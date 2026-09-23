@@ -17,14 +17,7 @@ candidatos:
   # Co-streams y eventos (contenido de terceros, Content ID casi seguro). Se busca en el título del
   # clip y en el título del stream (VOD). Sin distinguir mayúsculas ni tildes; palabra completa.
   # Falsos positivos aceptados. Motivo en la DB: "costream".
-  # Las de fútbol son por davooxeneize (transmite partidos): contenido de terceros.
   palabras_costream:
-    - gol
-    - resumen
-    - Boca
-    - River
-    - selección
-    - Mundial
     - LEC
     - LCK
     - LCS
@@ -34,6 +27,17 @@ candidatos:
     - costream
     - Kings League
     - Velada
+  # Palabras de fútbol: SOLO se aplican a streamers con detectar_marcador: true (los que transmiten
+  # partidos). Medido 2026-09-22: aplicadas a todos, "final" tiraba clips de juego perfectamente
+  # sanos ("Final de Geoware World", "cinemática del boss final") y "partido"/"gol" son comunes en
+  # cualquier stream. En los 52 canales del Dedsafío eran 6 falsos positivos de 12 descartes.
+  palabras_deportes:
+    - gol
+    - resumen
+    - Boca
+    - River
+    - selección
+    - Mundial
     - partido
     - final
   # Categorías de Twitch donde se transmiten eventos/deportes oficiales. Juegos como

@@ -82,12 +82,17 @@ def _normalizar(texto: str) -> str:
     return " " + re.sub(r"[^a-z0-9]+", " ", sin_tildes.lower()).strip() + " "
 
 
-def es_costream(textos: list[str], categoria: str, filtros: Filtros) -> bool:
-    """Co-stream o evento: palabra de la lista (completa) en algún título, o categoría de eventos."""
+def es_costream(textos: list[str], categoria: str, filtros: Filtros, con_deportes: bool = False) -> bool:
+    """Co-stream o evento: palabra de la lista (completa) en algún título, o categoría de eventos.
+
+    `con_deportes` suma las palabras de fútbol, y va SOLO para los streamers con detectar_marcador:
+    aplicadas a todos, "final" y "partido" tiran clips de juego sanos (medido 2026-09-22).
+    """
     if categoria.strip().lower() in {c.lower() for c in filtros.categorias_costream}:
         return True
     normalizados = [_normalizar(t) for t in textos if t]
-    for palabra in filtros.palabras_costream:
+    palabras = filtros.palabras_costream + (filtros.palabras_deportes if con_deportes else ())
+    for palabra in palabras:
         p = _normalizar(palabra)
         if p.strip() and any(p in t for t in normalizados):
             return True
@@ -150,7 +155,7 @@ def consolidar_evento(res: "Resultado", cfg: Evento, peso_momento: float) -> "Re
 
 
 def motivo_descarte(clip: Clip, filtros: Filtros, vistos: set[str], min_vistas: int | None = None,
-                    ahora: datetime | None = None) -> str | None:
+                    ahora: datetime | None = None, con_deportes: bool = False) -> str | None:
     """Devuelve por qué se descarta el clip, o None si pasa. El orden importa solo para el reporte.
 
     MUY NUEVO no es definitivo: esos clips no se marcan en la DB, así que vuelven a entrar en la
@@ -165,7 +170,7 @@ def motivo_descarte(clip: Clip, filtros: Filtros, vistos: set[str], min_vistas: 
         return "muy largo"
     if clip.language and clip.language != filtros.idioma.lower():  # Kick no informa idioma
         return f"idioma != {filtros.idioma}"
-    if es_costream([clip.title, clip.stream_title], clip.game_name, filtros):
+    if es_costream([clip.title, clip.stream_title], clip.game_name, filtros, con_deportes):
         return MOTIVO_COSTREAM
     excluidas = {c.lower() for c in filtros.categorias_excluidas}
     if clip.game_name.lower() in excluidas:
@@ -243,6 +248,11 @@ def _ids(client: TwitchClient, activos: list[Streamer], res: Resultado) -> dict[
     return {s.login: ids[s.login] for s in activos if s.login in ids}
 
 
+def _mira_deportes(por_login: dict[str, Streamer], login: str) -> bool:
+    s = por_login.get(login)
+    return bool(s and s.detectar_marcador)
+
+
 def _a_clips(client: TwitchClient, crudos: list[tuple[str, dict]], fuente: str,
              por_login: dict[str, Streamer]) -> list[Clip]:
     juegos = client.get_game_names(c.get("game_id", "") for _, c in crudos)
@@ -287,6 +297,7 @@ def buscar_kick(
     res = res or Resultado()
 
     todos: list[Clip] = []
+    deportes_de: dict[str, bool] = {}  # las palabras de fútbol son por streamer
     for s in habilitados(streamers, "kick", "reciente", res, incluir_sin_permiso, excluidos):
         try:
             crudos = client.get_clips(s.login, cfg.max_clips, cfg.orden, cfg.ventana)
@@ -295,6 +306,7 @@ def buscar_kick(
             res.fallos.append(f"kick/{s.login}: {e}")
             continue
         res.total_por_streamer[f"{s.login} (kick)"] = len(crudos)
+        deportes_de[s.login] = s.detectar_marcador
         for d in crudos:
             plano = a_clip(d, s.login)
             clip = Clip.from_helix(plano, s.login, plano["_game_name"], "", "reciente", "kick",
@@ -306,7 +318,9 @@ def buscar_kick(
 
     if not todos:
         return res
-    motivos = {c.id: motivo_descarte(c, filtros, vistos, ahora=ahora) for c in todos}
+    motivos = {c.id: motivo_descarte(c, filtros, vistos, ahora=ahora,
+                                     con_deportes=deportes_de.get(c.broadcaster_login, False))
+               for c in todos}
     for c in todos:
         if motivos[c.id]:
             res.descartes[motivos[c.id]] += 1
@@ -353,7 +367,9 @@ def buscar_candidatos(
         return res
 
     todos = _a_clips(client, crudos, "reciente", por_login)
-    motivos = {c.id: motivo_descarte(c, filtros, vistos, ahora=ahora) for c in todos}
+    motivos = {c.id: motivo_descarte(c, filtros, vistos, ahora=ahora,
+                                     con_deportes=_mira_deportes(por_login, c.broadcaster_login))
+               for c in todos}
     for c in todos:
         m = motivos[c.id]
         if m:
@@ -426,7 +442,8 @@ def buscar_catalogo(
                 continue
             paginas += 1
             for c in _a_clips(client, [(login, d) for d in page], "catalogo", por_login):
-                m = motivo_descarte(c, filtros, vistos, min_vistas=cat.min_vistas)
+                m = motivo_descarte(c, filtros, vistos, min_vistas=cat.min_vistas,
+                                    con_deportes=_mira_deportes(por_login, c.broadcaster_login))
                 if m:
                     res.descartes_catalogo[m] += 1
                     if m == MOTIVO_COSTREAM:

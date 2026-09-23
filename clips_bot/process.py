@@ -124,7 +124,8 @@ def procesar(url: str, cfg: Settings, streamers: list[Streamer], forzar: bool = 
         return True
 
     # §3 paso 2 (versión URL manual): co-stream / evento por título o categoría.
-    if es_costream([d.titulo], d.categoria, cfg.filtros) and descartar(
+    if es_costream([d.titulo], d.categoria, cfg.filtros,
+                   con_deportes=bool(streamer and streamer.detectar_marcador)) and descartar(
         f"co-stream o evento (título {d.titulo!r}, categoría {d.categoria!r})", MOTIVO_COSTREAM
     ):
         return _cerrar(res)

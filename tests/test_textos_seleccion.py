@@ -182,7 +182,18 @@ FILTROS = Filtros(
     ],
 )
 def test_es_costream(titulos, categoria, esperado):
-    assert es_costream(titulos, categoria, FILTROS) is esperado
+    assert es_costream(titulos, categoria, FILTROS, con_deportes=True) is esperado
+
+
+def test_las_palabras_de_futbol_solo_aplican_a_los_streamers_de_deportes():
+    """Medido en los 52 canales del Dedsafío (2026-09-22): con las palabras de fútbol aplicadas a
+    todos, 6 de los 12 descartes eran falsos positivos ("Final de Geoware World", "boss final")."""
+    f = Filtros(palabras_costream=("LEC", "Worlds"), palabras_deportes=("final", "partido", "gol"))
+    juego = ["cinemática del boss final"]
+    assert es_costream(juego, "Minecraft", f, con_deportes=False) is False  # streamer normal: pasa
+    assert es_costream(juego, "Minecraft", f, con_deportes=True) is True  # Davoo y cía: se descarta
+    # las de esports siguen valiendo para todos
+    assert es_costream(["REACCIONANDO A LA LEC"], "Minecraft", f, con_deportes=False) is True
 
 
 # ---- selección (paso 8) --------------------------------------------------------------

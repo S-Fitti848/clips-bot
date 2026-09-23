@@ -62,6 +62,7 @@ class Filtros:
     max_clips_por_streamer: int = 100
     categorias_excluidas: tuple[str, ...] = ("Music", "DJs")
     palabras_costream: tuple[str, ...] = ()
+    palabras_deportes: tuple[str, ...] = ()  # solo para streamers con detectar_marcador
     categorias_costream: tuple[str, ...] = ()
     ventana_momento_s: float = 60
 
@@ -223,6 +224,7 @@ def load_settings(path: Path = CONFIG_DIR / "settings.yaml") -> Settings:
         ("evento", "palabras"),
         ("candidatos", "categorias_excluidas"),
         ("candidatos", "palabras_costream"),
+        ("candidatos", "palabras_deportes"),
         ("candidatos", "categorias_costream"),
         ("publicacion", "horarios"),
     ]:
