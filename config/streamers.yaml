@@ -17,11 +17,68 @@
 #   detectar_marcador   true para descartar clips con marcador de transmisión deportiva en pantalla
 
 streamers:
+  # Grupo "argentinos": resueltos en Kick el 2026-09-22, todos con clips en los últimos 7 días.
+  # Quedaron afuera por inactividad o por no encontrar su cuenta real: Frankkaster y Carreraaa
+  # (existen pero 0 clips en 7 d), Momo, Luquitas Rodríguez y Marito Baracus (los slugs libres
+  # tienen 9–704 seguidores y no son ellos).
+  # detectar_marcador: true = habla de fútbol, así que se le aplican las palabras de deportes y la
+  # detección de cancha en pantalla.
   - login: davooxeneize
     plataforma: kick
     fuentes: [reciente]
-    grupo: kick_reciente
-    detectar_marcador: true    # transmite fútbol: no queremos clips con la señal en pantalla
+    grupo: argentinos
+    detectar_marcador: true
+    permiso:
+      experimento: true
+
+  - login: lacobraaa
+    plataforma: kick
+    fuentes: [reciente]
+    grupo: argentinos
+    detectar_marcador: true    # bio: "Hablo de FÚTBOL y deportes"
+    permiso:
+      experimento: true
+
+  - login: coker
+    plataforma: kick
+    fuentes: [reciente]
+    grupo: argentinos
+    detectar_marcador: true
+    permiso:
+      experimento: true
+
+  - login: spreen
+    plataforma: kick
+    fuentes: [reciente]
+    grupo: argentinos
+    permiso:
+      experimento: true
+
+  - login: mernuel
+    plataforma: kick
+    fuentes: [reciente]
+    grupo: argentinos
+    permiso:
+      experimento: true
+
+  - login: coscu
+    plataforma: kick
+    fuentes: [reciente]
+    grupo: argentinos
+    permiso:
+      experimento: true
+
+  - login: brunenger
+    plataforma: kick
+    fuentes: [reciente]
+    grupo: argentinos
+    permiso:
+      experimento: true
+
+  - login: goncho
+    plataforma: kick
+    fuentes: [reciente]
+    grupo: argentinos
     permiso:
       experimento: true
 

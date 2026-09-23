@@ -40,8 +40,9 @@ def url_clip(slug: str, clip_id: str) -> str:
 
 class KickClient:
     def __init__(self, session: requests.Session | None = None, timeout: float = 25,
-                 max_reintentos: int = 2, sleep=time.sleep):
+                 max_reintentos: int = 2, sleep=time.sleep, pausa_s: float = 0.0):
         self.session = session or requests.Session()
+        self.pausa_s = pausa_s  # espera antes de cada llamada, para no castigar la API interna
         self.timeout = timeout
         self.max_reintentos = max_reintentos
         self._sleep = sleep
@@ -49,6 +50,8 @@ class KickClient:
     def _get(self, url: str, params: dict | None = None) -> dict:
         intento = 0
         while True:
+            if self.pausa_s:
+                self._sleep(self.pausa_s)
             try:
                 r = self.session.get(url, params=params or {}, timeout=self.timeout,
                                      headers={"User-Agent": UA, "Accept": "application/json"})

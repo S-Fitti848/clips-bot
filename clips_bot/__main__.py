@@ -84,7 +84,7 @@ def buscar_todo(settings: Settings, streamers: list, incluir_sin_permiso: bool,
     try:
         vistos = db.ids_vistos(conn)
         excluidos = db.excluidos(conn)
-        res = buscar_kick(KickClient(), streamers, settings.filtros, vistos, settings.kick,
+        res = buscar_kick(KickClient(pausa_s=settings.kick.pausa_s), streamers, settings.filtros, vistos, settings.kick,
                           incluir_sin_permiso=incluir_sin_permiso, seleccion=settings.seleccion,
                           excluidos=excluidos)
         if any(s.plataforma == "twitch" for s in streamers):

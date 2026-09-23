@@ -79,6 +79,7 @@ class Evento:
 
 @dataclass(frozen=True)
 class Kick:
+    pausa_s: float = 1.0  # entre llamadas: la API interna no documenta su rate limit
     orden: str = "view"  # view = los más vistos (sin esto vienen los últimos subidos)
     ventana: str = "week"  # day | week | month | "" (todos)
     max_clips: int = 60
@@ -88,7 +89,7 @@ class Kick:
 class Catalogo:
     antiguedad_min_dias: int = 7
     antiguedad_max_dias: int = 1095
-    min_vistas: int = 00
+    min_vistas: int = 500
     n_candidatos: int = 4
     por_pagina: int = 20
     max_paginas: int = 3

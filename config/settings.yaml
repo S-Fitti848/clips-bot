@@ -71,6 +71,7 @@ kick:
   orden: view
   ventana: week              # day | week | month | "" (todos)
   max_clips: 60
+  pausa_s: 1.0               # entre llamadas: son 8 canales y la API interna no documenta su límite
 
 # Fuente "catalogo": clips viejos del streamer, por vistas absolutas. Usa los mismos filtros de
 # duración, idioma, música y co-stream que `candidatos`, con su propio mínimo de vistas.
@@ -165,9 +166,9 @@ seleccion:
   # Cupos por GRUPO (el grupo de cada streamer sale de streamers.yaml; default <plataforma>_<fuente>).
   # Lo que un grupo no llena pasa al grupo "catalogo".
   mezcla:
-    kick_reciente: 1
-    evento: 1
-    catalogo: 1
+    argentinos: 2            # los 8 de Kick (Davoo, Spreen, La Cobra, Coker, Goncho, Brunenger, Mernuel, Coscu)
+    evento: 1                # Dedsafío
+    # "catalogo" (Vegetta) no tiene cupo propio: es el fallback y se queda con lo que los otros no llenen
   peso_momento: 0.5          # 3 clips del mismo momento → × 2
   max_por_streamer: 2        # entre las dos fuentes
   # Scores a menos de este % en el corte de una fuente → desempata Gemini. Por fuente, porque el

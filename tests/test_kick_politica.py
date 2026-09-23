@@ -139,9 +139,11 @@ def test_permiso_por_experimento_y_por_cita():
 def test_streamers_yaml_del_repo_carga_los_grupos():
     por_login = {s.login: s for s in load_streamers()}
     assert por_login["davooxeneize"].plataforma == "kick"
-    assert por_login["davooxeneize"].detectar_marcador is True
+    assert por_login["davooxeneize"].grupo_de("reciente") == "argentinos"
     assert por_login["vegetta777"].fuentes == ("catalogo",)
-    assert por_login["davooxeneize"].grupo_de("reciente") == "kick_reciente"
+    # el grupo argentinos son los 8 de Kick resueltos el 2026-09-22
+    argentinos = [s for s in por_login.values() if s.grupo == "argentinos"]
+    assert len(argentinos) == 8 and all(s.plataforma == "kick" for s in argentinos)
     # la sección evento_* entra al grupo "evento"
     assert any(s.grupo == "evento" for s in por_login.values())
 
@@ -150,7 +152,10 @@ def test_el_filtro_de_deporte_no_toca_al_grupo_del_evento():
     """El evento es todo Minecraft y tiene mucho pasto: la señal de césped daría falsos positivos.
     Por eso la detección corre SOLO en los streamers marcados (hoy, davooxeneize)."""
     streamers = load_streamers()
-    assert [s.login for s in streamers if s.detectar_marcador] == ["davooxeneize"]
+    # los que hablan de fútbol, todos del grupo argentinos
+    marcados = [s for s in streamers if s.detectar_marcador]
+    assert sorted(s.login for s in marcados) == ["coker", "davooxeneize", "lacobraaa"]
+    assert all(s.grupo == "argentinos" for s in marcados)
     evento = [s for s in streamers if s.grupo == "evento"]
     assert len(evento) > 10 and not any(s.detectar_marcador for s in evento)
 
