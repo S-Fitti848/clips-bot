@@ -53,6 +53,12 @@ def pagina(clips, cursor=None):
     return Resp(200, {"clips": clips, "nextCursor": cursor})
 
 
+def videos(titulos=None):
+    """Respuesta de /videos: {livestream_id: título del stream}. buscar_kick la pide después de
+    los clips, así que va al final de la cola de la sesión falsa."""
+    return Resp(200, [{"id": lid, "session_title": t} for lid, t in (titulos or {}).items()])
+
+
 # ---- cliente de Kick ---------------------------------------------------------------
 
 
@@ -79,6 +85,33 @@ def test_kick_html_de_cloudflare_es_error():
         KickClient(session=s, sleep=lambda _: None).get_clips("davoo")
 
 
+def test_programa_de_terceros_por_titulo_del_stream():
+    """La Cobra, 2026-09-22: el clip se llamaba "El peor golpe en vivo" y el stream era
+    "412 con LA COBRA... PROGRAMA". Ninguna palabra del programa estaba en el título del clip, así
+    que solo el título del stream lo agarra. Kick no lo trae en el clip: sale de /videos."""
+    cobra = [Streamer("cobra", plataforma="kick", fuentes=("reciente",), grupo="argentinos",
+                      experimento=True, palabras_programa=("412", "ANALIZAMOS"))]
+    s = FakeSession([
+        pagina([clip_kick("prog", views=800, horas=48, titulo="El peor golpe en vivo", livestream="l1"),
+                clip_kick("normal", views=700, horas=48, offset=9000, livestream="l2")]),
+        videos({"l1": "412 con LA COBRA, DAVOOXENEIZE, AGUSNETA. PROGRAMA",
+                "l2": "jugando un rato"}),
+    ])
+    res = buscar_kick(KickClient(session=s, sleep=lambda _: None), cobra, Filtros(),
+                      vistos=set(), ahora=AHORA)
+    assert [c.id for c in res.candidatos] == ["normal"]
+    assert res.descartes["programa_terceros"] == 1
+
+
+def test_el_programa_mira_el_stream_y_no_el_clip():
+    from clips_bot.candidates import es_programa_de_terceros
+
+    assert es_programa_de_terceros("412 con LA COBRA. PROGRAMA", ("412",))
+    assert es_programa_de_terceros("hoy ANALIZAMOS la fecha", ("analizamos",))  # sin importar mayúsculas
+    assert not es_programa_de_terceros("jugando al 4120", ("412",))  # palabra completa, no subcadena
+    assert not es_programa_de_terceros("", ("412",))  # sin título de stream no se descarta nada
+
+
 def test_buscar_kick_no_corta_la_corrida_si_la_api_falla():
     s = FakeSession([Resp(503, None, "boom")] * 3)
     res = buscar_kick(KickClient(session=s, sleep=lambda _: None), DAVOO, Filtros(), vistos=set(), ahora=AHORA)
@@ -94,7 +127,7 @@ def test_twitch_no_pisa_los_candidatos_de_kick():
 
     from clips_bot.candidates import buscar_candidatos
 
-    s = FakeSession([pagina([clip_kick("k1", views=300, horas=48)])])
+    s = FakeSession([pagina([clip_kick("k1", views=300, horas=48)]), videos()])
     res = buscar_kick(KickClient(session=s, sleep=lambda _: None), DAVOO, Filtros(), vistos=set(), ahora=AHORA)
     assert [c.id for c in res.candidatos] == ["k1"]
 
@@ -113,7 +146,7 @@ def test_buscar_kick_filtra_ventana_y_no_filtra_idioma():
         clip_kick("ok", views=50, horas=48, offset=1000),
         clip_kick("mismo", views=20, horas=48, offset=1030),  # mismo momento que "ok"
         clip_kick("gol", views=999, horas=48, offset=8000, titulo="GOL de Boca"),
-    ])])
+    ]), videos()])
     res = buscar_kick(KickClient(session=s, sleep=lambda _: None), DAVOO,
                       Filtros(palabras_costream=("Boca", "gol")), vistos=set(), ahora=AHORA)
     assert [(c.id, c.clips_mismo_momento, c.plataforma, c.grupo) for c in res.candidatos] == [

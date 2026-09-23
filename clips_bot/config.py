@@ -36,6 +36,11 @@ class Streamer:
     experimento: bool = False
     subtitulos_propios: bool = False  # ya trae subtítulos en vivo quemados → no quemar los nuestros
     detectar_marcador: bool = False  # descartar clips con marcador de transmisión deportiva
+    # Marcas de programa de terceros en el TÍTULO DEL STREAM (no el del clip): "412", "ANALIZAMOS".
+    # Cuando el streamer está transmitiendo un programa con marca propia, todo ese stream queda
+    # afuera aunque el clip no diga nada. Es por streamer porque una marca ajena en otro canal no
+    # significa lo mismo. Motivo de descarte: programa_terceros.
+    palabras_programa: tuple[str, ...] = ()
 
     @property
     def permitido(self) -> bool:
@@ -298,6 +303,9 @@ def load_streamers(path: Path = CONFIG_DIR / "streamers.yaml") -> list[Streamer]
                     experimento=bool(permiso.get("experimento", False)),
                     subtitulos_propios=bool(item.get("subtitulos_propios", False)),
                     detectar_marcador=bool(item.get("detectar_marcador", False)),
+                    palabras_programa=tuple(
+                        str(p).strip() for p in (item.get("palabras_programa") or ()) if str(p).strip()
+                    ),
                 )
             )
     return out

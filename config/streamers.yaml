@@ -36,6 +36,13 @@ streamers:
     fuentes: [reciente]
     grupo: argentinos
     detectar_marcador: true    # bio: "Hablo de FÚTBOL y deportes"
+    # Marcas de programa en el TÍTULO DEL STREAM (no el del clip). Motivo de descarte:
+    # programa_terceros. El 2026-09-22 salió un Short del stream "412 con LA COBRA, DAVOOXENEIZE,
+    # AGUSNETA, TEODELIA Y BENITOSDR. PROGRAMA": el clip se llamaba "El peor golpe en vivo" y no
+    # tenía ninguna señal. Sumar acá las marcas que vayan apareciendo.
+    palabras_programa:
+      - "412"
+      - ANALIZAMOS
     permiso:
       experimento: true
 

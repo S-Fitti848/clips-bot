@@ -75,6 +75,7 @@ class Clip:
 
 
 MOTIVO_COSTREAM = "costream"
+MOTIVO_PROGRAMA = "programa_terceros"
 MOTIVO_FUERA_EVENTO = "fuera del evento (categoría, título o fecha)"
 MOTIVO_MUY_NUEVO = "muy nuevo (no llegó a antiguedad_min_h; se reevalúa mañana)"
 
@@ -102,6 +103,20 @@ def es_costream(textos: list[str], categoria: str, filtros: Filtros, con_deporte
         if p.strip() and any(p in t for t in normalizados):
             return True
     return False
+
+
+def es_programa_de_terceros(stream_title: str, palabras: tuple[str, ...]) -> bool:
+    """Marca de un programa con formato propio en el TÍTULO DEL STREAM.
+
+    Mira solo el título del stream a propósito: el del clip casi nunca lo nombra (el clip de La Cobra
+    del 2026-09-22 se llamaba "El peor golpe en vivo" y el stream era "412 con LA COBRA, DAVOOXENEIZE,
+    AGUSNETA... PROGRAMA"). Con una marca, TODO ese stream queda afuera, aunque el momento clipeado
+    no tenga nada del programa.
+    """
+    if not stream_title:
+        return False
+    normalizado = _normalizar(stream_title)
+    return any(_normalizar(p) in normalizado for p in palabras if p.strip())
 
 
 def es_del_evento(clip: Clip, cfg: Evento) -> bool:
@@ -170,7 +185,8 @@ def consolidar_evento(res: "Resultado", cfg: Evento, peso_momento: float,
 
 
 def motivo_descarte(clip: Clip, filtros: Filtros, vistos: set[str], min_vistas: int | None = None,
-                    ahora: datetime | None = None, con_deportes: bool = False) -> str | None:
+                    ahora: datetime | None = None, con_deportes: bool = False,
+                    palabras_programa: tuple[str, ...] = ()) -> str | None:
     """Devuelve por qué se descarta el clip, o None si pasa. El orden importa solo para el reporte.
 
     MUY NUEVO no es definitivo: esos clips no se marcan en la DB, así que vuelven a entrar en la
@@ -185,6 +201,8 @@ def motivo_descarte(clip: Clip, filtros: Filtros, vistos: set[str], min_vistas: 
         return "muy largo"
     if clip.language and clip.language != filtros.idioma.lower():  # Kick no informa idioma
         return f"idioma != {filtros.idioma}"
+    if es_programa_de_terceros(clip.stream_title, palabras_programa):
+        return MOTIVO_PROGRAMA
     if es_costream([clip.title, clip.stream_title], clip.game_name, filtros, con_deportes):
         return MOTIVO_COSTREAM
     excluidas = {c.lower() for c in filtros.categorias_excluidas}
@@ -264,14 +282,15 @@ def _ids(client: TwitchClient, activos: list[Streamer], res: Resultado) -> dict[
 
 
 def _motivo(clip: Clip, filtros: Filtros, vistos: set[str], ahora: datetime, evento: Evento,
-            con_deportes: bool) -> str | None:
+            con_deportes: bool, palabras_programa: tuple[str, ...] = ()) -> str | None:
     """Motivo de descarte, con el filtro del evento incluido.
 
     Los clips del grupo "evento" que no son del evento se descartan ACÁ, antes del corte al top N:
     si no, los clips de otra cosa del mismo streamer se comen los lugares y el cupo del evento queda
     vacío aunque haya clips buenos del evento más abajo (visto en la simulación del 2026-09-22).
     """
-    m = motivo_descarte(clip, filtros, vistos, ahora=ahora, con_deportes=con_deportes)
+    m = motivo_descarte(clip, filtros, vistos, ahora=ahora, con_deportes=con_deportes,
+                        palabras_programa=palabras_programa)
     if m:
         return m
     if (clip.grupo or "") == "evento" and not es_del_evento(clip, evento):
@@ -282,6 +301,11 @@ def _motivo(clip: Clip, filtros: Filtros, vistos: set[str], ahora: datetime, eve
 def _mira_deportes(por_login: dict[str, Streamer], login: str) -> bool:
     s = por_login.get(login)
     return bool(s and s.detectar_marcador)
+
+
+def _programa_de(por_login: dict[str, Streamer], login: str) -> tuple[str, ...]:
+    s = por_login.get(login)
+    return s.palabras_programa if s else ()
 
 
 def _a_clips(client: TwitchClient, crudos: list[tuple[str, dict]], fuente: str,
@@ -337,6 +361,7 @@ def buscar_kick(
 
     todos: list[Clip] = []
     deportes_de: dict[str, bool] = {}  # las palabras de fútbol son por streamer
+    programa_de: dict[str, tuple[str, ...]] = {}  # y las marcas de programa también
     for s in habilitados(streamers, "kick", "reciente", res, incluir_sin_permiso, excluidos):
         try:
             crudos = client.get_clips(s.login, cfg.max_clips, cfg.orden, cfg.ventana)
@@ -346,9 +371,15 @@ def buscar_kick(
             continue
         res.total_por_streamer[f"{s.login} (kick)"] = len(crudos)
         deportes_de[s.login] = s.detectar_marcador
+        programa_de[s.login] = s.palabras_programa
+        # El clip de Kick no trae el título del stream, solo livestream_id: se resuelve con
+        # /videos del canal (una llamada por canal). Sin esto, los filtros que miran el título del
+        # stream no existen en Kick.
+        titulos = client.get_session_titles(s.login)
         for d in crudos:
             plano = a_clip(d, s.login)
-            clip = Clip.from_helix(plano, s.login, plano["_game_name"], "", "reciente", "kick",
+            clip = Clip.from_helix(plano, s.login, plano["_game_name"],
+                                   titulos.get(plano["video_id"], ""), "reciente", "kick",
                                    s.grupo_de("reciente"))
             if clip.created_at >= desde:  # la API no filtra por fecha: se hace acá
                 todos.append(clip)
@@ -358,7 +389,8 @@ def buscar_kick(
     if not todos:
         return res
     motivos = {c.id: _motivo(c, filtros, vistos, ahora, evento,
-                             deportes_de.get(c.broadcaster_login, False))
+                             deportes_de.get(c.broadcaster_login, False),
+                             programa_de.get(c.broadcaster_login, ()))
                for c in todos}
     for c in todos:
         if motivos[c.id]:
@@ -408,7 +440,8 @@ def buscar_candidatos(
 
     todos = _a_clips(client, crudos, "reciente", por_login)
     motivos = {c.id: _motivo(c, filtros, vistos, ahora, evento,
-                             _mira_deportes(por_login, c.broadcaster_login))
+                             _mira_deportes(por_login, c.broadcaster_login),
+                             _programa_de(por_login, c.broadcaster_login))
                for c in todos}
     for c in todos:
         m = motivos[c.id]
@@ -486,7 +519,8 @@ def buscar_catalogo(
             paginas += 1
             for c in _a_clips(client, [(login, d) for d in page], "catalogo", por_login):
                 m = motivo_descarte(c, filtros, vistos, min_vistas=cat.min_vistas,
-                                    con_deportes=_mira_deportes(por_login, c.broadcaster_login))
+                                    con_deportes=_mira_deportes(por_login, c.broadcaster_login),
+                                    palabras_programa=_programa_de(por_login, c.broadcaster_login))
                 if m:
                     res.descartes_catalogo[m] += 1
                     if m == MOTIVO_COSTREAM:

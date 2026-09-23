@@ -13,6 +13,11 @@ La respuesta trae `clips` y `nextCursor`. De cada clip se usa: id, title, view_c
 created_at, category.name, channel.slug, livestream_id y vod_starts_at (los dos últimos sirven para
 agrupar clips del mismo momento, igual que vod_offset en Twitch).
 Kick NO informa idioma: esos clips no pasan por el filtro de idioma.
+
+El clip NO trae el título del stream, solo `livestream_id`. Ese título lo da
+GET kick.com/api/v2/channels/{slug}/videos, que lista los últimos streams con `id` (= livestream_id
+del clip) y `session_title`. Hace falta para los filtros que miran el título del stream y no el del
+clip: co-streams, deportes y `palabras_programa` (ver §3 paso 2).
 """
 
 from __future__ import annotations
@@ -26,6 +31,7 @@ import requests
 log = logging.getLogger(__name__)
 
 API = "https://kick.com/api/v2/channels/{slug}/clips"
+API_VIDEOS = "https://kick.com/api/v2/channels/{slug}/videos"
 UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) "
       "Chrome/141.0.0.0 Safari/537.36")
 
@@ -88,6 +94,21 @@ class KickClient:
             if not page or not cursor:
                 break
         return clips[:max_clips]
+
+    def get_session_titles(self, slug: str) -> dict[str, str]:
+        """{livestream_id: título del stream} de los últimos streams del canal.
+
+        Es una llamada por canal y por corrida. Si falla, se devuelve vacío y los clips quedan sin
+        título de stream (como antes): un filtro menos, pero la corrida no se cae.
+        """
+        try:
+            data = self._get(API_VIDEOS.format(slug=slug))
+        except KickError as e:
+            log.warning("Kick: sin títulos de stream para %s (%s)", slug, e)
+            return {}
+        if not isinstance(data, list):
+            return {}
+        return {str(d.get("id")): str(d.get("session_title") or "") for d in data if d.get("id")}
 
 
 def a_clip(d: dict, login: str) -> dict:
