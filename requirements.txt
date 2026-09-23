@@ -1,0 +1,11 @@
+requests>=2.31
+PyYAML>=6.0
+python-dotenv>=1.0
+yt-dlp>=2025.6
+faster-whisper>=1.2
+numpy>=1.26
+# En la Pi (sin pantalla) va la versión headless; no instalar las dos juntas.
+opencv-python>=4.8; platform_machine != "aarch64"
+opencv-python-headless>=4.8; platform_machine == "aarch64"
+pytest>=8.0
+# Además: ffmpeg con libass en el PATH (Windows: winget install Gyan.FFmpeg · Pi: apt install ffmpeg)

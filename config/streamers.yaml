@@ -1,0 +1,376 @@
+# Streamers de los que se toman clips.
+#
+# PERMISO (uno de los dos):
+#   cita + fuente        el streamer permite clips públicamente (Acerca de, panel de reglas o bio)
+#   experimento: true    entra igual, como experimento (política 2026-09-22). Se sube en PRIVADO y
+#                        recién se hace público si los Chequeos de copyright de Studio salen limpios.
+# Sin ninguno de los dos, el bot lo ignora.
+# Si un video recibe un reclamo o strike (/reclamo en Telegram), el streamer queda EXCLUIDO
+# automáticamente en la DB (tabla streamer_estado) y no se vuelve a usar hasta sacarlo a mano.
+#
+# Campos:
+#   login       el de la URL: twitch.tv/<login> o kick.com/<login>
+#   plataforma  twitch | kick
+#   fuentes     [reciente], [catalogo] o las dos
+#   grupo       cupo en el que compite (seleccion.mezcla). Default: <plataforma>_<fuente>
+#   subtitulos_propios  true si ya muestra subtítulos quemados en el stream
+#   detectar_marcador   true para descartar clips con marcador de transmisión deportiva en pantalla
+
+streamers:
+  - login: davooxeneize
+    plataforma: kick
+    fuentes: [reciente]
+    grupo: kick_reciente
+    detectar_marcador: true    # transmite fútbol: no queremos clips con la señal en pantalla
+    permiso:
+      experimento: true
+
+  - login: vegetta777
+    plataforma: twitch
+    fuentes: [catalogo]        # solo catálogo: sus clips recientes tienen muy pocas vistas
+    grupo: catalogo
+    permiso:
+      experimento: true
+
+# Dedsafío Nights — participantes resueltos el 2026-09-22 contra Twitch (Get Users + Search) y,
+# si no estaban, contra Kick. El login NO siempre es el nombre de pantalla: acá va el login real.
+# Todos entran como experimento. Además, el grupo "evento" solo toma clips de categoría Minecraft o
+# con dedsafio/nights en el título, dentro del período (config: settings.yaml → evento).
+evento_dedsafio:
+  - login: theblazer97
+    plataforma: twitch
+    fuentes: [reciente]
+    permiso:
+      experimento: true
+    # TheBlazer97 — dedsafío confirmado en clips
+  - login: nephtunie
+    plataforma: twitch
+    fuentes: [reciente]
+    permiso:
+      experimento: true
+    # Nephtunie — Minecraft en clips recientes
+  - login: bobicraftmc
+    plataforma: twitch
+    fuentes: [reciente]
+    permiso:
+      experimento: true
+    # BobicraftMC — dedsafío confirmado en clips
+  - login: aldo_geo
+    plataforma: twitch
+    fuentes: [reciente]
+    permiso:
+      experimento: true
+    # aldo_geo — dedsafío confirmado en clips
+  - login: conterstine
+    plataforma: twitch
+    fuentes: [reciente]
+    permiso:
+      experimento: true
+    # Conterstine — dedsafío confirmado en clips
+  - login: filisgg
+    plataforma: twitch
+    fuentes: [reciente]
+    permiso:
+      experimento: true
+    # Filisgg — dedsafío confirmado en clips
+  - login: renrize
+    plataforma: twitch
+    fuentes: [reciente]
+    permiso:
+      experimento: true
+    # Renrize — dedsafío confirmado en clips
+  - login: juansguarnizo
+    plataforma: twitch
+    fuentes: [reciente]
+    permiso:
+      experimento: true
+    # JuanSGuarnizo — Minecraft en clips recientes
+  - login: crystalmolly
+    plataforma: twitch
+    fuentes: [reciente]
+    permiso:
+      experimento: true
+    # CrystalMolly — Minecraft en clips recientes
+  - login: vickypalami
+    plataforma: twitch
+    fuentes: [reciente]
+    permiso:
+      experimento: true
+    # VickyPALAMI — dedsafío confirmado en clips
+  - login: maryblog
+    plataforma: twitch
+    fuentes: [reciente]
+    permiso:
+      experimento: true
+    # MaryBlog — dedsafío confirmado en clips
+  - login: rociodta
+    plataforma: twitch
+    fuentes: [reciente]
+    permiso:
+      experimento: true
+    # rociodta — dedsafío confirmado en clips
+  - login: ichurrox
+    plataforma: twitch
+    fuentes: [reciente]
+    permiso:
+      experimento: true
+    # iChurrox — dedsafío confirmado en clips
+  - login: rivers_gg
+    plataforma: twitch
+    fuentes: [reciente]
+    permiso:
+      experimento: true
+    # rivers_GG — Minecraft en clips recientes
+  - login: pujidos_90
+    plataforma: twitch
+    fuentes: [reciente]
+    permiso:
+      experimento: true
+    # Pujidos_90 — Minecraft en clips recientes
+  - login: hasvik
+    plataforma: twitch
+    fuentes: [reciente]
+    permiso:
+      experimento: true
+    # Hasvik — dedsafío confirmado en clips
+  - login: markilokurasy
+    plataforma: twitch
+    fuentes: [reciente]
+    permiso:
+      experimento: true
+    # MarkiLokurasY — dedsafío confirmado en clips
+  - login: soarinng
+    plataforma: twitch
+    fuentes: [reciente]
+    permiso:
+      experimento: true
+    # Soarinng — Minecraft en clips recientes
+  - login: samitacross
+    plataforma: twitch
+    fuentes: [reciente]
+    permiso:
+      experimento: true
+    # SamitaCross — dedsafío confirmado en clips
+  - login: elbudget
+    plataforma: twitch
+    fuentes: [reciente]
+    permiso:
+      experimento: true
+    # ElBudget — dedsafío confirmado en clips
+  - login: gamstergaming
+    plataforma: twitch
+    fuentes: [reciente]
+    permiso:
+      experimento: true
+    # GamsterGaming — Minecraft en clips recientes
+  - login: aquino
+    plataforma: twitch
+    fuentes: [reciente]
+    permiso:
+      experimento: true
+    # AQUINO — dedsafío confirmado en clips
+  - login: fkcristina
+    plataforma: twitch
+    fuentes: [reciente]
+    permiso:
+      experimento: true
+    # FKcristina — Minecraft en clips recientes
+  - login: pattymeza
+    plataforma: twitch
+    fuentes: [reciente]
+    permiso:
+      experimento: true
+    # PattyMeza — Minecraft en clips recientes
+  - login: green
+    plataforma: twitch
+    fuentes: [reciente]
+    permiso:
+      experimento: true
+    # Green — dedsafío confirmado en clips
+  - login: antonicratv
+    plataforma: twitch
+    fuentes: [reciente]
+    permiso:
+      experimento: true
+    # antonicratv — dedsafío confirmado en clips
+  - login: fapparamoar
+    plataforma: twitch
+    fuentes: [reciente]
+    permiso:
+      experimento: true
+    # fapparamoar — dedsafío confirmado en clips
+  - login: pompeyo4
+    plataforma: twitch
+    fuentes: [reciente]
+    permiso:
+      experimento: true
+    # Pompeyo4 — dedsafío confirmado en clips
+  - login: serpias
+    plataforma: twitch
+    fuentes: [reciente]
+    permiso:
+      experimento: true
+    # Serpias — dedsafío confirmado en clips
+  - login: akim
+    plataforma: twitch
+    fuentes: [reciente]
+    permiso:
+      experimento: true
+    # Akim — dedsafío confirmado en clips
+  - login: mirandaibanez
+    plataforma: twitch
+    fuentes: [reciente]
+    permiso:
+      experimento: true
+    # Mirandaibanez — Minecraft en clips recientes
+  - login: denniscyan
+    plataforma: twitch
+    fuentes: [reciente]
+    permiso:
+      experimento: true
+    # DennisCyan — dedsafío confirmado en clips
+  - login: betra
+    plataforma: twitch
+    fuentes: [reciente]
+    permiso:
+      experimento: true
+    # Betra — Minecraft en clips recientes
+  - login: daniboy
+    plataforma: twitch
+    fuentes: [reciente]
+    permiso:
+      experimento: true
+    # DaniBoy — Minecraft en clips recientes
+  - login: srelemao
+    plataforma: twitch
+    fuentes: [reciente]
+    permiso:
+      experimento: true
+    # SrElemao — dedsafío confirmado en clips
+  - login: sofia_anyway
+    plataforma: twitch
+    fuentes: [reciente]
+    permiso:
+      experimento: true
+    # SOFIA_ANYWAY — Minecraft en clips recientes
+  - login: javiermtz
+    plataforma: twitch
+    fuentes: [reciente]
+    permiso:
+      experimento: true
+    # javiermtz — Minecraft en clips recientes
+  - login: larrycabirria
+    plataforma: twitch
+    fuentes: [reciente]
+    permiso:
+      experimento: true
+    # larrycabirria — Minecraft en clips recientes
+  - login: amablitz
+    plataforma: twitch
+    fuentes: [reciente]
+    permiso:
+      experimento: true
+    # amablitz — Minecraft en clips recientes
+  - login: girlofnox
+    plataforma: twitch
+    fuentes: [reciente]
+    permiso:
+      experimento: true
+    # GIRLOFNOX — dedsafío confirmado en clips
+
+  # SIN señal de Minecraft ni dedsafío al 2026-09-22 (el login existe, pero puede ser otra
+  # persona con ese nombre, o simplemente no clipeó el evento). Revisalos y sacá los que no sean:
+  - login: emikukis
+    plataforma: twitch
+    fuentes: [reciente]
+    permiso:
+      experimento: true
+    # Emikukis — SIN señal verificada
+  - login: caprimint
+    plataforma: twitch
+    fuentes: [reciente]
+    permiso:
+      experimento: true
+    # Caprimint — SIN señal verificada
+  - login: millymusic
+    plataforma: twitch
+    fuentes: [reciente]
+    permiso:
+      experimento: true
+    # MillyMusic — SIN señal verificada
+  - login: sweetyb
+    plataforma: twitch
+    fuentes: [reciente]
+    permiso:
+      experimento: true
+    # SweetyB — SIN señal verificada
+  - login: monywtff
+    plataforma: twitch
+    fuentes: [reciente]
+    permiso:
+      experimento: true
+    # MONYWTFF — SIN señal verificada
+  - login: jamesaap
+    plataforma: twitch
+    fuentes: [reciente]
+    permiso:
+      experimento: true
+    # JamesAAP — SIN señal verificada
+  - login: farfadox
+    plataforma: twitch
+    fuentes: [reciente]
+    permiso:
+      experimento: true
+    # Farfadox — SIN señal verificada
+  - login: marioreyes22
+    plataforma: twitch
+    fuentes: [reciente]
+    permiso:
+      experimento: true
+    # MarioReyes22 — SIN señal verificada
+  - login: twinzzz
+    plataforma: twitch
+    fuentes: [reciente]
+    permiso:
+      experimento: true
+    # Twinzzz — SIN señal verificada
+  - login: arigameplays
+    plataforma: twitch
+    fuentes: [reciente]
+    permiso:
+      experimento: true
+    # arigameplays — SIN señal verificada
+  - login: nataliamx
+    plataforma: twitch
+    fuentes: [reciente]
+    permiso:
+      experimento: true
+    # nataliamx — SIN señal verificada
+  - login: puvlo69
+    plataforma: twitch
+    fuentes: [reciente]
+    permiso:
+      experimento: true
+    # PUVLO69 — SIN señal verificada
+  - login: flexvega
+    plataforma: kick
+    fuentes: [reciente]
+    permiso:
+      experimento: true
+    # FlexVega — SIN señal verificada
+  - login: thedaarick28
+    plataforma: kick
+    fuentes: [reciente]
+    permiso:
+      experimento: true
+    # TheDaarick28 — SIN señal verificada
+
+  # NO RESUELTOS (no existen con ese nombre en Twitch ni en Kick; hace falta el login real):
+  #   rubinavx
+  #   Dlffrent
+  #   MontokaAtr
+  #   CherryToragao
+  #   Maau
+  #   FalloSinEmision
+  #   Albaclouthier
+  #   Juliandns_

@@ -1,0 +1,169 @@
+# Parámetros de la corrida. Cambiar acá, no en el código.
+
+candidatos:
+  ventana_horas: 168         # 7 días: clips creados en las últimas N horas
+  antiguedad_min_h: 24       # un clip entra recién cuando juntó vistas y duplicados.
+                             # Los más nuevos NO se marcan en la DB: vuelven a entrar cuando maduran.
+  idioma: es                 # campo `language` del clip en Twitch (ISO 639-1)
+  duracion_min_s: 15
+  duracion_max_s: 60       # los clips de Twitch salen de 60 s; el render corta a 59
+  min_vistas: 0              # recientes: no se filtra por vistas (el score ya las pondera)
+  n_candidatos: 8            # cuántos pasan a descarga (§3 paso 3)
+  max_clips_por_streamer: 100
+  # §4 capa 1 del filtro de música: categorías que se descartan directo.
+  categorias_excluidas:
+    - Music
+    - DJs
+  # Co-streams y eventos (contenido de terceros, Content ID casi seguro). Se busca en el título del
+  # clip y en el título del stream (VOD). Sin distinguir mayúsculas ni tildes; palabra completa.
+  # Falsos positivos aceptados. Motivo en la DB: "costream".
+  # Las de fútbol son por davooxeneize (transmite partidos): contenido de terceros.
+  palabras_costream:
+    - gol
+    - resumen
+    - Boca
+    - River
+    - selección
+    - Mundial
+    - LEC
+    - LCK
+    - LCS
+    - Worlds
+    - MSI
+    - co-stream
+    - costream
+    - Kings League
+    - Velada
+    - partido
+    - final
+  # Categorías de Twitch donde se transmiten eventos/deportes oficiales. Juegos como
+  # League of Legends NO van acá (se juegan normal); para eso están las palabras.
+  categorias_costream:
+    - Sports
+    - Special Events
+  # Clips del mismo streamer y mismo VOD con vod_offset a ±N s del más visto = mismo momento.
+  # Queda uno solo (el más visto que pase los filtros); cuántos hubo suma puntaje (seleccion.peso_momento).
+  ventana_momento_s: 60
+
+# Grupo "evento" (streamers cargados en una sección evento_* de streamers.yaml). Son decenas de
+# canales transmitiendo lo mismo: solo entran clips de esas categorías o con esas palabras en el
+# título, y dentro del período del evento. Además, los clips de distintos streamers hechos a la
+# misma hora real (±ventana) cuentan como el MISMO momento: si 5 canales clipearon la misma muerte,
+# ese momento sube mucho de score.
+evento:
+  categorias:
+    - Minecraft
+  palabras:
+    - dedsafio
+    - nights
+  desde: ""                  # AAAA-MM-DD, primer día del evento (vacío = sin piso)
+  hasta: ""                  # AAAA-MM-DD (vacío = sin techo)
+  ventana_entre_streamers_s: 120
+
+# Kick (API interna de la web). sort=view + time=week trae los MÁS VISTOS de la semana; sin eso
+# vienen los últimos subidos, que en un canal grande son cientos de clips de la última hora con 2 o
+# 3 vistas (medido en davooxeneize el 2026-09-22).
+kick:
+  orden: view
+  ventana: week              # day | week | month | "" (todos)
+  max_clips: 60
+
+# Fuente "catalogo": clips viejos del streamer, por vistas absolutas. Usa los mismos filtros de
+# duración, idioma, música y co-stream que `candidatos`, con su propio mínimo de vistas.
+# Cursor de Helix por streamer en la DB: cada corrida sigue donde quedó la anterior; al agotarse,
+# arranca un ciclo nuevo con la ventana de fechas actualizada.
+catalogo:
+  antiguedad_min_dias: 7
+  antiguedad_max_dias: 1095  # 3 años
+  min_vistas: 500
+  n_candidatos: 4            # cuántos pasan a descarga por corrida
+  por_pagina: 20
+  max_paginas: 3             # por streamer y por corrida
+
+# §3 paso 5: layout 9:16.
+render:
+  ancho: 1080
+  alto: 1920
+  fps: 30
+  duracion_max_s: 59
+  alto_camara: 768           # layout split: cámara arriba 40 % (1080x768), juego abajo 60 % (1080x1152)
+  separador_px: 6            # línea negra entre cámara y juego (0 = sin línea)
+  recorte_inferior_camara_px: 50  # px del video original que se sacan del pie del cuadro de cámara (UI del juego)
+  zoom_sin_camara: 1.08      # layout sin cámara: crop central 9:16 con este zoom
+  x264_preset: medium        # en la Pi conviene veryfast
+  crf: 20
+  maxrate_kbps: 5000         # tope: 59 s × 5 Mbps ≈ 38 MB < 50 MB (límite de la Bot API de Telegram)
+
+# Detección de cámara (OpenCV, caras en frames muestreados).
+camara:
+  frames_muestra: 20
+  min_presencia: 0.4         # fracción de frames con una cara en el mismo lugar → hay cámara
+  cara_grande: 0.12          # ancho de cara / ancho de frame ≥ esto → cámara a pantalla completa
+
+# §3 paso 6: subtítulos.
+subtitulos:
+  modelo: small
+  compute_type: int8
+  cpu_threads: 0             # 0 = automático
+  idioma: es
+  fuente: Arial
+  tamano: 64
+  mayusculas: false
+  max_chars_linea: 24
+  max_lineas: 2
+  max_duracion_s: 3.0        # un subtítulo no dura más que esto
+  posicion_y: 0.80           # centro del bloque de subtítulos (fracción del alto). El 15 % de abajo
+                             # lo tapan los botones de Shorts/TikTok: no bajar de ~0.78 con 2 líneas.
+
+# §3 paso 4 / §4: filtros de audio (capas silencio y densidad de palabras; librosa pendiente).
+filtro_audio:
+  max_silencio: 0.8          # fracción del clip en silencio → descartar
+  min_palabras_por_s: 0.7    # menos → probable música o gameplay puro → descartar
+  silencio_db: -35
+  silencio_min_s: 0.5
+
+# Marcador de transmisión deportiva (solo streamers con detectar_marcador: true, ej. davooxeneize).
+# Heurística: región de una esquina de arriba que casi no cambia mientras el resto del video sí, y
+# con mucho borde (texto y líneas del gráfico). Falsos positivos posibles con HUDs de juegos.
+marcador:
+  frames_muestra: 6
+  quietud_min: 0.75
+  bordes_min: 0.05
+
+# §3 paso 7: textos con Gemini.
+textos:
+  modelo: gemini-3.6-flash      # 2.5-flash dio 404 para cuentas nuevas (2026-09-21)
+  max_titulo: 59             # < 60 caracteres
+  min_hashtags: 3
+  max_hashtags: 5
+  max_descripcion: 800
+  reintentos: 3              # si la respuesta no valida, se reintenta con los errores
+
+# §3 paso 8: selección de los mejores.
+# Cada fuente compite solo dentro de su cupo; los cupos que sobran pasan a la otra fuente.
+#   reciente: score = (1 + peso_momento × (clips del mismo momento − 1)) × (1 + log10(1 + vistas))
+#             Un clip con 0 vistas y 3 personas que lo clipearon (2,0) compite con uno de 500 vistas
+#             sin duplicados (3,7); las vistas bajas no anulan el resto.
+#   catalogo: score = vistas absolutas
+seleccion:
+  # Cupos por GRUPO (el grupo de cada streamer sale de streamers.yaml; default <plataforma>_<fuente>).
+  # Lo que un grupo no llena pasa al grupo "catalogo".
+  mezcla:
+    kick_reciente: 1
+    evento: 1
+    catalogo: 1
+  peso_momento: 0.5          # 3 clips del mismo momento → × 2
+  max_por_streamer: 2        # entre las dos fuentes
+  # Scores a menos de este % en el corte de una fuente → desempata Gemini. Por fuente, porque el
+  # score reciente es logarítmico (3 % ≈ 20 % en vistas) y el de catálogo son vistas directas.
+  empate_pct:
+    reciente: 0.03
+    catalogo: 0.10
+
+# §3 paso 10: entrega por Telegram.
+publicacion:
+  horarios: ["13:00", "18:00", "21:30"]   # hora AR sugerida para cada seleccionado, en orden
+
+# §3 paso 9. Queda en false hasta que la auditoría de la YouTube Data API esté aprobada
+# (sin auditoría los uploads quedan bloqueados privados para siempre).
+youtube_upload_enabled: false

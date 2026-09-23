@@ -1,0 +1,363 @@
+# Clips Bot — Project Context
+
+**Snapshot:** 2026-09-22 | **Versión:** v0.8.1 | **Modo:** Fase 1 en curso (pasos 1–8 + entrega por Telegram, probados en vivo)
+
+> Este archivo se reconstruyó el 2026-09-22 desde el transcript de la sesión: un script de parche lo
+> rompió (reemplazo descontrolado, 37 MB de texto repetido) y no había copia. El contenido está al
+> día; si falta algún detalle viejo, es por eso. Conviene `git init` en el proyecto.
+
+---
+
+## 0. QUÉ ES
+
+Bot que cada día toma los mejores clips de un set fijo de streamers de Twitch y Kick, los convierte a
+formato vertical 9:16 con subtítulos, y los entrega para publicar en un canal de YouTube Shorts
+(3 por día). Hasta pasar la auditoría de la YouTube Data API la subida es manual; después, el bot
+sube solo con `publishAt` (ver §1). Corre 24/7 en la Raspberry Pi 4 (misma Pi que el trading bot,
+servicio systemd separado: `clips-bot`).
+
+**Idioma:** español argentino, informal. **Estilo del usuario:** directo, sin atajos, datos > opinión.
+**Regla persistente:** después de CADA cambio, actualizar este archivo (versión, changelog, estado).
+
+---
+
+## 1. DECISIONES YA TOMADAS (no reabrir sin dato nuevo)
+
+- **Plataformas: Twitch + Kick (2026-09-22).** Twitch tiene API oficial (Helix `GET /clips`).
+  Kick NO tiene API pública de clips: se usa la interna de la web
+  (`kick.com/api/v2/channels/{slug}/clips`, con `sort=view&time=week` para los más vistos de la
+  semana). No está documentada y puede romperse o empezar a pedir verificación de navegador sin
+  aviso: si falla, se loguea, se avisa y la corrida sigue con Twitch. Descarga: yt-dlp en las dos.
+- **Streamers: con permiso citado O como experimento (política revisada 2026-09-22).**
+  `config/streamers.yaml`: `permiso.cita` + `permiso.fuente` (permiso público citado) **o**
+  `permiso.experimento: true`. Sin ninguno de los dos, no entra. NO se contacta a nadie por ahora.
+  Con experimento, el control de copyright real es Studio: se sube en PRIVADO, se esperan los
+  Chequeos de copyright y recién ahí se publica (va como recordatorio fijo en cada mensaje).
+- **Un reclamo o strike excluye al streamer, automáticamente.** Queda en la DB (`streamer_estado`)
+  y ninguna corrida lo vuelve a usar hasta sacarlo a mano. Hoy se dispara con `/reclamo <id>` por
+  Telegram; cuando exista el módulo de métricas (§4b) se llama igual desde ahí.
+- **Sin IA generativa de video.** Gemini se usa solo para texto: título, descripción, hashtags,
+  `depende_de_fecha`, y elegir entre candidatos cuando hay empate.
+- **Sin música agregada.** Cualquier música es riesgo de Content ID. Si el clip trae música de
+  fondo del stream, se descarta (detección: ver §4).
+- **Volumen: 3 uploads/día** (3 × 1600 = 4800 unidades de las 10.000 diarias de cuota).
+- **Publicación: TODO MANUAL hasta la auditoría de YouTube (decisión 2026-09-21, revisada).**
+  CONFIRMADO: los videos subidos por API desde un proyecto sin auditar quedan bloqueados como
+  privados de forma permanente (no se pueden publicar desde Studio ni apelar). Por eso, hasta
+  aprobar la auditoría, el bot NO sube nada: entrega por Telegram el mp4 + título + descripción +
+  hashtags y Santi sube a mano a YouTube Shorts, TikTok, Instagram Reels y Facebook Reels
+  (~5–7 min/día). Esto también evita la auditoría de TikTok y la revisión de Meta.
+  Con la auditoría aprobada se activa YouTube automático: `videos.insert` privado + `publishAt`
+  escalonado (ej. 13:00/18:00/21:30 AR); cuota confirmada 1600/upload → 3 × 1600 = 4800 de las
+  10.000 diarias. TikTok/IG/FB siguen manuales.
+- **Feedback loop obligatorio:** el bot mide cómo rinde cada video y usa eso para elegir mejor
+  (ver §4b). Sin métricas el proyecto es ciego.
+- **Valor agregado obligatorio en cada Short**: subtítulos quemados, layout vertical con cámara
+  arriba/juego abajo (o zoom inteligente si no hay cámara), título con contexto, mención al
+  streamer en descripción. Es lo que YouTube pide para no marcar "contenido reutilizado".
+
+---
+
+## 2. STACK
+
+| Capa | Herramienta | Notas |
+|---|---|---|
+| Descubrir clips | Twitch Helix API (`Get Clips`) | app token client-credentials, gratis |
+| Descubrir clips (Kick) | API interna de la web (`/api/v2/channels/{slug}/clips`) | no documentada; si falla, la corrida sigue |
+| Descargar | `yt-dlp` | URL del clip → mp4 (Twitch y Kick) |
+| Detectar cámara/layout | OpenCV (detección de rostro en frames muestreados) | decide layout |
+| Marcador deportivo | OpenCV (esquina quieta + mucho borde) | heurística, se activa por streamer |
+| Recorte + layout 9:16 | `ffmpeg` | 1080x1920, 30 fps, ≤ 59 s |
+| Subtítulos | `faster-whisper` (modelo `small`, CPU) | español; quemados con ffmpeg |
+| Texto (título/desc) | Gemini API (key existente) | prompt corto, salida JSON por schema |
+| Upload YouTube | YouTube Data API v3 `videos.insert` | SOLO post-auditoría. OAuth, scope `youtube.upload` |
+| Entrega manual | Telegram (envía mp4 + texto) | Santi sube a mano (YouTube hasta la auditoría; TikTok/IG/FB siempre) |
+| Métricas | YouTube Data + Analytics API, Meta Graph API, TikTok Display API | solo cuentas propias, sin auditoría |
+| Estado | SQLite (`data/clips.db`) | clips vistos, subidos, cursores, exclusiones |
+| Alertas | Telegram (bot nuevo, no el del trading) | resumen diario + errores |
+| Scheduler | systemd timer (1 corrida/día, ej. 05:00 AR) | + watchdog simple |
+
+Restricción de hardware: la Pi tiene undervoltage confirmado. Whisper `small` en CPU tarda
+~1–2 min por clip de 60 s; 3 clips/día es trivial. NO paralelizar.
+
+---
+
+## 3. PIPELINE (una corrida diaria: `python -m clips_bot diario`)
+
+1. Tres fuentes/grupos, según lo que declara cada streamer en `streamers.yaml`:
+   - **reciente**: clips de los últimos 7 días con al menos 24 h de antigüedad
+     (`antiguedad_min_h`), para que hayan juntado vistas y duplicados. Los más nuevos se descartan
+     SOLO por esa corrida: no se marcan en la DB y vuelven a entrar cuando maduran.
+     Clips del mismo streamer y VOD con `vod_offset` a ±60 s del más visto = mismo momento → queda
+     uno solo (el más visto que pase los filtros) y cuántos hubo suma puntaje.
+     Score = (1 + peso_momento × (clips del momento − 1)) × (1 + log10(1 + vistas)).
+     El log achata las vistas (0 → 1,0; 10 → 2,0; 500 → 3,7; 50.000 → 5,7): un clip sin vistas que
+     3 personas clipearon compite con uno de 500 vistas sin duplicados. `min_vistas` 0, sin umbral.
+   - **catalogo**: clips de 7 días a 3 años, por vistas absolutas, con su propio `min_vistas`.
+     Cursor de Helix por streamer en la DB (tabla `catalogo_cursor`, junto con la ventana de fechas
+     con la que se creó): cada corrida sigue donde quedó; al agotarse o si Twitch lo rechaza, ciclo
+     nuevo con la ventana actualizada. `candidatos` NO mueve el cursor (listar no quema la página).
+   - **evento** (streamers de una sección `evento_*`): además de los filtros comunes, solo entran
+     clips de las categorías del evento (Minecraft) o con sus palabras en el título
+     (dedsafio/nights), dentro del período. Los clips de DISTINTOS streamers hechos a la misma hora
+     real (±2 min) cuentan como el mismo momento y suman el bonus: si 5 canales clipearon la misma
+     muerte, ese momento sube mucho.
+2. Filtrar (todas las fuentes): duración 15–60 s, no visto antes (`clips.db`), idioma es (Kick no
+   informa idioma: esos no pasan por ese filtro), categoría no excluida.
+   Co-streams y eventos de terceros fuera: palabra de `palabras_costream` en el título del clip o
+   del stream (título del VOD), o categoría en `categorias_costream`. Se guardan en la DB con
+   motivo `costream`. Las palabras de fútbol (gol, Boca, River, partido, Mundial…) son por Davoo.
+3. Descargar los mejores candidatos con yt-dlp, solo hasta llenar el cupo de cada grupo.
+4. Marcador de transmisión deportiva (streamers con `detectar_marcador`) → descarta. Después,
+   filtros de audio: casi todo silencio, o muy pocas palabras por segundo (música/gameplay puro).
+5. Layout: detectar cámara → cámara arriba 40 % (1080x762) + línea negra de 6 px + juego abajo 60 %
+   (1080x1152); si la cara ocupa mucho → crop 9:16 centrado en la cara; si no hay cara estable →
+   crop central 9:16 con zoom leve.
+6. Whisper → SRT → quemar subtítulos (fuente 64, bloque centrado al 80 % del alto, 2 líneas máx).
+   Si el streamer tiene `subtitulos_propios: true` (ya trae subtítulos en vivo), no se queman; el
+   SRT se guarda igual (título + pista de subtítulos en YouTube).
+7. Gemini: título (< 60 chars, gancho, sin clickbait falso), descripción con crédito
+   "Clip de [streamer] — twitch.tv/[login]", 3–5 hashtags incluyendo #Shorts, tipo de gancho, y
+   `depende_de_fecha` (true si referencia algo puntual de ese día/semana → se descarta; ante la
+   duda, true). Corre antes del render para no renderizar lo que se descarta.
+7b. **Multi-POV (grupo evento).** Si 3+ canales clipearon el mismo momento y se procesaron 3, se
+   arma ADEMÁS un Short secuencial: hasta 3 ángulos, cada uno ±4 s alrededor de su pico de reacción
+   (volumen RMS + densidad de palabras del .srt), cartel con el nombre del streamer arriba durante
+   su tramo, orden de menos a más visto (el final es el ángulo más fuerte) y crédito a todos en la
+   descripción. Sin pantalla dividida. Se parte de los mp4 verticales ya renderizados.
+8. Elegir con cupos por GRUPO (`seleccion.mezcla`, default 1 kick_reciente + 1 evento + 1 catálogo).
+   Cada grupo compite solo en su cupo; lo que un grupo no llena pasa al grupo `catalogo`, y si a ese
+   le sobra vuelve a repartirse. Tope 2 por streamer entre todos. Empate en el corte → Gemini
+   (`empate_pct` por fuente: 3 % recientes, porque el score es logarítmico; 10 % catálogo).
+9. YouTube (SOLO con la auditoría aprobada; flag `youtube_upload_enabled`, default false):
+   `videos.insert` privado con `publishAt` en el slot correspondiente. Guardar `video_id` en
+   `clips.db` (tabla `posts`). Reintento con backoff; si falla 3 veces, alerta y se manda igual.
+10. Telegram: por cada clip, el mp4 + un mensaje con `Título:` / `Descripción:` / `Hashtags:` /
+    `Crédito:` en bloques copiables, id interno, horario sugerido, el recordatorio fijo
+    **"Subir en PRIVADO → esperar Chequeos de copyright en Studio → si sale limpio, publicar"** y el
+    `/reclamo <id>` listo para copiar. Santi sube a mano y responde con los links; el bot los asocia
+    al clip en `posts` (esa 2ª mitad está pendiente).
+
+### 4b. Módulo de métricas (feedback loop)
+Job cada 6 h: para cada post de los últimos 30 días, pedir vistas/likes/comentarios/shares
+(YouTube `videos.list` + Analytics API para retención promedio; Meta Graph insights para IG/FB;
+TikTok Display API para la cuenta propia). Guardar snapshots a 24 h, 72 h y 7 d.
+Cada clip queda etiquetado con: streamer, categoría/juego, duración, hora de publicación,
+plataforma, tiene_cámara, tipo de gancho del título, palabras clave de la descripción.
+Reporte semanal por Telegram: mediana de vistas a 7 d por streamer, por duración, por horario y
+por plataforma; top 5 y peores 5 con su título.
+Uso en la selección: el score de candidatos (§3 paso 8) incorpora un factor por streamer y por
+duración derivado de la mediana a 7 d. REGLA: ajustes suaves y solo con n ≥ 15 por categoría;
+con menos datos el bot solo informa, no cambia pesos. Con ~90 videos/mes recién al segundo o
+tercer mes hay señal real. Las vistas a 24 h son ruidosas (las plataformas testean al azar);
+la métrica que manda es la mediana a 7 d, y en YouTube la retención promedio.
+Acá también entra la exclusión automática por reclamo de copyright (§1): mismo camino que
+`/reclamo`, llamando a `db.excluir_streamer` y avisando por Telegram.
+Si TikTok Display API se complica: carga manual semanal de números en una planilla que el bot lee.
+
+---
+
+## 4. FILTRO DE MÚSICA (crítico)
+
+Sin herramienta perfecta gratis. Enfoque en capas, descartar si cualquiera dispara:
+- El título/categoría del stream en Twitch es "Music" o "Just Chatting" con "music" en el título.
+- Análisis espectral simple con `librosa`: si hay energía tonal sostenida y ritmo estable
+  (tempo detectado con confianza alta) durante > 40 % del clip → probable música. PENDIENTE.
+- Whisper devuelve muy pocas palabras para la duración → probable música/gameplay puro.
+Falsos positivos aceptados: preferimos tirar 2 clips buenos que subir 1 con música.
+
+---
+
+## 5. FASES
+
+**Fase 0 — Cuentas (lo hace Santi):**
+- Canal de YouTube nuevo (nombre neutro, no el de un streamer).
+- Cuentas de TikTok, Instagram (Creator, vinculada a una página de Facebook) y Facebook.
+- Proyecto en Google Cloud → habilitar YouTube Data API v3 + YouTube Analytics API → credencial
+  OAuth "Desktop app" → `client_secret.json` a `config/`. Scopes `youtube.upload` + lectura.
+- App en Twitch Developer Console → client id + secret. HECHO.
+- Bot de Telegram nuevo (BotFather) → token + chat id. HECHO (@Clipsito_bot).
+- Todo va a `.env`, nunca al repo.
+
+**Fase 1 — MVP local (Windows), sin upload:** pasos 1–8 del pipeline. Salida: 3 mp4 en `output/`
+por corrida. Criterio de listo: Santi mira 10 Shorts generados y ≥ 7 le parecen publicables.
+
+**Fase 2 — Telegram + Pi + auditoría:** paso 10 (entrega manual de todo, YouTube incluido),
+deploy systemd + timer. Objetivo: 2 semanas seguidas sin fallar. Con ~20 Shorts subidos a mano
+y públicos en el canal real, pedir la auditoría de la YouTube Data API.
+En paralelo se desarrolla el paso 9 (`videos.insert` + `publishAt`) y se prueba SOLO contra un
+canal descartable (sus videos van a quedar bloqueados privados, da igual). Primer OAuth
+interactivo en Windows; el token cacheado se copia a la Pi. Recién con la auditoría aprobada se
+activa `youtube_upload_enabled` contra el canal real.
+
+**Fase 3 — Métricas:** módulo §4b con YouTube Data + Analytics (OAuth de lectura; funciona sin
+auditoría para el canal propio), Meta Graph (cuenta Creator + página) y TikTok Display API.
+Reporte semanal. Ajustar umbrales según datos.
+
+**Fase 4 — Evaluar (a los 60–90 días):** ¿hay tracción (Shorts con > 10k vistas de forma
+repetida)? Si sí, escalar streamers y contactar a los mejores con números en la mano. Si no,
+replantear nicho o cerrar.
+
+---
+
+## 6. LO QUE FALTA INVESTIGAR
+
+- [ ] Términos de servicio de Twitch sobre redistribución de clips y VODs (qué dicen exactamente).
+- [ ] Términos de Kick sobre clips y sobre usar su API interna (no documentada).
+- [x] Auditoría de la YouTube Data API: CONFIRMADO que sin auditoría los uploads por API quedan
+      bloqueados privados para siempre; `videos.insert` = 1600 unidades (doc oficial).
+      Pendiente solo: qué pide el formulario y cuánto tarda la aprobación.
+- [ ] Cuota de Gemini: si el límite que se agotó el 2026-09-22 es diario y de cuánto, o si conviene
+      una key paga.
+- [ ] Qué devuelve exactamente TikTok Display API para la cuenta propia (vistas/likes por video) y
+      qué necesita Meta Graph para leer insights de Reels de una cuenta Creator.
+- [ ] Ruta de monetización realista para clips: AdSense Shorts exige 10 M vistas de Shorts en
+      90 días; alternativas (patrocinios, acuerdos con streamers) y qué numerito hace viable cada una.
+- [ ] Benchmark en la Pi (aarch64) de `faster-whisper small` + render x264 por clip de 60 s
+      (referencia Windows en §8).
+
+---
+
+## 7. MÉTRICAS QUE DEFINEN SI ESTO SIRVE
+
+- Vistas a 24 h y 7 d por Short (mediana, no promedio).
+- % de Shorts con reclamo de copyright o bloqueados (objetivo: 0; si aparece uno, el streamer
+  queda excluido automáticamente).
+- Suscriptores/semana.
+- Costo real: Gemini (~$0), API YouTube ($0), electricidad de la Pi. Debe ser ≈ $0.
+
+---
+
+## 8. ESTADO DEL CÓDIGO
+
+Python 3.13, deps en `requirements.txt`. Además, ffmpeg con libass (Windows: `winget install
+Gyan.FFmpeg`, ya instalado 9.0.2; Pi: `apt install ffmpeg`). Si la consola no ve ffmpeg en el PATH,
+el código lo busca en la instalación de winget o en `FFMPEG_DIR`.
+
+```
+config/settings.yaml     candidatos, evento, kick, catalogo, render, camara, subtitulos, filtro_audio,
+                         marcador, textos, seleccion, publicacion, youtube_upload_enabled
+config/streamers.yaml    login, plataforma, fuentes, grupo, permiso (cita/fuente o experimento),
+                         subtitulos_propios, detectar_marcador + sección evento_dedsafio
+.env                     TWITCH_*, GEMINI_API_KEY, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
+clips_bot/config.py      carga YAML + .env; Streamer.permitido = cita o experimento
+clips_bot/twitch.py      Helix: token, /users, /search/channels, /clips (paginado o página con
+                         cursor), /games, /videos (título del stream)
+clips_bot/kick.py        API interna de Kick: clips por canal (sort=view&time=week), a_clip() los aplana
+clips_bot/candidates.py  pasos 1–2 de las 3 fuentes: filtros, es_costream, agrupar_momentos,
+                         agrupar_evento/consolidar_evento, cursor del catálogo
+clips_bot/download.py    paso 3: yt-dlp (Twitch y Kick) → output/raw/
+clips_bot/media.py       ffmpeg/ffprobe: ubicar binario, probe, fracción de silencio, miniatura
+clips_bot/deportes.py    marcador de transmisión deportiva: esquina quieta + mucho borde (heurística)
+clips_bot/subtitles.py   paso 6: faster-whisper → subtítulos ≤ 2 líneas → SRT + ASS
+clips_bot/layout.py      paso 5: caras (OpenCV Haar) → split / fullcam / sincam
+clips_bot/render.py      pasos 5–6: una pasada de ffmpeg, tope 5 Mbps (entra en los 50 MB de Telegram)
+clips_bot/gemini.py      cliente REST generateContent con responseSchema (JSON forzado)
+clips_bot/textos.py      paso 7: título/descripción/hashtags/gancho/depende_de_fecha + crédito
+clips_bot/multipov.py    paso 7b: pico de reacción, ventanas, carteles y concat de hasta 3 ángulos
+clips_bot/seleccion.py   paso 8: score por fuente, cupos por grupo con fallback, desempate Gemini
+clips_bot/telegram.py    paso 10: sendVideo (width/height/duration + miniatura), mensaje con bloques
+                         copiables + recordatorio, getUpdates y parseo de comandos
+clips_bot/process.py     orquesta 3–7 por clip, tiempos por etapa, registra estado en la DB
+clips_bot/db.py          SQLite data/clips.db: clips, posts, catalogo_cursor, streamer_estado
+                         (exclusiones), bot_estado (offset de Telegram)
+clips_bot/__main__.py    CLI
+tests/                   120 tests sin red ni video
+```
+
+Comandos:
+- `diario [--simular] [--max-procesar N] [--incluir-sin-permiso]` — la corrida del timer de systemd:
+  atiende Telegram → pasos 1–2 de las dos plataformas → procesa por grupo solo hasta llenar su cupo
+  → multi-POV si corresponde → paso 8 → entrega. `--simular` hace todo menos el envío.
+- `candidatos [--json] [--incluir-sin-permiso] [--avanzar-cursor]` — lista recientes y catálogo;
+  guarda en la DB los descartes `costream`. Por default NO mueve el cursor del catálogo.
+- `procesar <url> [<url> ...] [--forzar] [--fuente reciente|catalogo]` — pasos 3–7 de una o más URLs
+  (Twitch o Kick). Sin `--fuente`: catálogo si el clip tiene ≥ 7 días.
+- `seleccionar [--n N] [--enviar]` — paso 8 sobre los `procesado`. Antes de elegir genera los textos
+  faltantes y descarta los que dependen de la fecha. El envío rechaza streamers sin permiso.
+- `multipov <id1> <id2> [id3]` — arma el Short multi-POV con clips YA procesados.
+- `atender-telegram` — procesa `/reclamo <id del clip>`: marca el reclamo, excluye al streamer y
+  responde. `diario` lo corre al principio. El offset de getUpdates queda en la DB.
+- `telegram-chat-id` — lista los chats de getUpdates.
+
+Textos (paso 7): Gemini con `responseSchema`; igual se valida todo (claves exactas, título ≤ 59 sin
+# ni saltos, descripción sin hashtags ni links, 3–5 hashtags de una palabra con #Shorts, gancho del
+enum, depende_de_fecha booleano). Si no valida, reintenta hasta 3 veces con los errores. El crédito
+lo agrega el código, no Gemini. Modelo: `gemini-3.6-flash` fijo (2.5-flash da 404 para cuentas nuevas).
+
+Tiempos medidos (Windows, 8 hilos, clips de 17–60 s): descarga 1–4 s · silencio 0,1–0,5 s · cargar
+Whisper 2–11 s · transcribir 0,17–0,55× la duración · detectar cámara 4–9 s · render 0,5–1,4× la
+duración · Gemini 7–30 s. Total 45–170 s por clip. Benchmark en la Pi: pendiente.
+
+Streamers cargados (2026-09-22): davooxeneize (Kick, reciente, detectar_marcador), vegetta777
+(Twitch, solo catálogo) y 54 participantes del Dedsafío en `evento_dedsafio` — 40 con señal de
+Minecraft/dedsafío en clips recientes y 14 sin señal (marcados en el YAML para revisar). Sin
+resolver, NO cargados: rubinavx, Dlffrent, MontokaAtr, CherryToragao, Maau, FalloSinEmision,
+Albaclouthier, Juliandns_.
+
+Problemas abiertos:
+- **Cuota de Gemini agotada (2026-09-22):** después de las pruebas del día la key devuelve 429
+  "exceeded your current quota" y ningún clip pudo generar textos. Los 429 por cuota ya NO se
+  reintentan (perdían 100 s por clip); los 503 sí. Sin textos, `seleccionar` deja el clip afuera y
+  lo reintenta en la corrida siguiente.
+- **El marcador deportivo tuvo un falso negativo real:** un clip de davooxeneize que ES una
+  transmisión de fútbol (cámara sobre la tribuna) midió quietud 0,0 y bordes 0,0 → no disparó,
+  porque en esos segundos NO hay marcador en pantalla. Tampoco lo agarró el filtro de palabras
+  (título "AGUSNETA", categoría "Just Chatting"). Riesgo abierto: clips de partidos que pasan los
+  filtros. La medición ahora se guarda siempre en el json para poder calibrar.
+- **Co-streams por URL manual:** `procesar` solo ve título y categoría del clip; el título del
+  stream (vía /videos) solo está en `candidatos`.
+- **Subtítulos en vivo cortados:** con `subtitulos_propios`, el crop 9:16 corta los costados de los
+  subtítulos del streamer si ocupan todo el ancho (visto en elxokas).
+- **Franja de UI al pie de la cámara** (split): mitigada recortando 50 px + línea negra de 6 px;
+  queda un filo del fondo del overlay. Sigue sin detectar los bordes reales del overlay.
+- **Kick sin `sort=view` es inservible:** devolvía 100 clips de menos de 24 h con 2 a 5 vistas.
+  Kick también podría alimentar el catálogo (`sort=view` sin `time`, clips de hasta 265.000 vistas):
+  no está conectado.
+- Capa `librosa` del filtro de música (§4): pendiente.
+- Respuesta de Santi con los links de TikTok/IG/FB → tabla `posts`: pendiente.
+- El multi-POV compite en la selección junto al clip individual del mismo momento.
+- **El proyecto no tiene git.** Este archivo se rompió una vez y se reconstruyó desde el transcript.
+
+---
+
+## 9. CHANGELOG
+
+- v0.0.0 (2026-09-21) — Documento inicial. Sin código.
+- v0.0.1 (2026-09-21) — Publicación manual vía Telegram + módulo de métricas §4b.
+- v0.0.2 (2026-09-21) — Upload automático a YouTube Shorts por API; revisado después.
+- v0.0.3 (2026-09-21) — Confirmado: sin auditoría los uploads por API quedan bloqueados privados
+  para siempre. Todo se sube a mano hasta la auditoría.
+- v0.1.0 (2026-09-21) — Esqueleto del repo + cliente Twitch Helix + comando `candidatos`. 6 tests OK.
+- v0.2.0 (2026-09-21) — Pasos 3–6: `procesar <url>` (yt-dlp, filtros de audio, faster-whisper,
+  layout con OpenCV, render 9:16 con subtítulos). ffmpeg 9.0.2 + faster-whisper 1.2.1. 19 tests OK.
+- v0.3.0 (2026-09-21) — `subtitulos_propios`; filtro de co-streams; paso 7 Gemini con validación
+  estricta; paso 8 selección; entrega por Telegram. 61 tests OK.
+- v0.3.1 (2026-09-21) — Gemini `gemini-3.6-flash` (2.5-flash dio 404), reintentos ante 503.
+- v0.3.2 (2026-09-21) — Telegram configurado (@Clipsito_bot). Primer envío real OK.
+- v0.3.3 (2026-09-21) — Subtítulos al 80 % del alto y fuente 74→64; cámara con 50 px menos al pie +
+  separador negro. 63 tests OK.
+- v0.3.4 (2026-09-21) — Telegram mostraba el video angosto: faltaban width/height en sendVideo (el
+  mp4 estaba bien). Cámara 40 % / juego 60 %. 65 tests OK.
+- v0.4.0 (2026-09-22) — Dos fuentes: reciente (velocidad × mismo momento) y catálogo (cursor de
+  Helix por streamer en la DB). Mezcla por cupos con fallback. `depende_de_fecha`. 83 tests OK.
+- v0.4.1 (2026-09-22) — Primera corrida con credenciales de Twitch: `veggeta` no tiene clips (es
+  `vegetta777`); dedsafio como canal propio no rinde. Los umbrales iniciales estaban altos.
+- v0.5.0 (2026-09-22) — Fuente reciente revisada con datos reales: ventana 7 días, mínimo 24 h de
+  antigüedad, `min_vistas` 0, sin umbral de velocidad, y score = duplicados × log de vistas.
+  Catálogo desde 7 días. 84 tests OK.
+- v0.6.0 (2026-09-22) — `duracion_max_s` 60; `empate_pct` por fuente; comando `diario [--simular]`;
+  la entrega rechaza streamers sin permiso.
+- v0.6.1 (2026-09-22) — Primera `diario --simular` real (flujo completo OK). `candidatos` ya no
+  mueve el cursor; `textos.reintentos` 1 → 3 y prompt más explícito con los hashtags. 87 tests OK.
+- v0.7.0 (2026-09-22) — Política: streamers por experimento, recordatorio fijo de subir en privado y
+  chequear copyright, exclusión automática ante un reclamo (`/reclamo <id>`, `atender-telegram`,
+  tabla `streamer_estado`). Kick como segunda plataforma. Mezcla por GRUPO. Palabras de fútbol y
+  marcador deportivo por streamer. 104 tests OK.
+- v0.8.0 (2026-09-22) — Dedsafío: 54 de 62 participantes resueltos y cargados en `evento_dedsafio`.
+  Grupo evento con filtros propios y agrupación de "mismo momento" entre streamers por hora real
+  (±2 min). Short multi-POV secuencial (hasta 3 ángulos, ±4 s del pico de reacción, cartel con el
+  nombre, orden de menos a más visto, crédito a todos) + comando `multipov`. Gemini: 429 por cuota
+  ya no se reintenta. 120 tests OK.
+- v0.8.1 (2026-09-22) — CLAUDE.md reconstruido desde el transcript después de que un script de
+  parche lo rompiera (37 MB de texto repetido, sin backup).

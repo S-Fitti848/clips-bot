@@ -1,0 +1,33 @@
+# Secretos: NUNCA al repo
+.env
+.env.*
+!.env.example
+config/client_secret.json
+config/*token*.json
+config/*secret*.json
+*.pem
+*.key
+
+# Estado y salidas (se regeneran)
+data/*
+!data/.gitkeep
+output/*
+!output/.gitkeep
+
+# Video y material descargado, por si algo queda fuera de output/
+*.mp4
+*.mkv
+*.webm
+*.m4a
+*.ts
+*.thumb.jpg
+
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+venv/
+
+# Config local de Claude Code (permisos de esta máquina)
+.claude/settings.local.json
