@@ -164,6 +164,19 @@ class MarcadorDeportivo:
 
 
 @dataclass(frozen=True)
+class PantallaCfg:
+    """OCR sobre frames muestreados: datos personales o pantallas de pago (§ pantalla.py)."""
+    activo: bool = True
+    frames_muestra: int = 8
+    idioma: str = "eng"       # `spa` solo si está instalado el modelo; con eng alcanza
+    buscar_telefonos: bool = True
+    palabras_pago: tuple[str, ...] = ()
+    # Un teléfono o una tarjeta solo cuentan si en el mismo frame hay una de estas palabras.
+    palabras_contexto: tuple[str, ...] = ()
+    palabras_direccion: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
 class Textos:
     modelo: str = "gemini-3.6-flash"
     modelo_fallback: str = "gemini-3.5-flash-lite"  # cuando se acaba la cuota diaria del principal
@@ -205,6 +218,7 @@ class Settings:
     subtitulos: Subtitulos = Subtitulos()
     filtro_audio: FiltroAudio = FiltroAudio()
     marcador: MarcadorDeportivo = MarcadorDeportivo()
+    pantalla: PantallaCfg = PantallaCfg()
     textos: Textos = Textos()
     seleccion: Seleccion = Seleccion()
     publicacion: Publicacion = Publicacion()
@@ -270,6 +284,7 @@ def load_settings(path: Path = CONFIG_DIR / "settings.yaml") -> Settings:
         subtitulos=_seccion(Subtitulos, raw, "subtitulos", path),
         filtro_audio=_seccion(FiltroAudio, raw, "filtro_audio", path),
         marcador=_seccion(MarcadorDeportivo, raw, "marcador", path),
+        pantalla=_seccion(PantallaCfg, raw, "pantalla", path),
         textos=_seccion(Textos, raw, "textos", path),
         seleccion=seleccion,
         publicacion=_seccion(Publicacion, raw, "publicacion", path),

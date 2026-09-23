@@ -19,6 +19,7 @@ from . import layout as lay
 from . import subtitles as sub
 from . import textos as tx
 from . import deportes
+from . import pantalla as pant
 from .candidates import MOTIVO_COSTREAM, es_costream
 from .config import DB_PATH, OUTPUT_DIR, Settings, Streamer
 from .download import descargar
@@ -49,6 +50,7 @@ class Resultado:
     plataforma: str = "twitch"
     clips_mismo_momento: int = 1
     marcador_deportivo: dict | None = None
+    pantalla: dict | None = None  # OCR: datos personales / pantalla de pago
     duracion_s: float = 0.0
     silencio: float = 0.0
     palabras: int = 0
@@ -144,6 +146,19 @@ def procesar(url: str, cfg: Settings, streamers: list[Streamer], forzar: bool = 
                f"marcador {'sí' if deporte.marcador.hay else 'no'}")
         if deporte.hay and descartar(f"transmisión deportiva: {deporte.motivo}", "transmisión deportiva"):
             return _cerrar(res)
+
+    # Datos personales en pantalla (OCR). Va antes de Whisper: es más barato (3-9 s) y es un
+    # descarte duro. Se guarda SIEMPRE, dispare o no, igual que el marcador deportivo.
+    with crono.etapa("datos en pantalla"):
+        vista = pant.detectar_datos(d.path, cfg.pantalla)
+    res.pantalla = vista.a_dict()
+    if vista.salteado:
+        avisar(f"  ⚠ OCR salteado: {vista.salteado}")
+    else:
+        avisar(f"  pantalla: {vista.caracteres} caracteres leídos en {vista.frames_leidos} frames, "
+               f"{len(vista.hallazgos)} hallazgo(s)")
+    if vista.hay and descartar(vista.motivo, pant.MOTIVO):
+        return _cerrar(res)
 
     # §3 paso 4: capas baratas del filtro de audio. (Capa librosa de §4: pendiente.)
     with crono.etapa("silencio"):

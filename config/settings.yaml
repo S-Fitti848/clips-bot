@@ -154,6 +154,58 @@ marcador:
   cesped_min: 0.45           # 45 % del frame en verde-césped = probable cancha
   cesped_frames_min: 2       # y que pase en al menos 2 de los frames muestreados
 
+# Datos personales en pantalla (OCR con tesseract, sin LLM). Ver clips_bot/pantalla.py.
+# Existe porque el 2026-09-23 casi se publica un clip cuya categoría decía Minecraft pero que era
+# el navegador del streamer en un checkout, con nombre, mail y dirección de un tercero.
+# Falsos positivos aceptados: tirar un clip bueno sale mucho más barato que publicar eso.
+# Si tesseract no está instalado, la capa se saltea con un warning y la corrida sigue.
+pantalla:
+  activo: true
+  frames_muestra: 8
+  idioma: eng                # `spa` solo si está instalado el modelo; con eng alcanza (sin tildes)
+  buscar_telefonos: true     # 9+ dígitos seguidos; apagalo si tira falsos positivos con HUDs
+  # Los números (teléfono, tarjeta) solo cuentan si en el mismo frame hay una de estas palabras.
+  # Medido 2026-09-23 sobre 26 clips: el regex de teléfono solo daba 3 falsos positivos (el contador
+  # de dinero de Vegetta, un id de Minecraft, un timer) y ningún acierto.
+  palabras_contexto:
+    - tel
+    - telefono
+    - phone
+    - celular
+    - movil
+    - whatsapp
+    - contacto
+    - contact
+    - dni
+    - documento
+  palabras_pago:
+    - checkout
+    - carrito
+    - subtotal
+    - tarjeta
+    - CVV
+    - CVC
+    - vencimiento
+    - credit card
+    - card number
+    - payment
+    - pagar ahora
+    - paypal
+    - mercadopago
+    - cupon
+    - discount code
+  palabras_direccion:
+    - direccion de envio
+    - shipping
+    - ship to
+    - codigo postal
+    - zip code
+    - calle
+    - avenida
+    - piso
+    - departamento
+    - billing
+
 # §3 paso 7: textos con Gemini.
 textos:
   # El free tier de los Flash está en ~20 requests/día (reseteo a medianoche del Pacífico). Con 3
