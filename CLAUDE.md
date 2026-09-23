@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-09-22 | **Versión:** v0.9.0 | **Modo:** Fase 1 en curso (pasos 1–8 + entrega por Telegram, probados en vivo)
+**Snapshot:** 2026-09-22 | **Versión:** v0.10.0 | **Modo:** Fase 1 andando: primera entrega real hecha (3 Shorts por Telegram)
 
 > **Reglas de trabajo sobre este archivo:** se edita con Edit o se reescribe entero. NADA de scripts
 > de reemplazo encadenados: uno rompió el archivo el 2026-09-22 (37 MB de texto repetido) y hubo que
@@ -290,11 +290,25 @@ Tiempos medidos (Windows, 8 hilos, clips de 17–60 s): descarga 1–4 s · sile
 Whisper 2–11 s · transcribir 0,17–0,55× la duración · detectar cámara 4–9 s · render 0,5–1,4× la
 duración · Gemini 7–30 s. Total 45–170 s por clip. Benchmark en la Pi: pendiente.
 
-Streamers cargados (2026-09-22): davooxeneize (Kick, reciente, detectar_marcador), vegetta777
-(Twitch, solo catálogo) y 54 participantes del Dedsafío en `evento_dedsafio` — 40 con señal de
-Minecraft/dedsafío en clips recientes y 14 sin señal (marcados en el YAML para revisar). Sin
-resolver, NO cargados: rubinavx, Dlffrent, MontokaAtr, CherryToragao, Maau, FalloSinEmision,
-Albaclouthier, Juliandns_.
+Streamers cargados (2026-09-22). Mezcla diaria: **2 argentinos + 1 evento**, y el catálogo sin cupo
+propio como fallback.
+- **argentinos** (8, todos Kick, resueltos con clips en los últimos 7 días): davooxeneize (100 clips
+  en 7 d), spreen (100), lacobraaa (94), coker (97), goncho (67), brunenger (62), mernuel (57),
+  coscu (19). Con `detectar_marcador` (hablan de fútbol): davooxeneize, lacobraaa, coker.
+  Afuera por 0 clips en 7 d: Frankkaster, Carreraaa. Afuera porque no se encontró su cuenta real
+  (los slugs libres tienen 9–704 seguidores): Momo, Luquitas Rodríguez, Marito Baracus.
+- **evento** (54): participantes del Dedsafío, 40 con señal de Minecraft/dedsafío y 14 sin señal
+  (marcados en el YAML). Sin resolver, NO cargados: rubinavx, Dlffrent, MontokaAtr, CherryToragao,
+  Maau, FalloSinEmision, Albaclouthier, Juliandns_.
+- **catalogo** (1): vegetta777.
+
+Dos bugs de orden encontrados con corridas reales (los dos del mismo tipo: un filtro o una
+asignación corriendo después de lo que debía):
+1. `buscar_candidatos` (Twitch) **asignaba** `res.candidatos` en vez de sumar, y borraba los de Kick:
+   Davoo traía 60 clips y su cupo quedaba vacío sin motivo visible.
+2. El filtro del evento corría DESPUÉS del corte al top N: los clips de Just Chatting de los mismos
+   streamers del Dedsafío se comían los 8 lugares y el cupo del evento quedaba en cero. Ahora se
+   descarta antes de ordenar (429 descartes por "fuera del evento" en la corrida del 2026-09-22).
 
 Cuota de Gemini (medido 2026-09-22): el free tier de los modelos Flash está en **~20 requests por
 día**, con reseteo a medianoche hora del Pacífico (bajó de 250; la doc ya no publica el número por
@@ -376,3 +390,9 @@ Problemas abiertos:
   requests/día, fallback automático a `gemini-3.5-flash-lite` ante 429 por cuota, reintentos 3 → 2 y
   `textos_pendientes` para no perder el render. Fútbol: segunda señal por fracción de verde-césped
   (calibrada con 8 clips reales; agarra el caso que el marcador no veía). 122 tests OK.
+- v0.10.0 (2026-09-22) — Primera entrega REAL: 3 Shorts por Telegram (1 del Dedsafío con ×3
+  duplicados + 2 de catálogo). Grupo `argentinos` (8 de Kick) y mezcla 2 argentinos + 1 evento con
+  fallback a catálogo. Las palabras de fútbol pasan a aplicarse solo a streamers con
+  `detectar_marcador` (medido: 6 de 12 descartes del evento eran falsos positivos de "final").
+  Arreglados dos bugs de orden: Twitch pisaba los candidatos de Kick, y el filtro del evento corría
+  después del corte al top N. 126 tests OK.
