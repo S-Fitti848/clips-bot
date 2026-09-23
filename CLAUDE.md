@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-09-23 | **Versión:** v0.12.0 | **Modo:** Fase 1 andando: primera entrega real hecha (3 Shorts por Telegram)
+**Snapshot:** 2026-09-23 | **Versión:** v0.13.0 | **Modo:** Fase 1 andando: primera entrega real hecha (3 Shorts por Telegram)
 
 > **Reglas de trabajo sobre este archivo:** se edita con Edit o se reescribe entero. NADA de scripts
 > de reemplazo encadenados: uno rompió el archivo el 2026-09-22 (37 MB de texto repetido) y hubo que
@@ -116,6 +116,11 @@ Restricción de hardware: la Pi tiene undervoltage confirmado. Whisper `small` e
 4. Transmisión deportiva (streamers con `detectar_marcador`) → descarta con DOS señales: marcador de
    TV en una esquina de arriba, o fracción de verde-césped alta en ≥ 2 de 12 frames (una cancha llena
    la pantalla). Después, filtros de audio: casi todo silencio, o muy pocas palabras por segundo.
+4b. **Datos en pantalla (OCR, sin LLM).** tesseract sobre 8 frames; descarta con motivo
+   `datos_en_pantalla` si aparece un mail, una palabra de pago (checkout, subtotal, CVV…) o de
+   dirección (shipping, código postal…). Los NÚMEROS (teléfono, tarjeta) solo cuentan si en el mismo
+   frame hay una palabra de contexto (tel, contacto, DNI): sin eso daba 3 falsos positivos y ningún
+   acierto sobre 26 clips. Si tesseract no está instalado la capa se saltea y la corrida sigue.
 5. Layout, tres opciones (el recorte central "a ver qué sale" se eliminó el 2026-09-23):
    - **split** — facecam clara (una cara chica y estable): cámara arriba 40 % (1080x762) + línea
      negra de 6 px + juego abajo 60 % (1080x1152).
@@ -123,8 +128,11 @@ Restricción de hardware: la Pi tiene undervoltage confirmado. Whisper `small` e
    - **fit_blur** — todo lo demás: el 16:9 ENTERO escalado a 1080 de ancho y centrado, sobre el
      mismo video ampliado y con blur fuerte (`render.blur_sigma`) llenando el 9:16. No recorta nada,
      y los subtítulos caen en la franja de abajo, fuera del video.
-   Se va a fit_blur si no hay cara estable, si hay 2+ caras separadas, o si la cara quedaría a menos
-   de `camara.margen_borde` (15 %) de un borde del recorte. Además, DESPUÉS del render se vuelve a
+   Se va a fit_blur si no hay cara estable, si hay 2+ caras separadas, si la cara quedaría a menos
+   de `camara.margen_borde` (15 %) de un borde del recorte, o si en la zona que el split usaría de
+   "juego" hay caras en más de `presencia_juego_max` de los frames (ahí no hay juego: es un podcast
+   o un estudio, y el split repetiría la escena cortando a alguien).
+   `layout_forzado` en streamers.yaml saltea toda la decisión para un canal (coker: `fit_blur`). Además, DESPUÉS del render se vuelve a
    pasar el detector de caras sobre el 9:16 final: si alguna queda pegada al borde, se re-renderiza
    con fit_blur y queda anotado en `rerender_fit_blur` del json.
 6. Whisper → SRT → quemar subtítulos (fuente 64, bloque centrado al 80 % del alto, 2 líneas máx).
@@ -250,9 +258,10 @@ el código lo busca en la instalación de winget o en `FFMPEG_DIR`.
 
 ```
 config/settings.yaml     candidatos, evento, kick, catalogo, render, camara, subtitulos, filtro_audio,
-                         marcador, textos, seleccion, publicacion, youtube_upload_enabled
+                         marcador, pantalla, textos, seleccion, publicacion, youtube_upload_enabled
 config/streamers.yaml    login, plataforma, fuentes, grupo, permiso (cita/fuente o experimento),
-                         subtitulos_propios, detectar_marcador, palabras_programa + evento_dedsafio
+                         subtitulos_propios, detectar_marcador, palabras_programa, layout_forzado
+                         + sección evento_dedsafio
 .env                     TWITCH_*, GEMINI_API_KEY, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID,
                          TELEGRAM_ALLOWED_USERS (ids que pueden mandar comandos; vacío = ninguno)
 clips_bot/config.py      carga YAML + .env; Streamer.permitido = cita o experimento
@@ -265,6 +274,7 @@ clips_bot/candidates.py  pasos 1–2 de las 3 fuentes: filtros, es_costream, agr
 clips_bot/download.py    paso 3: yt-dlp (Twitch y Kick) → output/raw/
 clips_bot/media.py       ffmpeg/ffprobe: ubicar binario, probe, fracción de silencio, miniatura
 clips_bot/deportes.py    marcador de transmisión deportiva: esquina quieta + mucho borde (heurística)
+clips_bot/pantalla.py    paso 4b: OCR (tesseract) → mails, teléfonos, tarjetas, pago, dirección
 clips_bot/subtitles.py   paso 6: faster-whisper → subtítulos ≤ 2 líneas → SRT + ASS
 clips_bot/layout.py      paso 5: caras (OpenCV Haar) → split / fullcam / fit_blur + chequeo
                          post-render (`cara_cortada_en_render`)
@@ -354,14 +364,12 @@ Problemas abiertos:
 - **fit_blur usa menos pantalla:** el video ocupa 1080x608 de los 1920 de alto. Es el precio de no
   cortar nada. Si los datos muestran que rinde peor que un recorte, la alternativa es un zoom suave
   hasta el límite en que no se corte ninguna cara ni el HUD.
-- **split da por sentado que hay un juego abajo.** Con contenido multicámara (podcast, llamada,
-  estudio con dos personas) no hay juego: el panel de abajo repite la misma escena recortada y corta
-  a alguien. Visto el 2026-09-23 en dos clips de coker. La regla de "2+ caras → fit_blur" no lo
-  agarra porque Haar solo sostiene una de las caras.
-- **Nada mira QUÉ hay en pantalla antes de publicar.** Un clip de hasvik del grupo evento (categoría
-  Minecraft, así que pasó el filtro del evento) era en realidad su navegador en un checkout, con
-  nombre, mail y dirección de un tercero a la vista. Descartado a mano el 2026-09-23. No hay ninguna
-  capa que detecte datos personales, DNI, mails o pantallas de pago.
+- **El OCR de la pantalla ve lo que tesseract puede leer.** Texto chico o sobre fondo con textura
+  se pierde, y el modelo instalado es `eng` (sin `spa`). Es una red, no una garantía: un documento
+  o una dirección escritos a mano, o en un video dentro del video, no los ve nadie.
+- **La regla de "caras en la zona del juego" tiene poco margen.** Calibrada con 11 clips: 25 % y
+  30 % (coker) contra 10 % del resto, y solo separa sumando un mínimo de ancho de cara. Con más
+  datos puede hacer falta moverla.
 - **`procesar` por URL no puede aplicar `palabras_programa`**: no tiene el título del stream (mismo
   problema que los co-streams por URL manual).
 - **Franja de UI al pie de la cámara** (split): mitigada recortando 50 px + línea negra de 6 px;
@@ -421,6 +429,13 @@ Problemas abiertos:
   requests/día, fallback automático a `gemini-3.5-flash-lite` ante 429 por cuota, reintentos 3 → 2 y
   `textos_pendientes` para no perder el render. Fútbol: segunda señal por fracción de verde-césped
   (calibrada con 8 clips reales; agarra el caso que el marcador no veía). 122 tests OK.
+- v0.13.0 (2026-09-23) — `layout_forzado` por streamer (coker: `fit_blur`, hace podcast
+  multicámara) y regla automática: si en la zona del "juego" hay caras, no hay juego → fit_blur
+  (calibrada sobre los 11 clips que daban split; hizo falta un mínimo de ancho de cara porque Haar
+  ve caras en los skins de Minecraft). Capa nueva `pantalla.py`: OCR con tesseract sobre 8 frames,
+  descarta por mails / pago / dirección, y los números solo con palabra de contexto (medido: sin eso,
+  3 falsos positivos y 0 aciertos sobre 26 clips; con eso, 1 acierto y 0 falsos positivos).
+  `palabras_programa` también en davooxeneize. 147 tests OK.
 - v0.12.0 (2026-09-23) — `palabras_programa` por streamer: marca de un programa de terceros en el
   TÍTULO DEL STREAM → descarta todo ese stream con motivo `programa_terceros`. Para que ande en Kick
   se trae el título del stream, que el clip no incluye (`/videos` del canal). Cargado en lacobraaa
