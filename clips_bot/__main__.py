@@ -19,6 +19,7 @@ Comandos:
 from __future__ import annotations
 
 import argparse
+import html
 import json
 import logging
 import sys
@@ -285,25 +286,33 @@ def ejecutar_seleccion(settings: Settings, gemini: GeminiClient | None, enviar: 
     conn = db.connect(DB_PATH)
     try:
         for i, o in enumerate(elegidos, 1):
-            meta = o.meta
-            ruta_json = READY_DIR / f"{o.clip_id}.json"
             horario = horarios[i - 1] if i <= len(horarios) else None
-            video = Path(meta["salida"])
-            info = probe(video)  # dimensiones reales del archivo: sin esto Telegram lo muestra angosto
-            thumb = miniatura(video, video.with_suffix(".thumb.jpg"))
-            tg.send_video(chat_id, video, f"#{i} · {meta['streamer']} · {meta['textos']['titulo']}",
-                          width=info.ancho, height=info.alto, duration=round(info.duracion), thumbnail=thumb)
-            tg.send_message(chat_id, mensaje_textos(i, meta["streamer"], o.clip_id, horario, meta["textos"]))
-            if not meta.get("subtitulos_quemados", True):  # el .srt va como pista de subtítulos en YouTube
-                tg.send_document(chat_id, READY_DIR / f"{o.clip_id}.srt",
-                                 "Subtítulos para cargar como pista en YouTube")
-            meta["entregado"] = {"fecha": datetime.now(timezone.utc).isoformat(), "orden": i, "horario": horario}
-            guardar_meta(ruta_json, meta)
-            db.set_estado(conn, o.clip_id, "entregado")
+            enviar_clip(tg, chat_id, conn, o.clip_id, o.meta, i, horario)
             print(f"  enviado #{i}: {o.clip_id}")
     finally:
         conn.close()
     return 0
+
+
+def enviar_clip(tg: TelegramClient, chat_id: str, conn, clip_id: str, meta: dict, numero: int,
+                horario: str | None) -> None:
+    """El mp4 + el mensaje con los textos, y el clip queda `entregado`. §3 paso 10."""
+    from .process import READY_DIR, guardar_meta
+    from .telegram import mensaje_textos
+
+    video = Path(meta["salida"])
+    info = probe(video)  # dimensiones reales del archivo: sin esto Telegram lo muestra angosto
+    thumb = miniatura(video, video.with_suffix(".thumb.jpg"))
+    tg.send_video(chat_id, video, f"#{numero} · {meta['streamer']} · {meta['textos']['titulo']}",
+                  width=info.ancho, height=info.alto, duration=round(info.duracion), thumbnail=thumb)
+    tg.send_message(chat_id, mensaje_textos(numero, meta["streamer"], clip_id, horario, meta["textos"]))
+    if not meta.get("subtitulos_quemados", True):  # el .srt va como pista de subtítulos en YouTube
+        tg.send_document(chat_id, READY_DIR / f"{clip_id}.srt",
+                         "Subtítulos para cargar como pista en YouTube")
+    meta["entregado"] = {"fecha": datetime.now(timezone.utc).isoformat(), "orden": numero,
+                         "horario": horario}
+    guardar_meta(READY_DIR / f"{clip_id}.json", meta)
+    db.set_estado(conn, clip_id, "entregado")
 
 
 def cmd_diario(args: argparse.Namespace) -> int:
@@ -617,12 +626,20 @@ def atender_telegram(settings: Settings, silencioso: bool = False) -> int:
                 continue
             if c["comando"] == "/reclamo":
                 respuesta = _reclamo(conn, c["args"])
+            elif c["comando"] == "/buscar":
+                respuesta = _buscar(conn, tg, c["chat_id"], c["args"], settings,
+                                    load_streamers(), _gemini(settings))
             elif c["comando"] in ("/ayuda", "/start", "/help"):
-                respuesta = ("Comandos:\n/reclamo &lt;id del clip&gt; — marcá que ese video recibió un "
-                             "reclamo o strike. Excluyo al streamer de las próximas corridas.")
+                respuesta = ("Comandos:\n"
+                             "/reclamo &lt;id del clip&gt; — marcá que ese video recibió un reclamo o "
+                             "strike. Excluyo al streamer de las próximas corridas.\n"
+                             "/buscar &lt;streamer&gt; [palabras] [días] — busco en sus clips de los "
+                             f"últimos días (default 7), proceso los {TOPE_BUSCAR} mejores y te los "
+                             "mando. Ej: <code>/buscar davooxeneize gol 3</code>")
             else:
                 respuesta = f"No conozco {c['comando']}. Probá /ayuda."
-            tg.send_message(c["chat_id"], respuesta)
+            if respuesta:
+                tg.send_message(c["chat_id"], respuesta)
             atendidos += 1
             if not silencioso:
                 print(f"  {c['comando']} {' '.join(c['args'])} → respondido")
@@ -635,6 +652,108 @@ def atender_telegram(settings: Settings, silencioso: bool = False) -> int:
         return atendidos
     finally:
         conn.close()
+
+
+MAX_BUSQUEDAS = 2      # a la vez, contando otros procesos (el turno se guarda en la DB)
+TOPE_BUSCAR = 3        # clips procesados por búsqueda: cada uno es Whisper + OCR + render
+
+
+def _buscar(conn, tg: TelegramClient, chat_id: str, args: list[str], settings: Settings,
+            streamers: list, gemini: GeminiClient | None) -> str | None:
+    """/buscar <streamer> [palabras] [días]. Devuelve el mensaje final, o None si ya respondió.
+
+    Contesta "buscando..." con cuántos candidatos hay ANTES de procesar, porque procesar 3 clips en
+    la Pi son varios minutos y si no parece que el bot se colgó.
+    """
+    from .candidates import MOTIVO_SIN_PALABRAS, buscar_candidatos, buscar_kick
+    from .process import READY_DIR, procesar
+    from .seleccion import score_reciente
+    from .telegram import parse_buscar
+
+    from dataclasses import replace as _replace
+
+    try:
+        login, palabras, dias = parse_buscar(args)
+    except ValueError as e:
+        return str(e)
+
+    st = next((x for x in streamers if x.login == login), None)
+    if st is None:
+        return (f"No tengo a <code>{login}</code> en streamers.yaml. Los que hay: "
+                + ", ".join(sorted(x.login for x in streamers)[:25]) + "...")
+    if not st.permitido:
+        return f"{login} no tiene permiso cargado en streamers.yaml: no puedo mandar sus clips."
+    excluidos = db.excluidos(conn)
+    if login in excluidos:
+        return f"{login} está EXCLUIDO ({excluidos[login]}). Sacalo a mano si querés volver a usarlo."
+
+    token = f"{login}:{datetime.now(timezone.utc).timestamp():.0f}"
+    if not db.tomar_turno_busqueda(conn, token, MAX_BUSQUEDAS):
+        return (f"Ya hay {MAX_BUSQUEDAS} búsquedas andando. Esperá a que terminen: cada una procesa "
+                f"hasta {TOPE_BUSCAR} clips y eso calienta la Pi y gasta cuota de Gemini.")
+    try:
+        # Ventana pedida a mano: sin el mínimo de 24 h de antigüedad (eso es para que un clip junte
+        # vistas y duplicados; acá el que busca ya sabe lo que quiere) y con margen de candidatos
+        # para que el filtro de palabras tenga con qué trabajar.
+        filtros = _replace(settings.filtros, ventana_horas=dias * 24, antiguedad_min_h=0,
+                           n_candidatos=max(settings.filtros.n_candidatos, 20))
+        vistos = db.ids_vistos(conn)
+        if st.plataforma == "kick":
+            res = buscar_kick(KickClient(pausa_s=settings.kick.pausa_s), [st], filtros, vistos,
+                              settings.kick, seleccion=settings.seleccion, excluidos=excluidos,
+                              evento=settings.evento, palabras_titulo=palabras)
+        else:
+            res = buscar_candidatos(TwitchClient(load_twitch_creds()), [st], filtros, vistos,
+                                    seleccion=settings.seleccion, excluidos=excluidos,
+                                    evento=settings.evento, palabras_titulo=palabras)
+
+        que = f" con {', '.join(palabras)}" if palabras else ""
+        if not res.candidatos:
+            return (f"Busqué en {login}{que} de los últimos {dias} días y no quedó ninguno."
+                    f"{_resumen_descartes(res)}")
+        tg.send_message(chat_id, f"Buscando en <b>{login}</b>{html.escape(que)} de los últimos "
+                                 f"{dias} días: <b>{len(res.candidatos)} candidatos</b>. "
+                                 f"Proceso los {min(TOPE_BUSCAR, len(res.candidatos))} mejores, "
+                                 f"tarda unos minutos.")
+
+        enviados, fallados = 0, []
+        for c in res.candidatos[:TOPE_BUSCAR]:
+            try:
+                r = procesar(c.url, settings, streamers, gemini=gemini, fuente="reciente",
+                             clips_mismo_momento=c.clips_mismo_momento, grupo=st.grupo_de("reciente"),
+                             avisar=lambda *_: None)
+            except (DescargaError, MediaError) as e:
+                fallados.append(f"{c.id[:14]}: {e}")
+                continue
+            if r.descartado:
+                res.descartes[r.descartado.split(" (")[0]] += 1
+                continue
+            meta = json.loads((READY_DIR / f"{r.clip_id}.json").read_text(encoding="utf-8"))
+            if not meta.get("textos"):
+                fallados.append(f"{r.clip_id[:14]}: sin textos (¿cuota de Gemini?)")
+                continue
+            enviados += 1
+            enviar_clip(tg, chat_id, conn, r.clip_id, meta, enviados, None)
+
+        final = [f"Listo: <b>{enviados}</b> de {len(res.candidatos)} candidatos "
+                 f"({login}{que}, {dias} días)."]
+        if fallados:
+            final.append("No salieron: " + "; ".join(html.escape(f) for f in fallados[:3]))
+        final.append(_resumen_descartes(res))
+        return "\n".join(x for x in final if x)
+    finally:
+        db.soltar_turno_busqueda(conn, token)
+
+
+def _resumen_descartes(res) -> str:
+    """Los motivos de descarte, de mayor a menor. Es la mitad útil de una búsqueda: dice POR QUÉ
+    no quedó nada."""
+    if not res.descartes:
+        return ""
+    filas = sorted(res.descartes.items(), key=lambda kv: kv[1], reverse=True)
+    total = sum(v for _, v in filas)
+    cuerpo = "\n".join(f"{v:>4}  {html.escape(k)}" for k, v in filas if v)
+    return f"\nDescartes ({total}):\n<pre>{cuerpo}</pre>"
 
 
 def _reclamo(conn, args: list[str]) -> str:

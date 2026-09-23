@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-09-23 | **Versión:** v0.15.0 | **Modo:** Fase 1 andando: primera entrega real hecha (3 Shorts por Telegram)
+**Snapshot:** 2026-09-23 | **Versión:** v0.16.0 | **Modo:** Fase 1 andando: primera entrega real hecha (3 Shorts por Telegram)
 
 > **Reglas de trabajo sobre este archivo:** se edita con Edit o se reescribe entero. NADA de scripts
 > de reemplazo encadenados: uno rompió el archivo el 2026-09-22 (37 MB de texto repetido) y hubo que
@@ -317,8 +317,20 @@ Comandos:
 - `seleccionar [--n N] [--enviar]` — paso 8 sobre los `procesado`. Antes de elegir genera los textos
   faltantes y descarta los que dependen de la fecha. El envío rechaza streamers sin permiso.
 - `multipov <id1> <id2> [id3]` — arma el Short multi-POV con clips YA procesados.
-- `atender-telegram` — procesa `/reclamo <id del clip>`: marca el reclamo, excluye al streamer y
-  responde. `diario` lo corre al principio. El offset de getUpdates queda en la DB.
+- `atender-telegram` — procesa los comandos. `diario` lo corre al principio y el offset de
+  getUpdates queda en la DB. Solo obedece a los ids de `TELEGRAM_ALLOWED_USERS` (vacío = nadie).
+  - `/reclamo <id del clip>` — marca el reclamo, excluye al streamer y responde.
+  - `/buscar <streamer> [palabras] [días]` — busca a mano en los clips de ese streamer de los
+    últimos N días (default 7, tope 90) los que tengan las palabras **en el título del clip o en el
+    del stream**, con todos los filtros de siempre. Contesta "buscando…" con cuántos candidatos
+    encontró, procesa hasta `TOPE_BUSCAR` (3) y los manda con el formato habitual; al final, el
+    resumen de descartes, que es la mitad útil (dice POR QUÉ no quedó nada). Los días son el último
+    argumento y solo si es un número, así `/buscar davoo 12 de octubre` busca esas palabras.
+    Máximo `MAX_BUSQUEDAS` (2) a la vez, contando otros procesos: el turno se guarda en la DB
+    (`bot_estado`) con vencimiento, porque cada búsqueda son 3 clips de Whisper + OCR + render y eso
+    calienta la Pi y gasta cuota de Gemini. **El filtro de palabras corre ANTES del corte al top N**
+    (si no, los clips sin las palabras se comen los lugares: es el mismo bug de orden que ya pasó
+    con el evento y con los candidatos de Kick).
 - `telegram-chat-id` — lista los chats de getUpdates y los ids de usuario (TELEGRAM_ALLOWED_USERS).
 - `benchmark [--clips N] [--modelos small,base] [--limite-s S]` — mide OCR, Whisper (carga y
   transcripción por modelo), detección de cámara y render sobre los mp4 que ya están en
@@ -459,6 +471,11 @@ Problemas abiertos:
   requests/día, fallback automático a `gemini-3.5-flash-lite` ante 429 por cuota, reintentos 3 → 2 y
   `textos_pendientes` para no perder el render. Fútbol: segunda señal por fracción de verde-césped
   (calibrada con 8 clips reales; agarra el caso que el marcador no veía). 122 tests OK.
+- v0.16.0 (2026-09-23) — Comando `/buscar <streamer> [palabras] [días]` por Telegram, solo para
+  usuarios permitidos: búsqueda a mano con todos los filtros, aviso previo con la cantidad de
+  candidatos, hasta 3 clips por búsqueda y 2 búsquedas simultáneas (turno en la DB, no en memoria,
+  porque puede haber dos procesos). El envío de un clip se extrajo a `enviar_clip`, compartido con
+  `seleccionar`. 157 tests OK.
 - v0.15.0 (2026-09-23) — Primer benchmark REAL en la Pi. `small` se queda (entra cómodo y `base`
   pierde calidad visible). Tope de tiempo en la transcripción (`transcripcion_lenta`) por el clip
   que se iba a 28× la duración. Hallazgo de hardware: la Pi no tiene undervoltage sino

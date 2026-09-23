@@ -344,3 +344,77 @@ def test_deporte_dispara_por_cesped_aunque_no_haya_marcador():
     assert con_cancha.hay is True
     assert con_cancha.a_dict()["cesped_max"] == 0.68  # la medición se guarda siempre, para calibrar
     assert sin_nada.a_dict()["frames_con_cesped"] == 0
+
+
+# ---- /buscar -------------------------------------------------------------------
+
+
+def test_parse_buscar():
+    from clips_bot.telegram import parse_buscar
+
+    assert parse_buscar(["davoo", "gol", "3"]) == ("davoo", ("gol",), 3)
+    assert parse_buscar(["davoo"]) == ("davoo", (), 7)
+    assert parse_buscar(["@DavooXeneize", "gol"]) == ("davooxeneize", ("gol",), 7)
+    # un número que NO es el último es parte de lo que se busca, no los días
+    assert parse_buscar(["davoo", "12", "de", "octubre"]) == ("davoo", ("12", "de", "octubre"), 7)
+    for malo in ([], ["davoo", "gol", "999"], ["davoo", "gol", "0"]):
+        with pytest.raises(ValueError):
+            parse_buscar(malo)
+
+
+def test_las_palabras_se_filtran_antes_del_corte_al_top_n():
+    """Mismo bug de orden que ya pasó dos veces (evento y Kick): si el filtro de palabras corre
+    después del corte al top N, los clips sin las palabras se comen los lugares."""
+    s = FakeSession([pagina([
+        clip_kick(f"ruido{i}", views=900 - i, horas=48, offset=1000 * i, titulo="jugando")
+        for i in range(10)
+    ] + [clip_kick("elbueno", views=5, horas=48, offset=99000, titulo="GOLAZO de Boca")]), videos()])
+    res = buscar_kick(KickClient(session=s, sleep=lambda _: None), DAVOO,
+                      Filtros(n_candidatos=3), vistos=set(), ahora=AHORA,
+                      palabras_titulo=("golazo",))
+    assert [c.id for c in res.candidatos] == ["elbueno"]  # el único con la palabra, aunque tenga 5 vistas
+    assert res.descartes["sin las palabras buscadas"] == 10
+
+
+def test_tiene_palabras_mira_los_dos_titulos():
+    from clips_bot.candidates import Clip, tiene_palabras
+
+    def clip(titulo, stream=""):
+        return Clip.from_helix({"id": "x", "url": "u", "title": titulo,
+                                "created_at": "2026-09-20T00:00:00Z"},
+                               "davoo", "", stream, "reciente", "kick", "argentinos")
+
+    assert tiene_palabras(clip("GOLAZO"), ("gol",)) is False          # palabra completa, no prefijo
+    assert tiene_palabras(clip("un GOL tremendo"), ("gol",)) is True
+    assert tiene_palabras(clip("nada", "NOCHE de GOLES"), ("goles",)) is True  # título del stream
+    assert tiene_palabras(clip("Ñandú ácido"), ("nandu",)) is True    # sin tildes
+    assert tiene_palabras(clip("cualquier cosa"), ()) is True         # sin palabras pedidas, pasan todos
+
+
+def test_turnos_de_busqueda_topea_en_dos(tmp_path):
+    """Dos búsquedas a la vez como máximo: cada una procesa hasta 3 clips (Whisper + OCR + render),
+    y eso calienta la Pi y gasta cuota de Gemini. El turno va en la DB porque puede haber dos
+    procesos (el timer y un `atender-telegram` a mano)."""
+    conn = db.connect(tmp_path / "x.db")
+    assert db.tomar_turno_busqueda(conn, "a", maximo=2)
+    assert db.tomar_turno_busqueda(conn, "b", maximo=2)
+    assert not db.tomar_turno_busqueda(conn, "c", maximo=2)
+    db.soltar_turno_busqueda(conn, "a")
+    assert db.tomar_turno_busqueda(conn, "c", maximo=2)
+    # un turno colgado (el proceso murió) se suelta solo al vencer
+    assert not db.tomar_turno_busqueda(conn, "d", maximo=2)
+    assert db.tomar_turno_busqueda(conn, "d", maximo=2, vencimiento_s=0)
+    conn.close()
+
+
+def test_resumen_de_descartes():
+    from clips_bot.__main__ import _resumen_descartes
+    from clips_bot.candidates import Resultado
+
+    res = Resultado()
+    res.descartes["sin las palabras buscadas"] = 40
+    res.descartes["muy corto"] = 2
+    texto = _resumen_descartes(res)
+    assert "Descartes (42)" in texto
+    assert texto.index("sin las palabras") < texto.index("muy corto")  # de mayor a menor
+    assert _resumen_descartes(Resultado()) == ""

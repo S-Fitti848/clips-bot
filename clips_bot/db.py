@@ -177,3 +177,47 @@ def clip_de(conn: sqlite3.Connection, clip_id: str) -> tuple[str, str] | None:
     """(streamer, url) del clip, o None si no está en la DB."""
     fila = conn.execute("SELECT broadcaster, url FROM clips WHERE clip_id = ?", (clip_id,)).fetchone()
     return (fila[0], fila[1]) if fila else None
+
+
+# ---- turnos de /buscar -------------------------------------------------------
+# Un /buscar procesa hasta 3 clips: descarga, Whisper, OCR y render. En la Pi eso calienta y gasta
+# cuota de Gemini, así que no puede haber más de N a la vez. El control va en la DB y no en memoria
+# porque puede haber dos procesos (el timer de systemd y un `atender-telegram` a mano).
+
+CLAVE_BUSQUEDAS = "busquedas_activas"
+
+
+def _busquedas(conn: sqlite3.Connection, vencimiento_s: float) -> list[tuple[str, float]]:
+    import json
+    import time
+
+    crudo = get_valor(conn, CLAVE_BUSQUEDAS)
+    ahora = time.time()
+    try:
+        activas = json.loads(crudo) if crudo else []
+    except ValueError:
+        activas = []
+    # Las que quedaron colgadas (el proceso murió a mitad) se sueltan solas al vencer.
+    return [(str(t), float(ts)) for t, ts in activas if ahora - float(ts) < vencimiento_s]
+
+
+def tomar_turno_busqueda(conn: sqlite3.Connection, token: str, maximo: int = 2,
+                         vencimiento_s: float = 3600) -> bool:
+    """Reserva un lugar para una búsqueda. False si ya hay `maximo` andando."""
+    import json
+    import time
+
+    activas = _busquedas(conn, vencimiento_s)
+    if len(activas) >= maximo:
+        set_valor(conn, CLAVE_BUSQUEDAS, json.dumps(activas))  # deja limpias las vencidas
+        return False
+    activas.append((token, time.time()))
+    set_valor(conn, CLAVE_BUSQUEDAS, json.dumps(activas))
+    return True
+
+
+def soltar_turno_busqueda(conn: sqlite3.Connection, token: str, vencimiento_s: float = 3600) -> None:
+    import json
+
+    activas = [(t, ts) for t, ts in _busquedas(conn, vencimiento_s) if t != token]
+    set_valor(conn, CLAVE_BUSQUEDAS, json.dumps(activas))

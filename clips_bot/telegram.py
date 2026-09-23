@@ -160,6 +160,28 @@ def comandos(updates: list[dict]) -> list[dict]:
     return out
 
 
+def parse_buscar(args: list[str], dias_default: int = 7, dias_max: int = 90
+                 ) -> tuple[str, tuple[str, ...], int]:
+    """/buscar <streamer> [palabras...] [días] → (login, palabras, días).
+
+    Los días son el ÚLTIMO argumento y solo si es un número: así `/buscar davoo gol 3` pide 3 días y
+    `/buscar davoo 12 de octubre` busca esas palabras con los días por default. Un número suelto que
+    no sea el último no se toca (puede ser parte de lo que se busca).
+    """
+    if not args:
+        raise ValueError("Uso: <code>/buscar &lt;streamer&gt; [palabras] [días]</code>")
+    partes = list(args)
+    dias = dias_default
+    if len(partes) > 1 and partes[-1].isdigit():
+        dias = int(partes.pop())
+        if not 1 <= dias <= dias_max:
+            raise ValueError(f"Los días tienen que estar entre 1 y {dias_max} (pediste {dias}).")
+    login = partes.pop(0).strip().lower().lstrip("@")
+    if not login:
+        raise ValueError("Falta el streamer.")
+    return login, tuple(partes), dias
+
+
 def usuarios_permitidos(valor: str) -> set[str]:
     """TELEGRAM_ALLOWED_USERS: ids de usuario separados por coma (o espacio)."""
     return {p for p in re.split(r"[,\s]+", (valor or "").strip()) if p}

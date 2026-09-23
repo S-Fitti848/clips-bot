@@ -76,6 +76,7 @@ class Clip:
 
 MOTIVO_COSTREAM = "costream"
 MOTIVO_PROGRAMA = "programa_terceros"
+MOTIVO_SIN_PALABRAS = "sin las palabras buscadas"
 MOTIVO_FUERA_EVENTO = "fuera del evento (categoría, título o fecha)"
 MOTIVO_MUY_NUEVO = "muy nuevo (no llegó a antiguedad_min_h; se reevalúa mañana)"
 
@@ -103,6 +104,15 @@ def es_costream(textos: list[str], categoria: str, filtros: Filtros, con_deporte
         if p.strip() and any(p in t for t in normalizados):
             return True
     return False
+
+
+def tiene_palabras(clip: Clip, palabras: tuple[str, ...]) -> bool:
+    """Alguna de las palabras aparece en el título del clip o en el del stream (palabra completa,
+    sin tildes ni mayúsculas). Sin palabras pedidas, pasan todos."""
+    if not palabras:
+        return True
+    texto = _normalizar(clip.title) + _normalizar(clip.stream_title)
+    return any(_normalizar(p) in texto for p in palabras if p.strip())
 
 
 def es_programa_de_terceros(stream_title: str, palabras: tuple[str, ...]) -> bool:
@@ -186,7 +196,8 @@ def consolidar_evento(res: "Resultado", cfg: Evento, peso_momento: float,
 
 def motivo_descarte(clip: Clip, filtros: Filtros, vistos: set[str], min_vistas: int | None = None,
                     ahora: datetime | None = None, con_deportes: bool = False,
-                    palabras_programa: tuple[str, ...] = ()) -> str | None:
+                    palabras_programa: tuple[str, ...] = (),
+                    palabras_titulo: tuple[str, ...] = ()) -> str | None:
     """Devuelve por qué se descarta el clip, o None si pasa. El orden importa solo para el reporte.
 
     MUY NUEVO no es definitivo: esos clips no se marcan en la DB, así que vuelven a entrar en la
@@ -201,6 +212,11 @@ def motivo_descarte(clip: Clip, filtros: Filtros, vistos: set[str], min_vistas: 
         return "muy largo"
     if clip.language and clip.language != filtros.idioma.lower():  # Kick no informa idioma
         return f"idioma != {filtros.idioma}"
+    # Las palabras pedidas a mano (/buscar) se filtran ACÁ, antes del corte al top N. Si se filtrara
+    # después, los clips que no tienen las palabras se comerían los lugares (mismo bug que ya pasó
+    # dos veces con el evento y con los candidatos de Kick).
+    if not tiene_palabras(clip, palabras_titulo):
+        return MOTIVO_SIN_PALABRAS
     if es_programa_de_terceros(clip.stream_title, palabras_programa):
         return MOTIVO_PROGRAMA
     if es_costream([clip.title, clip.stream_title], clip.game_name, filtros, con_deportes):
@@ -282,7 +298,8 @@ def _ids(client: TwitchClient, activos: list[Streamer], res: Resultado) -> dict[
 
 
 def _motivo(clip: Clip, filtros: Filtros, vistos: set[str], ahora: datetime, evento: Evento,
-            con_deportes: bool, palabras_programa: tuple[str, ...] = ()) -> str | None:
+            con_deportes: bool, palabras_programa: tuple[str, ...] = (),
+            palabras_titulo: tuple[str, ...] = ()) -> str | None:
     """Motivo de descarte, con el filtro del evento incluido.
 
     Los clips del grupo "evento" que no son del evento se descartan ACÁ, antes del corte al top N:
@@ -290,7 +307,7 @@ def _motivo(clip: Clip, filtros: Filtros, vistos: set[str], ahora: datetime, eve
     vacío aunque haya clips buenos del evento más abajo (visto en la simulación del 2026-09-22).
     """
     m = motivo_descarte(clip, filtros, vistos, ahora=ahora, con_deportes=con_deportes,
-                        palabras_programa=palabras_programa)
+                        palabras_programa=palabras_programa, palabras_titulo=palabras_titulo)
     if m:
         return m
     if (clip.grupo or "") == "evento" and not es_del_evento(clip, evento):
@@ -352,6 +369,7 @@ def buscar_kick(
     res: Resultado | None = None,
     excluidos: dict[str, str] | None = None,
     evento: Evento = Evento(),
+    palabras_titulo: tuple[str, ...] = (),
 ) -> Resultado:
     """Fuente reciente de Kick. Si la API interna falla, se anota en res.fallos y la corrida sigue
     con lo de Twitch (no se corta nada)."""
@@ -390,7 +408,7 @@ def buscar_kick(
         return res
     motivos = {c.id: _motivo(c, filtros, vistos, ahora, evento,
                              deportes_de.get(c.broadcaster_login, False),
-                             programa_de.get(c.broadcaster_login, ()))
+                             programa_de.get(c.broadcaster_login, ()), palabras_titulo)
                for c in todos}
     for c in todos:
         if motivos[c.id]:
@@ -422,6 +440,7 @@ def buscar_candidatos(
     res: Resultado | None = None,
     excluidos: dict[str, str] | None = None,
     evento: Evento = Evento(),
+    palabras_titulo: tuple[str, ...] = (),
 ) -> Resultado:
     """Fuente reciente de Twitch: filtros → un clip por momento → score → top N."""
     ahora = ahora or datetime.now(timezone.utc)
@@ -441,7 +460,7 @@ def buscar_candidatos(
     todos = _a_clips(client, crudos, "reciente", por_login)
     motivos = {c.id: _motivo(c, filtros, vistos, ahora, evento,
                              _mira_deportes(por_login, c.broadcaster_login),
-                             _programa_de(por_login, c.broadcaster_login))
+                             _programa_de(por_login, c.broadcaster_login), palabras_titulo)
                for c in todos}
     for c in todos:
         m = motivos[c.id]
