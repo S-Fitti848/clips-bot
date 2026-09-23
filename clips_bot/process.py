@@ -55,6 +55,7 @@ class Resultado:
     palabras_por_s: float = 0.0
     transcripcion: str = ""
     layout: str = ""
+    layout_forzado: str = ""  # el de streamers.yaml, si el streamer lo tiene fijado
     presencia_cara: float = 0.0
     rerender_fit_blur: str = ""  # motivo, si el chequeo post-render detectó una cara cortada
     subtitulos_quemados: bool = True
@@ -193,13 +194,16 @@ def procesar(url: str, cfg: Settings, streamers: list[Streamer], forzar: bool = 
     if not res.subtitulos_quemados:
         avisar(f"  {d.streamer} tiene subtitulos_propios: no se queman los nuestros (el .srt se guarda igual)")
 
+    forzado = streamer.layout_forzado if streamer else ""
     with crono.etapa("detectar cámara"):
         W, H, frames, imagenes = lay.detectar_caras(d.path, cfg.camara.frames_muestra)
-        layout = lay.decidir_layout(W, H, frames, cfg.camara, cfg.render)
+        layout = lay.decidir_layout(W, H, frames, cfg.camara, cfg.render, forzado=forzado)
         if imagenes:
             lay.guardar_debug(imagenes[len(imagenes) // 2], layout, DEBUG_DIR / f"{d.clip_id}_layout.jpg")
     res.layout, res.presencia_cara = layout.tipo, round(layout.presencia, 2)
-    avisar(f"  layout {layout.tipo} (cara estable en {layout.presencia:.0%} de los frames)")
+    res.layout_forzado = forzado
+    avisar(f"  layout {layout.tipo}" + (f" (forzado en streamers.yaml)" if forzado else "")
+           + f" (cara estable en {layout.presencia:.0%} de los frames)")
 
     quemar = bool(subs) and res.subtitulos_quemados
     salida = READY_DIR / f"{d.clip_id}.mp4"
@@ -208,7 +212,8 @@ def procesar(url: str, cfg: Settings, streamers: list[Streamer], forzar: bool = 
 
     # Chequeo post-render: si el recorte partió una cara, se rehace con fit_blur (que no recorta).
     # Atrapa lo que la decisión previa no vio, ej. la persona que se corre a un costado a mitad del clip.
-    if layout.tipo != "fit_blur":
+    # Con layout_forzado no se toca: si alguien pidió ese layout a mano, se respeta.
+    if layout.tipo != "fit_blur" and not forzado:
         with crono.etapa("chequeo de caras cortadas"):
             cortada, detalle = lay.cara_cortada_en_render(salida)
         if cortada:

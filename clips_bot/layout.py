@@ -14,11 +14,14 @@ sentada en una mesa y cortaba el chat y el HUD en los clips de juego sin cámara
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from pathlib import Path
 from statistics import median
 
 from .config import Camara, Render
+
+log = logging.getLogger(__name__)
 
 Deteccion = tuple[int, int, int, int]  # x, y, w, h en píxeles del video original
 
@@ -132,18 +135,53 @@ def pegada_al_borde(caja: Caja, cara: Deteccion, margen: float = 0.15) -> bool:
             or fy - caja.y < my or (caja.y + caja.h) - (fy + fh) < my)
 
 
+def caras_en_caja(W: int, H: int, frames: list[list[Deteccion]], caja: Caja,
+                  excepto: Deteccion | None = None, min_ancho: float = 0.065) -> float:
+    """Fracción de frames con alguna cara DETECTADA dentro de la caja, sin contar la de la cámara.
+
+    Mira las detecciones crudas y no `caras_estables` a propósito: al segundo de una charla lo
+    agarra Haar de a ratos (se mueve, se ríe, gira), nunca con presencia suficiente para contar como
+    cara estable, y esa es justo la que el split parte al medio.
+
+    `min_ancho` (fracción del ancho del frame) saca las caras chicas. Hace falta: Haar ve "caras" en
+    los skins de Minecraft y en la gente de una transmisión de fútbol. Medido 2026-09-23 sobre 9
+    clips reales: las personas de los podcasts de coker miden 6,7–8,8 % del ancho y los skins de
+    Vegetta 4,8–6,2 %. Solo con la presencia no alcanzaba (25 % contra 20 %: sin margen).
+    """
+    if not frames:
+        return 0.0
+    ex = (excepto[0] + excepto[2] / 2, excepto[1] + excepto[3] / 2) if excepto else None
+    con_cara = 0
+    for dets in frames:
+        for x, y, w, h in dets:
+            if w / W < min_ancho:
+                continue
+            cx, cy = x + w / 2, y + h / 2
+            if ex and abs(cx - ex[0]) / W < TOLERANCIA and abs(cy - ex[1]) / H < TOLERANCIA:
+                continue  # es la cámara del streamer, no una segunda persona
+            if caja.x <= cx <= caja.x + caja.w and caja.y <= cy <= caja.y + caja.h:
+                con_cara += 1
+                break
+    return con_cara / len(frames)
+
+
 def layout_fit_blur(W: int, H: int, render: Render, presencia: float = 0.0,
                     cara: Deteccion | None = None) -> Layout:
     """El 16:9 entero sobre fondo borroso. `principal` es el frame completo: no se recorta nada."""
     return Layout("fit_blur", Caja(0, 0, _par(W), _par(H)), None, presencia, cara)
 
 
-def decidir_layout(W: int, H: int, frames: list[list[Deteccion]], cam: Camara, render: Render) -> Layout:
+def decidir_layout(W: int, H: int, frames: list[list[Deteccion]], cam: Camara, render: Render,
+                   forzado: str = "") -> Layout:
     """Elige el layout (ver `fit_blur` en render.py para el porqué de cada regla).
 
-    - facecam clara (una cara chica y estable) → split cámara/juego
+    - facecam clara (una cara chica y estable) → split cámara/juego, salvo que abajo, en la zona del
+      "juego", también haya caras: ahí no hay juego (podcast, llamada, estudio) → fit_blur
     - sin cara estable, o 2+ caras separadas → fit_blur
     - una sola cara grande: recorte central solo si queda centrada; si toca un borde → fit_blur
+
+    `forzado` (streamers.yaml: layout_forzado) saltea todo esto. Un split o un fullcam forzados
+    igual necesitan una cara; sin ella se cae a fit_blur, que es el único que no depende de nada.
     """
     ratio_total = render.ancho / render.alto
     caras = caras_estables(W, H, frames, cam.min_presencia)
@@ -151,7 +189,12 @@ def decidir_layout(W: int, H: int, frames: list[list[Deteccion]], cam: Camara, r
     if not caras:
         _, presencia = cara_estable(W, H, frames)  # para el informe, aunque no alcance el umbral
 
-    if len(caras) >= 2 or cara is None:
+    if forzado == "fit_blur" or (forzado in ("split", "fullcam") and cara is None):
+        if forzado != "fit_blur":
+            log.warning("layout_forzado=%s pero no hay cara estable: va fit_blur", forzado)
+        return layout_fit_blur(W, H, render, presencia, cara)
+
+    if forzado != "split" and (len(caras) >= 2 or cara is None):
         # dos personas separadas (cualquier recorte 9:16 corta a una o a las dos), o ningún rostro
         # estable (juego puro: el chat y el HUD viven en los bordes)
         return layout_fit_blur(W, H, render, presencia, cara)
@@ -159,9 +202,9 @@ def decidir_layout(W: int, H: int, frames: list[list[Deteccion]], cam: Camara, r
     fx, fy, fw, fh = cara
     cx, cy = fx + fw / 2, fy + fh / 2
 
-    if fw / W >= cam.cara_grande:
+    if forzado == "fullcam" or (not forzado and fw / W >= cam.cara_grande):
         central = recorte(W, H, ratio_total, cx, H / 2, H)
-        if cortada_por(central, cara) or pegada_al_borde(central, cara, cam.margen_borde):
+        if not forzado and (cortada_por(central, cara) or pegada_al_borde(central, cara, cam.margen_borde)):
             return layout_fit_blur(W, H, render, presencia, cara)
         return Layout("fullcam", central, None, presencia, cara)
 
@@ -176,6 +219,13 @@ def decidir_layout(W: int, H: int, frames: list[list[Deteccion]], cam: Camara, r
     # del panel de salida (y del recorte de abajo), el overlay no. Se estima con proporción de webcam típica.
     overlay = recorte(W, H, RATIO_OVERLAY, cx, centro_y, fh * FACTOR_CAMARA)
     juego = _alejar_de(recorte(W, H, ratio_juego, W / 2, H / 2, H), overlay, W)
+    # El split da por sentado que abajo hay un juego. Con contenido multicámara (podcast, llamada,
+    # estudio con dos personas) no lo hay: el panel de abajo repite la escena y corta a alguien
+    # (visto 2026-09-23 en dos clips de coker). Si hay caras ahí, no se recorta nada.
+    en_juego = caras_en_caja(W, H, frames, juego, cara, cam.cara_juego_min)
+    if not forzado and en_juego > cam.presencia_juego_max:
+        log.info("Caras en la zona del juego en %.0f%% de los frames: no hay juego, va fit_blur", en_juego * 100)
+        return layout_fit_blur(W, H, render, presencia, cara)
     return Layout("split", juego, camara, presencia, cara)
 
 

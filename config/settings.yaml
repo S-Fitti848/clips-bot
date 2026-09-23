@@ -106,6 +106,15 @@ camara:
   min_presencia: 0.4         # fracción de frames con una cara en el mismo lugar → hay cámara
   cara_grande: 0.12          # ancho de cara / ancho de frame ≥ esto → cámara a pantalla completa
   margen_borde: 0.15         # si la cara queda a menos de esto de un borde del recorte → fit_blur
+  # El split da por sentado que abajo hay un juego. Con contenido multicámara (podcast, llamada,
+  # estudio con dos personas) no lo hay: el panel de abajo repite la escena y corta a alguien.
+  # Si en la zona del "juego" hay caras en más de presencia_juego_max de los frames → fit_blur.
+  # Calibrado 2026-09-23 sobre 11 clips que daban split: los dos podcasts de coker miden 25 % y 30 %,
+  # y el resto no pasa de 10 %. El mínimo de ancho hace falta porque Haar ve caras en los skins de
+  # Minecraft (4,8-6,2 % del ancho) y en la gente de una transmisión; las personas filmadas miden
+  # 6,7-8,8 %. Solo con la presencia no había margen (25 % contra 20 %).
+  presencia_juego_max: 0.20
+  cara_juego_min: 0.065
 
 # §3 paso 6: subtítulos.
 subtitulos:

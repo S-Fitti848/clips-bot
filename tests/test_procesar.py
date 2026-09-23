@@ -105,6 +105,64 @@ def test_juego_se_corre_si_pisa_la_camara():
     assert juego.x + juego.w <= W
 
 
+def test_caras_en_la_zona_del_juego_cancelan_el_split():
+    """coker, 2026-09-23: es un podcast multicámara. No hay juego abajo, así que el split repetía
+    la escena y cortaba al segundo. Se mide sobre las detecciones crudas porque al segundo Haar lo
+    agarra de a ratos, nunca como cara estable."""
+    cam_chica = (1650, 800, 90, 90)          # facecam del streamer, abajo a la derecha
+    otro = (300, 400, 150, 150)              # la otra persona, en la zona que el split usaría de juego
+    solo_facecam = [[cam_chica] for _ in range(20)]
+    assert decidir_layout(W, H, solo_facecam, CAM, R).tipo == "split"
+
+    # aparece en 8 de 20 frames (40 % > presencia_juego_max): no hay juego
+    con_otro = [[cam_chica, otro] if i < 8 else [cam_chica] for i in range(20)]
+    assert decidir_layout(W, H, con_otro, CAM, R).tipo == "fit_blur"
+
+    # en 2 de 20 (10 %) sigue siendo split: un falso positivo suelto no cancela nada
+    casi_nunca = [[cam_chica, otro] if i < 2 else [cam_chica] for i in range(20)]
+    assert decidir_layout(W, H, casi_nunca, CAM, R).tipo == "split"
+
+
+def test_las_caras_chicas_del_juego_no_cuentan():
+    """Haar ve "caras" en los skins de Minecraft y en la gente de una transmisión. Medido: las
+    personas de un podcast miden 6,7-8,8 % del ancho; los skins de Vegetta, 4,8-6,2 %."""
+    from clips_bot.layout import caras_en_caja, Caja
+
+    caja = Caja(0, 0, 1080, 1080)
+    # los skins se mueven por la pantalla, como en el juego; el ancho es lo que los distingue
+    skins = [[(100 + i * 40, 200 + (i % 4) * 90, int(0.05 * W), 96)] for i in range(20)]
+    personas = [[(100 + i * 40, 200 + (i % 4) * 90, int(0.08 * W), 154)] for i in range(20)]
+    assert caras_en_caja(W, H, skins, caja, min_ancho=CAM.cara_juego_min) == 0.0
+    assert caras_en_caja(W, H, personas, caja, min_ancho=CAM.cara_juego_min) > 0.5
+
+    cam_chica = (1650, 800, 90, 90)
+    assert decidir_layout(W, H, [[cam_chica] + s for s in skins], CAM, R).tipo == "split"
+    assert decidir_layout(W, H, [[cam_chica] + s for s in personas], CAM, R).tipo == "fit_blur"
+
+
+def test_layout_forzado():
+    """streamers.yaml: layout_forzado. Es para los canales cuyo formato la heurística no ve."""
+    cam_chica = [[(1650, 800, 90, 90)] for _ in range(20)]
+    assert decidir_layout(W, H, cam_chica, CAM, R).tipo == "split"
+    assert decidir_layout(W, H, cam_chica, CAM, R, forzado="fit_blur").tipo == "fit_blur"
+    assert decidir_layout(W, H, cam_chica, CAM, R, forzado="fullcam").tipo == "fullcam"
+    # forzar split sin cara estable no se puede: cae a fit_blur, el único que no depende de nada
+    assert decidir_layout(W, H, [[] for _ in range(20)], CAM, R, forzado="split").tipo == "fit_blur"
+    # y un split forzado se respeta aunque haya otra persona en la zona del juego
+    con_otro = [[(1650, 800, 90, 90), (300, 400, 150, 150)] for _ in range(20)]
+    assert decidir_layout(W, H, con_otro, CAM, R).tipo == "fit_blur"
+    assert decidir_layout(W, H, con_otro, CAM, R, forzado="split").tipo == "split"
+
+
+def test_layout_forzado_invalido_no_carga(tmp_path):
+    from clips_bot.config import ConfigError, load_streamers
+
+    yaml = tmp_path / "s.yaml"
+    yaml.write_text("streamers:\n  - login: x\n    layout_forzado: vertical\n", encoding="utf-8")
+    with pytest.raises(ConfigError):
+        load_streamers(yaml)
+
+
 def test_cara_grande_es_fullcam():
     frames = [[(800, 300, 320, 320)] for _ in range(20)]
     lay = decidir_layout(W, H, frames, CAM, R)

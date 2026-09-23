@@ -27,6 +27,11 @@ streamers:
     plataforma: kick
     fuentes: [reciente]
     grupo: argentinos
+    # El 412 se transmite en los dos canales. Medido 2026-09-23: 8 de sus 100 clips de la semana
+    # salen de streams "412", y los de análisis de fútbol dicen "ANALIZAMOS" en el título.
+    palabras_programa:
+      - "412"
+      - ANALIZAMOS
     detectar_marcador: true
     permiso:
       experimento: true
@@ -50,6 +55,9 @@ streamers:
     plataforma: kick
     fuentes: [reciente]
     grupo: argentinos
+    # Hace podcast/llamada multicámara: no hay "juego" abajo, así que el split repite la escena y
+    # corta a alguien (visto 2026-09-23 en dos clips). fit_blur no recorta nada.
+    layout_forzado: fit_blur
     detectar_marcador: true
     permiso:
       experimento: true

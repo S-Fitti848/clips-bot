@@ -41,6 +41,9 @@ class Streamer:
     # afuera aunque el clip no diga nada. Es por streamer porque una marca ajena en otro canal no
     # significa lo mismo. Motivo de descarte: programa_terceros.
     palabras_programa: tuple[str, ...] = ()
+    # split | fullcam | fit_blur. Vacío = lo decide la detección de caras. Es para los canales cuyo
+    # formato la heurística no puede ver (ej. coker: podcast multicámara, donde "el juego" no existe).
+    layout_forzado: str = ""
 
     @property
     def permitido(self) -> bool:
@@ -121,7 +124,11 @@ class Camara:
     frames_muestra: int = 20
     min_presencia: float = 0.4
     cara_grande: float = 0.12
-    margen_borde: float = 0.15  # cara a menos de esto de un borde del recorte → fit_blur
+    margen_borde: float = 0.15       # cara a menos de esto de un borde del recorte → fit_blur
+    # Fracción de frames con una cara (que no es la de la cámara) dentro del recorte del "juego".
+    # Por encima de esto no hay juego: es contenido multicámara y el split parte a alguien.
+    presencia_juego_max: float = 0.20
+    cara_juego_min: float = 0.065     # ancho mínimo (fracción del frame) para contar como persona
 
 
 @dataclass(frozen=True)
@@ -270,6 +277,16 @@ def load_settings(path: Path = CONFIG_DIR / "settings.yaml") -> Settings:
     )
 
 
+LAYOUTS = ("split", "fullcam", "fit_blur")
+
+
+def _layout_forzado(item: dict, login: str) -> str:
+    valor = str(item.get("layout_forzado") or "").strip().lower()
+    if valor and valor not in LAYOUTS:
+        raise ConfigError(f"{login}: layout_forzado {valor!r} (válidos: {LAYOUTS})")
+    return valor
+
+
 def load_streamers(path: Path = CONFIG_DIR / "streamers.yaml") -> list[Streamer]:
     """Lee `streamers` y las secciones `evento_*` (esas van al grupo "evento" por default)."""
     raw = _read_yaml(path)
@@ -306,6 +323,7 @@ def load_streamers(path: Path = CONFIG_DIR / "streamers.yaml") -> list[Streamer]
                     palabras_programa=tuple(
                         str(p).strip() for p in (item.get("palabras_programa") or ()) if str(p).strip()
                     ),
+                    layout_forzado=_layout_forzado(item, login),
                 )
             )
     return out
