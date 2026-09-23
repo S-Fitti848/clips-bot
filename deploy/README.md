@@ -8,7 +8,7 @@ encuentra una unidad `clips-bot*` que no reconoce como suya.
 
 ```bash
 sudo apt update
-sudo apt install -y ffmpeg python3-venv tesseract-ocr tesseract-ocr-spa logrotate
+sudo apt install -y ffmpeg tesseract-ocr tesseract-ocr-spa
 git clone <repo> ~/clips && cd ~/clips
 python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt
@@ -36,10 +36,32 @@ calidad del texto a ojo, y un `benchmark.json` con la máquina y los tiempos.
 Referencia Windows (8 hilos, clips de 17–22 s, `spa+eng`, preset `medium`): 40–76 s por clip, o sea
 1,8–4,5× la duración del clip.
 
-**Si `small` no entra en 5 min:** pasar a `base` en `config/settings.yaml` (`subtitulos.modelo`), y
-comparar los dos `.srt` del mismo clip antes de decidir — el número de palabras no alcanza para
-juzgar, hay que leerlos. Otra palanca, más barata que cambiar de modelo: `render.x264_preset` a
-`veryfast`, que en ARM ahorra mucho más de lo que cuesta en calidad.
+**Medido en esta Pi el 2026-09-23** (Pi 4 Rev 1.4, 8 GB, Debian 13, 4 núcleos):
+
+| | cargar modelo | 60 s de video | 22 s de video |
+|---|---|---|---|
+| `small` | 59 s (la 1ª vez baja 467 MB) | 42 s (0,70×) | 34 s (1,53×) |
+| `base` | 21 s | 58 s (0,97×) | 12 s (0,57×) |
+
+`small` entra cómodo, así que **se queda `small`**: `base` es más rápido pero pierde calidad visible
+(se come los signos de pregunta e inventa palabras — "no es manera hue" donde `small` pone "no hay
+manera"). Los `.srt` de los dos están en `output/benchmark/` si lo querés ver vos.
+
+Dos cosas que sí aparecieron midiendo:
+
+- **Un clip de 17 s tardó 483 s con `small`** (28× la duración). No es el modelo: con `base` fueron
+  198 s, y con `beam_size=1` y/o `condition_on_previous_text=False` da 27–37× igual. Es un audio de
+  gritos sin habla clara donde el decoder entra en loop, y lo que sale es "no no no no". Por eso
+  ahora hay un tope de tiempo por clip (`subtitulos.timeout_factor`, 8× la duración) que lo corta y
+  lo descarta con motivo `transcripcion_lenta`.
+- **La Pi throttlea por temperatura, no por voltaje.** `get_throttled` arranca en `0x0` (sin
+  undervoltage), pero con Whisper sostenido llega a 84,7 °C y pasa a `0xe0008`: límite blando de
+  temperatura activo y frecuencia ya capada. Con disipador o ventilador estos números mejoran.
+  La unidad ya va con `Nice=10` y CPU de baja prioridad para no calentar de más ni pelearle al
+  bot de trading.
+
+Otra palanca, si hiciera falta: `render.x264_preset` a `veryfast`, que en ARM ahorra mucho más de lo
+que cuesta en calidad.
 
 ## 3. Instalar
 
