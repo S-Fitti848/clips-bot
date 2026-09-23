@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-09-23 | **Versión:** v0.11.0 | **Modo:** Fase 1 andando: primera entrega real hecha (3 Shorts por Telegram)
+**Snapshot:** 2026-09-23 | **Versión:** v0.12.0 | **Modo:** Fase 1 andando: primera entrega real hecha (3 Shorts por Telegram)
 
 > **Reglas de trabajo sobre este archivo:** se edita con Edit o se reescribe entero. NADA de scripts
 > de reemplazo encadenados: uno rompió el archivo el 2026-09-22 (37 MB de texto repetido) y hubo que
@@ -107,6 +107,11 @@ Restricción de hardware: la Pi tiene undervoltage confirmado. Whisper `small` e
    Co-streams y eventos de terceros fuera: palabra de `palabras_costream` en el título del clip o
    del stream (título del VOD), o categoría en `categorias_costream`. Se guardan en la DB con
    motivo `costream`. Las palabras de fútbol (gol, Boca, River, partido, Mundial…) son por Davoo.
+   **Programas de terceros** (`palabras_programa` por streamer, motivo `programa_terceros`): marca
+   de un programa con formato propio en el TÍTULO DEL STREAM, no en el del clip. Si dispara, queda
+   afuera TODO ese stream. En Kick el clip no trae el título del stream: sale de
+   `/api/v2/channels/{slug}/videos` (una llamada por canal, `{livestream_id: session_title}`); si
+   esa llamada falla, los clips quedan sin título de stream y la corrida sigue.
 3. Descargar los mejores candidatos con yt-dlp, solo hasta llenar el cupo de cada grupo.
 4. Transmisión deportiva (streamers con `detectar_marcador`) → descarta con DOS señales: marcador de
    TV en una esquina de arriba, o fracción de verde-césped alta en ≥ 2 de 12 frames (una cancha llena
@@ -247,12 +252,14 @@ el código lo busca en la instalación de winget o en `FFMPEG_DIR`.
 config/settings.yaml     candidatos, evento, kick, catalogo, render, camara, subtitulos, filtro_audio,
                          marcador, textos, seleccion, publicacion, youtube_upload_enabled
 config/streamers.yaml    login, plataforma, fuentes, grupo, permiso (cita/fuente o experimento),
-                         subtitulos_propios, detectar_marcador + sección evento_dedsafio
-.env                     TWITCH_*, GEMINI_API_KEY, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
+                         subtitulos_propios, detectar_marcador, palabras_programa + evento_dedsafio
+.env                     TWITCH_*, GEMINI_API_KEY, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID,
+                         TELEGRAM_ALLOWED_USERS (ids que pueden mandar comandos; vacío = ninguno)
 clips_bot/config.py      carga YAML + .env; Streamer.permitido = cita o experimento
 clips_bot/twitch.py      Helix: token, /users, /search/channels, /clips (paginado o página con
                          cursor), /games, /videos (título del stream)
-clips_bot/kick.py        API interna de Kick: clips por canal (sort=view&time=week), a_clip() los aplana
+clips_bot/kick.py        API interna de Kick: clips por canal (sort=view&time=week), a_clip() los aplana,
+                         get_session_titles() = títulos de stream por livestream_id (/videos)
 clips_bot/candidates.py  pasos 1–2 de las 3 fuentes: filtros, es_costream, agrupar_momentos,
                          agrupar_evento/consolidar_evento, cursor del catálogo
 clips_bot/download.py    paso 3: yt-dlp (Twitch y Kick) → output/raw/
@@ -267,7 +274,8 @@ clips_bot/textos.py      paso 7: título/descripción/hashtags/gancho/depende_de
 clips_bot/multipov.py    paso 7b: pico de reacción, ventanas, carteles y concat de hasta 3 ángulos
 clips_bot/seleccion.py   paso 8: score por fuente, cupos por grupo con fallback, desempate Gemini
 clips_bot/telegram.py    paso 10: sendVideo (width/height/duration + miniatura), mensaje con bloques
-                         copiables + recordatorio, getUpdates y parseo de comandos
+                         copiables + recordatorio, getUpdates, comandos con user_id y
+                         usuarios_permitidos (TELEGRAM_ALLOWED_USERS)
 clips_bot/process.py     orquesta 3–7 por clip, tiempos por etapa, registra estado en la DB
 clips_bot/db.py          SQLite data/clips.db: clips, posts, catalogo_cursor, streamer_estado
                          (exclusiones), bot_estado (offset de Telegram)
@@ -346,6 +354,16 @@ Problemas abiertos:
 - **fit_blur usa menos pantalla:** el video ocupa 1080x608 de los 1920 de alto. Es el precio de no
   cortar nada. Si los datos muestran que rinde peor que un recorte, la alternativa es un zoom suave
   hasta el límite en que no se corte ninguna cara ni el HUD.
+- **split da por sentado que hay un juego abajo.** Con contenido multicámara (podcast, llamada,
+  estudio con dos personas) no hay juego: el panel de abajo repite la misma escena recortada y corta
+  a alguien. Visto el 2026-09-23 en dos clips de coker. La regla de "2+ caras → fit_blur" no lo
+  agarra porque Haar solo sostiene una de las caras.
+- **Nada mira QUÉ hay en pantalla antes de publicar.** Un clip de hasvik del grupo evento (categoría
+  Minecraft, así que pasó el filtro del evento) era en realidad su navegador en un checkout, con
+  nombre, mail y dirección de un tercero a la vista. Descartado a mano el 2026-09-23. No hay ninguna
+  capa que detecte datos personales, DNI, mails o pantallas de pago.
+- **`procesar` por URL no puede aplicar `palabras_programa`**: no tiene el título del stream (mismo
+  problema que los co-streams por URL manual).
 - **Franja de UI al pie de la cámara** (split): mitigada recortando 50 px + línea negra de 6 px;
   queda un filo del fondo del overlay. Sigue sin detectar los bordes reales del overlay.
 - **Kick sin `sort=view` es inservible:** devolvía 100 clips de menos de 24 h con 2 a 5 vistas.
@@ -403,6 +421,12 @@ Problemas abiertos:
   requests/día, fallback automático a `gemini-3.5-flash-lite` ante 429 por cuota, reintentos 3 → 2 y
   `textos_pendientes` para no perder el render. Fútbol: segunda señal por fracción de verde-césped
   (calibrada con 8 clips reales; agarra el caso que el marcador no veía). 122 tests OK.
+- v0.12.0 (2026-09-23) — `palabras_programa` por streamer: marca de un programa de terceros en el
+  TÍTULO DEL STREAM → descarta todo ese stream con motivo `programa_terceros`. Para que ande en Kick
+  se trae el título del stream, que el clip no incluye (`/videos` del canal). Cargado en lacobraaa
+  con "412" y "ANALIZAMOS": medido, saca 55 de sus 100 clips de la semana. Los comandos de Telegram
+  pasan a aceptarse solo de `TELEGRAM_ALLOWED_USERS` (por usuario, no por chat: en un grupo cualquier
+  miembro podría mandar /reclamo); sin la variable no se obedece nada. 136 tests OK.
 - v0.11.0 (2026-09-23) — Layout `fit_blur` (16:9 entero sobre fondo borroso) en lugar del recorte
   central, que sacó dos Shorts mal: un panel de La Cobra donde el crop agarró la pared del medio y
   cortó a los dos que hablaban, y un Minecraft de Vegetta sin cámara donde cortó el chat, el
