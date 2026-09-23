@@ -170,8 +170,14 @@ def procesar(url: str, cfg: Settings, streamers: list[Streamer], forzar: bool = 
 
     with crono.etapa("whisper: cargar modelo"):
         modelo = sub.cargar_modelo(cfg.subtitulos)
-    with crono.etapa("whisper: transcribir"):
-        palabras = sub.transcribir(modelo, d.path, cfg.subtitulos)
+    try:
+        with crono.etapa("whisper: transcribir"):
+            palabras = sub.transcribir(modelo, d.path, cfg.subtitulos, info.duracion)
+    except sub.TranscripcionLenta as e:
+        del modelo
+        if descartar(str(e), "transcripcion_lenta"):
+            return _cerrar(res)
+        palabras = []
     del modelo
     res.palabras = len(palabras)
     res.palabras_por_s = round(len(palabras) / info.duracion, 2) if info.duracion else 0.0

@@ -134,6 +134,10 @@ class Camara:
 @dataclass(frozen=True)
 class Subtitulos:
     modelo: str = "small"
+    # Tope de tiempo de pared por clip: max(timeout_min_s, timeout_factor x duración del clip).
+    # Medido en la Pi: los clips normales van a 0,7-1,5x y uno patológico se fue a 28x.
+    timeout_factor: float = 8.0
+    timeout_min_s: float = 60.0
     compute_type: str = "int8"
     cpu_threads: int = 0
     idioma: str = "es"

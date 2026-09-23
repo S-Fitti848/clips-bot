@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-09-23 | **Versión:** v0.14.0 | **Modo:** Fase 1 andando: primera entrega real hecha (3 Shorts por Telegram)
+**Snapshot:** 2026-09-23 | **Versión:** v0.15.0 | **Modo:** Fase 1 andando: primera entrega real hecha (3 Shorts por Telegram)
 
 > **Reglas de trabajo sobre este archivo:** se edita con Edit o se reescribe entero. NADA de scripts
 > de reemplazo encadenados: uno rompió el archivo el 2026-09-22 (37 MB de texto repetido) y hubo que
@@ -77,8 +77,12 @@ servicio systemd separado: `clips-bot`).
 | Alertas | Telegram (bot nuevo, no el del trading) | resumen diario + errores |
 | Scheduler | systemd timer (1 corrida/día, ej. 05:00 AR) | + watchdog simple |
 
-Restricción de hardware: la Pi tiene undervoltage confirmado. Whisper `small` en CPU tarda
-~1–2 min por clip de 60 s; 3 clips/día es trivial. NO paralelizar.
+Restricción de hardware (medido en la Pi el 2026-09-23, no estimado): Pi 4 Model B Rev 1.4, 8 GB,
+4 núcleos, Debian 13, systemd 257, zona horaria ya en AR. **No hay undervoltage** (`throttled`
+arranca en 0x0; la nota vieja estaba mal). Lo que sí hay es **throttling térmico**: con Whisper
+sostenido llega a 84,7 °C y `get_throttled` pasa a 0xe0008 (límite blando de temperatura activo,
+frecuencia ya capada). O sea que el cuello no es el voltaje sino el calor: conviene disipador/ventilador,
+y por eso la unidad va con `Nice=10` y prioridad de CPU baja. NO paralelizar.
 
 ---
 
@@ -327,8 +331,21 @@ enum, depende_de_fecha booleano). Si no valida, reintenta hasta 3 veces con los 
 lo agrega el código, no Gemini. Modelo: `gemini-3.6-flash` fijo (2.5-flash da 404 para cuentas nuevas).
 
 Tiempos medidos (Windows, 8 hilos, clips de 17–60 s): descarga 1–4 s · silencio 0,1–0,5 s · cargar
-Whisper 2–11 s · transcribir 0,17–0,55× la duración · detectar cámara 4–9 s · render 0,5–1,4× la
-duración · Gemini 7–30 s. Total 45–170 s por clip. Benchmark en la Pi: pendiente.
+Whisper 2–11 s · transcribir 0,17–0,55× la duración · OCR 3–11 s · detectar cámara 4–9 s · render
+0,5–1,4× la duración · Gemini 7–30 s. Total 45–170 s por clip (con `spa+eng`, 40–76 s en 2 clips).
+
+**Whisper en la Pi (aarch64, 2026-09-23).** Cargar el modelo: `small` 59 s la primera vez (baja
+467 MB), `base` 21 s. Transcribir, clips normales: `small` 0,70× (60 s) y 1,53× (22 s); `base` 0,97×
+y 0,57×. O sea que `small` ENTRA cómodo para 3 clips/día. Calidad: `small` es claramente mejor —
+mantiene los signos de pregunta ("¿Estás aquí atrás, verdad, gordita?" contra "estás aquí atrás,
+verdad gordita,") y acierta palabras que `base` inventa ("no hay manera" contra "no es manera hue").
+**Se queda `small`.**
+El problema no era el modelo: un clip de 17 s se fue a 483 s (28×) con `small` y 198 s con `base`.
+Es un audio de gritos sin habla clara donde el decoder entra en loop. Probado `beam_size=1` y
+`condition_on_previous_text=False`, solos y juntos: 27–37× en los cuatro casos, y lo que sale es
+"no no no no". Por eso ahora hay un tope de tiempo por clip
+(`subtitulos.timeout_factor` × duración, mínimo `timeout_min_s`): se corta entre segmentos y el clip
+se descarta con motivo `transcripcion_lenta`.
 
 Streamers cargados (2026-09-22). Mezcla diaria: **2 argentinos + 1 evento**, y el catálogo sin cupo
 propio como fallback.
@@ -442,6 +459,10 @@ Problemas abiertos:
   requests/día, fallback automático a `gemini-3.5-flash-lite` ante 429 por cuota, reintentos 3 → 2 y
   `textos_pendientes` para no perder el render. Fútbol: segunda señal por fracción de verde-césped
   (calibrada con 8 clips reales; agarra el caso que el marcador no veía). 122 tests OK.
+- v0.15.0 (2026-09-23) — Primer benchmark REAL en la Pi. `small` se queda (entra cómodo y `base`
+  pierde calidad visible). Tope de tiempo en la transcripción (`transcripcion_lenta`) por el clip
+  que se iba a 28× la duración. Hallazgo de hardware: la Pi no tiene undervoltage sino
+  **throttling térmico** (84,7 °C, `throttled=0xe0008` bajo Whisper sostenido). 152 tests OK.
 - v0.14.0 (2026-09-23) — Multi-POV: cada ángulo tiene que mostrar algo en su tramo (medido frame
   por frame, no por promedio: el de PattyMeza daba 56 % de frames en negro y el brillo promedio
   0,22 no lo delataba). Rescate con fit_blur → reemplazo por otro canal del momento → si no, no se

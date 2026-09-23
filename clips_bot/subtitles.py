@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import textwrap
 from dataclasses import dataclass
+import time
 from pathlib import Path
 
 from .config import Render, Subtitulos
@@ -33,12 +34,35 @@ def cargar_modelo(cfg: Subtitulos):
     return WhisperModel(cfg.modelo, device="cpu", compute_type=cfg.compute_type, cpu_threads=cfg.cpu_threads)
 
 
-def transcribir(modelo, audio: Path, cfg: Subtitulos) -> list[Palabra]:
+class TranscripcionLenta(RuntimeError):
+    """La transcripción se pasó del presupuesto de tiempo para ese clip."""
+
+
+def transcribir(modelo, audio: Path, cfg: Subtitulos, duracion_s: float = 0.0) -> list[Palabra]:
+    """Transcribe con un tope de tiempo de pared proporcional a la duración del clip.
+
+    Por qué el tope: medido en la Pi el 2026-09-23, un clip de 17 s tardó 483 s con `small` (28x la
+    duración) contra 0,7-1,5x de los clips normales. No es el modelo ni el hardware: el audio es
+    gritos sin habla clara y el decoder se va a un loop. Probado con beam_size=1 y con
+    condition_on_previous_text=False, solos y juntos: 27-37x en los cuatro casos, y el texto que
+    sale es "no no no no no". Esos clips no sirven igual, así que se cortan y se descartan en vez de
+    comerse la corrida entera.
+
+    El corte se hace ENTRE segmentos: el generador de faster-whisper transcribe de a uno, así que
+    acá se mira el reloj en cada vuelta.
+    """
+    limite = max(cfg.timeout_min_s, cfg.timeout_factor * duracion_s) if duracion_s else 0.0
+    t0 = time.perf_counter()
     segmentos, _ = modelo.transcribe(
         str(audio), language=cfg.idioma, word_timestamps=True, vad_filter=True, beam_size=5
     )
     palabras = []
     for seg in segmentos:  # generador: la transcripción corre acá
+        if limite and time.perf_counter() - t0 > limite:
+            raise TranscripcionLenta(
+                f"la transcripción pasó los {limite:.0f}s para un clip de {duracion_s:.0f}s "
+                f"(llevaba {len(palabras)} palabras): audio sin habla clara"
+            )
         for w in seg.words or []:
             texto = w.word.strip()
             if texto:

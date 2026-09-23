@@ -256,3 +256,37 @@ def test_ass_centra_el_bloque_en_posicion_y(tmp_path):
 def test_formatos_de_tiempo():
     assert _t_srt(3661.5) == "01:01:01,500"
     assert _t_ass(61.25) == "0:01:01.25"
+
+
+def test_transcribir_corta_si_se_pasa_del_tiempo(monkeypatch):
+    """Pi, 2026-09-23: un clip de 17 s tardó 483 s con small (28x) porque el audio son gritos sin
+    habla clara. Ni beam_size=1 ni condition_on_previous_text=False lo arreglan (27-37x los cuatro),
+    y el texto que sale es "no no no no". Se corta entre segmentos y el clip se descarta."""
+    import time as _time
+
+    from clips_bot.subtitles import TranscripcionLenta, transcribir
+
+    class Palabra:
+        def __init__(self, t):
+            self.word, self.start, self.end = f"w{t}", t, t + 0.1
+
+    class Seg:
+        def __init__(self, t):
+            self.words = [Palabra(t)]
+
+    class Modelo:
+        def transcribe(self, *a, **k):
+            return (Seg(i) for i in range(50)), None
+
+    reloj = iter([0.0] + [i * 10.0 for i in range(1, 60)])
+    monkeypatch.setattr(_time, "perf_counter", lambda: next(reloj))
+
+    cfg = Subtitulos(timeout_factor=8.0, timeout_min_s=60)
+    with pytest.raises(TranscripcionLenta) as e:
+        transcribir(Modelo(), None, cfg, duracion_s=17.0)  # tope = max(60, 136) = 136 s
+    assert "136s" in str(e.value) and "17s" in str(e.value)
+
+    # sin duración (URL suelta, ruta vieja) no hay tope y transcribe entero
+    reloj = iter([i * 1000.0 for i in range(60)])
+    monkeypatch.setattr(_time, "perf_counter", lambda: next(reloj))
+    assert len(transcribir(Modelo(), None, cfg, duracion_s=0)) == 50

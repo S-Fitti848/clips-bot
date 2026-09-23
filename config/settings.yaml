@@ -119,6 +119,13 @@ camara:
 # §3 paso 6: subtítulos.
 subtitulos:
   modelo: small
+  # Tope de tiempo por clip: max(timeout_min_s, timeout_factor x duración). Medido en la Pi el
+  # 2026-09-23: los clips normales transcriben a 0,7-1,5x la duración, pero uno de 17 s se fue a
+  # 483 s (28x) porque el audio son gritos sin habla clara y el decoder entra en loop. Probado con
+  # beam_size=1 y condition_on_previous_text=False, solos y juntos: 27-37x en los cuatro casos.
+  # Esos clips no sirven igual (sale "no no no no"), así que se cortan y se descartan.
+  timeout_factor: 8.0
+  timeout_min_s: 60
   compute_type: int8
   cpu_threads: 0             # 0 = automático
   idioma: es
