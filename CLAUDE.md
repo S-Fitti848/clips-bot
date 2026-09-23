@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-09-22 | **Versión:** v0.10.0 | **Modo:** Fase 1 andando: primera entrega real hecha (3 Shorts por Telegram)
+**Snapshot:** 2026-09-23 | **Versión:** v0.11.0 | **Modo:** Fase 1 andando: primera entrega real hecha (3 Shorts por Telegram)
 
 > **Reglas de trabajo sobre este archivo:** se edita con Edit o se reescribe entero. NADA de scripts
 > de reemplazo encadenados: uno rompió el archivo el 2026-09-22 (37 MB de texto repetido) y hubo que
@@ -111,9 +111,17 @@ Restricción de hardware: la Pi tiene undervoltage confirmado. Whisper `small` e
 4. Transmisión deportiva (streamers con `detectar_marcador`) → descarta con DOS señales: marcador de
    TV en una esquina de arriba, o fracción de verde-césped alta en ≥ 2 de 12 frames (una cancha llena
    la pantalla). Después, filtros de audio: casi todo silencio, o muy pocas palabras por segundo.
-5. Layout: detectar cámara → cámara arriba 40 % (1080x762) + línea negra de 6 px + juego abajo 60 %
-   (1080x1152); si la cara ocupa mucho → crop 9:16 centrado en la cara; si no hay cara estable →
-   crop central 9:16 con zoom leve.
+5. Layout, tres opciones (el recorte central "a ver qué sale" se eliminó el 2026-09-23):
+   - **split** — facecam clara (una cara chica y estable): cámara arriba 40 % (1080x762) + línea
+     negra de 6 px + juego abajo 60 % (1080x1152).
+   - **fullcam** — UNA sola cara grande y centrada: crop 9:16 centrado en la cara.
+   - **fit_blur** — todo lo demás: el 16:9 ENTERO escalado a 1080 de ancho y centrado, sobre el
+     mismo video ampliado y con blur fuerte (`render.blur_sigma`) llenando el 9:16. No recorta nada,
+     y los subtítulos caen en la franja de abajo, fuera del video.
+   Se va a fit_blur si no hay cara estable, si hay 2+ caras separadas, o si la cara quedaría a menos
+   de `camara.margen_borde` (15 %) de un borde del recorte. Además, DESPUÉS del render se vuelve a
+   pasar el detector de caras sobre el 9:16 final: si alguna queda pegada al borde, se re-renderiza
+   con fit_blur y queda anotado en `rerender_fit_blur` del json.
 6. Whisper → SRT → quemar subtítulos (fuente 64, bloque centrado al 80 % del alto, 2 líneas máx).
    Si el streamer tiene `subtitulos_propios: true` (ya trae subtítulos en vivo), no se queman; el
    SRT se guarda igual (título + pista de subtítulos en YouTube).
@@ -251,7 +259,8 @@ clips_bot/download.py    paso 3: yt-dlp (Twitch y Kick) → output/raw/
 clips_bot/media.py       ffmpeg/ffprobe: ubicar binario, probe, fracción de silencio, miniatura
 clips_bot/deportes.py    marcador de transmisión deportiva: esquina quieta + mucho borde (heurística)
 clips_bot/subtitles.py   paso 6: faster-whisper → subtítulos ≤ 2 líneas → SRT + ASS
-clips_bot/layout.py      paso 5: caras (OpenCV Haar) → split / fullcam / sincam
+clips_bot/layout.py      paso 5: caras (OpenCV Haar) → split / fullcam / fit_blur + chequeo
+                         post-render (`cara_cortada_en_render`)
 clips_bot/render.py      pasos 5–6: una pasada de ffmpeg, tope 5 Mbps (entra en los 50 MB de Telegram)
 clips_bot/gemini.py      cliente REST generateContent con responseSchema (JSON forzado)
 clips_bot/textos.py      paso 7: título/descripción/hashtags/gancho/depende_de_fecha + crédito
@@ -332,7 +341,11 @@ Problemas abiertos:
 - **Co-streams por URL manual:** `procesar` solo ve título y categoría del clip; el título del
   stream (vía /videos) solo está en `candidatos`.
 - **Subtítulos en vivo cortados:** con `subtitulos_propios`, el crop 9:16 corta los costados de los
-  subtítulos del streamer si ocupan todo el ancho (visto en elxokas).
+  subtítulos del streamer si ocupan todo el ancho (visto en elxokas). Con fit_blur ya no pasa, pero
+  elxokas cae en split, que sí recorta.
+- **fit_blur usa menos pantalla:** el video ocupa 1080x608 de los 1920 de alto. Es el precio de no
+  cortar nada. Si los datos muestran que rinde peor que un recorte, la alternativa es un zoom suave
+  hasta el límite en que no se corte ninguna cara ni el HUD.
 - **Franja de UI al pie de la cámara** (split): mitigada recortando 50 px + línea negra de 6 px;
   queda un filo del fondo del overlay. Sigue sin detectar los bordes reales del overlay.
 - **Kick sin `sort=view` es inservible:** devolvía 100 clips de menos de 24 h con 2 a 5 vistas.
@@ -390,6 +403,13 @@ Problemas abiertos:
   requests/día, fallback automático a `gemini-3.5-flash-lite` ante 429 por cuota, reintentos 3 → 2 y
   `textos_pendientes` para no perder el render. Fútbol: segunda señal por fracción de verde-césped
   (calibrada con 8 clips reales; agarra el caso que el marcador no veía). 122 tests OK.
+- v0.11.0 (2026-09-23) — Layout `fit_blur` (16:9 entero sobre fondo borroso) en lugar del recorte
+  central, que sacó dos Shorts mal: un panel de La Cobra donde el crop agarró la pared del medio y
+  cortó a los dos que hablaban, y un Minecraft de Vegetta sin cámara donde cortó el chat, el
+  minimapa y la hotbar. Reglas nuevas: `caras_estables` (busca varias caras, no una),
+  `camara.margen_borde` 0,15 y chequeo de caras cortadas DESPUÉS del render con re-render
+  automático. Los dos clips rehechos: los dos daban 0 caras estables (presencia 35 % y 5 %, bajo el
+  umbral de 40 %), así que con la regla vieja caían en el recorte central. 133 tests OK.
 - v0.10.0 (2026-09-22) — Primera entrega REAL: 3 Shorts por Telegram (1 del Dedsafío con ×3
   duplicados + 2 de catálogo). Grupo `argentinos` (8 de Kick) y mezcla 2 argentinos + 1 evento con
   fallback a catálogo. Las palabras de fútbol pasan a aplicarse solo a streamers con
