@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-09-23 | **Versión:** v0.13.0 | **Modo:** Fase 1 andando: primera entrega real hecha (3 Shorts por Telegram)
+**Snapshot:** 2026-09-23 | **Versión:** v0.14.0 | **Modo:** Fase 1 andando: primera entrega real hecha (3 Shorts por Telegram)
 
 > **Reglas de trabajo sobre este archivo:** se edita con Edit o se reescribe entero. NADA de scripts
 > de reemplazo encadenados: uno rompió el archivo el 2026-09-22 (37 MB de texto repetido) y hubo que
@@ -147,6 +147,11 @@ Restricción de hardware: la Pi tiene undervoltage confirmado. Whisper `small` e
    (volumen RMS + densidad de palabras del .srt), cartel con el nombre del streamer arriba durante
    su tramo, orden de menos a más visto (el final es el ángulo más fuerte) y crédito a todos en la
    descripción. Sin pantalla dividida. Se parte de los mp4 verticales ya renderizados.
+   **Cada ángulo tiene que MOSTRAR algo en su tramo**: se cuenta cuántos frames del tramo son un
+   rectángulo casi negro (`multipov.frames_vacios_max`, más de un tercio = no sirve). Si un ángulo
+   no pasa: (1) se rehace con fit_blur, que muestra el 16:9 entero; (2) si tampoco alcanza, se
+   reemplaza por otro canal del mismo momento (se procesan hasta 2 más); (3) si no se llega a
+   `min_angulos`, no se arma el multi-POV.
 8. Elegir con cupos por GRUPO (`seleccion.mezcla`, default 1 kick_reciente + 1 evento + 1 catálogo).
    Cada grupo compite solo en su cupo; lo que un grupo no llena pasa al grupo `catalogo`, y si a ese
    le sobra vuelve a repartirse. Tope 2 por streamer entre todos. Empate en el corte → Gemini
@@ -281,7 +286,11 @@ clips_bot/layout.py      paso 5: caras (OpenCV Haar) → split / fullcam / fit_b
 clips_bot/render.py      pasos 5–6: una pasada de ffmpeg, tope 5 Mbps (entra en los 50 MB de Telegram)
 clips_bot/gemini.py      cliente REST generateContent con responseSchema (JSON forzado)
 clips_bot/textos.py      paso 7: título/descripción/hashtags/gancho/depende_de_fecha + crédito
-clips_bot/multipov.py    paso 7b: pico de reacción, ventanas, carteles y concat de hasta 3 ángulos
+clips_bot/multipov.py    paso 7b: pico de reacción, ventanas, carteles, concat y medición del
+                         panel de cada tramo (medir_panel / panel_vacio)
+clips_bot/benchmark.py   `benchmark`: tiempos por etapa y comparación de modelos de Whisper
+deploy/                  systemd (service + timer 05:00 AR + alerta por Telegram), logrotate,
+                         instalar.sh y README con el orden del deploy en la Pi
 clips_bot/seleccion.py   paso 8: score por fuente, cupos por grupo con fallback, desempate Gemini
 clips_bot/telegram.py    paso 10: sendVideo (width/height/duration + miniatura), mensaje con bloques
                          copiables + recordatorio, getUpdates, comandos con user_id y
@@ -306,7 +315,11 @@ Comandos:
 - `multipov <id1> <id2> [id3]` — arma el Short multi-POV con clips YA procesados.
 - `atender-telegram` — procesa `/reclamo <id del clip>`: marca el reclamo, excluye al streamer y
   responde. `diario` lo corre al principio. El offset de getUpdates queda en la DB.
-- `telegram-chat-id` — lista los chats de getUpdates.
+- `telegram-chat-id` — lista los chats de getUpdates y los ids de usuario (TELEGRAM_ALLOWED_USERS).
+- `benchmark [--clips N] [--modelos small,base] [--limite-s S]` — mide OCR, Whisper (carga y
+  transcripción por modelo), detección de cámara y render sobre los mp4 que ya están en
+  `output/raw/`; no descarga nada. Dice si entra en el tope por clip y deja un `.srt` por modelo
+  para comparar la calidad. Es el primer paso del deploy en la Pi (ver `deploy/README.md`).
 
 Textos (paso 7): Gemini con `responseSchema`; igual se valida todo (claves exactas, título ≤ 59 sin
 # ni saltos, descripción sin hashtags ni links, 3–5 hashtags de una palabra con #Shorts, gancho del
@@ -429,6 +442,12 @@ Problemas abiertos:
   requests/día, fallback automático a `gemini-3.5-flash-lite` ante 429 por cuota, reintentos 3 → 2 y
   `textos_pendientes` para no perder el render. Fútbol: segunda señal por fracción de verde-césped
   (calibrada con 8 clips reales; agarra el caso que el marcador no veía). 122 tests OK.
+- v0.14.0 (2026-09-23) — Multi-POV: cada ángulo tiene que mostrar algo en su tramo (medido frame
+  por frame, no por promedio: el de PattyMeza daba 56 % de frames en negro y el brillo promedio
+  0,22 no lo delataba). Rescate con fit_blur → reemplazo por otro canal del momento → si no, no se
+  arma. OCR en `spa+eng` (encuentra un teléfono que `eng` solo no leía, sin falsos positivos
+  nuevos; cuesta 1,5–2×). Comando `benchmark` y carpeta `deploy/` con el servicio systemd, el timer
+  de las 05:00 AR, la alerta por Telegram y logrotate. 151 tests OK.
 - v0.13.1 (2026-09-23) — Segunda entrega real de 3 (Spreen y Vegetta rehechos con fit_blur + el
   multi-POV de PattyMeza/Hasvik/aldo_geo). `TELEGRAM_ALLOWED_USERS` cargado. Primera corrida con
   todo el filtrado nuevo: **28 descartes por `programa_terceros`**, y el filtro de césped agarró un

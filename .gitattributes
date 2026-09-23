@@ -1,0 +1,6 @@
+# Los scripts y las unidades de systemd van a la Raspberry: SIEMPRE con finales de línea LF.
+# Con CRLF, Linux falla con "bad interpreter: /usr/bin/env bash^M" y systemd no parsea la unidad.
+*.sh              text eol=lf
+*.service         text eol=lf
+*.timer           text eol=lf
+deploy/logrotate-* text eol=lf
