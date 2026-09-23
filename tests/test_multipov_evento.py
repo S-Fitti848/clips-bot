@@ -6,7 +6,8 @@ from pathlib import Path
 import pytest
 from test_twitch_candidates import helix_clip
 
-from clips_bot.candidates import Clip, Resultado, agrupar_evento, consolidar_evento, es_del_evento
+from clips_bot.candidates import (MOTIVO_FUERA_EVENTO, Clip, Resultado, agrupar_evento,
+                                  consolidar_evento, es_del_evento)
 from clips_bot.config import Evento, Render, Subtitulos
 from clips_bot.multipov import (Angulo, ass_carteles, credito_multiple, densidad_palabras,
                                 filtro_concat, ordenar, palabras_de_srt, pico_reaccion)
@@ -67,6 +68,35 @@ def test_consolidar_evento_suma_el_bonus_y_guarda_el_grupo_para_multipov():
     assert res.descartes["mismo momento (entre streamers del evento)"] == 2
     assert [c.id for c in res.grupos_evento[0]] == ["b", "a", "c"]  # 3 canales → da para multi-POV
     assert any(c.grupo == "catalogo" for c in res.candidatos)  # el resto no se toca
+
+
+def test_el_filtro_del_evento_corre_antes_del_corte_al_top_n():
+    """Visto en la simulación del 2026-09-22: los clips de otra cosa del mismo streamer se comían
+    los 8 lugares y el cupo del evento quedaba vacío, aunque más abajo había clips del evento."""
+    from test_fuentes import fijos
+    from test_twitch_candidates import Resp, cliente, helix_clip
+
+    from clips_bot.candidates import buscar_candidatos
+    from clips_bot.config import Filtros, Seleccion, Streamer
+
+    def crudo(id, views, juego_id):
+        return {**helix_clip(id, views=views, game_id=juego_id,
+                             created=(AHORA - timedelta(hours=48)).strftime("%Y-%m-%dT%H:%M:%SZ")),
+                "video_id": "", "vod_offset": None}
+
+    c, _ = cliente(fijos({
+        "/clips": Resp(200, {"data": [crudo("charla1", 900, "2"), crudo("charla2", 800, "2"),
+                                      crudo("minecraft", 50, "1")]}),
+        "/games": Resp(200, {"data": [{"id": "1", "name": "Minecraft"},
+                                      {"id": "2", "name": "Just Chatting"}]}),
+    }))
+    uno = [Streamer("uno", fuentes=("reciente",), grupo="evento", experimento=True)]
+    res = buscar_candidatos(c, uno, Filtros(n_candidatos=2), vistos=set(), ahora=AHORA,
+                            seleccion=Seleccion(), evento=EVENTO)
+
+    # los dos de Just Chatting tenían más vistas, pero no son del evento: no ocupan lugar
+    assert [x.id for x in res.candidatos] == ["minecraft"]
+    assert res.descartes[MOTIVO_FUERA_EVENTO] == 2
 
 
 def test_grupo_de_dos_canales_no_va_a_multipov():

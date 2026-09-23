@@ -248,6 +248,22 @@ def _ids(client: TwitchClient, activos: list[Streamer], res: Resultado) -> dict[
     return {s.login: ids[s.login] for s in activos if s.login in ids}
 
 
+def _motivo(clip: Clip, filtros: Filtros, vistos: set[str], ahora: datetime, evento: Evento,
+            con_deportes: bool) -> str | None:
+    """Motivo de descarte, con el filtro del evento incluido.
+
+    Los clips del grupo "evento" que no son del evento se descartan ACÁ, antes del corte al top N:
+    si no, los clips de otra cosa del mismo streamer se comen los lugares y el cupo del evento queda
+    vacío aunque haya clips buenos del evento más abajo (visto en la simulación del 2026-09-22).
+    """
+    m = motivo_descarte(clip, filtros, vistos, ahora=ahora, con_deportes=con_deportes)
+    if m:
+        return m
+    if (clip.grupo or "") == "evento" and not es_del_evento(clip, evento):
+        return MOTIVO_FUERA_EVENTO
+    return None
+
+
 def _mira_deportes(por_login: dict[str, Streamer], login: str) -> bool:
     s = por_login.get(login)
     return bool(s and s.detectar_marcador)
@@ -289,6 +305,7 @@ def buscar_kick(
     seleccion: Seleccion = Seleccion(),
     res: Resultado | None = None,
     excluidos: dict[str, str] | None = None,
+    evento: Evento = Evento(),
 ) -> Resultado:
     """Fuente reciente de Kick. Si la API interna falla, se anota en res.fallos y la corrida sigue
     con lo de Twitch (no se corta nada)."""
@@ -318,8 +335,8 @@ def buscar_kick(
 
     if not todos:
         return res
-    motivos = {c.id: motivo_descarte(c, filtros, vistos, ahora=ahora,
-                                     con_deportes=deportes_de.get(c.broadcaster_login, False))
+    motivos = {c.id: _motivo(c, filtros, vistos, ahora, evento,
+                             deportes_de.get(c.broadcaster_login, False))
                for c in todos}
     for c in todos:
         if motivos[c.id]:
@@ -350,6 +367,7 @@ def buscar_candidatos(
     seleccion: Seleccion = Seleccion(),
     res: Resultado | None = None,
     excluidos: dict[str, str] | None = None,
+    evento: Evento = Evento(),
 ) -> Resultado:
     """Fuente reciente de Twitch: filtros → un clip por momento → score → top N."""
     ahora = ahora or datetime.now(timezone.utc)
@@ -367,8 +385,8 @@ def buscar_candidatos(
         return res
 
     todos = _a_clips(client, crudos, "reciente", por_login)
-    motivos = {c.id: motivo_descarte(c, filtros, vistos, ahora=ahora,
-                                     con_deportes=_mira_deportes(por_login, c.broadcaster_login))
+    motivos = {c.id: _motivo(c, filtros, vistos, ahora, evento,
+                             _mira_deportes(por_login, c.broadcaster_login))
                for c in todos}
     for c in todos:
         m = motivos[c.id]

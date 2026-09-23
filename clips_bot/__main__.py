@@ -86,12 +86,12 @@ def buscar_todo(settings: Settings, streamers: list, incluir_sin_permiso: bool,
         excluidos = db.excluidos(conn)
         res = buscar_kick(KickClient(pausa_s=settings.kick.pausa_s), streamers, settings.filtros, vistos, settings.kick,
                           incluir_sin_permiso=incluir_sin_permiso, seleccion=settings.seleccion,
-                          excluidos=excluidos)
+                          excluidos=excluidos, evento=settings.evento)
         if any(s.plataforma == "twitch" for s in streamers):
             client = TwitchClient(*load_twitch_creds().__dict__.values())
             res = buscar_candidatos(client, streamers, settings.filtros, vistos, res=res,
                                     incluir_sin_permiso=incluir_sin_permiso, seleccion=settings.seleccion,
-                                    excluidos=excluidos)
+                                    excluidos=excluidos, evento=settings.evento)
             res = buscar_catalogo(client, streamers, settings.filtros, settings.catalogo, conn, vistos,
                                   incluir_sin_permiso=incluir_sin_permiso, res=res,
                                   guardar_cursor=guardar_cursor, excluidos=excluidos)
