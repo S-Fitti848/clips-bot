@@ -367,8 +367,11 @@ def buscar_candidatos(
         return score_reciente(c.view_count, c.clips_mismo_momento, seleccion.peso_momento)
 
     pasan.sort(key=sc, reverse=True)
-    res.candidatos = pasan[: filtros.n_candidatos]
-    res.descartes["fuera del top N"] += len(pasan) - len(res.candidatos)
+    nuevos = pasan[: filtros.n_candidatos]
+    res.descartes["fuera del top N"] += len(pasan) - len(nuevos)
+    # Se SUMAN a los que ya haya (ej. los de Kick): cada plataforma aporta su top N y después
+    # compiten por cupo en la selección. Pisar la lista dejaba a Kick afuera sin que se notara.
+    res.candidatos = sorted(res.candidatos + nuevos, key=sc, reverse=True)
     return res
 
 

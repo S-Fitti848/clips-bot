@@ -86,6 +86,26 @@ def test_buscar_kick_no_corta_la_corrida_si_la_api_falla():
     assert res.fallos and "kick/davoo" in res.fallos[0]
 
 
+def test_twitch_no_pisa_los_candidatos_de_kick():
+    """Bug de la primera corrida real: la búsqueda de Twitch reemplazaba res.candidatos y los de
+    Kick desaparecían, así que el cupo kick_reciente quedaba vacío sin motivo visible."""
+    from test_fuentes import fijos, vod
+    from test_twitch_candidates import cliente as cliente_twitch
+
+    from clips_bot.candidates import buscar_candidatos
+
+    s = FakeSession([pagina([clip_kick("k1", views=300, horas=48)])])
+    res = buscar_kick(KickClient(session=s, sleep=lambda _: None), DAVOO, Filtros(), vistos=set(), ahora=AHORA)
+    assert [c.id for c in res.candidatos] == ["k1"]
+
+    tw, _ = cliente_twitch(fijos({"/clips": Resp(200, {"data": [vod("t1", 500, horas=48, offset=1)]})}))
+    uno = [Streamer("uno", fuentes=("reciente",), experimento=True)]
+    res = buscar_candidatos(tw, uno, Filtros(), vistos=set(), ahora=AHORA, res=res)
+
+    assert sorted(c.id for c in res.candidatos) == ["k1", "t1"]  # conviven las dos plataformas
+    assert {c.plataforma for c in res.candidatos} == {"kick", "twitch"}
+
+
 def test_buscar_kick_filtra_ventana_y_no_filtra_idioma():
     s = FakeSession([pagina([
         clip_kick("viejo", horas=24 * 10),  # fuera de la ventana de 7 días
