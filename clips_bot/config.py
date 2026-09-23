@@ -105,6 +105,7 @@ class Render:
     separador_px: int = 6
     recorte_inferior_camara_px: int = 50
     zoom_sin_camara: float = 1.08
+    blur_sigma: float = 30  # fondo del layout fit_blur
     x264_preset: str = "medium"
     crf: int = 20
     maxrate_kbps: int = 5000
@@ -115,6 +116,7 @@ class Camara:
     frames_muestra: int = 20
     min_presencia: float = 0.4
     cara_grande: float = 0.12
+    margen_borde: float = 0.15  # cara a menos de esto de un borde del recorte → fit_blur
 
 
 @dataclass(frozen=True)

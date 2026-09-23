@@ -2,7 +2,7 @@ import pytest
 
 from clips_bot.config import Camara, Render, Subtitulos
 from clips_bot.download import DescargaError, parse_clip_url
-from clips_bot.layout import cara_estable, decidir_layout, recorte
+from clips_bot.layout import cara_estable, caras_estables, decidir_layout, recorte
 from clips_bot.media import parse_silencio
 from clips_bot.render import filtro
 from clips_bot.subtitles import Palabra, _t_ass, _t_srt, armar_subtitulos
@@ -49,10 +49,34 @@ def test_recorte_respeta_ratio_y_bordes():
     assert all(v % 2 == 0 for v in (c.x, c.y, c.w, c.h))
 
 
-def test_sin_caras_es_sincam():
+def test_sin_caras_es_fit_blur():
+    """Antes era un recorte central, y en los clips de juego sin cámara cortaba el chat y el HUD."""
     lay = decidir_layout(W, H, [[] for _ in range(20)], CAM, R)
-    assert lay.tipo == "sincam" and lay.camara is None
-    assert lay.principal.h == pytest.approx(H / R.zoom_sin_camara, abs=2)
+    assert lay.tipo == "fit_blur" and lay.camara is None
+
+
+def test_dos_caras_separadas_es_fit_blur():
+    """Dos personas en una mesa: cualquier recorte 9:16 agarra la pared del medio y corta a las dos."""
+    izq, der = (200, 400, 260, 260), (1450, 400, 260, 260)
+    frames = [[izq, der] for _ in range(20)]
+    caras = caras_estables(W, H, frames, CAM.min_presencia)
+    assert len(caras) == 2
+    assert decidir_layout(W, H, frames, CAM, R).tipo == "fit_blur"
+
+
+def test_una_cara_grande_pero_al_costado_es_fit_blur():
+    from clips_bot.layout import cortada_por, pegada_al_borde, recorte
+
+    # cara grande contra el borde derecho del frame: el recorte no puede centrarse mas alla del
+    # borde, asi que la cara queda al filo (es el caso de la persona sentada al costado de la mesa)
+    cara = (1620, 300, 300, 300)
+    lay = decidir_layout(W, H, [[cara] for _ in range(20)], CAM, R)
+    assert lay.tipo == "fit_blur"
+    # y una cara grande bien centrada sigue siendo fullcam
+    centrada = (860, 300, 300, 300)
+    lay = decidir_layout(W, H, [[centrada] for _ in range(20)], CAM, R)
+    assert lay.tipo == "fullcam"
+    assert not cortada_por(lay.principal, centrada) and not pegada_al_borde(lay.principal, centrada)
 
 
 def test_cara_chica_estable_es_split():
@@ -93,7 +117,7 @@ def test_caras_que_se_mueven_no_son_camara():
     frames = [[(100 + i * 80, 100 + (i % 5) * 150, 80, 80)] for i in range(20)]
     _, presencia = cara_estable(W, H, frames)
     assert presencia < CAM.min_presencia
-    assert decidir_layout(W, H, frames, CAM, R).tipo == "sincam"
+    assert decidir_layout(W, H, frames, CAM, R).tipo == "fit_blur"
 
 
 def test_filtro_ffmpeg():
@@ -104,7 +128,18 @@ def test_filtro_ffmpeg():
     assert 768 + 1152 == R.alto  # llenan los 1920 sin franjas
     assert f.endswith("ass=subs.ass[v]")
     f = filtro(decidir_layout(W, H, [], CAM, R), R, con_subs=False)
-    assert "scale=1080:1920" in f and "ass=" not in f
+    assert "ass=" not in f
+
+
+def test_filtro_fit_blur_no_recorta_el_video():
+    from clips_bot.layout import layout_fit_blur
+
+    f = filtro(layout_fit_blur(W, H, R), R, con_subs=True)
+    frente = f.split("[fg]")[1].split("[frente]")[0]
+    assert "crop" not in frente                       # el 16:9 entra entero
+    assert f"scale={R.ancho}:-2" in frente            # 1080 de ancho, alto por proporción
+    assert f"gblur=sigma={R.blur_sigma}" in f         # y el fondo es el mismo video, borroso
+    assert "overlay=0:(H-h)/2" in f and f.endswith("ass=subs.ass[v]")
 
 
 # ---- subtítulos ------------------------------------------------------------------

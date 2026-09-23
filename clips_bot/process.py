@@ -56,6 +56,7 @@ class Resultado:
     transcripcion: str = ""
     layout: str = ""
     presencia_cara: float = 0.0
+    rerender_fit_blur: str = ""  # motivo, si el chequeo post-render detectó una cara cortada
     subtitulos_quemados: bool = True
     textos: dict | None = None
     textos_pendientes: bool = False  # el render está hecho; `seleccionar` reintenta los textos
@@ -204,6 +205,20 @@ def procesar(url: str, cfg: Settings, streamers: list[Streamer], forzar: bool = 
     salida = READY_DIR / f"{d.clip_id}.mp4"
     with crono.etapa("render 9:16" + (" + subtítulos" if quemar else "")):
         renderizar(d.path, salida, layout, cfg.render, work if quemar else None)
+
+    # Chequeo post-render: si el recorte partió una cara, se rehace con fit_blur (que no recorta).
+    # Atrapa lo que la decisión previa no vio, ej. la persona que se corre a un costado a mitad del clip.
+    if layout.tipo != "fit_blur":
+        with crono.etapa("chequeo de caras cortadas"):
+            cortada, detalle = lay.cara_cortada_en_render(salida)
+        if cortada:
+            avisar(f"  ⚠ {detalle} → re-render con fit_blur")
+            res.rerender_fit_blur = detalle
+            layout = lay.layout_fit_blur(W, H, cfg.render, layout.presencia, layout.cara)
+            res.layout = layout.tipo
+            with crono.etapa("re-render fit_blur"):
+                renderizar(d.path, salida, layout, cfg.render, work if quemar else None)
+
     shutil.copyfile(work / "subs.srt", READY_DIR / f"{d.clip_id}.srt")
     res.salida = str(salida)
 

@@ -94,7 +94,8 @@ render:
   alto_camara: 768           # layout split: cámara arriba 40 % (1080x768), juego abajo 60 % (1080x1152)
   separador_px: 6            # línea negra entre cámara y juego (0 = sin línea)
   recorte_inferior_camara_px: 50  # px del video original que se sacan del pie del cuadro de cámara (UI del juego)
-  zoom_sin_camara: 1.08      # layout sin cámara: crop central 9:16 con este zoom
+  zoom_sin_camara: 1.08      # (ya no se usa: el recorte sin cara pasó a ser fit_blur)
+  blur_sigma: 30             # fondo borroso del layout fit_blur
   x264_preset: medium        # en la Pi conviene veryfast
   crf: 20
   maxrate_kbps: 5000         # tope: 59 s × 5 Mbps ≈ 38 MB < 50 MB (límite de la Bot API de Telegram)
@@ -104,6 +105,7 @@ camara:
   frames_muestra: 20
   min_presencia: 0.4         # fracción de frames con una cara en el mismo lugar → hay cámara
   cara_grande: 0.12          # ancho de cara / ancho de frame ≥ esto → cámara a pantalla completa
+  margen_borde: 0.15         # si la cara queda a menos de esto de un borde del recorte → fit_blur
 
 # §3 paso 6: subtítulos.
 subtitulos:

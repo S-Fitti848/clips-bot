@@ -1,4 +1,14 @@
-"""§3 pasos 5–6: armar el 9:16 y quemar subtítulos en una sola pasada de ffmpeg."""
+"""§3 pasos 5–6: armar el 9:16 y quemar subtítulos en una sola pasada de ffmpeg.
+
+Tres layouts (los elige `layout.decidir_layout`):
+  split     facecam clara: cámara arriba, juego abajo. Recorta, pero recorta bien porque sabe dónde
+            está cada cosa.
+  fullcam   una sola cara grande y centrada: recorte 9:16 centrado en la cara.
+  fit_blur  todo lo demás. El 16:9 entero, escalado a 1080 de ancho y centrado, sobre el mismo video
+            ampliado y borroso llenando el 9:16. No recorta NADA: es lo único seguro cuando hay dos
+            personas separadas, o cuando lo importante está en los bordes (chat, HUD, marcador).
+            Los subtítulos quedan en la franja de abajo, fuera del video.
+"""
 
 from __future__ import annotations
 
@@ -26,6 +36,16 @@ def filtro(layout: Layout, render: Render, con_subs: bool) -> str:
             f"[c]{layout.camara.ffmpeg_crop()},{escalar.format(w=W, h=hc - sep)}{pad}[cam];"
             f"[g]{layout.principal.ffmpeg_crop()},{escalar.format(w=W, h=H - hc)}[juego];"
             f"[cam][juego]vstack=inputs=2,{final}[v]"
+        )
+    if layout.tipo == "fit_blur":
+        # Fondo: el mismo video agrandado hasta tapar los 1080x1920 y desenfocado.
+        # Frente: el 16:9 entero a 1080 de ancho, centrado. No se recorta nada.
+        return (
+            "[0:v]split=2[bg][fg];"
+            f"[bg]scale={W}:{H}:force_original_aspect_ratio=increase,crop={W}:{H},"
+            f"gblur=sigma={render.blur_sigma}[fondo];"
+            f"[fg]scale={W}:-2:flags=lanczos,setsar=1[frente];"
+            f"[fondo][frente]overlay=0:(H-h)/2,{final}[v]"
         )
     return f"[0:v]{layout.principal.ffmpeg_crop()},{escalar.format(w=W, h=H)},{final}[v]"
 
