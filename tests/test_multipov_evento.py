@@ -223,3 +223,96 @@ def test_carteles_duran_el_tramo_de_cada_streamer(tmp_path: Path):
 def test_credito_lista_a_todos():
     c = credito_multiple([("Uno", "twitch.tv/uno"), ("Dos", "kick.com/dos"), ("Tres", "twitch.tv/tres")])
     assert c.count("·") == 3 and "kick.com/dos" in c and c.startswith("Clips de:")
+
+
+# ---- panel con contenido (§3 7b) -------------------------------------------------
+
+
+def test_panel_vacio_cuenta_frames_y_no_promedios():
+    """PattyMeza 2026-09-23: 97-99 % negro los primeros 5 de 8 s y después se iluminaba. El brillo
+    promedio daba 0,22 (nada raro); contando frames da 56 % vacíos."""
+    from clips_bot.config import MultiPov
+    from clips_bot.multipov import Contenido, panel_vacio
+
+    cfg = MultiPov()
+    assert panel_vacio(Contenido(vacios=0.56, brillo=0.221, frames=9), cfg.frames_vacios_max)
+    # los dos peores clips reales ya renderizados: un corte a negro puntual no descalifica
+    assert not panel_vacio(Contenido(vacios=0.22, frames=9), cfg.frames_vacios_max)
+    assert not panel_vacio(Contenido(vacios=0.11, frames=9), cfg.frames_vacios_max)
+    assert not panel_vacio(Contenido(vacios=0.0, frames=9), cfg.frames_vacios_max)
+    # sin frames leídos no se decide nada (video ilegible): no se descarta por las dudas
+    assert not panel_vacio(Contenido(vacios=1.0, frames=0), cfg.frames_vacios_max)
+
+
+def _angulo(clip_id, vistas, tmp_path):
+    from clips_bot.multipov import Angulo
+
+    v = tmp_path / f"{clip_id}.mp4"
+    v.write_bytes(b"x")
+    return Angulo(clip_id, clip_id, v, vistas, inicio=0.0, fin=8.0)
+
+
+def test_el_angulo_vacio_se_rescata_con_fit_blur(tmp_path, monkeypatch):
+    from clips_bot import multipov
+    from clips_bot.__main__ import _angulos_con_contenido
+    from clips_bot.config import load_settings
+
+    cfg = load_settings()
+    a, b, c = (_angulo("a", 300, tmp_path), _angulo("b", 200, tmp_path), _angulo("c", 100, tmp_path))
+    por_id = {x.clip_id: {"clip_id": x.clip_id, "layout": "split", "subtitulos_quemados": True}
+              for x in (a, b, c)}
+
+    # "b" está en negro en el split; con fit_blur (y0 = 0) se ve bien
+    def medir(video, ini, fin, y0, y1, *args):
+        vacio = video.stem.startswith("b") and y0 > 0
+        return multipov.Contenido(vacios=0.9 if vacio else 0.0, frames=10)
+
+    monkeypatch.setattr(multipov, "medir_panel", medir)
+    monkeypatch.setattr("clips_bot.layout.detectar_caras", lambda *a, **k: (1920, 1080, [], []))
+    hechos = []
+    monkeypatch.setattr("clips_bot.render.renderizar",
+                        lambda e, s, l, r, d: hechos.append((s.name, l.tipo)) or s.write_bytes(b"y"))
+
+    elegidos = _angulos_con_contenido([a, b, c], por_id, cfg, 3, avisar=lambda *_: None)
+    assert [x.clip_id for x in elegidos] == ["a", "b", "c"]
+    assert hechos == [("fitblur_b.mp4", "fit_blur")]         # solo se rehizo el que hacía falta
+    assert elegidos[1].video.name == "fitblur_b.mp4"         # y el tramo usa esa versión
+
+
+def test_si_ni_con_fit_blur_hay_algo_se_reemplaza(tmp_path, monkeypatch):
+    """Es el caso real: la pantalla de PattyMeza estaba en negro, no solo el panel de abajo."""
+    from clips_bot import multipov
+    from clips_bot.__main__ import _angulos_con_contenido
+    from clips_bot.config import load_settings
+
+    cfg = load_settings()
+    a, b, c, d = (_angulo("a", 300, tmp_path), _angulo("b", 200, tmp_path),
+                  _angulo("c", 100, tmp_path), _angulo("d", 50, tmp_path))
+    por_id = {x.clip_id: {"clip_id": x.clip_id, "layout": "split", "subtitulos_quemados": True}
+              for x in (a, b, c, d)}
+    monkeypatch.setattr(multipov, "medir_panel",
+                        lambda video, *args: multipov.Contenido(
+                            vacios=0.9 if video.stem.endswith("b") else 0.0, frames=10))  # "b" y su fitblur_b
+    monkeypatch.setattr("clips_bot.layout.detectar_caras", lambda *a, **k: (1920, 1080, [], []))
+    monkeypatch.setattr("clips_bot.render.renderizar", lambda e, s, l, r, dd: s.write_bytes(b"y"))
+
+    elegidos = _angulos_con_contenido([a, b, c, d], por_id, cfg, 3, avisar=lambda *_: None)
+    assert [x.clip_id for x in elegidos] == ["a", "c", "d"]  # "b" sale, entra el siguiente del momento
+
+
+def test_sin_reemplazo_no_se_arma_el_multipov(tmp_path, monkeypatch):
+    from clips_bot import multipov
+    from clips_bot.__main__ import _angulos_con_contenido
+    from clips_bot.config import load_settings
+
+    cfg = load_settings()
+    a, b, c = (_angulo("a", 300, tmp_path), _angulo("b", 200, tmp_path), _angulo("c", 100, tmp_path))
+    # todos con fit_blur: no hay panel que sacar, así que no hay rescate posible
+    por_id = {x.clip_id: {"clip_id": x.clip_id, "layout": "fit_blur"} for x in (a, b, c)}
+    monkeypatch.setattr(multipov, "medir_panel",
+                        lambda video, *args: multipov.Contenido(
+                            vacios=0.9 if video.stem == "c" else 0.0, frames=10))
+
+    elegidos = _angulos_con_contenido([a, b, c], por_id, cfg, 3, avisar=lambda *_: None)
+    assert [x.clip_id for x in elegidos] == ["a", "b"]
+    assert len(elegidos) < cfg.multipov.min_angulos  # el que llama no arma nada

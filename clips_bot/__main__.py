@@ -386,30 +386,48 @@ def procesar_multipov_del_dia(settings: Settings, streamers: list, res: Resultad
     por_canal: dict[str, object] = {}
     for c in sorted(grupo, key=lambda c: c.view_count, reverse=True):
         por_canal.setdefault(c.broadcaster_login, c)  # un ángulo por canal
-    angulos = list(por_canal.values())[:3]
-    if len(angulos) < 3:
+    candidatos = list(por_canal.values())
+    n = settings.multipov.max_angulos
+    if len(candidatos) < n:
         return 0
 
-    print(f"\n=== Multi-POV: {len(angulos)} canales clipearon el mismo momento")
-    ids, procesados = [], 0
-    for c in angulos:
+    print(f"\n=== Multi-POV: {len(candidatos)} canales clipearon el mismo momento")
+    ids, procesados, i = [], 0, 0
+
+    def procesar_siguiente() -> bool:
+        """Procesa el próximo candidato del momento. True si quedó usable."""
+        nonlocal procesados, i
+        c = candidatos[i]
+        i += 1
         print(f"\n--- [multipov] {c.url}")
         try:
             r = procesar(c.url, settings, streamers, gemini=gemini, fuente="reciente",
                          clips_mismo_momento=c.clips_mismo_momento, grupo="evento")
         except (DescargaError, MediaError) as e:
             print(f"ERROR: {e}", file=sys.stderr)
-            continue
+            return False
         procesados += 1
         if r.descartado:
             print(f"  → DESCARTADO: {r.descartado}")
-        else:
-            ids.append(r.clip_id)
-    if len(ids) < 3:
+            return False
+        ids.append(r.clip_id)
+        return True
+
+    while len(ids) < n and i < len(candidatos) and procesados < tope:
+        procesar_siguiente()
+    if len(ids) < n:
         print(f"  quedaron {len(ids)} ángulos usables: no alcanza para el multi-POV")
         return procesados
 
     meta = armar_multipov(settings, ids, gemini)
+    # Si algún ángulo no mostraba nada en su tramo, se busca reemplazo en el mismo momento.
+    # Se prueban hasta 2 canales más: cada uno cuesta una descarga + Whisper + OCR + render.
+    for _ in range(2):
+        if meta or i >= len(candidatos) or procesados >= tope:
+            break
+        print("\n  busco un ángulo de reemplazo en el mismo momento")
+        if procesar_siguiente():
+            meta = armar_multipov(settings, ids, gemini)
     if meta:
         conn = db.connect(DB_PATH)
         try:
@@ -418,6 +436,57 @@ def procesar_multipov_del_dia(settings: Settings, streamers: list, res: Resultad
         finally:
             conn.close()
     return procesados
+
+
+def _angulos_con_contenido(candidatos: list, por_id: dict, settings: Settings, max_angulos: int,
+                           avisar=print) -> list:
+    """Se queda con los ángulos cuyo tramo MUESTRA algo, probando de más a menos visto.
+
+    Un ángulo cuyo panel de juego es un rectángulo negro no aporta ningún POV (PattyMeza,
+    2026-09-23). El orden de rescate es el de §3 7b: primero rehacerlo con fit_blur (que muestra el
+    16:9 entero, sin panel), y si tampoco alcanza, reemplazarlo por el siguiente ángulo del mismo
+    momento. Si no se llega al mínimo, el que llama no arma nada.
+    """
+    from dataclasses import replace as _replace
+    from . import layout as lay, multipov
+    from .process import RAW_DIR, WORK_DIR
+    from .render import renderizar
+
+    cfg, R = settings.multipov, settings.render
+    elegidos = []
+    for a in candidatos:
+        if len(elegidos) >= max_angulos:
+            break
+        meta = por_id[a.clip_id]
+        es_split = meta.get("layout") == "split"
+        y0 = R.alto_camara if es_split else 0
+        c = multipov.medir_panel(a.video, a.inicio, a.fin, y0, R.alto, cfg.frames_muestra,
+                                 cfg.luma_negro, cfg.pixeles_negros_min)
+        if not multipov.panel_vacio(c, cfg.frames_vacios_max):
+            elegidos.append(a)
+            continue
+        avisar(f"  {a.streamer}: {c.vacios:.0%} del tramo en negro ({meta.get('layout')})")
+        if not es_split:
+            avisar(f"    ya no tiene panel que sacar: lo dejo afuera")
+            continue
+        # Rescate 1: rehacer ese clip con fit_blur (el 16:9 entero) y volver a medir el frame completo.
+        alterno = WORK_DIR / f"fitblur_{a.clip_id}.mp4"
+        try:
+            W, H, frames, _ = lay.detectar_caras(RAW_DIR / f"{a.clip_id}.mp4", settings.camara.frames_muestra)
+            subs = WORK_DIR / a.clip_id
+            renderizar(RAW_DIR / f"{a.clip_id}.mp4", alterno, lay.layout_fit_blur(W, H, R), R,
+                       subs if (subs / "subs.ass").exists() and meta.get("subtitulos_quemados", True) else None)
+        except (OSError, RuntimeError) as e:
+            avisar(f"    no pude rehacerlo con fit_blur ({e}): lo dejo afuera")
+            continue
+        c2 = multipov.medir_panel(alterno, a.inicio, a.fin, 0, R.alto, cfg.frames_muestra,
+                                  cfg.luma_negro, cfg.pixeles_negros_min)
+        if multipov.panel_vacio(c2, cfg.frames_vacios_max):
+            avisar(f"    con fit_blur sigue {c2.vacios:.0%} en negro: lo reemplazo")
+            continue
+        avisar(f"    rehecho con fit_blur: {c2.vacios:.0%} en negro")
+        elegidos.append(_replace(a, video=alterno))
+    return elegidos
 
 
 def armar_multipov(settings: Settings, clip_ids: list[str], gemini: GeminiClient | None,
@@ -442,8 +511,17 @@ def armar_multipov(settings: Settings, clip_ids: list[str], gemini: GeminiClient
         avisar("  hacen falta al menos 2 ángulos procesados")
         return None
 
-    angulos = multipov.ordenar(multipov.preparar(metas, READY_DIR))
+    cfg_mp = settings.multipov
+    minimo = min(len(metas), cfg_mp.min_angulos)
     por_id = {m["clip_id"]: m for m in metas}
+    candidatos = multipov.preparar(metas, READY_DIR, cfg_mp.margen_s)
+    candidatos.sort(key=lambda a: a.vistas, reverse=True)  # se prueban de más a menos visto
+    angulos = _angulos_con_contenido(candidatos, por_id, settings, cfg_mp.max_angulos, avisar)
+    if len(angulos) < minimo:
+        avisar(f"  solo {len(angulos)} de {len(candidatos)} ángulos muestran algo en su tramo "
+               f"(hacen falta {minimo}): no armo el multi-POV")
+        return None
+    angulos = sorted(angulos, key=lambda a: a.vistas)  # de menos a más visto: el final es el fuerte
     for a in angulos:
         avisar(f"  {a.streamer:<16} vistas {a.vistas:>6,}  ventana {a.inicio:.1f}–{a.fin:.1f}s")
 

@@ -164,11 +164,23 @@ class MarcadorDeportivo:
 
 
 @dataclass(frozen=True)
+class MultiPov:
+    """§3 paso 7b. `margen_s`: mitad de la ventana de cada ángulo alrededor de su pico."""
+    margen_s: float = 4.0
+    max_angulos: int = 3
+    min_angulos: int = 3
+    frames_muestra: int = 10
+    frames_vacios_max: float = 0.34   # más de un tercio del tramo en negro → el ángulo no sirve
+    luma_negro: float = 0.08          # un píxel por debajo de esto cuenta como negro
+    pixeles_negros_min: float = 0.90  # y un frame es "vacío" con esta fracción de píxeles negros
+
+
+@dataclass(frozen=True)
 class PantallaCfg:
     """OCR sobre frames muestreados: datos personales o pantallas de pago (§ pantalla.py)."""
     activo: bool = True
     frames_muestra: int = 8
-    idioma: str = "eng"       # `spa` solo si está instalado el modelo; con eng alcanza
+    idioma: str = "spa+eng"   # si `spa` no está instalado, tesseract falla y la capa se saltea
     buscar_telefonos: bool = True
     palabras_pago: tuple[str, ...] = ()
     # Un teléfono o una tarjeta solo cuentan si en el mismo frame hay una de estas palabras.
@@ -219,6 +231,7 @@ class Settings:
     filtro_audio: FiltroAudio = FiltroAudio()
     marcador: MarcadorDeportivo = MarcadorDeportivo()
     pantalla: PantallaCfg = PantallaCfg()
+    multipov: MultiPov = MultiPov()
     textos: Textos = Textos()
     seleccion: Seleccion = Seleccion()
     publicacion: Publicacion = Publicacion()
@@ -285,6 +298,7 @@ def load_settings(path: Path = CONFIG_DIR / "settings.yaml") -> Settings:
         filtro_audio=_seccion(FiltroAudio, raw, "filtro_audio", path),
         marcador=_seccion(MarcadorDeportivo, raw, "marcador", path),
         pantalla=_seccion(PantallaCfg, raw, "pantalla", path),
+        multipov=_seccion(MultiPov, raw, "multipov", path),
         textos=_seccion(Textos, raw, "textos", path),
         seleccion=seleccion,
         publicacion=_seccion(Publicacion, raw, "publicacion", path),

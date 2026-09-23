@@ -154,6 +154,21 @@ marcador:
   cesped_min: 0.45           # 45 % del frame en verde-césped = probable cancha
   cesped_frames_min: 2       # y que pase en al menos 2 de los frames muestreados
 
+# §3 paso 7b: Short multi-POV (el mismo momento visto por varios streamers, uno atrás del otro).
+# Cada ángulo tiene que MOSTRAR algo en su tramo: si el panel es casi todo negro, ese ángulo se
+# rehace con fit_blur (el 16:9 entero) y, si tampoco alcanza, se reemplaza por otro ángulo del
+# mismo momento. Si no quedan min_angulos, no se arma el multi-POV.
+# Calibrado 2026-09-23: el tramo de PattyMeza daba 56 % de frames vacíos; de los 13 clips split
+# ya renderizados, 11 dan 0 % y los dos peores 22 % y 11 % (un corte a negro puntual).
+multipov:
+  margen_s: 4.0
+  max_angulos: 3
+  min_angulos: 3
+  frames_muestra: 10
+  frames_vacios_max: 0.34
+  luma_negro: 0.08
+  pixeles_negros_min: 0.90
+
 # Datos personales en pantalla (OCR con tesseract, sin LLM). Ver clips_bot/pantalla.py.
 # Existe porque el 2026-09-23 casi se publica un clip cuya categoría decía Minecraft pero que era
 # el navegador del streamer en un checkout, con nombre, mail y dirección de un tercero.
@@ -162,7 +177,13 @@ marcador:
 pantalla:
   activo: true
   frames_muestra: 8
-  idioma: eng                # `spa` solo si está instalado el modelo; con eng alcanza (sin tildes)
+  # spa+eng: medido 2026-09-23 sobre 3 clips, spa+eng con el modelo estándar encuentra en el
+  # checkout un teléfono que eng solo no leía, sin sumar falsos positivos. Cuesta ~1,5-2x el tiempo
+  # (5,5 s → 10,6 s en el peor clip). El modelo va aparte del binario:
+  #   Windows: spa.traineddata de github.com/tesseract-ocr/tessdata en la carpeta tessdata
+  #   Pi/Debian: sudo apt install tesseract-ocr-spa
+  # Si `spa` no está instalado, tesseract falla y la capa se saltea sola: poné `eng` y listo.
+  idioma: spa+eng
   buscar_telefonos: true     # 9+ dígitos seguidos; apagalo si tira falsos positivos con HUDs
   # Los números (teléfono, tarjeta) solo cuentan si en el mismo frame hay una de estas palabras.
   # Medido 2026-09-23 sobre 26 clips: el regex de teléfono solo daba 3 falsos positivos (el contador

@@ -24,6 +24,7 @@ from .subtitles import _escapar_ass, _t_ass
 log = logging.getLogger(__name__)
 
 MAX_ANGULOS = 3
+MIN_ANGULOS = 3  # la política (§3 7b) es armarlo cuando 3+ canales clipearon el mismo momento
 SR = 8000  # audio a 8 kHz mono alcanza para medir volumen
 VENTANA_RMS_S = 0.5
 PESO_VOLUMEN = 0.6  # el resto lo aporta la densidad de palabras
@@ -109,6 +110,69 @@ def preparar(metas: list[dict], ready: Path, margen_s: float = 4.0) -> list[Angu
                               inicio=round(max(centro - margen_s, 0.0), 2),
                               fin=round(min(centro + margen_s, duracion), 2)))
     return angulos
+
+
+@dataclass(frozen=True)
+class Contenido:
+    """Qué tan "vivo" está el panel de un ángulo durante su tramo."""
+    vacios: float = 0.0    # fracción de frames del tramo cuyo panel es casi todo negro
+    brillo: float = 0.0    # luma media 0-1 (informativo)
+    detalle: float = 0.0   # desvío de la luma dentro del frame (informativo)
+    frames: int = 0
+
+    def a_dict(self) -> dict:
+        return {"vacios": round(self.vacios, 3), "brillo": round(self.brillo, 3),
+                "detalle": round(self.detalle, 3), "frames": self.frames}
+
+
+def medir_panel(video: Path, inicio: float, fin: float, y0: int, y1: int,
+                n_frames: int = 10, luma_negro: float = 0.08,
+                pixeles_negros_min: float = 0.90) -> Contenido:
+    """Cuánto del tramo de un ángulo es un rectángulo negro (filas y0..y1 del 9:16 renderizado).
+
+    PattyMeza, 2026-09-23: su pantalla estaba en negro, así que el 60 % de abajo del Short era un
+    rectángulo negro — y encima era el ángulo final, el que más pesa. Un panel sin nada no aporta
+    ningún POV: o se muestra el 16:9 entero (fit_blur) o el ángulo no va.
+
+    Se cuenta FRAME POR FRAME y no con el promedio del tramo: en ese caso el panel estaba 97-99 %
+    negro durante los primeros 5 de los 8 s y después se iluminaba, y el promedio daba un brillo
+    de 0,22 que no parecía nada raro.
+    """
+    import cv2
+
+    cap = cv2.VideoCapture(str(video))
+    if not cap.isOpened():
+        log.warning("No puedo abrir %s para medir el panel", video)
+        return Contenido()
+    fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
+    brillos, detalles, vacios = [], [], 0
+    try:
+        for i in range(n_frames):
+            t = inicio + (fin - inicio) * (i / max(n_frames - 1, 1))
+            cap.set(cv2.CAP_PROP_POS_FRAMES, int(t * fps))
+            ok, img = cap.read()
+            if not ok:
+                continue
+            panel = cv2.cvtColor(img[y0:y1], cv2.COLOR_BGR2GRAY).astype("float32") / 255.0
+            brillos.append(float(panel.mean()))
+            detalles.append(float(panel.std()))
+            if float((panel < luma_negro).mean()) >= pixeles_negros_min:
+                vacios += 1
+    finally:
+        cap.release()
+    if not brillos:
+        return Contenido()
+    return Contenido(vacios=vacios / len(brillos), brillo=sum(brillos) / len(brillos),
+                     detalle=sum(detalles) / len(detalles), frames=len(brillos))
+
+
+def panel_vacio(c: Contenido, frames_vacios_max: float) -> bool:
+    """True si buena parte del tramo es un rectángulo negro.
+
+    Calibrado 2026-09-23: el tramo de PattyMeza daba 56 % de frames vacíos; de los 13 clips split
+    de ready/ medidos enteros, 11 dan 0 % y los dos peores 22 % y 11 % (un corte a negro puntual).
+    """
+    return c.frames > 0 and c.vacios > frames_vacios_max
 
 
 def _normalizar(valores: list[float]) -> list[float]:
