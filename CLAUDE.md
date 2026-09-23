@@ -429,6 +429,14 @@ Problemas abiertos:
   requests/día, fallback automático a `gemini-3.5-flash-lite` ante 429 por cuota, reintentos 3 → 2 y
   `textos_pendientes` para no perder el render. Fútbol: segunda señal por fracción de verde-césped
   (calibrada con 8 clips reales; agarra el caso que el marcador no veía). 122 tests OK.
+- v0.13.1 (2026-09-23) — Segunda entrega real de 3 (Spreen y Vegetta rehechos con fit_blur + el
+  multi-POV de PattyMeza/Hasvik/aldo_geo). `TELEGRAM_ALLOWED_USERS` cargado. Primera corrida con
+  todo el filtrado nuevo: **28 descartes por `programa_terceros`**, y el filtro de césped agarró un
+  clip de fútbol de coker (55 % en 4 de 12 frames). La capa de pantalla corrió en los 5 clips
+  procesados (3–11 s cada uno) sin ningún falso positivo. Gemini se quedó sin cuota del modelo
+  principal y siguió con el fallback, que además devolvió 503 varias veces: el camino de respaldo
+  funcionó. Los clips que ya estaban en `ready/` no pasaron por el filtro nuevo, así que se
+  revisaron a mano: salió uno de Davoo (stream "…ANALIZAMOS").
 - v0.13.0 (2026-09-23) — `layout_forzado` por streamer (coker: `fit_blur`, hace podcast
   multicámara) y regla automática: si en la zona del "juego" hay caras, no hay juego → fit_blur
   (calibrada sobre los 11 clips que daban split; hizo falta un mínimo de ancho de cara porque Haar
