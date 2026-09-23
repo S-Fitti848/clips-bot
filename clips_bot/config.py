@@ -167,7 +167,7 @@ FUENTES = ("reciente", "catalogo")
 class Seleccion:
     mezcla: dict = field(default_factory=lambda: {"kick_reciente": 1, "evento": 1, "catalogo": 1})
     peso_momento: float = 0.5
-    max_por_streamer: int = 2
+    max_por_streamer: int = 1
     empate_pct: dict = field(default_factory=lambda: {"reciente": 0.03, "catalogo": 0.10})
 
     @property

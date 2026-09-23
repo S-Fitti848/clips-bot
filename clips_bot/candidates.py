@@ -41,9 +41,13 @@ class Clip:
     video_id: str = ""
     stream_title: str = ""
     fuente: str = "reciente"
-    clips_mismo_momento: int = 1  # clips distintos del mismo momento (este incluido)
+    # Creadores DISTINTOS que clipearon el mismo momento (este incluido). Si el mismo usuario
+    # clipeó tres veces la misma muerte, cuenta 1: la señal es cuánta gente lo consideró clipeable.
+    clips_mismo_momento: int = 1
     plataforma: str = "twitch"
     grupo: str = ""  # cupo en el que compite (seleccion.mezcla)
+    creator_id: str = ""  # quién hizo el clip (no el streamer)
+    creadores: tuple[str, ...] = ()  # creadores DISTINTOS del mismo momento
 
     @classmethod
     def from_helix(cls, d: dict, login: str, game_name: str = "", stream_title: str = "",
@@ -61,6 +65,7 @@ class Clip:
             game_id=d.get("game_id") or "",
             game_name=game_name,
             vod_offset=d.get("vod_offset"),
+            creator_id=str(d.get("creator_id") or d.get("creator_name") or ""),
             video_id=d.get("video_id") or "",
             stream_title=stream_title,
             fuente=fuente,
@@ -141,8 +146,9 @@ def consolidar_evento(res: "Resultado", cfg: Evento, peso_momento: float) -> "Re
 
     elegidos = []
     for grupo in agrupar_evento(del_evento, cfg.ventana_entre_streamers_s):
-        total = sum(c.clips_mismo_momento for c in grupo)
-        elegidos.append(replace(grupo[0], clips_mismo_momento=total))
+        # Unión de los creadores de cada clip del grupo: el mismo usuario en dos canales cuenta 1.
+        creadores = tuple(sorted({x for c in grupo for x in (c.creadores or (c.creator_id or c.id,))}))
+        elegidos.append(replace(grupo[0], clips_mismo_momento=len(creadores), creadores=creadores))
         res.descartes["mismo momento (entre streamers del evento)"] += len(grupo) - 1
         if len({c.broadcaster_login for c in grupo}) >= 3:
             # 3+ canales clipearon el mismo momento: da para un Short multi-POV (§ multipov)
@@ -281,15 +287,22 @@ def _a_clips(client: TwitchClient, crudos: list[tuple[str, dict]], fuente: str,
     ]
 
 
+def creadores_de(clips: list[Clip]) -> tuple[str, ...]:
+    """Creadores distintos de un grupo de clips. Sin creator_id se usa el id del clip (cuenta como
+    uno propio), así un dato faltante no infla ni desinfla el bonus."""
+    return tuple(sorted({c.creator_id or f"clip:{c.id}" for c in clips}))
+
+
 def _elegir_por_momento(todos: list[Clip], motivos: dict[str, str | None], filtros: Filtros,
                         res: Resultado, descartes: Counter) -> list[Clip]:
-    """Un clip por momento: el más visto que pasó los filtros. El conteo incluye a todos los del
-    grupo (pasen o no): todos son gente que clipeó ese momento."""
+    """Un clip por momento: el más visto que pasó los filtros. El bonus cuenta a los CREADORES
+    distintos del grupo (pasen o no sus clips): el mismo usuario clipeando tres veces cuenta 1."""
     pasan: list[Clip] = []
     for grupo in agrupar_momentos(todos, filtros.ventana_momento_s):
         ok = [c for c in grupo if not motivos[c.id]]
         if ok:
-            pasan.append(replace(ok[0], clips_mismo_momento=len(grupo)))
+            creadores = creadores_de(grupo)
+            pasan.append(replace(ok[0], clips_mismo_momento=len(creadores), creadores=creadores))
             descartes["mismo momento"] += len(ok) - 1
     return pasan
 

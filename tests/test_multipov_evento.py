@@ -41,6 +41,37 @@ def test_es_del_evento(juego, titulo, horas, esperado):
     assert es_del_evento(clip("x", "uno", juego=juego, titulo=titulo, horas=horas), EVENTO) is esperado
 
 
+def test_el_bonus_cuenta_creadores_distintos_no_clips():
+    """Si el mismo usuario clipea tres veces la misma muerte, cuenta 1: la señal es cuánta gente
+    distinta lo consideró clipeable."""
+    from clips_bot.candidates import creadores_de
+
+    def con_creador(id, creador):
+        c = clip(id, "uno")
+        return type(c)(**{**c.__dict__, "creator_id": creador})
+
+    tres_del_mismo = [con_creador("a", "u1"), con_creador("b", "u1"), con_creador("c", "u1")]
+    assert creadores_de(tres_del_mismo) == ("u1",)
+    mezcla = [con_creador("a", "u1"), con_creador("b", "u2"), con_creador("c", "u1")]
+    assert creadores_de(mezcla) == ("u1", "u2")
+    # sin creator_id cada clip cuenta como propio, para no inflar ni desinflar el bonus
+    assert len(creadores_de([clip("x", "uno"), clip("y", "uno")])) == 2
+
+
+def test_el_evento_une_creadores_entre_canales():
+    """Dos canales clipeados por el mismo usuario cuentan 1; tres usuarios distintos, 3."""
+    res = Resultado()
+    base = clip("a", "uno", views=50, horas=48.0)
+    def con(id, login, creadores, views):
+        c = clip(id, login, views=views, horas=48.0)
+        return type(c)(**{**c.__dict__, "creadores": creadores})
+    res.candidatos = [con("a", "uno", ("u1",), 50), con("b", "dos", ("u1",), 90),
+                      con("c", "tres", ("u2", "u3"), 10)]
+    res = consolidar_evento(res, EVENTO, peso_momento=0.5)
+    elegido = [c for c in res.candidatos if c.grupo == "evento"][0]
+    assert elegido.creadores == ("u1", "u2", "u3") and elegido.clips_mismo_momento == 3
+
+
 def test_agrupar_evento_por_hora_real_entre_streamers():
     # la misma muerte clipeada por 3 canales con 1 min de diferencia
     a = clip("a", "uno", views=50, horas=48.0)

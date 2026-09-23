@@ -225,14 +225,26 @@ def test_sin_evento_el_cupo_va_al_catalogo():
     opciones = [
         op("k1", "davoo", 500, "kick_reciente"),
         op("c1", "vegetta777", 9000, "catalogo", "catalogo"),
-        op("c2", "vegetta777", 8000, "catalogo", "catalogo"),
-        op("c3", "otro", 7000, "catalogo", "catalogo"),
+        op("c2", "otro", 8000, "catalogo", "catalogo"),
+        op("c3", "tercero", 7000, "catalogo", "catalogo"),
     ]
     assert [o.clip_id for o in seleccionar(opciones, MEZCLA, AHORA)] == ["k1", "c1", "c2"]
 
 
+def test_un_solo_clip_por_streamer_en_todo_el_envio():
+    """Tope 1 por streamer (2026-09-22): si no, un día entero podía salir del mismo canal."""
+    opciones = [
+        op("k1", "davoo", 500, "kick_reciente"), op("k2", "davoo", 450, "kick_reciente"),
+        op("c1", "vegetta777", 9000, "catalogo", "catalogo"),
+        op("c2", "vegetta777", 8000, "catalogo", "catalogo"),
+    ]
+    elegidos = seleccionar(opciones, MEZCLA, AHORA)
+    assert [o.clip_id for o in elegidos] == ["k1", "c1"]
+    assert len({o.streamer for o in elegidos}) == len(elegidos)
+
+
 def test_sin_catalogo_los_cupos_vuelven_a_los_otros_grupos():
-    opciones = [op("k1", "davoo", 500, "kick_reciente"), op("k2", "davoo", 400, "kick_reciente"),
+    opciones = [op("k1", "davoo", 500, "kick_reciente"), op("k2", "spreen", 400, "kick_reciente"),
                 op("e1", "parti", 300, "evento")]
     assert [o.clip_id for o in seleccionar(opciones, MEZCLA, AHORA)] == ["k1", "k2", "e1"]
 

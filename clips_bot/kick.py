@@ -108,6 +108,7 @@ def a_clip(d: dict, login: str) -> dict:
         "game_id": str((d.get("category") or {}).get("id") or ""),
         "created_at": fecha.strftime("%Y-%m-%dT%H:%M:%SZ"),
         "vod_offset": int(d.get("vod_starts_at") or 0) or None,
+        "creator_id": str((d.get("creator") or {}).get("id") or (d.get("creator") or {}).get("username") or ""),
         "video_id": str(d.get("livestream_id") or ""),
         "_game_name": str((d.get("category") or {}).get("name") or ""),
     }

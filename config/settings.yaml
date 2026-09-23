@@ -170,7 +170,7 @@ seleccion:
     evento: 1                # Dedsafío
     # "catalogo" (Vegetta) no tiene cupo propio: es el fallback y se queda con lo que los otros no llenen
   peso_momento: 0.5          # 3 clips del mismo momento → × 2
-  max_por_streamer: 2        # entre las dos fuentes
+  max_por_streamer: 1        # un solo clip por streamer en todo el envío del día
   # Scores a menos de este % en el corte de una fuente → desempata Gemini. Por fuente, porque el
   # score reciente es logarítmico (3 % ≈ 20 % en vistas) y el de catálogo son vistas directas.
   empate_pct:

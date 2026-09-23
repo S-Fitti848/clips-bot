@@ -329,10 +329,18 @@ def cmd_diario(args: argparse.Namespace) -> int:
     print(f"\n=== Pasos 3-7: procesar (tope {args.max_procesar} clips)")
     procesados = 0
     # Por grupo (no por fuente): cada cupo de la mezcla se llena con sus propios candidatos.
+    # Multi-POV: si 3+ canales del evento clipearon el mismo momento, esos 3 clips se procesan y el
+    # Short secuencial se queda con el cupo del evento. Uno por día.
+    multipov_hecho = procesar_multipov_del_dia(settings, streamers, res, gemini, args.max_procesar)
+    procesados += multipov_hecho
+
     por_grupo: dict[str, list] = {}
     for c in res.candidatos + res.catalogo:
         por_grupo.setdefault(c.grupo or c.fuente, []).append(c)
     for grupo, clips in sorted(por_grupo.items(), key=lambda kv: -settings.seleccion.mezcla.get(kv[0], 0)):
+        if grupo == "evento" and multipov_hecho:
+            print("\n(el cupo del evento se lo lleva el multi-POV de hoy)")
+            continue
         objetivo = max(settings.seleccion.mezcla.get(grupo, 0), 1 if grupo == "catalogo" else 0)
         fuente = clips[0].fuente
         ok = 0
@@ -353,16 +361,60 @@ def cmd_diario(args: argparse.Namespace) -> int:
         if ok < objetivo:
             print(f"  (grupo {grupo}: {ok}/{objetivo} del cupo; lo que falte lo cubre el catálogo)")
 
-    # Multi-POV: si 3+ canales del evento clipearon el mismo momento y los procesamos, se arma
-    # además el Short secuencial con hasta 3 ángulos.
-    for grupo in res.grupos_evento[:1]:
-        ids = [c.id for c in grupo if (READY_DIR_CLI() / f"{c.id}.json").exists()]
-        if len(ids) >= 3:
-            print(f"\n=== Multi-POV: {len(ids)} ángulos del mismo momento")
-            armar_multipov(settings, ids[:3], gemini)
-
     print("\n=== Pasos 8 y 10: elegir y entregar")
     return ejecutar_seleccion(settings, gemini, enviar=not args.simular)
+
+
+def procesar_multipov_del_dia(settings: Settings, streamers: list, res: Resultado,
+                              gemini: GeminiClient | None, tope: int) -> int:
+    """Procesa los 3 ángulos del mejor momento del evento y arma el multi-POV. Devuelve cuántos
+    clips procesó (0 si no había un momento con 3+ canales distintos).
+
+    Los 3 individuales quedan en estado `usado_multipov`, así no compiten contra el multi-POV en la
+    selección: el cupo del evento es uno solo.
+    """
+    from .process import READY_DIR, procesar
+
+    if not res.grupos_evento or tope < 3:
+        return 0
+    # el grupo con más canales distintos; a igualdad, el de más vistas
+    grupo = max(res.grupos_evento,
+                key=lambda g: (len({c.broadcaster_login for c in g}), sum(c.view_count for c in g)))
+    por_canal: dict[str, object] = {}
+    for c in sorted(grupo, key=lambda c: c.view_count, reverse=True):
+        por_canal.setdefault(c.broadcaster_login, c)  # un ángulo por canal
+    angulos = list(por_canal.values())[:3]
+    if len(angulos) < 3:
+        return 0
+
+    print(f"\n=== Multi-POV: {len(angulos)} canales clipearon el mismo momento")
+    ids, procesados = [], 0
+    for c in angulos:
+        print(f"\n--- [multipov] {c.url}")
+        try:
+            r = procesar(c.url, settings, streamers, gemini=gemini, fuente="reciente",
+                         clips_mismo_momento=c.clips_mismo_momento, grupo="evento")
+        except (DescargaError, MediaError) as e:
+            print(f"ERROR: {e}", file=sys.stderr)
+            continue
+        procesados += 1
+        if r.descartado:
+            print(f"  → DESCARTADO: {r.descartado}")
+        else:
+            ids.append(r.clip_id)
+    if len(ids) < 3:
+        print(f"  quedaron {len(ids)} ángulos usables: no alcanza para el multi-POV")
+        return procesados
+
+    meta = armar_multipov(settings, ids, gemini)
+    if meta:
+        conn = db.connect(DB_PATH)
+        try:
+            for cid in ids:
+                db.set_estado(conn, cid, "usado_multipov")
+        finally:
+            conn.close()
+    return procesados
 
 
 def armar_multipov(settings: Settings, clip_ids: list[str], gemini: GeminiClient | None,
