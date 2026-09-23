@@ -1,0 +1,44 @@
+# Corrida diaria del bot de clips. La dispara clips-bot.timer; no se habilita sola.
+# Es un servicio APARTE del bot de trading que ya corre en esta Pi: otro nombre de unidad, otro
+# WorkingDirectory y sus propias cachés. No toca ni lee nada de aquel.
+[Unit]
+Description=Clips Bot - corrida diaria (candidatos, procesado y entrega por Telegram)
+After=network-online.target
+Wants=network-online.target
+# Si la corrida falla, salta el aviso por Telegram con el nombre de esta unidad.
+OnFailure=clips-bot-alerta@%n.service
+
+[Service]
+# oneshot: arranca, hace la corrida del día y termina. El reintento lo maneja correr.sh, no
+# systemd: con Type=oneshot el Restart= no se comporta como uno espera.
+Type=oneshot
+User=__USUARIO__
+WorkingDirectory=__DIR__
+Environment=PYTHONUNBUFFERED=1
+# La Pi tiene undervoltage confirmado y comparte CPU con el bot de trading: una sola corrida, sin
+# paralelizar, y con prioridad baja para no pelearle el CPU a lo que ya estaba andando.
+Environment=OMP_NUM_THREADS=2
+Nice=10
+IOSchedulingClass=idle
+CPUWeight=20
+# Cachés dentro del proyecto (modelos de Whisper, yt-dlp): con ProtectHome no se puede escribir
+# en ~/.cache, y además así no se mezclan con las del otro bot.
+Environment=HF_HOME=__DIR__/.cache/huggingface
+Environment=XDG_CACHE_HOME=__DIR__/.cache
+ExecStart=__DIR__/deploy/correr.sh
+# Un clip tarda entre 1 y 5 min; 3 clips más la búsqueda y el reintento no deberían pasar de esto.
+# Si se cuelga (una API que no contesta, yt-dlp trabado), se corta y salta la alerta.
+TimeoutStartSec=90min
+
+# journald además del archivo plano que rota logrotate (correr.sh escribe en los dos).
+SyslogIdentifier=clips-bot
+
+# Aislamiento básico: solo escribe en su propio directorio y en el de logs.
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=full
+ProtectHome=read-only
+ReadWritePaths=__DIR__ /var/log/clips-bot
+
+[Install]
+WantedBy=multi-user.target

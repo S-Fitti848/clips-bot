@@ -1,0 +1,18 @@
+# 05:00 hora de Argentina, todos los días.
+[Unit]
+Description=Disparador diario del Clips Bot (05:00 AR)
+
+[Timer]
+# systemd >= 252 (Raspberry Pi OS Bookworm) acepta la zona horaria acá, así que no importa en qué
+# zona esté la Pi. El instalador comprueba la versión y, si es más vieja, deja 08:00 UTC
+# (Argentina es UTC-3 todo el año: no tiene horario de verano).
+OnCalendar=*-*-* 05:00:00 America/Argentina/Buenos_Aires
+# Si la Pi estaba apagada a esa hora, corre al encender.
+Persistent=true
+# Para no pegarle a las APIs en el segundo exacto todos los días.
+RandomizedDelaySec=5min
+AccuracySec=1min
+Unit=clips-bot.service
+
+[Install]
+WantedBy=timers.target

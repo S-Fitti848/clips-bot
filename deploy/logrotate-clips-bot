@@ -1,0 +1,13 @@
+# Logs de la corrida diaria. Va en /etc/logrotate.d/clips-bot
+# journald ya guarda todo, pero el archivo plano es más cómodo para mirar una corrida entera.
+/var/log/clips-bot/*.log {
+    daily
+    rotate 14
+    maxsize 20M
+    compress
+    delaycompress
+    missingok
+    notifempty
+    copytruncate
+    create 0640 __USUARIO__ __USUARIO__
+}

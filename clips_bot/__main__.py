@@ -665,6 +665,35 @@ def READY_DIR_CLI() -> Path:
     return READY_DIR
 
 
+def cmd_benchmark(args: argparse.Namespace) -> int:
+    """Mide las etapas caras sobre los mp4 que ya están en output/raw/. No descarga nada."""
+    from . import benchmark as bench
+    from .process import OUTPUT_DIR, RAW_DIR
+
+    settings = load_settings()
+    modelos = [m.strip() for m in args.modelos.split(",") if m.strip()]
+    crudos = sorted(RAW_DIR.glob("*.mp4"), key=lambda p: p.stat().st_size)[: args.clips]
+    if not crudos:
+        print(f"No hay mp4 en {RAW_DIR}. Corré `procesar <url>` o copiá alguno desde otra máquina.",
+              file=sys.stderr)
+        return 1
+    info = bench.maquina()
+    print(f"{info.get('modelo') or info['plataforma']} · {info['maquina']} · {info['cpus']} CPUs · "
+          f"Python {info['python']}")
+    print(f"Whisper: {', '.join(modelos)} ({settings.subtitulos.compute_type}) · "
+          f"OCR: {settings.pantalla.idioma} · x264 preset {settings.render.x264_preset}")
+    destino = OUTPUT_DIR / "benchmark"
+    mediciones = []
+    for raw in crudos:
+        print(f"\n--- {raw.name}")
+        m = bench.medir_clip(raw, settings, modelos, destino)
+        print(f"    {m.layout} · total {m.total:.0f}s ({m.por_segundo():.1f}x la duración)")
+        mediciones.append(m)
+    print(f"\n" + bench.informe(mediciones, modelos, args.limite_s))
+    print(f"\njson: {bench.guardar(mediciones, modelos, destino / 'benchmark.json')}")
+    return 0
+
+
 def cmd_telegram_chat_id(args: argparse.Namespace) -> int:
     from .telegram import chats, usuarios
 
@@ -734,6 +763,13 @@ def main(argv: list[str] | None = None) -> int:
 
     pt = sub.add_parser("telegram-chat-id", help="listar chats que le escribieron al bot (getUpdates)")
     pt.set_defaults(func=cmd_telegram_chat_id)
+
+    pb = sub.add_parser("benchmark", help="cuánto tarda un clip completo en esta máquina")
+    pb.add_argument("--clips", type=int, default=2, help="cuántos mp4 de output/raw/ medir (default 2)")
+    pb.add_argument("--modelos", default="small",
+                    help="modelos de Whisper separados por coma, ej. small,base (default small)")
+    pb.add_argument("--limite-s", type=float, default=300.0, help="tope por clip para el veredicto")
+    pb.set_defaults(func=cmd_benchmark)
 
     args = p.parse_args(argv)
     # Los títulos de clips traen emojis; la consola de Windows por defecto no es UTF-8.

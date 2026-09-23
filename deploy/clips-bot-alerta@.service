@@ -1,0 +1,10 @@
+# Avisa por Telegram cuando una unidad falla. Se invoca con el nombre de la unidad caída:
+#   OnFailure=clips-bot-alerta@%n.service  →  %i = "clips-bot.service"
+[Unit]
+Description=Aviso por Telegram de que %i falló
+
+[Service]
+Type=oneshot
+User=__USUARIO__
+WorkingDirectory=__DIR__
+ExecStart=__DIR__/deploy/alerta.sh %i
