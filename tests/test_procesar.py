@@ -135,7 +135,7 @@ def test_filtro_fit_blur_no_recorta_el_video():
     from clips_bot.layout import layout_fit_blur
 
     f = filtro(layout_fit_blur(W, H, R), R, con_subs=True)
-    frente = f.split("[fg]")[1].split("[frente]")[0]
+    frente = f.split("[fg]")[-1].split("[frente]")[0]  # la rama del frente, no la del fondo
     assert "crop" not in frente                       # el 16:9 entra entero
     assert f"scale={R.ancho}:-2" in frente            # 1080 de ancho, alto por proporción
     assert f"gblur=sigma={R.blur_sigma}" in f         # y el fondo es el mismo video, borroso
