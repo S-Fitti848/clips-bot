@@ -58,6 +58,7 @@ class Resultado:
     presencia_cara: float = 0.0
     subtitulos_quemados: bool = True
     textos: dict | None = None
+    textos_pendientes: bool = False  # el render está hecho; `seleccionar` reintenta los textos
     descartado: str | None = None
     salida: str | None = None
     tiempos: dict[str, float] = field(default_factory=dict)
@@ -132,14 +133,13 @@ def procesar(url: str, cfg: Settings, streamers: list[Streamer], forzar: bool = 
     # es lo más barato de descartar.
     if streamer and streamer.detectar_marcador:
         m = cfg.marcador
-        with crono.etapa("marcador deportivo"):
-            marcador = deportes.detectar(d.path, m.frames_muestra, m.quietud_min, m.bordes_min)
-        res.marcador_deportivo = {"esquina": marcador.esquina, "quietud": marcador.quietud,
-                                  "bordes": marcador.bordes}
-        if marcador.hay and descartar(
-            f"transmisión deportiva en pantalla (marcador {marcador.esquina}, "
-            f"quietud {marcador.quietud}, bordes {marcador.bordes})", "marcador deportivo"
-        ):
+        with crono.etapa("transmisión deportiva"):
+            deporte = deportes.detectar_deporte(d.path, m.frames_muestra, m.quietud_min, m.bordes_min,
+                                                m.cesped_min, m.cesped_frames_min)
+        res.marcador_deportivo = deporte.a_dict()  # se guarda SIEMPRE, dispare o no: sirve para calibrar
+        avisar(f"  deporte: césped máx {deporte.cesped_max:.0%} en {deporte.frames_con_cesped} frames, "
+               f"marcador {'sí' if deporte.marcador.hay else 'no'}")
+        if deporte.hay and descartar(f"transmisión deportiva: {deporte.motivo}", "transmisión deportiva"):
             return _cerrar(res)
 
     # §3 paso 4: capas baratas del filtro de audio. (Capa librosa de §4: pendiente.)
@@ -174,11 +174,13 @@ def procesar(url: str, cfg: Settings, streamers: list[Streamer], forzar: bool = 
             avisar(f"  título: {res.textos['titulo']}")
         except (GeminiError, tx.TextosError) as e:
             avisar(f"  ⚠ textos: {e}")
+            res.textos_pendientes = True
         if res.textos and res.textos["depende_de_fecha"] and descartar(
             "depende de la fecha (referencia a algo puntual de ese día)", tx.MOTIVO_FECHA
         ):
             return _cerrar(res)
     else:
+        res.textos_pendientes = True
         avisar("  (sin GEMINI_API_KEY: textos pendientes)")
 
     work = WORK_DIR / d.clip_id

@@ -217,3 +217,31 @@ def test_sin_catalogo_los_cupos_vuelven_a_los_otros_grupos():
 )
 def test_evaluar_region_del_marcador(quietud, bordes, esperado):
     assert evaluar_region(quietud, bordes, 0.75, 0.05) is esperado
+
+
+def test_fraccion_cesped_separa_cancha_de_minecraft():
+    import numpy as np
+    from clips_bot.deportes import fraccion_cesped
+
+    def lleno(bgr):
+        return np.full((60, 80, 3), bgr, dtype=np.uint8)
+
+    cancha = lleno((60, 140, 60))  # verde césped
+    assert fraccion_cesped(cancha) > 0.95
+    assert fraccion_cesped(lleno((30, 30, 30))) == 0.0  # gris oscuro
+    assert fraccion_cesped(lleno((200, 120, 60))) == 0.0  # azul
+    # medido con clips reales (2026-09-22): fútbol llega a 68 %, Minecraft no pasa de 26 %
+    mitad = np.concatenate([lleno((60, 140, 60))[:30], lleno((30, 30, 30))[:30]])
+    assert 0.45 < fraccion_cesped(mitad) < 0.55
+
+
+def test_deporte_dispara_por_cesped_aunque_no_haya_marcador():
+    from clips_bot.deportes import Deporte, Marcador
+
+    # el caso real: cámara sobre la tribuna, sin marcador en pantalla
+    sin_nada = Deporte("", Marcador(False), 0.26, 0)
+    con_cancha = Deporte("cancha en pantalla (2/12 frames con ≥ 45% de césped)", Marcador(False), 0.68, 2)
+    assert sin_nada.hay is False
+    assert con_cancha.hay is True
+    assert con_cancha.a_dict()["cesped_max"] == 0.68  # la medición se guarda siempre, para calibrar
+    assert sin_nada.a_dict()["frames_con_cesped"] == 0

@@ -130,7 +130,8 @@ def cmd_candidatos(args: argparse.Namespace) -> int:
 
 def _gemini(settings: Settings) -> GeminiClient | None:
     key = env("GEMINI_API_KEY", requerido=False)
-    return GeminiClient(key, settings.textos.modelo) if key else None
+    return GeminiClient(key, settings.textos.modelo,
+                        modelo_fallback=settings.textos.modelo_fallback) if key else None
 
 
 def cmd_procesar(args: argparse.Namespace) -> int:

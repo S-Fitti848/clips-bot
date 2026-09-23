@@ -140,19 +140,22 @@ class FiltroAudio:
 
 @dataclass(frozen=True)
 class MarcadorDeportivo:
-    frames_muestra: int = 6
+    frames_muestra: int = 12
     quietud_min: float = 0.75  # la región cambia 4 veces menos que el frame entero
     bordes_min: float = 0.05  # 5 % de los píxeles de la región son borde (texto/líneas del gráfico)
+    cesped_min: float = 0.45  # fracción de verde-césped en un frame para contarlo como cancha
+    cesped_frames_min: int = 2  # cuántos frames así hacen falta para descartar
 
 
 @dataclass(frozen=True)
 class Textos:
     modelo: str = "gemini-3.6-flash"
+    modelo_fallback: str = "gemini-3.5-flash-lite"  # cuando se acaba la cuota diaria del principal
     max_titulo: int = 59
     min_hashtags: int = 3
     max_hashtags: int = 5
     max_descripcion: int = 800
-    reintentos: int = 3
+    reintentos: int = 2
 
 
 FUENTES = ("reciente", "catalogo")

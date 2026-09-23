@@ -125,19 +125,31 @@ filtro_audio:
 # Marcador de transmisión deportiva (solo streamers con detectar_marcador: true, ej. davooxeneize).
 # Heurística: región de una esquina de arriba que casi no cambia mientras el resto del video sí, y
 # con mucho borde (texto y líneas del gráfico). Falsos positivos posibles con HUDs de juegos.
+# Dos señales: (1) marcador de TV en una esquina de arriba, (2) fracción de verde-césped (una cancha
+# llena la pantalla de verde uniforme). Alcanza con que dispare una. La 2 cubre el caso real que la 1
+# no vio: cámara sobre la tribuna, sin gráfico en pantalla.
+# Calibrado 2026-09-22 con clips reales: el de fútbol de Davoo muestra la cancha en 2 de 12 frames
+# (70 % y 68 %) y el resto es la tribuna (0 %); los de Minecraft nunca pasan de 22 %. De ahí el
+# umbral de 45 % y el mínimo de 2 frames.
 marcador:
-  frames_muestra: 6
+  frames_muestra: 12
   quietud_min: 0.75
   bordes_min: 0.05
+  cesped_min: 0.45           # 45 % del frame en verde-césped = probable cancha
+  cesped_frames_min: 2       # y que pase en al menos 2 de los frames muestreados
 
 # §3 paso 7: textos con Gemini.
 textos:
+  # El free tier de los Flash está en ~20 requests/día (reseteo a medianoche del Pacífico). Con 3
+  # clips/día y UNA llamada por clip (título + descripción + hashtags + depende_de_fecha juntos)
+  # entramos cómodos; lo que quema la cuota son los reintentos y las pruebas.
   modelo: gemini-3.6-flash      # 2.5-flash dio 404 para cuentas nuevas (2026-09-21)
+  modelo_fallback: gemini-3.5-flash-lite   # si el principal responde 429 por cuota, sigue con este
   max_titulo: 59             # < 60 caracteres
   min_hashtags: 3
   max_hashtags: 5
   max_descripcion: 800
-  reintentos: 3              # si la respuesta no valida, se reintenta con los errores
+  reintentos: 2              # si la respuesta no valida, se reintenta con los errores (cuida la cuota)
 
 # §3 paso 8: selección de los mejores.
 # Cada fuente compite solo dentro de su cupo; los cupos que sobran pasan a la otra fuente.
