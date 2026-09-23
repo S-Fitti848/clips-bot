@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import html
+import re
 from pathlib import Path
 
 import requests
@@ -132,7 +133,11 @@ def mensaje_textos(numero: int, streamer: str, clip_id: str, horario: str | None
 
 
 def comandos(updates: list[dict]) -> list[dict]:
-    """Comandos /algo que le mandaron al bot: [{update_id, chat_id, comando, args}]."""
+    """Comandos /algo que le mandaron al bot: [{update_id, chat_id, user_id, usuario, comando, args}].
+
+    `user_id` es QUIÉN escribió, no dónde: en un grupo el chat es uno solo y cualquiera de los
+    miembros puede mandar /reclamo. Por eso el permiso se chequea por usuario (ver usuarios_permitidos).
+    """
     out = []
     for u in updates:
         msg = u.get("message") or u.get("edited_message") or {}
@@ -140,10 +145,37 @@ def comandos(updates: list[dict]) -> list[dict]:
         if not texto.startswith("/"):
             continue
         partes = texto.split()
+        quien = msg.get("from") or {}
+        nombre = " ".join(filter(None, [quien.get("first_name"), quien.get("last_name")]))
+        if quien.get("username"):
+            nombre = (nombre + f" (@{quien['username']})").strip()
         out.append({
             "update_id": u.get("update_id"),
             "chat_id": str((msg.get("chat") or {}).get("id", "")),
+            "user_id": str(quien.get("id") or ""),
+            "usuario": nombre.strip(),
             "comando": partes[0].split("@")[0].lower(),  # /reclamo@mi_bot → /reclamo
             "args": partes[1:],
         })
     return out
+
+
+def usuarios_permitidos(valor: str) -> set[str]:
+    """TELEGRAM_ALLOWED_USERS: ids de usuario separados por coma (o espacio)."""
+    return {p for p in re.split(r"[,\s]+", (valor or "").strip()) if p}
+
+
+def usuarios(updates: list[dict]) -> list[dict]:
+    """Quiénes le escribieron al bot: [{id, nombre, chat_id}]. Para armar TELEGRAM_ALLOWED_USERS."""
+    vistos: dict[str, dict] = {}
+    for u in updates:
+        msg = u.get("message") or u.get("edited_message") or {}
+        quien = msg.get("from") or {}
+        if not quien.get("id"):
+            continue
+        nombre = " ".join(filter(None, [quien.get("first_name"), quien.get("last_name")]))
+        if quien.get("username"):
+            nombre += f" (@{quien['username']})"
+        vistos[str(quien["id"])] = {"id": str(quien["id"]), "nombre": nombre.strip(),
+                                    "chat_id": str((msg.get("chat") or {}).get("id", ""))}
+    return list(vistos.values())

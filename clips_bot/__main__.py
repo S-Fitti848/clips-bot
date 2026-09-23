@@ -38,6 +38,8 @@ from .telegram import TelegramClient, TelegramError
 from .textos import TextosError
 from .twitch import TwitchClient, TwitchError
 
+log = logging.getLogger(__name__)
+
 AR = timezone(timedelta(hours=-3), "AR")  # Argentina no tiene horario de verano
 
 
@@ -504,16 +506,37 @@ def atender_telegram(settings: Settings, silencioso: bool = False) -> int:
     El offset de getUpdates se guarda en la DB, así cada comando se atiende una sola vez.
     Cuando exista el módulo de métricas (§4b), el mismo camino sirve para excluir automáticamente
     cuando YouTube marque un reclamo: llamar a `db.excluir_streamer` y avisar igual que acá.
+
+    Permiso por USUARIO (TELEGRAM_ALLOWED_USERS), no por chat: con la entrega en un grupo el chat es
+    uno solo y cualquier miembro podría excluir un streamer con /reclamo. Sin la variable no se
+    obedece ningún comando (falla cerrado): es preferible que /reclamo no ande a que lo use
+    cualquiera si el bot termina en otro grupo.
     """
-    from .telegram import comandos
+    from .telegram import comandos, usuarios_permitidos
 
     tg = TelegramClient(env("TELEGRAM_BOT_TOKEN"))
+    permitidos = usuarios_permitidos(env("TELEGRAM_ALLOWED_USERS", requerido=False))
+    if not permitidos:
+        log.warning("TELEGRAM_ALLOWED_USERS vacío: no obedezco ningún comando")
     conn = db.connect(DB_PATH)
     try:
         guardado = db.get_valor(conn, "telegram_offset")
         updates = tg.get_updates(offset=int(guardado) if guardado else None)
         atendidos = 0
         for c in comandos(updates):
+            if c["user_id"] not in permitidos:
+                quien = f"{c['usuario'] or '?'} (id {c['user_id'] or '?'})"
+                log.warning("%s de %s: no está en TELEGRAM_ALLOWED_USERS, lo ignoro", c["comando"], quien)
+                if not silencioso:
+                    print(f"  {c['comando']} de {quien} → IGNORADO (no autorizado)")
+                if not permitidos:
+                    # Está mal configurado, no es un intruso: decile cómo arreglarlo, con su id.
+                    # Con la lista puesta, a los de afuera no se les contesta nada.
+                    tg.send_message(c["chat_id"],
+                                    "No tengo <code>TELEGRAM_ALLOWED_USERS</code> configurado, así que no "
+                                    f"obedezco comandos. Tu id es <code>{c['user_id']}</code>: ponelo ahí "
+                                    "en el .env (con coma si son varios).")
+                continue
             if c["comando"] == "/reclamo":
                 respuesta = _reclamo(conn, c["args"])
             elif c["comando"] in ("/ayuda", "/start", "/help"):
@@ -565,14 +588,24 @@ def READY_DIR_CLI() -> Path:
 
 
 def cmd_telegram_chat_id(args: argparse.Namespace) -> int:
-    from .telegram import chats
+    from .telegram import chats, usuarios
 
-    encontrados = chats(TelegramClient(env("TELEGRAM_BOT_TOKEN")).get_updates())
+    updates = TelegramClient(env("TELEGRAM_BOT_TOKEN")).get_updates()
+    encontrados = chats(updates)
     if not encontrados:
-        print("Nadie le escribió al bot todavía (o ya se consumieron los updates). Mandale un mensaje y reintentá.")
+        print("Nadie le escribió al bot todavía (o ya se consumieron los updates). Mandale un mensaje y reintentá."
+              + chr(10) +
+              "En un GRUPO, con el modo privacidad de BotFather activado (el default) el bot solo ve los "
+              "mensajes que empiezan con / o que lo mencionan: mandá /start en el grupo.")
         return 1
+    print("Chats (TELEGRAM_CHAT_ID; los grupos tienen id negativo):")
     for c in encontrados:
         print(f"{c['id']:>16}  {c['tipo']:<10} {c['nombre']}")
+    quienes = usuarios(updates)
+    if quienes:
+        print(chr(10) + "Usuarios (TELEGRAM_ALLOWED_USERS, separados por coma):")
+        for u in quienes:
+            print(f"{u['id']:>16}  {u['nombre']}")
     print("\nCopiá el id que corresponda a TELEGRAM_CHAT_ID en .env.")
     return 0
 

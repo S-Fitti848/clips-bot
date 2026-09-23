@@ -227,10 +227,30 @@ def test_mensaje_de_telegram_lleva_el_recordatorio_y_el_comando():
 def test_comandos_ignora_lo_que_no_es_comando():
     updates = [
         {"update_id": 1, "message": {"chat": {"id": 9}, "text": "hola"}},
-        {"update_id": 2, "message": {"chat": {"id": 9}, "text": "/reclamo@Clipsito_bot clip_1 strike"}},
+        {"update_id": 2, "message": {"chat": {"id": 9}, "from": {"id": 77, "first_name": "Santi",
+                                                                 "username": "santi"},
+                                     "text": "/reclamo@Clipsito_bot clip_1 strike"}},
     ]
-    assert comandos(updates) == [{"update_id": 2, "chat_id": "9", "comando": "/reclamo",
+    assert comandos(updates) == [{"update_id": 2, "chat_id": "9", "user_id": "77",
+                                  "usuario": "Santi (@santi)", "comando": "/reclamo",
                                   "args": ["clip_1", "strike"]}]
+
+
+def test_usuarios_permitidos_y_quien_escribio():
+    """En un grupo el chat es uno solo: el permiso tiene que ser por usuario, no por chat."""
+    from clips_bot.telegram import usuarios, usuarios_permitidos
+
+    assert usuarios_permitidos(" 77, 88  99 ") == {"77", "88", "99"}
+    assert usuarios_permitidos("") == set()  # sin lista no se obedece a nadie (falla cerrado)
+    updates = [
+        {"update_id": 3, "message": {"chat": {"id": -100123}, "from": {"id": 77, "first_name": "Santi"},
+                                     "text": "/start"}},
+        {"update_id": 4, "message": {"chat": {"id": -100123}, "from": {"id": 55, "first_name": "Otro"},
+                                     "text": "/reclamo clip_1"}},
+    ]
+    assert [u["id"] for u in usuarios(updates)] == ["77", "55"]
+    ajenos = [c for c in comandos(updates) if c["user_id"] not in usuarios_permitidos("77")]
+    assert [c["user_id"] for c in ajenos] == ["55"]
 
 
 # ---- mezcla por grupo ----------------------------------------------------------------
