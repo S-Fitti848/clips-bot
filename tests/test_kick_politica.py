@@ -126,6 +126,15 @@ def test_streamers_yaml_del_repo_carga_los_grupos():
     assert any(s.grupo == "evento" for s in por_login.values())
 
 
+def test_el_filtro_de_deporte_no_toca_al_grupo_del_evento():
+    """El evento es todo Minecraft y tiene mucho pasto: la señal de césped daría falsos positivos.
+    Por eso la detección corre SOLO en los streamers marcados (hoy, davooxeneize)."""
+    streamers = load_streamers()
+    assert [s.login for s in streamers if s.detectar_marcador] == ["davooxeneize"]
+    evento = [s for s in streamers if s.grupo == "evento"]
+    assert len(evento) > 10 and not any(s.detectar_marcador for s in evento)
+
+
 def test_excluido_no_se_consulta_mas():
     res = Resultado()
     activos = habilitados(DAVOO, "kick", "reciente", res, False, {"davoo": "reclamo de copyright"})
