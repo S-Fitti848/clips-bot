@@ -1,10 +1,10 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-09-22 | **Versión:** v0.8.1 | **Modo:** Fase 1 en curso (pasos 1–8 + entrega por Telegram, probados en vivo)
+**Snapshot:** 2026-09-22 | **Versión:** v0.9.0 | **Modo:** Fase 1 en curso (pasos 1–8 + entrega por Telegram, probados en vivo)
 
-> Este archivo se reconstruyó el 2026-09-22 desde el transcript de la sesión: un script de parche lo
-> rompió (reemplazo descontrolado, 37 MB de texto repetido) y no había copia. El contenido está al
-> día; si falta algún detalle viejo, es por eso. Conviene `git init` en el proyecto.
+> **Reglas de trabajo sobre este archivo:** se edita con Edit o se reescribe entero. NADA de scripts
+> de reemplazo encadenados: uno rompió el archivo el 2026-09-22 (37 MB de texto repetido) y hubo que
+> reconstruirlo desde el transcript. Ahora hay git: **commit después de cada cambio.**
 
 ---
 
@@ -108,8 +108,9 @@ Restricción de hardware: la Pi tiene undervoltage confirmado. Whisper `small` e
    del stream (título del VOD), o categoría en `categorias_costream`. Se guardan en la DB con
    motivo `costream`. Las palabras de fútbol (gol, Boca, River, partido, Mundial…) son por Davoo.
 3. Descargar los mejores candidatos con yt-dlp, solo hasta llenar el cupo de cada grupo.
-4. Marcador de transmisión deportiva (streamers con `detectar_marcador`) → descarta. Después,
-   filtros de audio: casi todo silencio, o muy pocas palabras por segundo (música/gameplay puro).
+4. Transmisión deportiva (streamers con `detectar_marcador`) → descarta con DOS señales: marcador de
+   TV en una esquina de arriba, o fracción de verde-césped alta en ≥ 2 de 12 frames (una cancha llena
+   la pantalla). Después, filtros de audio: casi todo silencio, o muy pocas palabras por segundo.
 5. Layout: detectar cámara → cámara arriba 40 % (1080x762) + línea negra de 6 px + juego abajo 60 %
    (1080x1152); si la cara ocupa mucho → crop 9:16 centrado en la cara; si no hay cara estable →
    crop central 9:16 con zoom leve.
@@ -295,16 +296,25 @@ Minecraft/dedsafío en clips recientes y 14 sin señal (marcados en el YAML para
 resolver, NO cargados: rubinavx, Dlffrent, MontokaAtr, CherryToragao, Maau, FalloSinEmision,
 Albaclouthier, Juliandns_.
 
+Cuota de Gemini (medido 2026-09-22): el free tier de los modelos Flash está en **~20 requests por
+día**, con reseteo a medianoche hora del Pacífico (bajó de 250; la doc ya no publica el número por
+modelo, remite a AI Studio). La cuota que se agotó ese día fue por las pruebas, no por el uso normal:
+3 clips/día × 1 llamada = 3, más algún desempate. Por eso: UNA llamada por clip (título, descripción,
+hashtags y depende_de_fecha juntos), `reintentos` 2, y ante un 429 por cuota se pasa al
+`modelo_fallback` (flash-lite, que tiene su propia cuota) en vez de reintentar el mismo. Si igual no
+hay cuota, el clip queda con `textos_pendientes: true` en su json, conserva el render, y `seleccionar`
+lo reintenta en la corrida siguiente.
+
+Fútbol en Davoo (calibrado 2026-09-22 con 8 clips reales): el marcador de TV NO alcanzaba — un clip
+que es una transmisión de fútbol con la cámara sobre la tribuna medía quietud 0,0 y bordes 0,0, y
+tampoco lo agarraba el filtro de palabras (título "AGUSNETA", categoría "Just Chatting"). La segunda
+señal, fracción de verde-césped, sí lo agarra: 68 % de césped en 2 de 12 frames, contra un máximo de
+26 % en los clips de Minecraft, WoW, IRL y LEC (ninguno dispara). Umbral: 45 % en ≥ 2 frames, con
+muestreo del 3 % al 97 % del clip (con 10 %–90 % la cancha aparecía en un solo frame). Respaldo real:
+los Chequeos de copyright de Studio detectan transmisiones de partidos por Content ID antes de
+publicar, así que el riesgo queda cubierto aunque la heurística falle.
+
 Problemas abiertos:
-- **Cuota de Gemini agotada (2026-09-22):** después de las pruebas del día la key devuelve 429
-  "exceeded your current quota" y ningún clip pudo generar textos. Los 429 por cuota ya NO se
-  reintentan (perdían 100 s por clip); los 503 sí. Sin textos, `seleccionar` deja el clip afuera y
-  lo reintenta en la corrida siguiente.
-- **El marcador deportivo tuvo un falso negativo real:** un clip de davooxeneize que ES una
-  transmisión de fútbol (cámara sobre la tribuna) midió quietud 0,0 y bordes 0,0 → no disparó,
-  porque en esos segundos NO hay marcador en pantalla. Tampoco lo agarró el filtro de palabras
-  (título "AGUSNETA", categoría "Just Chatting"). Riesgo abierto: clips de partidos que pasan los
-  filtros. La medición ahora se guarda siempre en el json para poder calibrar.
 - **Co-streams por URL manual:** `procesar` solo ve título y categoría del clip; el título del
   stream (vía /videos) solo está en `candidatos`.
 - **Subtítulos en vivo cortados:** con `subtitulos_propios`, el crop 9:16 corta los costados de los
@@ -317,7 +327,8 @@ Problemas abiertos:
 - Capa `librosa` del filtro de música (§4): pendiente.
 - Respuesta de Santi con los links de TikTok/IG/FB → tabla `posts`: pendiente.
 - El multi-POV compite en la selección junto al clip individual del mismo momento.
-- **El proyecto no tiene git.** Este archivo se rompió una vez y se reconstruyó desde el transcript.
+- La detección de césped puede dar falsos positivos con juegos de campo abierto muy verde (un
+  Minecraft de pradera llegó a 26 %, cerca del umbral de 45 %). Solo corre en streamers marcados.
 
 ---
 
@@ -361,3 +372,7 @@ Problemas abiertos:
   ya no se reintenta. 120 tests OK.
 - v0.8.1 (2026-09-22) — CLAUDE.md reconstruido desde el transcript después de que un script de
   parche lo rompiera (37 MB de texto repetido, sin backup).
+- v0.9.0 (2026-09-22) — `git init` + repo con commit por cambio. Gemini: free tier medido en ~20
+  requests/día, fallback automático a `gemini-3.5-flash-lite` ante 429 por cuota, reintentos 3 → 2 y
+  `textos_pendientes` para no perder el render. Fútbol: segunda señal por fracción de verde-césped
+  (calibrada con 8 clips reales; agarra el caso que el marcador no veía). 122 tests OK.
