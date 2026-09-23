@@ -129,9 +129,15 @@ def agrupar_evento(clips: list[Clip], ventana_s: float) -> list[list[Clip]]:
     return grupos
 
 
-def consolidar_evento(res: "Resultado", cfg: Evento, peso_momento: float) -> "Resultado":
-    """Sobre los candidatos del grupo "evento": saca los que no son del evento, junta los de la misma
-    hora real entre streamers (sumando el bonus de duplicados) y reordena todo por score."""
+def consolidar_evento(res: "Resultado", cfg: Evento, peso_momento: float,
+                      n_candidatos: int = 8) -> "Resultado":
+    """Sobre los candidatos del grupo "evento": junta los de la misma hora real entre streamers
+    (sumando los creadores distintos) y recién ahí corta al top N.
+
+    Importante: le llegan TODOS los clips del evento que pasaron los filtros, no los 8 mejores. Si
+    se corta antes, con 52 canales es casi imposible que 3 de los 8 sean del mismo momento y el
+    multi-POV no se dispara nunca (medido 2026-09-22: 15 momentos con 3+ canales en el día, y
+    ninguno llegaba a consolidarse)."""
     evento = [c for c in res.candidatos if (c.grupo or "") == "evento"]
     resto = [c for c in res.candidatos if (c.grupo or "") != "evento"]
     if not evento:
@@ -154,9 +160,12 @@ def consolidar_evento(res: "Resultado", cfg: Evento, peso_momento: float) -> "Re
             # 3+ canales clipearon el mismo momento: da para un Short multi-POV (§ multipov)
             res.grupos_evento.append(grupo)
 
-    res.candidatos = sorted(
-        resto + elegidos,
-        key=lambda c: score_reciente(c.view_count, c.clips_mismo_momento, peso_momento), reverse=True)
+    def sc(c: Clip) -> float:
+        return score_reciente(c.view_count, c.clips_mismo_momento, peso_momento)
+
+    elegidos.sort(key=sc, reverse=True)
+    res.descartes["fuera del top N"] += max(len(elegidos) - n_candidatos, 0)
+    res.candidatos = sorted(resto + elegidos[:n_candidatos], key=sc, reverse=True)
     return res
 
 
@@ -414,8 +423,11 @@ def buscar_candidatos(
         return score_reciente(c.view_count, c.clips_mismo_momento, seleccion.peso_momento)
 
     pasan.sort(key=sc, reverse=True)
-    nuevos = pasan[: filtros.n_candidatos]
-    res.descartes["fuera del top N"] += len(pasan) - len(nuevos)
+    # Los del evento pasan enteros: los corta consolidar_evento, después de agrupar por momento.
+    del_evento = [c for c in pasan if (c.grupo or "") == "evento"]
+    otros = [c for c in pasan if (c.grupo or "") != "evento"]
+    nuevos = del_evento + otros[: filtros.n_candidatos]
+    res.descartes["fuera del top N"] += len(otros) - min(len(otros), filtros.n_candidatos)
     # Se SUMAN a los que ya haya (ej. los de Kick): cada plataforma aporta su top N y después
     # compiten por cupo en la selección. Pisar la lista dejaba a Kick afuera sin que se notara.
     res.candidatos = sorted(res.candidatos + nuevos, key=sc, reverse=True)

@@ -95,7 +95,8 @@ def buscar_todo(settings: Settings, streamers: list, incluir_sin_permiso: bool,
             res = buscar_catalogo(client, streamers, settings.filtros, settings.catalogo, conn, vistos,
                                   incluir_sin_permiso=incluir_sin_permiso, res=res,
                                   guardar_cursor=guardar_cursor, excluidos=excluidos)
-        res = consolidar_evento(res, settings.evento, settings.seleccion.peso_momento)
+        res = consolidar_evento(res, settings.evento, settings.seleccion.peso_momento,
+                                settings.filtros.n_candidatos)
         # Co-stream es una propiedad fija del clip: se marca para no volver a evaluarlo.
         for c in res.costream:
             db.registrar_clip(

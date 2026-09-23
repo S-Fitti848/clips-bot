@@ -130,6 +130,24 @@ def test_el_filtro_del_evento_corre_antes_del_corte_al_top_n():
     assert res.descartes[MOTIVO_FUERA_EVENTO] == 2
 
 
+def test_el_evento_se_consolida_entero_antes_de_cortar():
+    """Medido 2026-09-22: hubo 15 momentos con 3+ canales entre 479 clips del evento, y el multi-POV
+    no se disparó nunca porque la agrupación corría sobre los 8 que sobrevivían al corte."""
+    res = Resultado()
+    # un momento con 3 canales, pero con pocas vistas: quedaría fuera de un top 2 hecho antes
+    res.candidatos = [
+        clip("pop1", "famoso", views=900, horas=48.0),
+        clip("pop2", "famoso2", views=800, horas=47.0),
+        clip("m1", "uno", views=10, horas=40.0),
+        clip("m2", "dos", views=9, horas=40.0),
+        clip("m3", "tres", views=8, horas=40.0),
+    ]
+    res = consolidar_evento(res, EVENTO, peso_momento=0.5, n_candidatos=2)
+
+    assert len(res.candidatos) == 2  # el corte se aplica igual, pero al final
+    assert [c.id for c in res.grupos_evento[0]] == ["m1", "m2", "m3"]  # el momento sobrevive
+
+
 def test_grupo_de_dos_canales_no_va_a_multipov():
     res = Resultado()
     res.candidatos = [clip("a", "uno", horas=48.0), clip("b", "dos", horas=48.0)]
