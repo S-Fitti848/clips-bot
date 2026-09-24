@@ -472,6 +472,10 @@ Problemas abiertos:
   requests/día, fallback automático a `gemini-3.5-flash-lite` ante 429 por cuota, reintentos 3 → 2 y
   `textos_pendientes` para no perder el render. Fútbol: segunda señal por fracción de verde-césped
   (calibrada con 8 clips reales; agarra el caso que el marcador no veía). 122 tests OK.
+- v0.17.1 (2026-09-23) — SIGTERM se maneja como una salida normal para que corran los `finally`:
+  sin eso, un `systemctl stop` en medio de una corrida dejaba el turno pesado tomado y el `/buscar`
+  siguiente quedaba en cola hasta que venciera (3 h). Encontrado probando el corte, no leyendo. En
+  Windows el test no sirve (no hay SIGTERM real): se verificó en la Pi.
 - v0.17.0 (2026-09-23) — Modo escucha: `atender-telegram --escuchar` con long polling y su propio
   servicio (`clips-bot-telegram`, `Restart=always`, misma prioridad baja), así `/buscar` anda en el
   momento y no recién en la corrida del día siguiente. Turno de "trabajo pesado" en la DB que toman

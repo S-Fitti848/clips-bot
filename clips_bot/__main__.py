@@ -22,6 +22,7 @@ import argparse
 import html
 import json
 import logging
+import signal
 import sys
 import time
 from datetime import datetime, timedelta, timezone
@@ -1031,6 +1032,11 @@ def main(argv: list[str] | None = None) -> int:
     pb.set_defaults(func=cmd_benchmark)
 
     args = p.parse_args(argv)
+    # SIGTERM (lo que manda systemd al frenar o al vencer TimeoutStartSec) tiene que desarmar la
+    # pila como cualquier salida, para que corran los `finally` que sueltan el turno pesado. Sin
+    # esto, un `systemctl stop` en medio de una corrida dejaba el turno tomado y el /buscar
+    # siguiente quedaba en cola hasta que venciera (3 h). Encontrado probando, no en la doc.
+    signal.signal(signal.SIGTERM, lambda *_: sys.exit(143))
     # Los títulos de clips traen emojis; la consola de Windows por defecto no es UTF-8.
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     logging.basicConfig(
