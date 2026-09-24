@@ -33,6 +33,7 @@ class Medicion:
     etapas: dict[str, float] = field(default_factory=dict)
     layout: str = ""
     palabras: dict[str, int] = field(default_factory=dict)  # por modelo de Whisper
+    cortados: dict[str, bool] = field(default_factory=dict)  # si el tope de tiempo lo cortó
 
     @property
     def total(self) -> float:
@@ -75,9 +76,17 @@ def medir_clip(raw: Path, cfg: Settings, modelos: list[str], destino: Path,
         cfg_subs = replace(cfg.subtitulos, modelo=modelo)
         with _cronometrar(m.etapas, f"w:{modelo} cargar"):
             wm = sub.cargar_modelo(cfg_subs)
-        with _cronometrar(m.etapas, f"w:{modelo} transcr"):
-            palabras = sub.transcribir(wm, raw, cfg_subs)
+        # Con la duración, o sea CON el tope de tiempo: el benchmark tiene que medir lo que va a
+        # pasar en la corrida, no el peor caso teórico. Un clip que se pasa se descarta, no se espera.
+        cortado = False
+        try:
+            with _cronometrar(m.etapas, f"w:{modelo} transcr"):
+                palabras = sub.transcribir(wm, raw, cfg_subs, info.duracion)
+        except sub.TranscripcionLenta as e:
+            avisar(f"    {e}")
+            palabras, cortado = [], True
         del wm
+        m.cortados[modelo] = cortado
         m.palabras[modelo] = len(palabras)
         subs = sub.armar_subtitulos(palabras, cfg_subs)
         sub.escribir_srt(subs, destino / f"{raw.stem}.{modelo}.srt")
@@ -137,6 +146,9 @@ def informe(mediciones: list[Medicion], modelos: list[str], limite_s: float = LI
         veredicto = "ENTRA" if peor <= limite_s else f"NO ENTRA (tope {limite_s:.0f}s)"
         lineas.append(f"whisper {modelo:<6} por clip: mediana {mediana:.0f}s · peor {peor:.0f}s → {veredicto}")
         lineas.append(f"{'':21}3 clips/día ≈ {3 * mediana / 60:.0f} min de corrida")
+        cortados = [m.clip_id for m in mediciones if m.cortados.get(modelo)]
+        if cortados:
+            lineas.append(f"{'':21}cortados por el tope de tiempo (se descartan): {len(cortados)}")
     if len(modelos) > 1:
         lineas.append("")
         lineas.append("Palabras transcriptas por clip (más no es mejor, pero una caída grande avisa):")
@@ -150,7 +162,8 @@ def informe(mediciones: list[Medicion], modelos: list[str], limite_s: float = LI
 def guardar(mediciones: list[Medicion], modelos: list[str], destino: Path) -> Path:
     datos = {"maquina": maquina(), "modelos": modelos,
              "clips": [{"clip_id": m.clip_id, "duracion_s": m.duracion_s, "layout": m.layout,
-                        "etapas": m.etapas, "palabras": m.palabras, "total_s": round(m.total, 2)}
+                        "etapas": m.etapas, "palabras": m.palabras, "cortados": m.cortados,
+                        "total_s": round(m.total, 2)}
                        for m in mediciones]}
     destino.parent.mkdir(parents=True, exist_ok=True)
     destino.write_text(json.dumps(datos, ensure_ascii=False, indent=2), encoding="utf-8")
