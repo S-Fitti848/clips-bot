@@ -5,17 +5,25 @@
 # hacer nada verifica que ninguna de esas unidades ya exista con otro dueño. Si algo no cuadra,
 # corta sin escribir.
 #
-#   sudo ./deploy/instalar.sh            instala y activa el timer
+#   sudo ./deploy/instalar.sh            instala y activa el timer y la escucha de Telegram
 #   sudo ./deploy/instalar.sh --dry-run  muestra lo que haría, sin escribir
+#   sudo ./deploy/instalar.sh --sin-escucha   solo el timer diario (sin clips-bot-telegram)
 set -euo pipefail
 
 DRY=0
-[ "${1:-}" = "--dry-run" ] && DRY=1
+ESCUCHA=1
+for a in "$@"; do
+  case "$a" in
+    --dry-run) DRY=1 ;;
+    --sin-escucha) ESCUCHA=0 ;;
+    *) echo "Opción desconocida: $a"; exit 1 ;;
+  esac
+done
 
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 USUARIO="${SUDO_USER:-$(id -un)}"
 LOG_DIR=/var/log/clips-bot
-UNIDADES=(clips-bot.service clips-bot.timer clips-bot-alerta@.service)
+UNIDADES=(clips-bot.service clips-bot.timer clips-bot-alerta@.service clips-bot-telegram.service)
 
 decir() { printf '  %s\n' "$*"; }
 hacer() { if [ "$DRY" = 1 ]; then printf '  [dry-run] %s\n' "$*"; else eval "$@"; fi; }
@@ -57,19 +65,28 @@ fi
 
 # --- escribir -----------------------------------------------------------------
 hacer "install -d -m 0755 -o '$USUARIO' -g '$USUARIO' '$LOG_DIR'"
-for u in clips-bot.service clips-bot-alerta@.service; do
+UNIDADES_A_ESCRIBIR=(clips-bot.service clips-bot-alerta@.service)
+[ "$ESCUCHA" = 1 ] && UNIDADES_A_ESCRIBIR+=(clips-bot-telegram.service)
+for u in "${UNIDADES_A_ESCRIBIR[@]}"; do
   hacer "sed -e 's|__DIR__|$DIR|g' -e 's|__USUARIO__|$USUARIO|g' '$DIR/deploy/$u' > '/etc/systemd/system/$u'"
 done
 hacer "install -m 0644 '$TIMER_TMP' /etc/systemd/system/clips-bot.timer"
 hacer "sed 's|__USUARIO__|$USUARIO|g' '$DIR/deploy/logrotate-clips-bot' > /etc/logrotate.d/clips-bot"
-hacer "chmod +x '$DIR/deploy/correr.sh' '$DIR/deploy/alerta.sh'"
+hacer "chmod +x '$DIR/deploy/correr.sh' '$DIR/deploy/alerta.sh' '$DIR/deploy/escuchar.sh'"
 hacer "systemctl daemon-reload"
 hacer "systemctl enable --now clips-bot.timer"
+if [ "$ESCUCHA" = 1 ]; then
+  hacer "systemctl enable --now clips-bot-telegram.service"
+else
+  decir "sin modo escucha (--sin-escucha): /buscar se atiende recién en la corrida diaria"
+fi
 rm -f "$TIMER_TMP"
 
 echo
 echo "Listo. Comprobaciones:"
 echo "  systemctl list-timers clips-bot.timer        # próxima corrida"
+echo "  systemctl status clips-bot-telegram          # la escucha de Telegram"
+echo "  journalctl -u clips-bot-telegram -f          # ver los comandos que llegan"
 echo "  sudo systemctl start clips-bot.service       # correrlo ahora a mano"
 echo "  journalctl -u clips-bot -f                   # ver la corrida en vivo"
 echo "  sudo logrotate -d /etc/logrotate.d/clips-bot # probar la rotación (sin aplicar)"

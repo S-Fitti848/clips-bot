@@ -396,14 +396,29 @@ def test_turnos_de_busqueda_topea_en_dos(tmp_path):
     y eso calienta la Pi y gasta cuota de Gemini. El turno va en la DB porque puede haber dos
     procesos (el timer y un `atender-telegram` a mano)."""
     conn = db.connect(tmp_path / "x.db")
-    assert db.tomar_turno_busqueda(conn, "a", maximo=2)
-    assert db.tomar_turno_busqueda(conn, "b", maximo=2)
-    assert not db.tomar_turno_busqueda(conn, "c", maximo=2)
-    db.soltar_turno_busqueda(conn, "a")
-    assert db.tomar_turno_busqueda(conn, "c", maximo=2)
+    R = db.RECURSO_BUSQUEDAS
+    assert db.tomar_turno(conn, R, "a", maximo=2)
+    assert db.tomar_turno(conn, R, "b", maximo=2)
+    assert not db.tomar_turno(conn, R, "c", maximo=2)
+    db.soltar_turno(conn, R, "a")
+    assert db.tomar_turno(conn, R, "c", maximo=2)
     # un turno colgado (el proceso murió) se suelta solo al vencer
-    assert not db.tomar_turno_busqueda(conn, "d", maximo=2)
-    assert db.tomar_turno_busqueda(conn, "d", maximo=2, vencimiento_s=0)
+    assert not db.tomar_turno(conn, R, "d", maximo=2)
+    assert db.tomar_turno(conn, R, "d", maximo=2, vencimiento_s=0)
+    conn.close()
+
+
+def test_el_trabajo_pesado_es_de_a_uno(tmp_path):
+    """`diario` y cada /buscar toman el mismo turno: procesar un clip son minutos de CPU en la Pi
+    y no puede haber dos a la vez."""
+    conn = db.connect(tmp_path / "y.db")
+    assert db.hay_trabajo_pesado(conn) is None
+    assert db.tomar_turno(conn, db.RECURSO_PESADO, "diario")
+    assert db.hay_trabajo_pesado(conn) == "diario"
+    assert not db.tomar_turno(conn, db.RECURSO_PESADO, "buscar:davoo")
+    db.soltar_turno(conn, db.RECURSO_PESADO, "diario")
+    assert db.hay_trabajo_pesado(conn) is None
+    assert db.tomar_turno(conn, db.RECURSO_PESADO, "buscar:davoo")
     conn.close()
 
 

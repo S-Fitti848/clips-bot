@@ -1,0 +1,46 @@
+# Modo escucha: queda con long polling contra Telegram para que /buscar ande cuando lo mandás y no
+# recién en la corrida del día siguiente. Es el ÚNICO servicio de este proyecto que corre siempre.
+#
+# No se pisa con clips-bot.service: los dos toman el mismo turno "pesado" en la DB, así que nunca
+# hay dos clips procesándose a la vez. Si la corrida diaria está andando, la búsqueda queda en cola
+# y arranca sola cuando termina.
+[Unit]
+Description=Clips Bot - escucha de Telegram (/buscar, /reclamo)
+After=network-online.target
+Wants=network-online.target
+# Si se reinicia 5 veces en 5 min es un problema de verdad, no una caída pasajera: para y avisa.
+# Van en [Unit] (systemd >= 229); en [Service] todavía se aceptan pero tiran warning.
+StartLimitIntervalSec=300
+StartLimitBurst=5
+OnFailure=clips-bot-alerta@%n.service
+
+[Service]
+Type=simple
+User=__USUARIO__
+WorkingDirectory=__DIR__
+Environment=PYTHONUNBUFFERED=1
+# Misma prioridad baja que la corrida diaria: la Pi comparte CPU con el bot de trading y llega a
+# 84 °C con Whisper sostenido.
+Environment=OMP_NUM_THREADS=2
+Nice=10
+IOSchedulingClass=idle
+CPUWeight=20
+Environment=HF_HOME=__DIR__/.cache/huggingface
+Environment=XDG_CACHE_HOME=__DIR__/.cache
+ExecStart=__DIR__/deploy/escuchar.sh
+
+# Si se cae (corte de red largo, Telegram caído, un bug), vuelve solo. El long polling ya reintenta
+# los errores de red por su cuenta; esto es para lo que lo mata de verdad.
+Restart=always
+RestartSec=30
+
+SyslogIdentifier=clips-bot-telegram
+
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=full
+ProtectHome=read-only
+ReadWritePaths=__DIR__ /var/log/clips-bot
+
+[Install]
+WantedBy=multi-user.target

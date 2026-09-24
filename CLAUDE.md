@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-09-23 | **Versión:** v0.16.0 | **Modo:** Fase 1 andando: primera entrega real hecha (3 Shorts por Telegram)
+**Snapshot:** 2026-09-23 | **Versión:** v0.17.0 | **Modo:** Fase 1 andando: primera entrega real hecha (3 Shorts por Telegram)
 
 > **Reglas de trabajo sobre este archivo:** se edita con Edit o se reescribe entero. NADA de scripts
 > de reemplazo encadenados: uno rompió el archivo el 2026-09-22 (37 MB de texto repetido) y hubo que
@@ -75,7 +75,8 @@ servicio systemd separado: `clips-bot`).
 | Métricas | YouTube Data + Analytics API, Meta Graph API, TikTok Display API | solo cuentas propias, sin auditoría |
 | Estado | SQLite (`data/clips.db`) | clips vistos, subidos, cursores, exclusiones |
 | Alertas | Telegram (bot nuevo, no el del trading) | resumen diario + errores |
-| Scheduler | systemd timer (1 corrida/día, ej. 05:00 AR) | + watchdog simple |
+| Scheduler | systemd timer (1 corrida/día, 05:00 AR) | `clips-bot.timer` |
+| Escucha de Telegram | systemd service siempre andando (long polling) | `clips-bot-telegram` |
 
 Restricción de hardware (medido en la Pi el 2026-09-23, no estimado): Pi 4 Model B Rev 1.4, 8 GB,
 4 núcleos, Debian 13, systemd 257, zona horaria ya en AR. **No hay undervoltage** (`throttled`
@@ -293,7 +294,7 @@ clips_bot/textos.py      paso 7: título/descripción/hashtags/gancho/depende_de
 clips_bot/multipov.py    paso 7b: pico de reacción, ventanas, carteles, concat y medición del
                          panel de cada tramo (medir_panel / panel_vacio)
 clips_bot/benchmark.py   `benchmark`: tiempos por etapa y comparación de modelos de Whisper
-deploy/                  systemd (service + timer 05:00 AR + alerta por Telegram), logrotate,
+deploy/                  systemd (timer 05:00 AR + escucha de Telegram + alerta), logrotate,
                          instalar.sh y README con el orden del deploy en la Pi
 clips_bot/seleccion.py   paso 8: score por fuente, cupos por grupo con fallback, desempate Gemini
 clips_bot/telegram.py    paso 10: sendVideo (width/height/duration + miniatura), mensaje con bloques
@@ -471,6 +472,13 @@ Problemas abiertos:
   requests/día, fallback automático a `gemini-3.5-flash-lite` ante 429 por cuota, reintentos 3 → 2 y
   `textos_pendientes` para no perder el render. Fútbol: segunda señal por fracción de verde-césped
   (calibrada con 8 clips reales; agarra el caso que el marcador no veía). 122 tests OK.
+- v0.17.0 (2026-09-23) — Modo escucha: `atender-telegram --escuchar` con long polling y su propio
+  servicio (`clips-bot-telegram`, `Restart=always`, misma prioridad baja), así `/buscar` anda en el
+  momento y no recién en la corrida del día siguiente. Turno de "trabajo pesado" en la DB que toman
+  `diario` y cada búsqueda: nunca hay dos clips procesándose a la vez. Si llega un `/buscar` durante
+  la corrida diaria, contesta "en cola" y arranca solo al terminar; al revés, `diario` espera hasta
+  20 min a una búsqueda y después arranca igual (el día no se saltea). `MAX_BUSQUEDAS` pasa a ser el
+  tope de la COLA, porque la ejecución ahora la serializa el turno. 163 tests OK.
 - v0.16.0 (2026-09-23) — Comando `/buscar <streamer> [palabras] [días]` por Telegram, solo para
   usuarios permitidos: búsqueda a mano con todos los filtros, aviso previo con la cantidad de
   candidatos, hasta 3 clips por búsqueda y 2 búsquedas simultáneas (turno en la DB, no en memoria,

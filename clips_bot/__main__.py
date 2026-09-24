@@ -23,6 +23,7 @@ import html
 import json
 import logging
 import sys
+import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -317,9 +318,41 @@ def enviar_clip(tg: TelegramClient, chat_id: str, conn, clip_id: str, meta: dict
 
 def cmd_diario(args: argparse.Namespace) -> int:
     """Corrida diaria completa: candidatos → procesar lo necesario → elegir → entregar."""
+    settings = load_settings()
+
+    # Turno pesado: si hay un /buscar andando (modo escucha), se espera a que termine en vez de
+    # pelearle la CPU a la Pi. Después de ESPERA_DIARIO_S arranca igual: la corrida del día no se
+    # saltea por una búsqueda que quedó larga o colgada.
+    token = f"diario:{datetime.now(timezone.utc).timestamp():.0f}"
+    conn = db.connect(DB_PATH)
+    try:
+        espera = 0.0
+        while not db.tomar_turno(conn, db.RECURSO_PESADO, token, maximo=1,
+                                 vencimiento_s=VENCIMIENTO_PESADO_S):
+            quien = db.hay_trabajo_pesado(conn, VENCIMIENTO_PESADO_S)
+            if espera >= ESPERA_DIARIO_S:
+                print(f"  {quien} sigue andando después de {espera / 60:.0f} min: arranco igual")
+                db.soltar_turno(conn, db.RECURSO_PESADO, str(quien), VENCIMIENTO_PESADO_S)
+                continue
+            if espera == 0:
+                print(f"  hay {quien} andando; espero hasta {ESPERA_DIARIO_S // 60} min")
+            time.sleep(30)
+            espera += 30
+    finally:
+        conn.close()
+    try:
+        return _diario(args, settings)
+    finally:
+        conn = db.connect(DB_PATH)
+        try:
+            db.soltar_turno(conn, db.RECURSO_PESADO, token, VENCIMIENTO_PESADO_S)
+        finally:
+            conn.close()
+
+
+def _diario(args: argparse.Namespace, settings: Settings) -> int:
     from .process import procesar
 
-    settings = load_settings()
     streamers = load_streamers()
     gemini = _gemini(settings)
 
@@ -629,13 +662,13 @@ def atender_telegram(settings: Settings, silencioso: bool = False) -> int:
             elif c["comando"] == "/buscar":
                 respuesta = _buscar(conn, tg, c["chat_id"], c["args"], settings,
                                     load_streamers(), _gemini(settings))
+                if respuesta is OCUPADO:
+                    # Sin modo escucha no hay cola: este proceso termina cuando termina la pasada.
+                    respuesta = (f"Hay una corrida pesada andando ({db.hay_trabajo_pesado(conn)}). "
+                                 "Probá de nuevo cuando termine, o dejá andando "
+                                 "<code>clips-bot-telegram</code> para que quede en cola.")
             elif c["comando"] in ("/ayuda", "/start", "/help"):
-                respuesta = ("Comandos:\n"
-                             "/reclamo &lt;id del clip&gt; — marcá que ese video recibió un reclamo o "
-                             "strike. Excluyo al streamer de las próximas corridas.\n"
-                             "/buscar &lt;streamer&gt; [palabras] [días] — busco en sus clips de los "
-                             f"últimos días (default 7), proceso los {TOPE_BUSCAR} mejores y te los "
-                             "mando. Ej: <code>/buscar davooxeneize gol 3</code>")
+                respuesta = _ayuda()
             else:
                 respuesta = f"No conozco {c['comando']}. Probá /ayuda."
             if respuesta:
@@ -654,13 +687,18 @@ def atender_telegram(settings: Settings, silencioso: bool = False) -> int:
         conn.close()
 
 
-MAX_BUSQUEDAS = 2      # a la vez, contando otros procesos (el turno se guarda en la DB)
+MAX_BUSQUEDAS = 2      # búsquedas esperando en la cola del modo escucha
 TOPE_BUSCAR = 3        # clips procesados por búsqueda: cada uno es Whisper + OCR + render
+VENCIMIENTO_PESADO_S = 3 * 3600   # un turno pesado colgado se suelta solo a las 3 h
+ESPERA_DIARIO_S = 20 * 60         # lo que `diario` aguanta a una búsqueda antes de arrancar igual
+
+OCUPADO = object()     # lo devuelve _buscar cuando hay otra cosa pesada andando
 
 
 def _buscar(conn, tg: TelegramClient, chat_id: str, args: list[str], settings: Settings,
-            streamers: list, gemini: GeminiClient | None) -> str | None:
-    """/buscar <streamer> [palabras] [días]. Devuelve el mensaje final, o None si ya respondió.
+            streamers: list, gemini: GeminiClient | None):
+    """/buscar <streamer> [palabras] [días]. Devuelve el mensaje final, None si ya respondió, o
+    OCUPADO si hay otra cosa pesada corriendo (el que llama decide si encola).
 
     Contesta "buscando..." con cuántos candidatos hay ANTES de procesar, porque procesar 3 clips en
     la Pi son varios minutos y si no parece que el bot se colgó.
@@ -687,10 +725,11 @@ def _buscar(conn, tg: TelegramClient, chat_id: str, args: list[str], settings: S
     if login in excluidos:
         return f"{login} está EXCLUIDO ({excluidos[login]}). Sacalo a mano si querés volver a usarlo."
 
-    token = f"{login}:{datetime.now(timezone.utc).timestamp():.0f}"
-    if not db.tomar_turno_busqueda(conn, token, MAX_BUSQUEDAS):
-        return (f"Ya hay {MAX_BUSQUEDAS} búsquedas andando. Esperá a que terminen: cada una procesa "
-                f"hasta {TOPE_BUSCAR} clips y eso calienta la Pi y gasta cuota de Gemini.")
+    # Turno pesado: procesar clips es lo caro, y no puede haber dos a la vez (ni con `diario`).
+    token = f"buscar:{login}:{datetime.now(timezone.utc).timestamp():.0f}"
+    if not db.tomar_turno(conn, db.RECURSO_PESADO, token, maximo=1,
+                          vencimiento_s=VENCIMIENTO_PESADO_S):
+        return OCUPADO
     try:
         # Ventana pedida a mano: sin el mínimo de 24 h de antigüedad (eso es para que un clip junte
         # vistas y duplicados; acá el que busca ya sabe lo que quiere) y con margen de candidatos
@@ -742,7 +781,7 @@ def _buscar(conn, tg: TelegramClient, chat_id: str, args: list[str], settings: S
         final.append(_resumen_descartes(res))
         return "\n".join(x for x in final if x)
     finally:
-        db.soltar_turno_busqueda(conn, token)
+        db.soltar_turno(conn, db.RECURSO_PESADO, token, VENCIMIENTO_PESADO_S)
 
 
 def _resumen_descartes(res) -> str:
@@ -754,6 +793,97 @@ def _resumen_descartes(res) -> str:
     total = sum(v for _, v in filas)
     cuerpo = "\n".join(f"{v:>4}  {html.escape(k)}" for k, v in filas if v)
     return f"\nDescartes ({total}):\n<pre>{cuerpo}</pre>"
+
+
+def escuchar_telegram(settings: Settings, timeout_poll: int = 50) -> int:
+    """`atender-telegram --escuchar`: long polling, para que /buscar ande cuando lo mandás y no
+    recién en la corrida del día siguiente. Lo corre clips-bot-telegram.service.
+
+    Cola: si hay una corrida pesada andando (`diario` o la búsqueda anterior), la búsqueda no se
+    tira, se guarda y arranca sola cuando se libera el turno. Mientras hay algo en la cola el
+    polling baja a unos segundos, así no se queda esperando 50 s para reaccionar.
+    """
+    from .telegram import comandos, usuarios_permitidos
+
+    tg = TelegramClient(env("TELEGRAM_BOT_TOKEN"), timeout=timeout_poll + 30)
+    permitidos = usuarios_permitidos(env("TELEGRAM_ALLOWED_USERS", requerido=False))
+    if not permitidos:
+        log.warning("TELEGRAM_ALLOWED_USERS vacío: no obedezco ningún comando")
+    cola: list[dict] = []
+    print(f"Escuchando (long polling {timeout_poll}s). Ctrl-C para salir.")
+    while True:
+        conn = db.connect(DB_PATH)
+        try:
+            _drenar_cola(conn, tg, cola, settings)
+            guardado = db.get_valor(conn, "telegram_offset")
+            espera = 5 if cola else timeout_poll
+            try:
+                updates = tg.get_updates(offset=int(guardado) if guardado else None, timeout=espera)
+            except TelegramError as e:
+                # Un corte de red no puede matar el servicio: se anota y se reintenta.
+                log.warning("getUpdates falló (%s); reintento en 30 s", e)
+                time.sleep(30)
+                continue
+            for c in comandos(updates):
+                if c["user_id"] not in permitidos:
+                    log.warning("%s de %s (id %s): no autorizado", c["comando"], c["usuario"],
+                                c["user_id"])
+                    continue
+                _despachar(conn, tg, c, settings, cola)
+            if updates:
+                db.set_valor(conn, "telegram_offset", str(max(u["update_id"] for u in updates) + 1))
+        finally:
+            conn.close()
+
+
+def _despachar(conn, tg: TelegramClient, c: dict, settings: Settings, cola: list[dict]) -> None:
+    """Un comando del modo escucha. /buscar puede quedar en cola; el resto contesta al toque."""
+    print(f"  {c['comando']} {' '.join(c['args'])} de {c['usuario'] or c['user_id']}")
+    if c["comando"] == "/buscar":
+        if len(cola) >= MAX_BUSQUEDAS:
+            tg.send_message(c["chat_id"], f"Ya tengo {len(cola)} búsquedas en cola. Esperá a que "
+                                          "salgan esas y probá de nuevo.")
+            return
+        r = _buscar(conn, tg, c["chat_id"], c["args"], settings, load_streamers(), _gemini(settings))
+        if r is OCUPADO:
+            cola.append({"chat_id": c["chat_id"], "args": c["args"]})
+            quien = db.hay_trabajo_pesado(conn, VENCIMIENTO_PESADO_S) or ""
+            que = "la corrida diaria" if quien.startswith("diario") else "la búsqueda anterior"
+            tg.send_message(c["chat_id"], f"En cola ({len(cola)}º), arranco cuando termine {que}.")
+        elif r:
+            tg.send_message(c["chat_id"], r)
+        return
+    if c["comando"] == "/reclamo":
+        respuesta = _reclamo(conn, c["args"])
+    elif c["comando"] in ("/ayuda", "/start", "/help"):
+        respuesta = _ayuda()
+    else:
+        respuesta = f"No conozco {c['comando']}. Probá /ayuda."
+    tg.send_message(c["chat_id"], respuesta)
+
+
+def _drenar_cola(conn, tg: TelegramClient, cola: list[dict], settings: Settings) -> None:
+    """Arranca las búsquedas que estaban esperando, mientras el turno pesado siga libre."""
+    while cola:
+        if db.hay_trabajo_pesado(conn, VENCIMIENTO_PESADO_S):
+            return
+        pedido = cola.pop(0)
+        r = _buscar(conn, tg, pedido["chat_id"], pedido["args"], settings, load_streamers(),
+                    _gemini(settings))
+        if r is OCUPADO:  # alguien tomó el turno entre el chequeo y la llamada
+            cola.insert(0, pedido)
+            return
+        if r:
+            tg.send_message(pedido["chat_id"], r)
+
+
+def _ayuda() -> str:
+    return ("Comandos:\n"
+            "/reclamo &lt;id del clip&gt; — marcá que ese video recibió un reclamo o strike. "
+            "Excluyo al streamer de las próximas corridas.\n"
+            "/buscar &lt;streamer&gt; [palabras] [días] — busco en sus clips de los últimos días "
+            f"(default 7), proceso los {TOPE_BUSCAR} mejores y te los mando. "
+            "Ej: <code>/buscar davooxeneize gol 3</code>")
 
 
 def _reclamo(conn, args: list[str]) -> str:
@@ -774,7 +904,14 @@ def _reclamo(conn, args: list[str]) -> str:
 
 
 def cmd_atender_telegram(args: argparse.Namespace) -> int:
-    atender_telegram(load_settings())
+    settings = load_settings()
+    if args.escuchar:
+        try:
+            escuchar_telegram(settings)
+        except KeyboardInterrupt:
+            print("\nListo.")
+        return 0
+    atender_telegram(settings)
     return 0
 
 
@@ -877,7 +1014,10 @@ def main(argv: list[str] | None = None) -> int:
     pm.add_argument("clip_id", nargs="+", help="ids de clips ya procesados (2 a 3 ángulos)")
     pm.set_defaults(func=cmd_multipov)
 
-    pa = sub.add_parser("atender-telegram", help="procesar los comandos que le mandaste al bot (/reclamo)")
+    pa = sub.add_parser("atender-telegram", help="procesar los comandos que le mandaste al bot")
+    pa.add_argument("--escuchar", action="store_true",
+                    help="queda escuchando con long polling en vez de hacer una sola pasada "
+                         "(lo usa clips-bot-telegram.service)")
     pa.set_defaults(func=cmd_atender_telegram)
 
     pt = sub.add_parser("telegram-chat-id", help="listar chats que le escribieron al bot (getUpdates)")

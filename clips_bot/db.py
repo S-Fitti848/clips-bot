@@ -179,45 +179,60 @@ def clip_de(conn: sqlite3.Connection, clip_id: str) -> tuple[str, str] | None:
     return (fila[0], fila[1]) if fila else None
 
 
-# ---- turnos de /buscar -------------------------------------------------------
-# Un /buscar procesa hasta 3 clips: descarga, Whisper, OCR y render. En la Pi eso calienta y gasta
-# cuota de Gemini, así que no puede haber más de N a la vez. El control va en la DB y no en memoria
-# porque puede haber dos procesos (el timer de systemd y un `atender-telegram` a mano).
+# ---- turnos: trabajo pesado y búsquedas -------------------------------------
+# Procesar un clip es descarga + Whisper + OCR + render: en la Pi son minutos y calienta. No puede
+# haber dos de esas cosas a la vez, y la corrida diaria no puede pisarse con un /buscar.
+#
+# El control va en la DB y no en memoria porque son PROCESOS distintos: el timer de systemd
+# (clips-bot.service), el modo escucha (clips-bot-telegram.service) y cualquier comando a mano.
+# Cada turno vence solo, por si el proceso que lo tomó murió a la mitad.
 
-CLAVE_BUSQUEDAS = "busquedas_activas"
+RECURSO_PESADO = "pesado"      # lo toman `diario` y cada /buscar: uno solo a la vez
+RECURSO_BUSQUEDAS = "busquedas"  # cuántos /buscar puede haber esperando, ver MAX_BUSQUEDAS
 
 
-def _busquedas(conn: sqlite3.Connection, vencimiento_s: float) -> list[tuple[str, float]]:
+def _clave_turno(recurso: str) -> str:
+    return f"turnos_{recurso}"
+
+
+def turnos_activos(conn: sqlite3.Connection, recurso: str,
+                   vencimiento_s: float = 3600) -> list[tuple[str, float]]:
     import json
     import time
 
-    crudo = get_valor(conn, CLAVE_BUSQUEDAS)
+    crudo = get_valor(conn, _clave_turno(recurso))
     ahora = time.time()
     try:
-        activas = json.loads(crudo) if crudo else []
+        activos = json.loads(crudo) if crudo else []
     except ValueError:
-        activas = []
-    # Las que quedaron colgadas (el proceso murió a mitad) se sueltan solas al vencer.
-    return [(str(t), float(ts)) for t, ts in activas if ahora - float(ts) < vencimiento_s]
+        activos = []
+    return [(str(t), float(ts)) for t, ts in activos if ahora - float(ts) < vencimiento_s]
 
 
-def tomar_turno_busqueda(conn: sqlite3.Connection, token: str, maximo: int = 2,
-                         vencimiento_s: float = 3600) -> bool:
-    """Reserva un lugar para una búsqueda. False si ya hay `maximo` andando."""
+def tomar_turno(conn: sqlite3.Connection, recurso: str, token: str, maximo: int = 1,
+                vencimiento_s: float = 3600) -> bool:
+    """Reserva un lugar. False si ya hay `maximo` tomados (los vencidos no cuentan)."""
     import json
     import time
 
-    activas = _busquedas(conn, vencimiento_s)
-    if len(activas) >= maximo:
-        set_valor(conn, CLAVE_BUSQUEDAS, json.dumps(activas))  # deja limpias las vencidas
+    activos = turnos_activos(conn, recurso, vencimiento_s)
+    if len(activos) >= maximo:
+        set_valor(conn, _clave_turno(recurso), json.dumps(activos))  # deja limpios los vencidos
         return False
-    activas.append((token, time.time()))
-    set_valor(conn, CLAVE_BUSQUEDAS, json.dumps(activas))
+    activos.append((token, time.time()))
+    set_valor(conn, _clave_turno(recurso), json.dumps(activos))
     return True
 
 
-def soltar_turno_busqueda(conn: sqlite3.Connection, token: str, vencimiento_s: float = 3600) -> None:
+def soltar_turno(conn: sqlite3.Connection, recurso: str, token: str,
+                 vencimiento_s: float = 3600) -> None:
     import json
 
-    activas = [(t, ts) for t, ts in _busquedas(conn, vencimiento_s) if t != token]
-    set_valor(conn, CLAVE_BUSQUEDAS, json.dumps(activas))
+    activos = [(t, ts) for t, ts in turnos_activos(conn, recurso, vencimiento_s) if t != token]
+    set_valor(conn, _clave_turno(recurso), json.dumps(activos))
+
+
+def hay_trabajo_pesado(conn: sqlite3.Connection, vencimiento_s: float = 3600) -> str | None:
+    """Qué está corriendo ahora mismo (el token dice quién), o None si está libre."""
+    activos = turnos_activos(conn, RECURSO_PESADO, vencimiento_s)
+    return activos[0][0] if activos else None

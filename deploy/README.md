@@ -76,8 +76,20 @@ Qué deja:
 |---|---|
 | `/etc/systemd/system/clips-bot.service` | la corrida (`Type=oneshot`, `Nice=10`, CPU de baja prioridad) |
 | `/etc/systemd/system/clips-bot.timer` | 05:00 AR todos los días, `Persistent=true` |
+| `/etc/systemd/system/clips-bot-telegram.service` | la escucha de Telegram, siempre andando |
 | `/etc/systemd/system/clips-bot-alerta@.service` | el aviso por Telegram cuando falla |
-| `/etc/logrotate.d/clips-bot` | rota `/var/log/clips-bot/diario.log`, 14 días o 20 MB |
+| `/etc/logrotate.d/clips-bot` | rota `/var/log/clips-bot/*.log`, 14 días o 20 MB |
+
+**Escucha de Telegram.** `clips-bot-telegram.service` es el único que corre siempre: hace long
+polling para que `/buscar` ande en el momento y no recién en la corrida del día siguiente. Vuelve
+solo si se cae (`Restart=always`), y si se reinicia 5 veces en 5 minutos para y manda la alerta —
+eso ya no es una caída pasajera. Con `--sin-escucha` el instalador lo saltea y queda solo el timer.
+
+**Nunca hay dos cosas pesadas a la vez.** `diario` y cada `/buscar` toman el mismo turno en la DB
+(no en memoria: son procesos distintos). Si llega un `/buscar` mientras corre la corrida diaria, el
+bot contesta *"En cola (1º), arranco cuando termine la corrida diaria"* y lo larga solo cuando se
+libera. Al revés también: la corrida de las 05:00 espera hasta 20 minutos a una búsqueda que esté
+andando y después arranca igual, porque el día no se puede saltear.
 
 **Horario.** El timer dice `05:00 America/Argentina/Buenos_Aires`. La zona horaria dentro de
 `OnCalendar=` existe desde systemd 252 (Raspberry Pi OS Bookworm la tiene). Si la Pi tuviera una
@@ -100,13 +112,19 @@ sudo systemctl start clips-bot.service                 # correrlo ahora
 journalctl -u clips-bot -f                             # verlo en vivo
 sudo systemctl start clips-bot-alerta@prueba.service   # probar el aviso de Telegram
 sudo logrotate -d /etc/logrotate.d/clips-bot           # probar la rotación, sin aplicar
+systemctl status clips-bot-telegram                    # la escucha
+journalctl -u clips-bot-telegram -f                    # ver los comandos que van llegando
 ```
+
+Para probar la cola a mano: `sudo systemctl start clips-bot.service` y, mientras corre, mandale un
+`/buscar` al bot — tiene que contestar que quedó en cola y arrancar cuando la corrida termine.
 
 ## 5. Sacarlo
 
 ```bash
-sudo systemctl disable --now clips-bot.timer
-sudo rm /etc/systemd/system/clips-bot{.service,.timer} /etc/systemd/system/clips-bot-alerta@.service
+sudo systemctl disable --now clips-bot.timer clips-bot-telegram.service
+sudo rm /etc/systemd/system/clips-bot{.service,.timer,-telegram.service}
+sudo rm /etc/systemd/system/clips-bot-alerta@.service
 sudo rm /etc/logrotate.d/clips-bot
 sudo systemctl daemon-reload
 ```
