@@ -96,7 +96,12 @@ render:
   recorte_inferior_camara_px: 50  # px del video original que se sacan del pie del cuadro de cámara (UI del juego)
   zoom_sin_camara: 1.08      # (ya no se usa: el recorte sin cara pasó a ser fit_blur)
   blur_sigma: 30             # fondo borroso del layout fit_blur
-  x264_preset: medium        # en la Pi conviene veryfast
+  # veryfast, medido en la Pi el 2026-09-23 sobre un clip de 60 s: 111 s contra 197 s de `medium`
+  # (43 % menos) con SSIM 0,994 entre los dos, o sea indistinguible, y encima el archivo sale más
+  # chico (2609 contra 2928 kbps). `superfast` baja a 96 s pero se va a 4738 kbps, casi el tope de
+  # 5 Mbps: un clip de 59 s quedaría en ~35 MB, demasiado cerca del límite de 50 MB de Telegram.
+  # En la Pi el render es la etapa más cara del pipeline, no Whisper: 107-197 s por clip con medium.
+  x264_preset: veryfast
   crf: 20
   maxrate_kbps: 5000         # tope: 59 s × 5 Mbps ≈ 38 MB < 50 MB (límite de la Bot API de Telegram)
 
