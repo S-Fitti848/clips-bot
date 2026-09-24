@@ -6,9 +6,15 @@ set -uo pipefail
 UNIDAD="${1:-clips-bot.service}"
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
+# El .env puede venir de Windows con finales de línea CRLF. Bash se trae el  pegado al valor y
+# la URL de la API sale rota ("curl: (3) URL rejected"), sin decir por qué. Python no se entera
+# porque convierte los saltos al leer, así que el bot anda y solo se rompe la alerta: justo lo que
+# no se prueba nunca. Por eso se saca el  acá antes de importar.
 # shellcheck disable=SC1090
 if [ -f "$DIR/.env" ]; then
-  set -a; . "$DIR/.env"; set +a
+  set -a
+  . <(tr -d '' < "$DIR/.env")
+  set +a
 fi
 : "${TELEGRAM_BOT_TOKEN:?falta TELEGRAM_BOT_TOKEN en $DIR/.env}"
 : "${TELEGRAM_CHAT_ID:?falta TELEGRAM_CHAT_ID en $DIR/.env}"
