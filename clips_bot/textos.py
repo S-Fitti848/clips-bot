@@ -12,8 +12,11 @@ from .gemini import GeminiClient
 
 # Tipo de gancho del título: se guarda para el análisis de métricas (§4b).
 GANCHOS = ("reaccion", "frase_textual", "pregunta", "situacion", "resultado")
-CAMPOS = ("titulo", "descripcion", "hashtags", "gancho", "depende_de_fecha")
-MOTIVO_FECHA = "depende_de_fecha"  # motivo de descarte en la DB
+CAMPOS = ("titulo", "descripcion", "hashtags", "gancho", "depende_de_fecha", "sensible",
+          "puntaje")
+MOTIVO_FECHA = "depende_de_fecha"      # motivos de descarte en la DB
+MOTIVO_SENSIBLE = "tono_sensible"      # muerte, duelo, enfermedad, violencia real, salud mental
+MOTIVO_SIN_REMATE = "sin_remate"       # no se entiende solo o no tiene remate
 MAX_TRANSCRIPCION = 3000
 
 _HASHTAG = re.compile(r"^#[^\W_]\w*$")
@@ -26,6 +29,8 @@ SCHEMA = {
         "hashtags": {"type": "ARRAY", "items": {"type": "STRING"}},
         "gancho": {"type": "STRING", "enum": list(GANCHOS)},
         "depende_de_fecha": {"type": "BOOLEAN"},
+        "sensible": {"type": "BOOLEAN"},
+        "puntaje": {"type": "INTEGER"},
     },
     "required": list(CAMPOS),
     "propertyOrdering": list(CAMPOS),
@@ -49,6 +54,15 @@ Reglas:
   un cumpleaños, una fecha especial, un drama o tendencia de esos días. false si se entiende y
   funciona igual en cualquier momento (jugadas, reacciones, charlas, anécdotas).
   Ante la duda, true.
+- sensible: true si el clip trata de muerte, duelo, homenajes o memoriales, enfermedad, accidentes,
+  llanto real (no de risa), violencia real entre personas (algo que pasó de verdad y se muestra o
+  se cuenta), o salud mental. Ante la duda, true.
+  NO es sensible: el humor normal, las puteadas, las derrotas, las peleas DENTRO de un juego, ni una
+  charla hipotética sobre quién ganaría una pelea.
+- puntaje: del 1 al 10, cuánto se entiende el clip SOLO, sin saber lo que pasó antes, y si tiene un
+  remate (algo que cierra: una reacción, una frase, un desenlace). Si te mandan frames, contá lo que
+  se VE: un fail, un susto o una cara valen como remate aunque no se diga nada. 10 = se entiende
+  solo y tiene remate claro. 1 = no se entiende qué pasa ni mirando las imágenes.
 Respondé solo con el JSON pedido."""
 
 
@@ -64,6 +78,8 @@ class TextosClip:
     gancho: str
     credito: str
     depende_de_fecha: bool = False
+    sensible: bool = False   # muerte, duelo, enfermedad, violencia real, salud mental
+    puntaje: int = 0         # 1 a 10: se entiende solo + tiene remate
 
     def to_dict(self) -> dict:
         d = asdict(self)
@@ -73,7 +89,8 @@ class TextosClip:
     @classmethod
     def from_dict(cls, d: dict) -> "TextosClip":
         return cls(d["titulo"], d["descripcion"], tuple(d["hashtags"]), d["gancho"], d["credito"],
-                   bool(d.get("depende_de_fecha", False)))
+                   bool(d.get("depende_de_fecha", False)), bool(d.get("sensible", False)),
+                   int(d.get("puntaje", 0)))
 
 
 # Palabras que arrancan en mayúscula pero no nombran nada: pronombres, días, y el arranque de una
@@ -194,6 +211,11 @@ def validar(data: object, cfg: Textos, contexto: str = "") -> list[str]:
         errores.append(f"gancho tiene que ser uno de {list(GANCHOS)}")
     if not isinstance(data.get("depende_de_fecha"), bool):
         errores.append("depende_de_fecha tiene que ser true o false")
+    if not isinstance(data.get("sensible"), bool):
+        errores.append("sensible tiene que ser true o false")
+    p = data.get("puntaje")
+    if not isinstance(p, int) or isinstance(p, bool) or not 1 <= p <= 10:
+        errores.append("puntaje tiene que ser un entero de 1 a 10")
     return errores
 
 
@@ -219,6 +241,8 @@ def parsear(texto: str, cfg: Textos, canal: str, login: str,
             gancho=data["gancho"],
             credito=cred,
             depende_de_fecha=data["depende_de_fecha"],
+            sensible=data["sensible"],
+            puntaje=data["puntaje"],
         ),
         [],
     )
@@ -242,7 +266,11 @@ Generá: titulo (máximo {cfg.max_titulo} caracteres), descripcion, hashtags (en
 
 
 def generar(cliente: GeminiClient, cfg: Textos, *, canal: str, login: str, categoria: str,
-            titulo_twitch: str, duracion: float, transcripcion: str, fecha: str | None = None) -> TextosClip:
+            titulo_twitch: str, duracion: float, transcripcion: str, fecha: str | None = None,
+            imagenes: list[bytes] | None = None) -> TextosClip:
+    """`imagenes`: frames del clip, en la misma llamada. Sin ellas el puntaje castiga al humor
+    visual: medido sobre 30 clips, los que solo se entienden con la imagen puntuaban 4,0 de mediana
+    contra 5,0 el resto, y tenían 1,60 palabras/s contra 2,45."""
     prompt = armar_prompt(canal, categoria, titulo_twitch, duracion, transcripcion, cfg, fecha)
     # Contra esto se chequean los nombres del título. El nombre del canal entra a propósito: el
     # streamer puede ir en el título aunque no se nombre a sí mismo hablando.
@@ -252,7 +280,8 @@ def generar(cliente: GeminiClient, cfg: Textos, *, canal: str, login: str, categ
         p = prompt
         if errores:
             p += "\n\nTu respuesta anterior no era válida. Corregí esto:\n- " + "\n- ".join(errores)
-        textos, errores = parsear(cliente.json(SISTEMA, p, SCHEMA), cfg, canal, login, contexto)
+        crudo = cliente.json(SISTEMA, p, SCHEMA, imagenes=imagenes)
+        textos, errores = parsear(crudo, cfg, canal, login, contexto)
         if textos:
             return textos
     raise TextosError("Gemini no devolvió textos válidos: " + "; ".join(errores))

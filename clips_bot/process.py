@@ -24,7 +24,7 @@ from .candidates import MOTIVO_COSTREAM, es_costream
 from .config import DB_PATH, OUTPUT_DIR, Settings, Streamer
 from .download import descargar
 from .gemini import GeminiClient, GeminiError
-from .media import fraccion_silencio, probe
+from .media import fraccion_silencio, frames_jpeg, probe
 from .render import renderizar
 
 log = logging.getLogger(__name__)
@@ -63,6 +63,8 @@ class Resultado:
     subtitulos_quemados: bool = True
     textos: dict | None = None
     textos_pendientes: bool = False  # el render está hecho; `seleccionar` reintenta los textos
+    puntaje: int = 0        # 1 a 10 de Gemini: se entiende solo + tiene remate
+    relleno: bool = False   # no llegó al corte de calidad: solo se usa si falta para llenar el día
     descartado: str | None = None
     salida: str | None = None
     tiempos: dict[str, float] = field(default_factory=dict)
@@ -194,7 +196,9 @@ def procesar(url: str, cfg: Settings, streamers: list[Streamer], forzar: bool = 
     if gemini:
         try:
             with crono.etapa("gemini: textos"):
-                res.textos = generar_textos(gemini, cfg, asdict(res)).to_dict()
+                imgs = frames_jpeg(d.path, cfg.textos.frames_para_puntaje) \
+                    if cfg.textos.frames_para_puntaje else None
+                res.textos = generar_textos(gemini, cfg, asdict(res), imagenes=imgs).to_dict()
             avisar(f"  título: {res.textos['titulo']}")
         except (GeminiError, tx.TextosError) as e:
             avisar(f"  ⚠ textos: {e}")
@@ -203,6 +207,21 @@ def procesar(url: str, cfg: Settings, streamers: list[Streamer], forzar: bool = 
             "depende de la fecha (referencia a algo puntual de ese día)", tx.MOTIVO_FECHA
         ):
             return _cerrar(res)
+        # Tono: descarte duro, sin excepciones y sin relleno. Es el único filtro de contenido que
+        # mira de QUÉ trata el clip; existe porque el 2026-09-24 casi se publica el memorial de una
+        # mascota muerta con un emoji de risa en el título.
+        if res.textos and res.textos.get("sensible") and descartar(
+            "tono sensible (muerte, duelo, enfermedad, violencia real o salud mental)",
+            tx.MOTIVO_SENSIBLE
+        ):
+            return _cerrar(res)
+        # Calidad: NO es un descarte. El clip se renderiza igual y queda marcado como relleno, para
+        # usarlo solo si la corrida no llega a 3 con los que sí pasaron.
+        if res.textos:
+            res.puntaje = int(res.textos.get("puntaje") or 0)
+            res.relleno = 0 < res.puntaje < cfg.textos.puntaje_min
+            if res.relleno:
+                avisar(f"  puntaje {res.puntaje} < {cfg.textos.puntaje_min}: queda como RELLENO")
     else:
         res.textos_pendientes = True
         avisar("  (sin GEMINI_API_KEY: textos pendientes)")
@@ -248,15 +267,17 @@ def procesar(url: str, cfg: Settings, streamers: list[Streamer], forzar: bool = 
     shutil.copyfile(work / "subs.srt", READY_DIR / f"{d.clip_id}.srt")
     res.salida = str(salida)
 
-    _registrar(res, "procesado", None)
+    _registrar(res, "procesado", tx.MOTIVO_SIN_REMATE if res.relleno else None)
     return _cerrar(res)
 
 
-def generar_textos(gemini: GeminiClient, cfg: Settings, meta: dict) -> tx.TextosClip:
+def generar_textos(gemini: GeminiClient, cfg: Settings, meta: dict,
+                   imagenes: list[bytes] | None = None) -> tx.TextosClip:
     return tx.generar(
         gemini, cfg.textos, canal=meta["canal"] or meta["streamer"], login=meta["streamer"],
         categoria=meta["categoria"], titulo_twitch=meta["titulo_twitch"], duracion=meta["duracion_s"],
         transcripcion=meta["transcripcion"], fecha=(meta.get("creado") or "")[:10] or None,
+        imagenes=imagenes,
     )
 
 

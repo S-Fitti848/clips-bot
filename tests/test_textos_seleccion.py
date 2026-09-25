@@ -18,6 +18,8 @@ VALIDO = {
     "hashtags": ["#Shorts", "#elxokas", "#WoW"],
     "gancho": "reaccion",
     "depende_de_fecha": False,
+    "sensible": False,
+    "puntaje": 7,
 }
 
 
@@ -31,8 +33,10 @@ def test_valido_pasa_y_agrega_credito():
     assert t.credito == "Clip de elxokas — twitch.tv/elxokas"
     assert t.descripcion.endswith("\n\nClip de elxokas — twitch.tv/elxokas")
     assert t.hashtags == ("#Shorts", "#elxokas", "#WoW")
-    assert set(t.to_dict()) == {"titulo", "descripcion", "hashtags", "gancho", "credito", "depende_de_fecha"}
+    assert set(t.to_dict()) == {"titulo", "descripcion", "hashtags", "gancho", "credito",
+                                "depende_de_fecha", "sensible", "puntaje"}
     assert t.depende_de_fecha is False
+    assert t.sensible is False and t.puntaje == 7
 
 
 @pytest.mark.parametrize(
@@ -86,8 +90,9 @@ class FakeGemini:
         self.respuestas = list(respuestas)
         self.prompts = []
 
-    def json(self, sistema, prompt, schema, temperatura=0.7):
+    def json(self, sistema, prompt, schema, temperatura=0.7, imagenes=None):
         self.prompts.append(prompt)
+        self.imagenes = imagenes
         return self.respuestas.pop(0)
 
 
@@ -347,7 +352,7 @@ def test_un_titulo_que_nombra_algo_que_nadie_dijo_no_vale():
     def texto(titulo):
         return {"titulo": titulo, "descripcion": "algo pasa en el clip",
                 "hashtags": ["#Shorts", "#Uno", "#Dos"], "gancho": "reaccion",
-                "depende_de_fecha": False}
+                "depende_de_fecha": False, "sensible": False, "puntaje": 7}
 
     dicho = "uy no puedo creer lo que hizo el Mario ese"
     assert nombres_sin_respaldo("Se pelea con Mario", dicho) == []

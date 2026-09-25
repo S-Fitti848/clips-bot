@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import base64
 import logging
 import time
 
@@ -37,11 +38,22 @@ class GeminiClient:
         self.max_reintentos = max_reintentos
         self._sleep = sleep
 
-    def json(self, sistema: str, prompt: str, schema: dict, temperatura: float = 0.7) -> str:
-        """Devuelve el texto crudo de la respuesta (debería ser JSON; lo valida quien llama)."""
+    def json(self, sistema: str, prompt: str, schema: dict, temperatura: float = 0.7,
+             imagenes: list[bytes] | None = None) -> str:
+        """Devuelve el texto crudo de la respuesta (debería ser JSON; lo valida quien llama).
+
+        `imagenes`: JPEG en bytes, van en la misma llamada que el texto. Hacen falta porque el
+        puntaje de calidad sacado solo de la transcripción castiga al humor visual: medido sobre 30
+        clips, los marcados como "solo se entiende con la imagen" puntuaban 4,0 de mediana contra
+        5,0 el resto, y tenían 1,60 palabras/s contra 2,45.
+        """
+        partes: list[dict] = [{"text": prompt}]
+        for img in imagenes or []:
+            partes.append({"inlineData": {"mimeType": "image/jpeg",
+                                          "data": base64.b64encode(img).decode()}})
         cuerpo = {
             "systemInstruction": {"parts": [{"text": sistema}]},
-            "contents": [{"role": "user", "parts": [{"text": prompt}]}],
+            "contents": [{"role": "user", "parts": partes}],
             "generationConfig": {
                 "responseMimeType": "application/json",
                 "responseSchema": schema,

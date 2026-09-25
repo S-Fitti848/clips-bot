@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 import shutil
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
+
+log = logging.getLogger(__name__)
 
 
 class MediaError(RuntimeError):
@@ -103,3 +106,33 @@ def fraccion_silencio(path: Path, duracion: float, umbral_db: float, min_s: floa
         ]
     )
     return min(parse_silencio(r.stderr, duracion) / duracion, 1.0)
+
+
+def frames_jpeg(video: Path, n: int = 4, ancho: int = 512, calidad: int = 80) -> list[bytes]:
+    """`n` frames repartidos entre el 10 % y el 90 % del clip, como JPEG chicos.
+
+    Van a Gemini junto con la transcripción. A 512 px de ancho cada uno entra en un par de tiles de
+    tokens; más grande no cambia el puntaje y cuesta el doble.
+    """
+    import cv2
+
+    cap = cv2.VideoCapture(str(video))
+    if not cap.isOpened():
+        log.warning("No puedo abrir %s para sacar frames", video)
+        return []
+    total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    out: list[bytes] = []
+    try:
+        for i in range(n):
+            cap.set(cv2.CAP_PROP_POS_FRAMES, int(total * (0.1 + 0.8 * i / max(n - 1, 1))))
+            ok, img = cap.read()
+            if not ok:
+                continue
+            alto = max(2, int(img.shape[0] * ancho / img.shape[1]))
+            ok, buf = cv2.imencode(".jpg", cv2.resize(img, (ancho, alto)),
+                                   [cv2.IMWRITE_JPEG_QUALITY, calidad])
+            if ok:
+                out.append(buf.tobytes())
+    finally:
+        cap.release()
+    return out
