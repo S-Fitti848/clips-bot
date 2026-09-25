@@ -234,6 +234,9 @@ evento_dedsafio:
   - login: gamstergaming
     plataforma: twitch
     fuentes: [reciente]
+    # Quema subtítulos en vivo (detectado con OCR el 2026-09-24: el texto en pantalla
+    # coincide con lo que se dice). Si quemamos los nuestros quedan los dos.
+    subtitulos_propios: true
     permiso:
       experimento: true
     # GamsterGaming — Minecraft en clips recientes
@@ -411,6 +414,9 @@ evento_dedsafio:
   - login: arigameplays
     plataforma: twitch
     fuentes: [reciente]
+    # Quema subtítulos en vivo (detectado con OCR el 2026-09-24: el texto en pantalla
+    # coincide con lo que se dice). Si quemamos los nuestros quedan los dos.
+    subtitulos_propios: true
     permiso:
       experimento: true
     # arigameplays — SIN señal verificada

@@ -124,3 +124,56 @@ def test_los_comandos_livianos_no_pasan_por_la_cola(conn, monkeypatch):
     assert tg.mensajes[0] == "reclamo anotado"
     assert "/buscar" in tg.mensajes[1]
     assert cola == []
+
+
+# ---- /ya ------------------------------------------------------------------------
+
+
+def test_ya_usa_el_mismo_turno_que_buscar(conn, monkeypatch):
+    """/ya corre la mezcla diaria, que es lo más pesado de todo: comparte turno y cola con /buscar."""
+    cola, tg = [], FakeTG()
+    corridas = []
+
+    def falso_diario(args, settings, atender=True):
+        assert atender is False, "desde /ya no se atiende Telegram: le robaría los updates al modo escucha"
+        corridas.append("diario")
+        return 0
+
+    monkeypatch.setattr(m, "_diario", falso_diario)
+    monkeypatch.setattr(m, "_cuantos_entregados", lambda conn_: 3 if corridas else 1)
+    cfg = load_settings()
+    cmd = {"comando": "/ya", "args": [], "chat_id": "1", "usuario": "santi", "user_id": "7"}
+
+    # con el turno tomado, queda en cola
+    db.tomar_turno(conn, db.RECURSO_PESADO, "buscar:spreen:1", maximo=1)
+    m._despachar(conn, tg, cmd, cfg, cola)
+    assert corridas == [] and len(cola) == 1 and cola[0]["comando"] == "/ya"
+    assert "En cola" in tg.mensajes[-1]
+
+    # liberado, arranca y avisa cuántos salieron
+    db.soltar_turno(conn, db.RECURSO_PESADO, "buscar:spreen:1")
+    m._drenar_cola(conn, tg, cola, cfg)
+    assert corridas == ["diario"] and cola == []
+    assert "2" in tg.mensajes[-1]  # 3 entregados menos 1 que ya había
+
+
+def test_ya_toma_el_turno_y_lo_suelta(conn, monkeypatch):
+    cola, tg = [], FakeTG()
+    vistos = []
+    monkeypatch.setattr(m, "_diario",
+                        lambda a, s, atender=True: vistos.append(db.hay_trabajo_pesado(conn)) or 0)
+    monkeypatch.setattr(m, "_cuantos_entregados", lambda conn_: 0)
+
+    m._despachar(conn, tg, {"comando": "/ya", "args": [], "chat_id": "1", "usuario": "",
+                            "user_id": "7"}, load_settings(), cola)
+    assert vistos and vistos[0].startswith("diario:ya")   # lo tenía mientras corría
+    assert db.hay_trabajo_pesado(conn) is None            # y lo soltó al terminar
+    assert "no salió ninguno" in tg.mensajes[-1]
+
+
+def test_ayuda_lista_todos_los_comandos_con_ejemplo():
+    texto = m._ayuda()
+    for uso, que, ejemplo in m.COMANDOS:
+        assert uso in texto and que in texto
+        assert f"<code>{ejemplo}</code>" in texto
+    assert {c[0].split()[0] for c in m.COMANDOS} == {"/ya", "/buscar", "/reclamo", "/ayuda"}

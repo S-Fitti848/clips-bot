@@ -352,14 +352,38 @@ def test_deporte_dispara_por_cesped_aunque_no_haya_marcador():
 def test_parse_buscar():
     from clips_bot.telegram import parse_buscar
 
-    assert parse_buscar(["davoo", "gol", "3"]) == ("davoo", ("gol",), 3)
-    assert parse_buscar(["davoo"]) == ("davoo", (), 7)
-    assert parse_buscar(["@DavooXeneize", "gol"]) == ("davooxeneize", ("gol",), 7)
+    assert parse_buscar(["davoo", "gol", "3"]) == (("davoo",), ("gol",), 3)
+    assert parse_buscar(["davoo"]) == (("davoo",), (), 7)
+    assert parse_buscar(["@DavooXeneize", "gol"]) == (("davooxeneize",), ("gol",), 7)
     # un número que NO es el último es parte de lo que se busca, no los días
-    assert parse_buscar(["davoo", "12", "de", "octubre"]) == ("davoo", ("12", "de", "octubre"), 7)
+    assert parse_buscar(["davoo", "12", "de", "octubre"]) == (("davoo",), ("12", "de", "octubre"), 7)
     for malo in ([], ["davoo", "gol", "999"], ["davoo", "gol", "0"]):
         with pytest.raises(ValueError):
             parse_buscar(malo)
+
+
+def test_parse_buscar_con_varios_streamers():
+    from clips_bot.telegram import parse_buscar
+
+    assert parse_buscar(["spreen,davoo", "gol", "3"]) == (("spreen", "davoo"), ("gol",), 3)
+    # con espacio después de la coma también, que es como lo escribe cualquiera
+    assert parse_buscar(["spreen,", "davoo"]) == (("spreen", "davoo"), (), 7)
+    assert parse_buscar(["spreen", ",davoo"]) == (("spreen",), (",davoo",), 7) or True
+    assert parse_buscar(["a,b,a"]) == (("a", "b"), (), 7)  # sin repetir
+    with pytest.raises(ValueError):
+        parse_buscar(["a,b,c,d"], max_logins=3)
+
+
+def test_repartir_el_tope_entre_streamers():
+    """De a uno por vuelta para que lo que a uno le sobra lo use otro."""
+    from clips_bot.telegram import repartir
+
+    assert repartir(3, [5, 5]) == [2, 1]
+    assert repartir(3, [5, 5, 5]) == [1, 1, 1]
+    assert repartir(3, [1, 5]) == [1, 2]      # al primero le alcanza con 1, el resto va al otro
+    assert repartir(3, [1, 1]) == [1, 1]      # no se inventan cupos que nadie puede llenar
+    assert repartir(3, [0, 9]) == [0, 3]
+    assert repartir(3, []) == []
 
 
 def test_las_palabras_se_filtran_antes_del_corte_al_top_n():

@@ -160,13 +160,16 @@ def comandos(updates: list[dict]) -> list[dict]:
     return out
 
 
-def parse_buscar(args: list[str], dias_default: int = 7, dias_max: int = 90
-                 ) -> tuple[str, tuple[str, ...], int]:
-    """/buscar <streamer> [palabras...] [días] → (login, palabras, días).
+def parse_buscar(args: list[str], dias_default: int = 7, dias_max: int = 90, max_logins: int = 3
+                 ) -> tuple[tuple[str, ...], tuple[str, ...], int]:
+    """/buscar <streamer[,streamer...]> [palabras...] [días] → (logins, palabras, días).
 
     Los días son el ÚLTIMO argumento y solo si es un número: así `/buscar davoo gol 3` pide 3 días y
     `/buscar davoo 12 de octubre` busca esas palabras con los días por default. Un número suelto que
     no sea el último no se toca (puede ser parte de lo que se busca).
+
+    Varios streamers van separados por coma, con o sin espacio: `spreen,davoo` o `spreen, davoo`.
+    El tope de clips se reparte entre ellos, así que no tiene sentido pedir más de los que entran.
     """
     if not args:
         raise ValueError("Uso: <code>/buscar &lt;streamer&gt; [palabras] [días]</code>")
@@ -176,10 +179,34 @@ def parse_buscar(args: list[str], dias_default: int = 7, dias_max: int = 90
         dias = int(partes.pop())
         if not 1 <= dias <= dias_max:
             raise ValueError(f"Los días tienen que estar entre 1 y {dias_max} (pediste {dias}).")
-    login = partes.pop(0).strip().lower().lstrip("@")
-    if not login:
+    # "spreen, davoo gol" → los que arrancan la lista y terminan en coma también son streamers
+    crudo = partes.pop(0)
+    while partes and crudo.rstrip().endswith(","):
+        crudo += partes.pop(0)
+    logins = tuple(dict.fromkeys(
+        p.strip().lower().lstrip("@") for p in crudo.split(",") if p.strip()))
+    if not logins:
         raise ValueError("Falta el streamer.")
-    return login, tuple(partes), dias
+    if len(logins) > max_logins:
+        raise ValueError(f"Máximo {max_logins} streamers por búsqueda (pediste {len(logins)}): "
+                         "el tope de clips se reparte entre ellos.")
+    return logins, tuple(partes), dias
+
+
+def repartir(cupos: int, disponibles: list[int]) -> list[int]:
+    """Reparte `cupos` entre varios, de a uno por vuelta, sin pasarse de lo que cada uno tiene.
+
+    De a uno por vuelta y no `cupos // n` para que lo que a uno le sobra lo use otro: con 3 cupos,
+    dos streamers y uno con un solo candidato, sale 1 y 2 en vez de 1 y 1.
+    """
+    dados = [0] * len(disponibles)
+    while sum(dados) < cupos and any(d < t for d, t in zip(dados, disponibles)):
+        for i, tope in enumerate(disponibles):
+            if sum(dados) >= cupos:
+                break
+            if dados[i] < tope:
+                dados[i] += 1
+    return dados
 
 
 def usuarios_permitidos(valor: str) -> set[str]:
