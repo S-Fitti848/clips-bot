@@ -457,3 +457,40 @@ def test_resumen_de_descartes():
     assert "Descartes (42)" in texto
     assert texto.index("sin las palabras") < texto.index("muy corto")  # de mayor a menor
     assert _resumen_descartes(Resultado()) == ""
+
+
+def test_buscar_arma_bien_el_cliente_de_cada_plataforma(tmp_path, monkeypatch):
+    """Regresión del 2026-09-25: `TwitchClient(load_twitch_creds())` sin desempaquetar tumbaba la
+    escucha en cuanto alguien buscaba en un streamer de Twitch. Kick nunca falló porque su cliente
+    no lleva credenciales."""
+    import clips_bot.__main__ as m
+    from clips_bot.config import Streamer, load_settings
+
+    llamadas = []
+
+    class FakeTG:
+        def send_message(self, *a, **k):
+            pass
+
+    def fake_kick(client, streamers, *a, **k):
+        llamadas.append(("kick", type(client).__name__))
+        return Resultado()
+
+    def fake_twitch(client, streamers, *a, **k):
+        llamadas.append(("twitch", type(client).__name__))
+        return Resultado()
+
+    monkeypatch.setattr("clips_bot.candidates.buscar_kick", fake_kick)
+    monkeypatch.setattr("clips_bot.candidates.buscar_candidatos", fake_twitch)
+    monkeypatch.setattr(m, "_twitch", lambda: "CLIENTE_TWITCH")
+    conn = db.connect(tmp_path / "b.db")
+    try:
+        for plataforma, esperado in (("kick", "kick"), ("twitch", "twitch")):
+            st = [Streamer("x", plataforma=plataforma, fuentes=("reciente",), experimento=True)]
+            r = m._buscar(conn, FakeTG(), "1", ["x"], load_settings(), st, None)
+            assert r is not m.OCUPADO and isinstance(r, str)
+        assert [p for p, _ in llamadas] == ["kick", "twitch"]
+        assert llamadas[0][1] == "KickClient"    # el de Kick se arma solo
+        assert llamadas[1][1] == "str"           # y el de Twitch pasa por _twitch()
+    finally:
+        conn.close()

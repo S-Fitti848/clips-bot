@@ -94,7 +94,7 @@ def buscar_todo(settings: Settings, streamers: list, incluir_sin_permiso: bool,
                           incluir_sin_permiso=incluir_sin_permiso, seleccion=settings.seleccion,
                           excluidos=excluidos, evento=settings.evento)
         if any(s.plataforma == "twitch" for s in streamers):
-            client = TwitchClient(*load_twitch_creds().__dict__.values())
+            client = _twitch()
             res = buscar_candidatos(client, streamers, settings.filtros, vistos, res=res,
                                     incluir_sin_permiso=incluir_sin_permiso, seleccion=settings.seleccion,
                                     excluidos=excluidos, evento=settings.evento)
@@ -133,6 +133,19 @@ def cmd_candidatos(args: argparse.Namespace) -> int:
     else:
         _imprimir(res, settings.seleccion.peso_momento)
     return 0
+
+
+def _twitch() -> TwitchClient:
+    """La ÚNICA forma de armar el cliente de Twitch.
+
+    Antes se armaba a mano en cada lugar y el 2026-09-25 uno quedó como
+    `TwitchClient(load_twitch_creds())`, sin desempaquetar: tumbaba la escucha con
+    "missing 1 required positional argument: 'client_secret'" cada vez que alguien hacía /buscar
+    sobre un streamer de Twitch. El otro usaba `*creds.__dict__.values()`, que anda pero depende
+    del orden de los campos del dataclass.
+    """
+    creds = load_twitch_creds()
+    return TwitchClient(creds.client_id, creds.client_secret)
 
 
 def _gemini(settings: Settings) -> GeminiClient | None:
@@ -829,7 +842,7 @@ def _buscar(conn, tg: TelegramClient, chat_id: str, args: list[str], settings: S
                                   settings.kick, seleccion=settings.seleccion, excluidos=excluidos,
                                   evento=settings.evento, palabras_titulo=palabras)
             else:
-                res = buscar_candidatos(TwitchClient(load_twitch_creds()), [st], filtros, vistos,
+                res = buscar_candidatos(_twitch(), [st], filtros, vistos,
                                         seleccion=settings.seleccion, excluidos=excluidos,
                                         evento=settings.evento, palabras_titulo=palabras)
             por_streamer.append((st, res.candidatos))
@@ -943,11 +956,12 @@ def escuchar_telegram(settings: Settings, timeout_poll: int = 50) -> int:
     if not permitidos:
         log.warning("TELEGRAM_ALLOWED_USERS vacío: no obedezco ningún comando")
     cola: list[dict] = []
+    chat_ultimo = env("TELEGRAM_CHAT_ID", requerido=False)
     print(f"Escuchando (long polling {timeout_poll}s). Ctrl-C para salir.")
     while True:
         conn = db.connect(DB_PATH)
         try:
-            _drenar_cola(conn, tg, cola, settings)
+            _seguro(tg, str(chat_ultimo or ""), "la cola", _drenar_cola, conn, tg, cola, settings)
             guardado = db.get_valor(conn, "telegram_offset")
             espera = 5 if cola else timeout_poll
             try:
@@ -957,13 +971,15 @@ def escuchar_telegram(settings: Settings, timeout_poll: int = 50) -> int:
                 log.warning("getUpdates falló (%s); reintento en 30 s", e)
                 time.sleep(30)
                 continue
-            _atender_votos(conn, tg, updates, permitidos)
+            _seguro(tg, str(chat_ultimo or ""), "votos", _atender_votos, conn, tg, updates,
+                    permitidos)
             for c in comandos(updates):
+                chat_ultimo = c["chat_id"]
                 if c["user_id"] not in permitidos:
                     log.warning("%s de %s (id %s): no autorizado", c["comando"], c["usuario"],
                                 c["user_id"])
                     continue
-                _despachar(conn, tg, c, settings, cola)
+                _seguro(tg, c["chat_id"], c["comando"], _despachar, conn, tg, c, settings, cola)
             if updates:
                 db.set_valor(conn, "telegram_offset", str(max(u["update_id"] for u in updates) + 1))
         finally:
@@ -978,7 +994,11 @@ def _despachar(conn, tg: TelegramClient, c: dict, settings: Settings, cola: list
             tg.send_message(c["chat_id"], f"Ya tengo {len(cola)} búsquedas en cola. Esperá a que "
                                           "salgan esas y probá de nuevo.")
             return
-        r = _pesado(conn, tg, c["chat_id"], c["comando"], c["args"], settings)
+        etiqueta = f"{c['comando']} {' '.join(c['args'])}".strip()
+        r = _seguro(tg, c["chat_id"], etiqueta, _pesado, conn, tg, c["chat_id"], c["comando"],
+                    c["args"], settings)
+        if r is FALLO:
+            return  # no se encola: si falló una vez, encolarlo lo hace fallar para siempre
         if r is OCUPADO:
             cola.append({"chat_id": c["chat_id"], "comando": c["comando"], "args": c["args"]})
             quien = db.hay_trabajo_pesado(conn, VENCIMIENTO_PESADO_S) or ""
@@ -988,12 +1008,13 @@ def _despachar(conn, tg: TelegramClient, c: dict, settings: Settings, cola: list
             tg.send_message(c["chat_id"], r)
         return
     if c["comando"] == "/reclamo":
-        respuesta = _reclamo(conn, c["args"])
+        respuesta = _seguro(tg, c["chat_id"], c["comando"], _reclamo, conn, c["args"])
     elif c["comando"] in ("/ayuda", "/start", "/help"):
         respuesta = _ayuda()
     else:
         respuesta = f"No conozco {c['comando']}. Probá /ayuda."
-    tg.send_message(c["chat_id"], respuesta)
+    if respuesta is not FALLO and respuesta:
+        tg.send_message(c["chat_id"], respuesta)
 
 
 def _atender_votos(conn, tg: TelegramClient, updates: list[dict], permitidos: set) -> int:
@@ -1056,6 +1077,30 @@ def _revisar_prueba_multipov(conn, tg: TelegramClient, chat_id: str) -> None:
                     f"No se arma ninguno más hasta que lo revisemos.\n<pre>{motivo}</pre>")
 
 
+FALLO = object()   # lo devuelve _seguro cuando el comando explotó
+
+
+def _seguro(tg: TelegramClient, chat_id: str, etiqueta: str, fn, *args, **kw):
+    """Corre un comando sin que un error se lleve puesta la escucha.
+
+    El 2026-09-25 un `/buscar` sobre un streamer de Twitch tumbó el servicio entero por un
+    TypeError. Un comando que explota tiene que avisar y dejar al bot escuchando: el traceback va
+    al log, y por Telegram sale la primera línea, que es lo que sirve para saber qué pasó.
+    """
+    try:
+        return fn(*args, **kw)
+    except Exception as e:  # a propósito: cualquier cosa, incluidos los bugs nuestros
+        log.exception("%s falló", etiqueta)
+        corto = f"{type(e).__name__}: {e}".splitlines()[0][:300]
+        try:
+            tg.send_message(chat_id, f"⚠️ Falló <code>{html.escape(etiqueta)}</code>:"
+                                     f"\n<pre>{html.escape(corto)}</pre>"
+                                     f"\nEl detalle está en el log; sigo escuchando.")
+        except TelegramError:
+            log.exception("tampoco pude avisar del error por Telegram")
+        return FALLO
+
+
 def _pesado(conn, tg: TelegramClient, chat_id: str, comando: str, args: list[str],
             settings: Settings):
     """Los comandos que procesan clips y comparten el turno pesado: /buscar y /ya."""
@@ -1069,9 +1114,12 @@ def _drenar_cola(conn, tg: TelegramClient, cola: list[dict], settings: Settings)
     while cola:
         if db.hay_trabajo_pesado(conn, VENCIMIENTO_PESADO_S):
             return
-        pedido = cola.pop(0)
-        r = _pesado(conn, tg, pedido["chat_id"], pedido.get("comando", "/buscar"), pedido["args"],
-                    settings)
+        pedido = cola.pop(0)   # sale de la cola ANTES de correr: si explota, no vuelve a entrar
+        etiqueta = f"{pedido.get('comando', '/buscar')} {' '.join(pedido['args'])}".strip()
+        r = _seguro(tg, pedido["chat_id"], etiqueta, _pesado, conn, tg, pedido["chat_id"],
+                    pedido.get("comando", "/buscar"), pedido["args"], settings)
+        if r is FALLO:
+            continue
         if r is OCUPADO:  # alguien tomó el turno entre el chequeo y la llamada
             cola.insert(0, pedido)
             return

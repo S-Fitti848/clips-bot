@@ -301,3 +301,43 @@ def test_pasadas_las_dos_semanas_el_trato_se_vence(conn, monkeypatch, tmp_path):
     _voto_multipov(conn, tg, "multipov_uno")
     _voto_multipov(conn, tg, "multipov_dos")
     assert db.multipov_apagado(conn) is None   # el trato era por dos semanas
+
+
+# ---- que un comando roto no tumbe la escucha -------------------------------------
+
+
+def test_un_comando_que_explota_avisa_y_no_tumba_nada(conn, monkeypatch):
+    """El 2026-09-25 un /buscar sobre un streamer de Twitch se llevó puesto el servicio con un
+    TypeError. Ahora avisa, queda en el log y el bot sigue escuchando."""
+    cola, tg = [], FakeTG()
+
+    def explota(*a, **k):
+        raise TypeError("TwitchClient.__init__() missing 1 required positional argument")
+
+    monkeypatch.setattr(m, "_pesado", explota)
+    m._despachar(conn, tg, _cmd(["davoo"]), load_settings(), cola)
+    assert "Falló" in tg.mensajes[-1] and "TypeError" in tg.mensajes[-1]
+    assert cola == []          # y NO se encola: encolarlo lo haría fallar para siempre
+
+
+def test_lo_que_falla_sale_de_la_cola(conn, monkeypatch):
+    cola, tg = [], FakeTG()
+    intentos = []
+
+    def explota(conn_, tg_, chat, comando, args, settings):
+        intentos.append(args[0])
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(m, "_pesado", explota)
+    cola[:] = [{"chat_id": "1", "comando": "/buscar", "args": ["a"]},
+               {"chat_id": "1", "comando": "/buscar", "args": ["b"]}]
+    m._drenar_cola(conn, tg, cola, load_settings())
+    assert intentos == ["a", "b"]   # probó los dos
+    assert cola == []               # y ninguno quedó dando vueltas
+
+
+def test_seguro_devuelve_lo_que_devuelve_la_funcion(conn):
+    tg = FakeTG()
+    assert m._seguro(tg, "1", "x", lambda: "resultado") == "resultado"
+    assert m._seguro(tg, "1", "x", lambda: m.OCUPADO) is m.OCUPADO
+    assert tg.mensajes == []
