@@ -316,3 +316,67 @@ def test_sin_reemplazo_no_se_arma_el_multipov(tmp_path, monkeypatch):
     elegidos = _angulos_con_contenido([a, b, c], por_id, cfg, 3, avisar=lambda *_: None)
     assert [x.clip_id for x in elegidos] == ["a", "b"]
     assert len(elegidos) < cfg.multipov.min_angulos  # el que llama no arma nada
+
+
+# ---- verificación de "mismo hecho" ------------------------------------------------
+
+
+def test_superposicion_lexica():
+    """Si varios cuentan el mismo hecho nombran las mismas cosas. Medido sobre los 5 grupos reales:
+    el único que era de verdad el mismo momento dio 36 % y los otros cuatro 0, 2, 4 y 5 %."""
+    from clips_bot.multipov import superposicion
+
+    mismo = ["se murio el dragon no puedo creer que lo mataron entre todos",
+             "mataron al dragon! el dragon esta muerto, lo lograron",
+             "no puedo creer que el dragon se murio, lo mataron"]
+    assert superposicion(mismo) > 0.5
+
+    # el grupo que salió mal el 2026-09-24: menú de pausa, despedida y unos créditos
+    distinto = ["Pondipedos. Tu me dices cuando regresamos, yo tambien ya fui por otro drink",
+                "Ya me voy amigos, ya me voy, muchas gracias por todo de verdad",
+                "Campfire Studios los constructores los builders. En memoria de Zelda"]
+    assert superposicion(distinto) < 0.12
+
+    # las muletillas no cuentan: dos clips de puro relleno no se parecen por eso
+    assert superposicion(["bueno che dale vamos bien", "dale bueno vamos che muy bien"]) == 0.0
+    assert superposicion(["algo"]) == 0.0          # con un solo ángulo no hay con qué comparar
+
+
+def test_hacen_falta_las_dos_señales():
+    """Superposición Y Gemini. La superposición se mide primero porque es gratis: si no llega, no se
+    gasta una llamada."""
+    from clips_bot.multipov import es_el_mismo_hecho
+
+    class Gemini:
+        def __init__(self, respuesta):
+            self.respuesta, self.llamadas = respuesta, 0
+
+        def json(self, sistema, prompt, schema, temperatura=0.7, imagenes=None):
+            self.llamadas += 1
+            return self.respuesta
+
+    iguales = ["mataron al dragon entre todos", "el dragon muerto, lo mataron entre todos"]
+    distintos = ["hola gente como andan", "verde azul amarillo violeta"]
+
+    # 1) no pasa la superposición → ni se pregunta
+    g = Gemini('{"mismo_hecho": true, "hecho": "x", "razon": "y"}')
+    ok, det = es_el_mismo_hecho(g, ["a", "b"], distintos, 0.12)
+    assert not ok and g.llamadas == 0 and "vocabulario" in det["razon"]
+
+    # 2) pasa la superposición pero Gemini dice que no → no se arma
+    g = Gemini('{"mismo_hecho": false, "hecho": "", "razon": "cada uno en la suya"}')
+    ok, det = es_el_mismo_hecho(g, ["a", "b"], iguales, 0.12)
+    assert not ok and g.llamadas == 1 and det["razon"] == "cada uno en la suya"
+
+    # 3) las dos dicen que sí
+    g = Gemini('{"mismo_hecho": true, "hecho": "mataron al dragon", "razon": "los dos lo cuentan"}')
+    ok, det = es_el_mismo_hecho(g, ["a", "b"], iguales, 0.12)
+    assert ok and det["hecho"] == "mataron al dragon"
+
+    # 4) sin Gemini no se arma: una sola señal no alcanza
+    ok, det = es_el_mismo_hecho(None, ["a", "b"], iguales, 0.12)
+    assert not ok and "sin Gemini" in det["razon"]
+
+    # 5) si Gemini contesta cualquier cosa, tampoco
+    ok, _ = es_el_mismo_hecho(Gemini("no soy json"), ["a", "b"], iguales, 0.12)
+    assert not ok

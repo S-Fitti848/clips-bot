@@ -13,6 +13,8 @@ cada ángulo se reusan tal cual.
 from __future__ import annotations
 
 import logging
+import unicodedata
+import re
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
@@ -173,6 +175,93 @@ def panel_vacio(c: Contenido, frames_vacios_max: float) -> bool:
     de ready/ medidos enteros, 11 dan 0 % y los dos peores 22 % y 11 % (un corte a negro puntual).
     """
     return c.frames > 0 and c.vacios > frames_vacios_max
+
+
+# Palabras que aparecen en cualquier clip y no dicen nada sobre de qué se habla.
+_VACIAS = frozenset("""
+que de la el en y a los las un una con por para se me te lo le su es no si al del esto eso esta ese
+pero como cuando donde porque bien bueno ahora vamos vamo dale nada todo algo hay muy mas menos
+gente chicos amigos wey boludo che tipo cosa cosas hacer hace voy vas va ver mira mire aca alla
+""".split())
+
+
+def _contenido(texto: str) -> set[str]:
+    """Palabras con contenido: sin tildes, de 4 letras para arriba, sin muletillas."""
+    sin_tildes = "".join(c for c in unicodedata.normalize("NFKD", texto)
+                         if not unicodedata.combining(c))
+    return {w for w in re.findall(r"[a-z]{4,}", sin_tildes.lower()) if w not in _VACIAS}
+
+
+def superposicion(transcripciones: list[str]) -> float:
+    """Cuánto vocabulario comparten los ángulos, de 0 a 1 (Jaccard sobre el par más parecido).
+
+    Si tres personas cuentan el MISMO hecho, aunque sea desde ángulos distintos, nombran las mismas
+    cosas. Si no lo comparten, casi seguro no están hablando de lo mismo. Se toma el mejor par y no
+    el promedio para no castigar al ángulo que se queda callado.
+    """
+    vocab = [_contenido(t) for t in transcripciones]
+    mejor = 0.0
+    for i in range(len(vocab)):
+        for j in range(i + 1, len(vocab)):
+            union = vocab[i] | vocab[j]
+            if union:
+                mejor = max(mejor, len(vocab[i] & vocab[j]) / len(union))
+    return mejor
+
+
+SISTEMA_MISMO_HECHO = """Te paso lo que se dice en varios clips de streamers distintos, grabados a la
+misma hora en el mismo evento. Decidí si están todos reaccionando AL MISMO HECHO concreto (la misma
+muerte, la misma jugada, el mismo anuncio, la misma pelea) o si cada uno está en la suya.
+
+Estar en el mismo juego, en el mismo evento o de buen humor NO alcanza: tiene que ser el mismo hecho
+puntual. Ante la duda, false: un Short que junta momentos que no tienen nada que ver es peor que no
+publicar nada.
+
+Respondé solo con el JSON pedido."""
+
+SCHEMA_MISMO_HECHO = {
+    "type": "OBJECT",
+    "properties": {
+        "mismo_hecho": {"type": "BOOLEAN"},
+        "hecho": {"type": "STRING"},
+        "razon": {"type": "STRING"},
+    },
+    "required": ["mismo_hecho", "hecho", "razon"],
+}
+
+
+def pregunta_mismo_hecho(cliente, streamers: list[str], transcripciones: list[str]) -> dict:
+    """La segunda mitad de la verificación: se lo preguntamos a Gemini."""
+    import json as _json
+
+    partes = [f"--- {s}\n{t[:900]}" for s, t in zip(streamers, transcripciones)]
+    crudo = cliente.json(SISTEMA_MISMO_HECHO, "\n\n".join(partes), SCHEMA_MISMO_HECHO,
+                         temperatura=0.1)
+    try:
+        d = _json.loads(crudo)
+    except ValueError:
+        return {"mismo_hecho": False, "hecho": "", "razon": "Gemini no devolvió JSON válido"}
+    return {"mismo_hecho": bool(d.get("mismo_hecho")), "hecho": str(d.get("hecho") or ""),
+            "razon": str(d.get("razon") or "")}
+
+
+def es_el_mismo_hecho(cliente, streamers: list[str], transcripciones: list[str],
+                      minimo: float) -> tuple[bool, dict]:
+    """Las DOS tienen que pasar: superposición léxica y la pregunta a Gemini.
+
+    Se mide primero la superposición porque es gratis: si no llega, no se gasta una llamada.
+    """
+    sup = superposicion(transcripciones)
+    detalle = {"superposicion": round(sup, 3), "minimo": minimo}
+    if sup < minimo:
+        detalle["razon"] = f"comparten {sup:.0%} del vocabulario (hace falta {minimo:.0%})"
+        return False, detalle
+    if cliente is None:
+        detalle["razon"] = "sin Gemini no se puede confirmar el hecho"
+        return False, detalle
+    respuesta = pregunta_mismo_hecho(cliente, streamers, transcripciones)
+    detalle.update(respuesta)
+    return bool(respuesta["mismo_hecho"]), detalle
 
 
 def _normalizar(valores: list[float]) -> list[float]:

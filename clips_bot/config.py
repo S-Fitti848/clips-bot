@@ -180,6 +180,9 @@ class MultiPov:
     min_angulos: int = 3
     frames_muestra: int = 10
     frames_vacios_max: float = 0.34   # más de un tercio del tramo en negro → el ángulo no sirve
+    # Verificación de "mismo hecho": tienen que pasar las DOS, la superposición léxica entre las
+    # transcripciones y la pregunta a Gemini. La agrupación por hora de creación sola no alcanza.
+    superposicion_min: float = 0.12
     luma_negro: float = 0.08          # un píxel por debajo de esto cuenta como negro
     pixeles_negros_min: float = 0.90  # y un frame es "vacío" con esta fracción de píxeles negros
 
