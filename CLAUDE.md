@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-09-24 | **Versión:** v0.19.0 | **Modo:** Fase 1 andando: primera entrega real hecha (3 Shorts por Telegram)
+**Snapshot:** 2026-09-24 | **Versión:** v0.20.0 | **Modo:** Fase 1 andando: primera entrega real hecha (3 Shorts por Telegram)
 
 > **Reglas de trabajo sobre este archivo:** se edita con Edit o se reescribe entero. NADA de scripts
 > de reemplazo encadenados: uno rompió el archivo el 2026-09-22 (37 MB de texto repetido) y hubo que
@@ -165,12 +165,16 @@ y por eso la unidad va con `Nice=10` y prioridad de CPU baja. NO paralelizar.
      los mismos 27 clips, sin imagen y con 4 frames: mediana 5 → 6, y con corte 5 pasaban 14/27 →
      pasan 20/27. Los que más subieron son los visuales (renrize 2→9 con un parkour y un festejo,
      spreen 5→9 con un balde en la cabeza, vegetta777 4→8 cuando le explotan con misiles).
-7b. **Multi-POV (grupo evento). APAGADO desde el 2026-09-24** (`multipov.activo: false`).
-   La agrupación de "mismo momento entre streamers" usa la hora de CREACIÓN del clip (±2 min), que
-   NO es la hora del hecho: con 54 canales del evento, cualquier ventana de 2 min junta clips de
-   cosas distintas. Se vuelve a prender cuando exista una verificación de "mismo hecho" probada con
-   5 casos reales. El comando `multipov <id...>` a mano sigue andando, justamente para probarla.
-   Cómo era cuando estaba prendido: Si 3+ canales clipearon el mismo momento y se procesaron 3, se
+7b. **Multi-POV (grupo evento). PRENDIDO A PRUEBA desde el 2026-09-24** (`multipov.activo: true`).
+   Estuvo apagado unas horas: la agrupación de "mismo momento entre streamers" usa la hora de
+   CREACIÓN del clip (±2 min), que NO es la hora del hecho, y con 54 canales cualquier ventana de
+   2 min junta cosas distintas. Lo que lo destraba es la verificación de "mismo hecho" (más abajo).
+   **El trato (2026-09-24): si junta `votos_negativos_max` (2) multi-POV con 👎 dentro de
+   `dias_prueba` (14), el bot lo apaga SOLO y avisa por Telegram.** Ese apagado se guarda en la DB
+   (`bot_estado`), no en el YAML: el YAML está en git y lo editan las personas, esto lo decide el
+   bot y tiene que poder pasar sin un commit ni un deploy. Se cuenta un CLIP por multi-POV y no un
+   voto, así que cambiar el voto sobre el mismo Short no cuenta dos veces. Para volver a prenderlo:
+   `db.arrancar_prueba_multipov`, que además reinicia el período. Si 3+ canales clipearon el mismo momento y se procesaron 3, se
    arma ADEMÁS un Short secuencial: hasta 3 ángulos, cada uno ±4 s alrededor de su pico de reacción
    (volumen RMS + densidad de palabras del .srt), cartel con el nombre del streamer arriba durante
    su tramo, orden de menos a más visto (el final es el ángulo más fuerte) y crédito a todos en la
@@ -533,6 +537,9 @@ Problemas abiertos:
   requests/día, fallback automático a `gemini-3.5-flash-lite` ante 429 por cuota, reintentos 3 → 2 y
   `textos_pendientes` para no perder el render. Fútbol: segunda señal por fracción de verde-césped
   (calibrada con 8 clips reales; agarra el caso que el marcador no veía). 122 tests OK.
+- v0.20.0 (2026-09-24) — Multi-POV prendido A PRUEBA con la verificación de "mismo hecho": dos 👎
+  dentro de 14 días y el bot lo apaga solo (interruptor en la DB, no en el YAML). Prueba arrancada
+  en la Pi: 2026-09-25 02:03 → 2026-10-09 02:03. 178 tests OK.
 - v0.19.0 (2026-09-24) — Filtro de tono (`tono_sensible`, descarte duro) y puntaje de calidad
   (1–10, corte provisorio 5) en la MISMA llamada de textos, con 4 frames del clip. Relleno marcado
   para llenar el cupo solo con lo que falló únicamente por calidad, aviso de "0 clips hoy", botones
