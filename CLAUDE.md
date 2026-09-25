@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-09-24 | **Versión:** v0.20.0 | **Modo:** Fase 1 andando: primera entrega real hecha (3 Shorts por Telegram)
+**Snapshot:** 2026-09-24 | **Versión:** v0.21.0 | **Modo:** Fase 1 andando: primera entrega real hecha (3 Shorts por Telegram)
 
 > **Reglas de trabajo sobre este archivo:** se edita con Edit o se reescribe entero. NADA de scripts
 > de reemplazo encadenados: uno rompió el archivo el 2026-09-22 (37 MB de texto repetido) y hubo que
@@ -304,7 +304,11 @@ el código lo busca en la instalación de winget o en `FFMPEG_DIR`.
 ```
 config/settings.yaml     candidatos, evento, kick, catalogo, render, camara, subtitulos, filtro_audio,
                          marcador, pantalla, textos, seleccion, publicacion, youtube_upload_enabled
-config/streamers.yaml    login, plataforma, fuentes, grupo, permiso (cita/fuente o experimento),
+config/streamers.yaml    la lista "de autor". Las altas y bajas por Telegram NO se escriben acá:
+                         van a la DB y se combinan al cargar (`registro.combinar`), porque el YAML
+                         está en git y si el bot escribiera acá cada alta sería un conflicto en el
+                         próximo `git pull` de la Pi. La DB manda sobre el YAML.
+                         login, plataforma, fuentes, grupo, permiso (cita/fuente o experimento),
                          subtitulos_propios, detectar_marcador, palabras_programa, layout_forzado
                          + sección evento_dedsafio
 .env                     TWITCH_*, GEMINI_API_KEY, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID,
@@ -337,7 +341,10 @@ clips_bot/telegram.py    paso 10: sendVideo (width/height/duration + miniatura),
                          usuarios_permitidos (TELEGRAM_ALLOWED_USERS)
 clips_bot/process.py     orquesta 3–7 por clip, tiempos por etapa, registra estado en la DB
 clips_bot/db.py          SQLite data/clips.db: clips, posts, catalogo_cursor, streamer_estado
-                         (exclusiones), votos (👍/👎 con el puntaje), bot_estado (offset, turnos)
+                         (exclusiones), votos (👍/👎 con el puntaje), streamers_extra (altas y
+                         bajas por Telegram), bot_estado (offset, turnos, estado de los menús)
+clips_bot/registro.py    altas/bajas en la DB + `combinar` con el YAML + `resolver` un alta
+clips_bot/menu.py        teclados de /streamers y /agregar (callback_data de 64 bytes como tope)
 clips_bot/__main__.py    CLI
 tests/                   120 tests sin red ni video
 ```
@@ -371,6 +378,19 @@ Comandos:
     calienta la Pi y gasta cuota de Gemini. **El filtro de palabras corre ANTES del corte al top N**
     (si no, los clips sin las palabras se comen los lugares: es el mismo bug de orden que ya pasó
     con el evento y con los candidatos de Kick).
+  - `/streamers` — menú con botones, **editando siempre el mismo mensaje**: grupos → streamers
+    (2 columnas, 12 por página, ◀️ ▶️, ⬅️ Volver) → qué buscar (7 días / 30 días / con palabra).
+    Los excluidos salen con 🚫 y su botón no lleva a ningún lado. Cualquier búsqueda dispara el
+    `/buscar` de siempre, con la misma cola. Telegram corta el `callback_data` en **64 bytes**, así
+    que viajan índices (`st:s:2:37`) y no logins: con los 54 del Dedsafío varios no entrarían.
+  - `/agregar <login> [grupo]` (default `argentinos`) — lo busca en Kick y en Twitch, contesta qué
+    encontró (seguidores y clips de la semana) y lo suma con ✅/❌. **No usa "Kick primero" a
+    secas**: medido 2026-09-25, `vegetta777` en Kick es un slug ocupado con 166 seguidores y 0 clips
+    mientras el Vegetta real está en Twitch, y `momo` en Kick tiene 707 y 0. Lo que decide es tener
+    clips en 7 días. Si el que coincide exacto tiene menos de `CLIPS_SIN_DUDA` (20), se muestran
+    también los parecidos y elegís vos: "momo" da un canal con 7 clips que es un gato espacial en
+    inglés, no el Momo argentino.
+  - `/quitar <login>` — lo saca de las corridas.
   - `/ayuda` — lista los comandos con un ejemplo copiable de cada uno (sale de `COMANDOS` en
     `__main__.py`, y hay un test que exige que todos tengan ejemplo).
 - `telegram-chat-id` — lista los chats de getUpdates y los ids de usuario (TELEGRAM_ALLOWED_USERS).
@@ -463,6 +483,17 @@ descartado 9 de 10, porque el humor visual no se puede juzgar leyendo. Medido so
 contra 5,0 del resto (1,60 palabras/s contra 2,45). Por eso van 4 frames en la llamada. Corte
 provisorio en 5; el definitivo sale de los votos 👍/👎 en dos semanas.
 
+**El crash del 2026-09-25 y lo que se arregló alrededor.** `/buscar` sobre un streamer de Twitch
+tumbaba la escucha entera: `TwitchClient(load_twitch_creds())` sin desempaquetar. Tres arreglos:
+(1) una sola forma de armar el cliente (`_twitch()`), con un test que pasa por las dos plataformas;
+(2) cada comando corre dentro de `_seguro`, que atrapa cualquier excepción, deja el traceback en el
+log, contesta por Telegram y deja el bot escuchando; (3) lo que falla no vuelve a la cola. Además,
+systemd había llegado al `StartLimitBurst` y se plantó: un `restart` contesta "Start request
+repeated too quickly" y hace falta `reset-failed` primero, así que ahora la alerta trae ese comando.
+Y `alerta.sh` tenía DOS retornos de carro reales metidos en el código (uno partía un comentario en
+dos, el otro hacía que `tr` borrara también los saltos de línea del `.env`, que quedaba en una sola
+línea): la alerta estaba rota desde que se "arregló" el CRLF.
+
 Problemas abiertos:
 - **Co-streams por URL manual:** `procesar` solo ve título y categoría del clip; el título del
   stream (vía /videos) solo está en `candidatos`.
@@ -537,6 +568,10 @@ Problemas abiertos:
   requests/día, fallback automático a `gemini-3.5-flash-lite` ante 429 por cuota, reintentos 3 → 2 y
   `textos_pendientes` para no perder el render. Fútbol: segunda señal por fracción de verde-césped
   (calibrada con 8 clips reales; agarra el caso que el marcador no veía). 122 tests OK.
+- v0.21.0 (2026-09-25) — `/streamers` con navegación por botones, `/agregar` con confirmación y
+  `/quitar`, guardando en la DB y combinando con el YAML al cargar. Arreglado el crash de `/buscar`
+  en Twitch y blindada la escucha: un comando que explota avisa y no tumba el servicio ni queda en
+  loop en la cola. `alerta.sh` reescrito (tenía retornos de carro reales adentro). 185 tests OK.
 - v0.20.0 (2026-09-24) — Multi-POV prendido A PRUEBA con la verificación de "mismo hecho": dos 👎
   dentro de 14 días y el bot lo apaga solo (interruptor en la DB, no en el YAML). Prueba arrancada
   en la Pi: 2026-09-25 02:03 → 2026-10-09 02:03. 178 tests OK.
