@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-09-23 | **Versión:** v0.17.0 | **Modo:** Fase 1 andando: primera entrega real hecha (3 Shorts por Telegram)
+**Snapshot:** 2026-09-24 | **Versión:** v0.18.0 | **Modo:** Fase 1 andando: primera entrega real hecha (3 Shorts por Telegram)
 
 > **Reglas de trabajo sobre este archivo:** se edita con Edit o se reescribe entero. NADA de scripts
 > de reemplazo encadenados: uno rompió el archivo el 2026-09-22 (37 MB de texto repetido) y hubo que
@@ -147,7 +147,16 @@ y por eso la unidad va con `Nice=10` y prioridad de CPU baja. NO paralelizar.
    "Clip de [streamer] — twitch.tv/[login]", 3–5 hashtags incluyendo #Shorts, tipo de gancho, y
    `depende_de_fecha` (true si referencia algo puntual de ese día/semana → se descarta; ante la
    duda, true). Corre antes del render para no renderizar lo que se descarta.
-7b. **Multi-POV (grupo evento).** Si 3+ canales clipearon el mismo momento y se procesaron 3, se
+   **El título se valida contra lo que se dice**: los nombres propios (mayúscula en medio de la
+   oración) tienen que aparecer en la transcripción, la categoría o los títulos originales; si no,
+   cuenta como error de validación y se regenera. La primera palabra no se mira: en español va en
+   mayúscula siempre, y mirarla haría saltar "Reconoce" como si fuera un nombre.
+7b. **Multi-POV (grupo evento). APAGADO desde el 2026-09-24** (`multipov.activo: false`).
+   La agrupación de "mismo momento entre streamers" usa la hora de CREACIÓN del clip (±2 min), que
+   NO es la hora del hecho: con 54 canales del evento, cualquier ventana de 2 min junta clips de
+   cosas distintas. Se vuelve a prender cuando exista una verificación de "mismo hecho" probada con
+   5 casos reales. El comando `multipov <id...>` a mano sigue andando, justamente para probarla.
+   Cómo era cuando estaba prendido: Si 3+ canales clipearon el mismo momento y se procesaron 3, se
    arma ADEMÁS un Short secuencial: hasta 3 ángulos, cada uno ±4 s alrededor de su pico de reacción
    (volumen RMS + densidad de palabras del .srt), cartel con el nombre del streamer arriba durante
    su tramo, orden de menos a más visto (el final es el ángulo más fuerte) y crédito a todos en la
@@ -321,7 +330,11 @@ Comandos:
 - `atender-telegram` — procesa los comandos. `diario` lo corre al principio y el offset de
   getUpdates queda en la DB. Solo obedece a los ids de `TELEGRAM_ALLOWED_USERS` (vacío = nadie).
   - `/reclamo <id del clip>` — marca el reclamo, excluye al streamer y responde.
-  - `/buscar <streamer> [palabras] [días]` — busca a mano en los clips de ese streamer de los
+  - `/ya` — corre la mezcla diaria en el momento. Mismo turno pesado y misma cola que `/buscar`;
+    no atiende Telegram por dentro (le robaría los updates al modo escucha).
+  - `/buscar <streamer[,streamer]> [palabras] [días]` — busca a mano en los clips de esos
+    streamers (hasta 3, separados por coma; el tope se reparte de a uno por vuelta, así lo que a
+    uno le sobra lo usa otro) de los
     últimos N días (default 7, tope 90) los que tengan las palabras **en el título del clip o en el
     del stream**, con todos los filtros de siempre. Contesta "buscando…" con cuántos candidatos
     encontró, procesa hasta `TOPE_BUSCAR` (3) y los manda con el formato habitual; al final, el
@@ -332,6 +345,8 @@ Comandos:
     calienta la Pi y gasta cuota de Gemini. **El filtro de palabras corre ANTES del corte al top N**
     (si no, los clips sin las palabras se comen los lugares: es el mismo bug de orden que ya pasó
     con el evento y con los candidatos de Kick).
+  - `/ayuda` — lista los comandos con un ejemplo copiable de cada uno (sale de `COMANDOS` en
+    `__main__.py`, y hay un test que exige que todos tengan ejemplo).
 - `telegram-chat-id` — lista los chats de getUpdates y los ids de usuario (TELEGRAM_ALLOWED_USERS).
 - `benchmark [--clips N] [--modelos small,base] [--limite-s S]` — mide OCR, Whisper (carga y
   transcripción por modelo), detección de cámara y render sobre los mp4 que ya están en
@@ -397,6 +412,23 @@ señal, fracción de verde-césped, sí lo agarra: 68 % de césped en 2 de 12 fr
 muestreo del 3 % al 97 % del clip (con 10 %–90 % la cancha aparecía en un solo frame). Respaldo real:
 los Chequeos de copyright de Studio detectan transmisiones de partidos por Content ID antes de
 publicar, así que el riesgo queda cubierto aunque la heurística falle.
+
+**El multi-POV que salió mal (2026-09-24), en detalle.** Short "Reconoce que no conoce a Zelda 😅"
+con tres momentos sin relación. Horas de creación: rivers_gg 02:04:18, gamstergaming 02:05:31,
+pattymeza 02:06:25 — los tres en Minecraft y dentro de la ventana de 2 min, pero eran el menú de
+pausa, unos créditos y una despedida. Era el último día de GeoWare: mucha gente clipeando a la vez
+cosas distintas. Peor todavía: el clip ancla era un **memorial** ("En memoria de ZELDA, 15 NOV 24 –
+14 DIC 25", con fotos de un perro muerto), o sea un duelo convertido en Short con emoji. El clip y
+el multi-POV quedaron descartados con motivo `memorial / duelo`. **No hay ninguna capa que detecte
+contenido sensible** (memoriales, accidentes, malas noticias): el OCR de §4b busca datos personales,
+no tono. Ese título, además, NO lo agarra la validación nueva: "Zelda" sí estaba en la transcripción.
+
+Subtítulos quemados por el streamer (detectado 2026-09-24 con OCR + cruce contra la transcripción:
+si el texto en pantalla coincide con lo que se dice, son subtítulos en vivo; un HUD no). Sobre los
+6 clips del evento ya procesados: **rivers_gg, arigameplays y gamstergaming** los tienen (5 a 8
+palabras coincidentes en el decil de abajo); renrize tiene texto abajo pero 0 coincidencias (HUD);
+pattymeza y filisgg, nada. Los tres quedaron con `subtitulos_propios: true`, confirmado mirando los
+frames.
 
 Problemas abiertos:
 - **Co-streams por URL manual:** `procesar` solo ve título y categoría del clip; el título del
@@ -472,6 +504,12 @@ Problemas abiertos:
   requests/día, fallback automático a `gemini-3.5-flash-lite` ante 429 por cuota, reintentos 3 → 2 y
   `textos_pendientes` para no perder el render. Fútbol: segunda señal por fracción de verde-césped
   (calibrada con 8 clips reales; agarra el caso que el marcador no veía). 122 tests OK.
+- v0.18.0 (2026-09-24) — Multi-POV APAGADO hasta tener verificación de "mismo hecho" (la
+  agrupación usa la hora de creación del clip, no la del hecho). Título validado contra la
+  transcripción. `/ya`, `/buscar` con varios streamers repartiendo el tope, y `/ayuda` con un
+  ejemplo por comando. `subtitulos_propios` en rivers_gg, arigameplays y gamstergaming. La corrida
+  automática de las 05:02 por systemd salió `success` (27 min de reloj, 46 min de CPU): el sandbox
+  de la unidad quedó verificado. 171 tests OK.
 - v0.17.1 (2026-09-23) — SIGTERM se maneja como una salida normal para que corran los `finally`:
   sin eso, un `systemctl stop` en medio de una corrida dejaba el turno pesado tomado y el `/buscar`
   siguiente quedaba en cola hasta que venciera (3 h). Encontrado probando el corte, no leyendo. En
