@@ -230,3 +230,74 @@ def test_el_corte_sale_de_donde_ganan_los_pulgares_arriba(conn):
     assert tabla == [(3, 0, 2), (4, 1, 2), (5, 2, 1), (6, 2, 0)]
     corte = next(p for p, arriba, abajo in tabla if arriba > abajo)
     assert corte == 5
+
+
+# ---- la prueba del multi-POV ------------------------------------------------------
+
+
+def _voto_multipov(conn, tg, clip_id, voto=-1):
+    up = [{"callback_query": {"id": "q", "data": f"voto:{voto}:{clip_id}", "from": {"id": 7},
+                              "message": {"message_id": 3, "chat": {"id": "9"}}}}]
+    return m._atender_votos(conn, tg, up, {"7"})
+
+
+class TGvotos(FakeTG):
+    def edit_reply_markup(self, chat_id, message_id, teclado):
+        pass
+
+    def answer_callback(self, callback_id, texto=""):
+        pass
+
+
+def test_dos_pulgares_abajo_apagan_el_multipov(conn, monkeypatch, tmp_path):
+    """El trato del 2026-09-24: dos 👎 a multi-POV en dos semanas y se apaga hasta revisarlo."""
+    from datetime import datetime, timezone
+
+    monkeypatch.setattr("clips_bot.process.READY_DIR", tmp_path)
+    tg = TGvotos()
+    db.arrancar_prueba_multipov(conn, datetime.now(timezone.utc).isoformat())
+    assert db.multipov_apagado(conn) is None
+
+    # un 👎 avisa pero no apaga
+    _voto_multipov(conn, tg, "multipov_uno")
+    assert db.multipov_apagado(conn) is None
+    assert "1" in tg.mensajes[-1] and "apago" in tg.mensajes[-1]
+
+    # un 👍 a otro no suma
+    _voto_multipov(conn, tg, "multipov_dos", voto=1)
+    assert db.multipov_apagado(conn) is None
+
+    # y un 👎 a un clip normal tampoco
+    _voto_multipov(conn, tg, "clip_normal")
+    assert db.multipov_apagado(conn) is None
+
+    # el segundo 👎 a un multi-POV sí
+    _voto_multipov(conn, tg, "multipov_tres")
+    assert db.multipov_apagado(conn)
+    assert "apagado" in tg.mensajes[-1].lower()
+    assert db.pulgares_abajo_multipov(conn) == ["multipov_uno", "multipov_tres"]
+
+
+def test_cambiar_el_voto_no_cuenta_dos_veces(conn, monkeypatch, tmp_path):
+    """Se cuenta un clip por multi-POV, no un voto: si votás 👎 dos veces al mismo, es uno."""
+    from datetime import datetime, timezone
+
+    monkeypatch.setattr("clips_bot.process.READY_DIR", tmp_path)
+    tg = TGvotos()
+    db.arrancar_prueba_multipov(conn, datetime.now(timezone.utc).isoformat())
+    _voto_multipov(conn, tg, "multipov_uno")
+    _voto_multipov(conn, tg, "multipov_uno")
+    assert db.multipov_apagado(conn) is None
+    assert db.pulgares_abajo_multipov(conn) == ["multipov_uno"]
+
+
+def test_pasadas_las_dos_semanas_el_trato_se_vence(conn, monkeypatch, tmp_path):
+    from datetime import datetime, timedelta, timezone
+
+    monkeypatch.setattr("clips_bot.process.READY_DIR", tmp_path)
+    tg = TGvotos()
+    viejo = (datetime.now(timezone.utc) - timedelta(days=20)).isoformat()
+    db.arrancar_prueba_multipov(conn, viejo)
+    _voto_multipov(conn, tg, "multipov_uno")
+    _voto_multipov(conn, tg, "multipov_dos")
+    assert db.multipov_apagado(conn) is None   # el trato era por dos semanas

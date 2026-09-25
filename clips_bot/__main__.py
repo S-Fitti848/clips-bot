@@ -482,6 +482,14 @@ def procesar_multipov_del_dia(settings: Settings, streamers: list, res: Resultad
     if not settings.multipov.activo:
         print("\n=== Multi-POV APAGADO (multipov.activo: false en settings.yaml)")
         return 0
+    conn = db.connect(DB_PATH)
+    try:
+        apagado = db.multipov_apagado(conn)
+    finally:
+        conn.close()
+    if apagado:
+        print(f"\n=== Multi-POV APAGADO solo: {apagado}")
+        return 0
     if not res.grupos_evento or tope < 3:
         return 0
     # el grupo con más canales distintos; a igualdad, el de más vistas
@@ -1018,7 +1026,34 @@ def _atender_votos(conn, tg: TelegramClient, updates: list[dict], permitidos: se
         tg.answer_callback(v["callback_id"], "👍 anotado" if v["voto"] > 0 else "👎 anotado")
         n += 1
         print(f"  voto {'+1' if v['voto'] > 0 else '-1'} en {v['clip_id'][:28]}")
+        if v["voto"] < 0 and v["clip_id"].startswith(db.PREFIJO_MULTIPOV):
+            _revisar_prueba_multipov(conn, tg, v["chat_id"])
     return n
+
+
+def _revisar_prueba_multipov(conn, tg: TelegramClient, chat_id: str) -> None:
+    """El trato del 2026-09-24: dos 👎 a multi-POV en dos semanas y se apaga hasta revisarlo."""
+    cfg = load_settings().multipov
+    if db.multipov_apagado(conn):
+        return
+    desde = db.get_valor(conn, db.CLAVE_MP_DESDE)
+    if desde:
+        limite = datetime.fromisoformat(desde) + timedelta(days=cfg.dias_prueba)
+        if datetime.now(timezone.utc) > limite:
+            return  # pasó el período de prueba: el trato era por dos semanas
+    malos = db.pulgares_abajo_multipov(conn, desde)
+    if len(malos) < cfg.votos_negativos_max:
+        faltan = cfg.votos_negativos_max - len(malos)
+        log.info("multi-POV: %d 👎 (se apaga con %d)", len(malos), cfg.votos_negativos_max)
+        tg.send_message(chat_id, f"Anotado. Van <b>{len(malos)}</b> multi-POV con 👎; "
+                                 f"{'con uno más' if faltan == 1 else f'con {faltan} más'} lo apago.")
+        return
+    motivo = (f"{len(malos)} multi-POV con 👎 desde {(desde or '')[:10]}: "
+              + ", ".join(m[:34] for m in malos))
+    db.apagar_multipov(conn, motivo)
+    tg.send_message(chat_id,
+                    f"🛑 <b>Multi-POV apagado.</b> Le diste 👎 a {len(malos)}, que era el trato.\n"
+                    f"No se arma ninguno más hasta que lo revisemos.\n<pre>{motivo}</pre>")
 
 
 def _pesado(conn, tg: TelegramClient, chat_id: str, comando: str, args: list[str],

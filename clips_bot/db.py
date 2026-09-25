@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sqlite3
+from datetime import datetime
 from pathlib import Path
 
 SCHEMA = """
@@ -281,3 +282,54 @@ def votos_por_puntaje(conn: sqlite3.Connection) -> list[tuple[int, int, int]]:
            FROM votos WHERE puntaje > 0 GROUP BY puntaje ORDER BY puntaje"""
     ).fetchall()
     return [(int(p), int(a or 0), int(b or 0)) for p, a, b in filas]
+
+
+# ---- prueba del multi-POV ----------------------------------------------------
+# Se prendió el 2026-09-24 a prueba: si junta VOTOS_NEGATIVOS 👎 dentro del período, se apaga solo.
+# El interruptor va en la DB y no en settings.yaml a propósito: el YAML está en git y lo editan las
+# personas; esto lo decide el bot y tiene que poder apagarse sin un commit ni un deploy.
+
+PREFIJO_MULTIPOV = "multipov_"
+CLAVE_MP_DESDE = "multipov_prueba_desde"
+CLAVE_MP_APAGADO = "multipov_apagado"
+
+
+def arrancar_prueba_multipov(conn: sqlite3.Connection, cuando: str) -> None:
+    """Marca desde cuándo se cuentan los 👎, y limpia un apagado anterior."""
+    set_valor(conn, CLAVE_MP_DESDE, cuando)
+    conn.execute("DELETE FROM bot_estado WHERE clave = ?", (CLAVE_MP_APAGADO,))
+    conn.commit()
+
+
+def multipov_apagado(conn: sqlite3.Connection) -> str | None:
+    """El motivo por el que se apagó solo, o None si sigue andando."""
+    return get_valor(conn, CLAVE_MP_APAGADO)
+
+
+def apagar_multipov(conn: sqlite3.Connection, motivo: str) -> None:
+    set_valor(conn, CLAVE_MP_APAGADO, motivo)
+
+
+def _como_sqlite(iso: str) -> str:
+    """ISO 8601 -> el formato que escribe datetime('now') de SQLite, que es con lo que se compara.
+
+    Hace falta porque las dos formas se comparan como TEXTO: "2026-09-24 10:00:00" contra
+    "2026-09-24T10:00:00+00:00" da False por el espacio contra la T, y el filtro se comía todo.
+    """
+    from datetime import timezone
+
+    try:
+        dt = datetime.fromisoformat(iso)
+    except ValueError:
+        return iso
+    if dt.tzinfo is not None:
+        dt = dt.astimezone(timezone.utc).replace(tzinfo=None)
+    return dt.strftime("%Y-%m-%d %H:%M:%S")
+
+
+def pulgares_abajo_multipov(conn: sqlite3.Connection, desde: str | None = None) -> list[str]:
+    """Los multi-POV que recibieron 👎 desde `desde` (ISO). Uno por clip, no por voto."""
+    sql = ("SELECT DISTINCT clip_id FROM votos WHERE voto < 0 AND clip_id LIKE ?"
+           + (" AND ts >= ?" if desde else "") + " ORDER BY ts")
+    args = [PREFIJO_MULTIPOV + "%"] + ([_como_sqlite(desde)] if desde else [])
+    return [r[0] for r in conn.execute(sql, args)]
