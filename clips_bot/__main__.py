@@ -255,14 +255,33 @@ def ejecutar_seleccion(settings: Settings, gemini: GeminiClient | None, enviar: 
         conn.close()
     if not opciones:
         print("No hay clips procesados pendientes (estado 'procesado' en la DB con json en output/ready/).")
+        if enviar:
+            _avisar_cero(settings, "No quedó ningún clip procesado para elegir.")
         return 1
-    elegidos = seleccionar(opciones, cfg, ahora, desempate_gemini(gemini) if gemini else None)
+    # Los de relleno no compiten: se guardan aparte y solo entran si falta para llenar el día.
+    buenos = [o for o in opciones if not o.meta.get("relleno")]
+    relleno = sorted((o for o in opciones if o.meta.get("relleno")),
+                     key=lambda o: o.meta.get("puntaje", 0), reverse=True)
+    elegidos = seleccionar(buenos, cfg, ahora, desempate_gemini(gemini) if gemini else None)
+    cupo = n or sum(cfg.mezcla.values()) or 3
+    if len(elegidos) < cupo and relleno:
+        # Solo puede salir de acá lo que falló ÚNICAMENTE por calidad: lo que se descarta por tono,
+        # copyright, datos en pantalla o cualquier filtro de seguridad nunca llega a `opciones`.
+        faltan = cupo - len(elegidos)
+        print(f"\nFaltan {faltan} para llegar a {cupo}: completo con relleno "
+              f"(los mejores de {len(relleno)} que no llegaron al corte de calidad)")
+        elegidos += relleno[:faltan]
     if n:
         elegidos = elegidos[:n]
 
     cupos = ", ".join(f"{k} {v}" for k, v in cfg.mezcla.items())
     horarios = settings.publicacion.horarios
     print(f"\n{len(opciones)} pendientes → elegidos {len(elegidos)} (cupos: {cupos}):")
+    if not elegidos:
+        print("Ninguno pasó los filtros.")
+        if enviar:
+            _avisar_cero(settings, f"Había {len(opciones)} clips procesados y ninguno quedó.")
+        return 1
     for i, o in enumerate(elegidos, 1):
         edad = f"{(ahora - o.creado).total_seconds() / 3600 / 24:.1f} d" if o.creado else "?"
         horario = horarios[i - 1] if i <= len(horarios) else "?"
@@ -299,16 +318,26 @@ def ejecutar_seleccion(settings: Settings, gemini: GeminiClient | None, enviar: 
 
 def enviar_clip(tg: TelegramClient, chat_id: str, conn, clip_id: str, meta: dict, numero: int,
                 horario: str | None) -> None:
-    """El mp4 + el mensaje con los textos, y el clip queda `entregado`. §3 paso 10."""
+    """El mp4 + el mensaje con los textos, y el clip queda `entregado`. §3 paso 10.
+
+    El mensaje lleva los botones 👍/👎: con dos semanas de votos, el corte de calidad se elige con
+    datos en vez de con un número puesto a ojo (ver db.votos_por_puntaje).
+    """
     from .process import READY_DIR, guardar_meta
-    from .telegram import mensaje_textos
+    from .telegram import mensaje_textos, teclado_voto
 
     video = Path(meta["salida"])
     info = probe(video)  # dimensiones reales del archivo: sin esto Telegram lo muestra angosto
     thumb = miniatura(video, video.with_suffix(".thumb.jpg"))
-    tg.send_video(chat_id, video, f"#{numero} · {meta['streamer']} · {meta['textos']['titulo']}",
+    marca = f" · RELLENO (puntaje {meta.get('puntaje', 0)})" if meta.get("relleno") else ""
+    tg.send_video(chat_id, video,
+                  f"#{numero} · {meta['streamer']} · {meta['textos']['titulo']}{marca}",
                   width=info.ancho, height=info.alto, duration=round(info.duracion), thumbnail=thumb)
-    tg.send_message(chat_id, mensaje_textos(numero, meta["streamer"], clip_id, horario, meta["textos"]))
+    cuerpo = mensaje_textos(numero, meta["streamer"], clip_id, horario, meta["textos"])
+    if meta.get("relleno"):
+        cuerpo = (f"⚠️ <b>RELLENO (puntaje {meta.get('puntaje', 0)} de 10)</b> — no llegó al corte "
+                  f"de calidad; entró porque faltaban clips. Mirá si vale la pena.\n\n" + cuerpo)
+    tg.send_message(chat_id, cuerpo, teclado=teclado_voto(clip_id))
     if not meta.get("subtitulos_quemados", True):  # el .srt va como pista de subtítulos en YouTube
         tg.send_document(chat_id, READY_DIR / f"{clip_id}.srt",
                          "Subtítulos para cargar como pista en YouTube")
@@ -316,6 +345,31 @@ def enviar_clip(tg: TelegramClient, chat_id: str, conn, clip_id: str, meta: dict
                          "horario": horario}
     guardar_meta(READY_DIR / f"{clip_id}.json", meta)
     db.set_estado(conn, clip_id, "entregado")
+
+
+def _avisar_cero(settings: Settings, detalle: str) -> None:
+    """Un día sin entrega tiene que avisar. Si no, no se distingue de un bot colgado."""
+    from .telegram import resolver_chat_id
+
+    conn = db.connect(DB_PATH)
+    try:
+        motivos = conn.execute(
+            """SELECT motivo, COUNT(*) FROM clips
+               WHERE estado = 'descartado' AND motivo IS NOT NULL
+                 AND first_seen_at >= datetime('now', '-1 day')
+               GROUP BY motivo ORDER BY COUNT(*) DESC"""
+        ).fetchall()
+    finally:
+        conn.close()
+    cuerpo = f"<b>0 clips hoy.</b> {html.escape(detalle)}"
+    if motivos:
+        filas = "\n".join(f"{n:>4}  {html.escape(str(m))}" for m, n in motivos)
+        cuerpo += f"\n\nDescartes de las últimas 24 h:\n<pre>{filas}</pre>"
+    try:
+        tg = TelegramClient(env("TELEGRAM_BOT_TOKEN"))
+        tg.send_message(resolver_chat_id(tg, env("TELEGRAM_CHAT_ID", requerido=False)), cuerpo)
+    except (TelegramError, ConfigError) as e:
+        log.warning("No pude avisar que hoy no salió nada: %s", e)
 
 
 def cmd_diario(args: argparse.Namespace) -> int:
@@ -650,7 +704,7 @@ def atender_telegram(settings: Settings, silencioso: bool = False) -> int:
     try:
         guardado = db.get_valor(conn, "telegram_offset")
         updates = tg.get_updates(offset=int(guardado) if guardado else None)
-        atendidos = 0
+        atendidos = _atender_votos(conn, tg, updates, permitidos)
         for c in comandos(updates):
             if c["user_id"] not in permitidos:
                 quien = f"{c['usuario'] or '?'} (id {c['user_id'] or '?'})"
@@ -884,6 +938,7 @@ def escuchar_telegram(settings: Settings, timeout_poll: int = 50) -> int:
                 log.warning("getUpdates falló (%s); reintento en 30 s", e)
                 time.sleep(30)
                 continue
+            _atender_votos(conn, tg, updates, permitidos)
             for c in comandos(updates):
                 if c["user_id"] not in permitidos:
                     log.warning("%s de %s (id %s): no autorizado", c["comando"], c["usuario"],
@@ -920,6 +975,39 @@ def _despachar(conn, tg: TelegramClient, c: dict, settings: Settings, cola: list
     else:
         respuesta = f"No conozco {c['comando']}. Probá /ayuda."
     tg.send_message(c["chat_id"], respuesta)
+
+
+def _atender_votos(conn, tg: TelegramClient, updates: list[dict], permitidos: set) -> int:
+    """Los 👍/👎 de abajo de cada clip. Se guardan con el puntaje que le puso Gemini, que es lo que
+    después permite elegir el corte con datos (db.votos_por_puntaje)."""
+    import json as _json
+    from pathlib import Path as _Path
+
+    from .process import READY_DIR
+    from .telegram import teclado_voto, votos
+
+    n = 0
+    for v in votos(updates):
+        if v["user_id"] not in permitidos:
+            log.warning("Voto de %s: no autorizado", v["user_id"])
+            continue
+        meta = {}
+        ruta = READY_DIR / f"{v['clip_id']}.json"
+        if ruta.exists():
+            try:
+                meta = _json.loads(ruta.read_text(encoding="utf-8"))
+            except ValueError:
+                pass
+        db.votar(conn, v["clip_id"], v["voto"], v["user_id"],
+                 puntaje=int(meta.get("puntaje") or 0), relleno=bool(meta.get("relleno")))
+        try:
+            tg.edit_reply_markup(v["chat_id"], v["message_id"], teclado_voto(v["clip_id"], v["voto"]))
+        except TelegramError as e:
+            log.warning("No pude marcar el botón votado: %s", e)
+        tg.answer_callback(v["callback_id"], "👍 anotado" if v["voto"] > 0 else "👎 anotado")
+        n += 1
+        print(f"  voto {'+1' if v['voto'] > 0 else '-1'} en {v['clip_id'][:28]}")
+    return n
 
 
 def _pesado(conn, tg: TelegramClient, chat_id: str, comando: str, args: list[str],

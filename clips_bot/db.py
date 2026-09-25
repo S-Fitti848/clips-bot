@@ -135,6 +135,16 @@ CREATE TABLE IF NOT EXISTS streamer_estado (
     clip_id   TEXT,
     fecha     TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
 );
+CREATE TABLE IF NOT EXISTS votos (
+    clip_id    TEXT NOT NULL,
+    user_id    TEXT NOT NULL,
+    voto       INTEGER NOT NULL,          -- 1 o -1
+    puntaje    INTEGER NOT NULL DEFAULT 0, -- el que le puso Gemini, para calibrar el corte
+    relleno    INTEGER NOT NULL DEFAULT 0,
+    ts         TEXT NOT NULL,
+    PRIMARY KEY (clip_id, user_id)
+);
+
 CREATE TABLE IF NOT EXISTS bot_estado (
     clave  TEXT PRIMARY KEY,
     valor  TEXT
@@ -236,3 +246,38 @@ def hay_trabajo_pesado(conn: sqlite3.Connection, vencimiento_s: float = 3600) ->
     """Qué está corriendo ahora mismo (el token dice quién), o None si está libre."""
     activos = turnos_activos(conn, RECURSO_PESADO, vencimiento_s)
     return activos[0][0] if activos else None
+
+
+# ---- votos 👍/👎 -------------------------------------------------------------
+# Para qué: el corte de calidad (textos.puntaje_min) hoy es un número puesto a ojo. Con dos semanas
+# de votos, el corte se elige con datos: el puntaje a partir del cual Santi vota más 👍 que 👎.
+
+def votar(conn: sqlite3.Connection, clip_id: str, voto: int, user_id: str, puntaje: int = 0,
+          relleno: bool = False) -> None:
+    """voto: 1 (pulgar arriba) o -1. Un voto por clip y por persona; el último pisa al anterior."""
+    conn.execute(
+        """INSERT INTO votos (clip_id, user_id, voto, puntaje, relleno, ts)
+           VALUES (?, ?, ?, ?, ?, datetime('now'))
+           ON CONFLICT(clip_id, user_id) DO UPDATE SET
+               voto = excluded.voto, puntaje = excluded.puntaje,
+               relleno = excluded.relleno, ts = excluded.ts""",
+        (clip_id, str(user_id), int(voto), int(puntaje), 1 if relleno else 0),
+    )
+    conn.commit()
+
+
+def voto_de(conn: sqlite3.Connection, clip_id: str, user_id: str) -> int | None:
+    fila = conn.execute("SELECT voto FROM votos WHERE clip_id = ? AND user_id = ?",
+                        (clip_id, str(user_id))).fetchone()
+    return fila[0] if fila else None
+
+
+def votos_por_puntaje(conn: sqlite3.Connection) -> list[tuple[int, int, int]]:
+    """[(puntaje, 👍, 👎)] ordenado. Con esto se elige el corte: el puntaje desde el cual gana 👍."""
+    filas = conn.execute(
+        """SELECT puntaje,
+                  SUM(CASE WHEN voto > 0 THEN 1 ELSE 0 END),
+                  SUM(CASE WHEN voto < 0 THEN 1 ELSE 0 END)
+           FROM votos WHERE puntaje > 0 GROUP BY puntaje ORDER BY puntaje"""
+    ).fetchall()
+    return [(int(p), int(a or 0), int(b or 0)) for p, a, b in filas]

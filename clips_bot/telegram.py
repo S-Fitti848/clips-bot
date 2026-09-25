@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import html
+import json
 import re
 from pathlib import Path
 
@@ -45,9 +46,20 @@ class TelegramClient:
             data["offset"] = str(offset)
         return self._llamar("getUpdates", data)  # type: ignore[return-value]
 
-    def send_message(self, chat_id: str, texto_html: str) -> None:
-        self._llamar("sendMessage", {"chat_id": chat_id, "text": texto_html, "parse_mode": "HTML",
-                                     "disable_web_page_preview": "true"})
+    def send_message(self, chat_id: str, texto_html: str, teclado: dict | None = None) -> None:
+        data = {"chat_id": chat_id, "text": texto_html, "parse_mode": "HTML",
+                "disable_web_page_preview": "true"}
+        if teclado:
+            data["reply_markup"] = json.dumps(teclado)
+        self._llamar("sendMessage", data)
+
+    def answer_callback(self, callback_id: str, texto: str = "") -> None:
+        """Le saca el relojito al botón. Si no se contesta, Telegram lo deja girando."""
+        self._llamar("answerCallbackQuery", {"callback_query_id": callback_id, "text": texto})
+
+    def edit_reply_markup(self, chat_id: str, message_id: int, teclado: dict) -> None:
+        self._llamar("editMessageReplyMarkup", {"chat_id": chat_id, "message_id": message_id,
+                                                "reply_markup": json.dumps(teclado)})
 
     def send_video(self, chat_id: str, path: Path, caption: str = "", *, width: int | None = None,
                    height: int | None = None, duration: int | None = None, thumbnail: Path | None = None) -> None:
@@ -130,6 +142,37 @@ def mensaje_textos(numero: int, streamer: str, clip_id: str, horario: str | None
     partes.append(f"Si recibe un reclamo o strike: <code>/reclamo {e(clip_id)}</code> "
                   "(excluye al streamer de las próximas corridas).")
     return "\n".join(partes)
+
+
+def teclado_voto(clip_id: str, elegido: int = 0) -> dict:
+    """Los dos botones debajo del mensaje de un clip. `elegido` marca el que ya votaste."""
+    def etiqueta(icono: str, valor: int) -> str:
+        return f"{icono} ✓" if elegido == valor else icono
+
+    return {"inline_keyboard": [[
+        {"text": etiqueta("👍", 1), "callback_data": f"voto:1:{clip_id}"},
+        {"text": etiqueta("👎", -1), "callback_data": f"voto:-1:{clip_id}"},
+    ]]}
+
+
+def votos(updates: list[dict]) -> list[dict]:
+    """Los botones 👍/👎 que apretaron: [{callback_id, chat_id, message_id, user_id, voto, clip_id}]."""
+    out = []
+    for u in updates:
+        cb = u.get("callback_query")
+        if not cb or not str(cb.get("data", "")).startswith("voto:"):
+            continue
+        _, valor, clip_id = cb["data"].split(":", 2)
+        msg = cb.get("message") or {}
+        out.append({
+            "callback_id": cb.get("id"),
+            "chat_id": str((msg.get("chat") or {}).get("id", "")),
+            "message_id": msg.get("message_id"),
+            "user_id": str((cb.get("from") or {}).get("id") or ""),
+            "voto": int(valor),
+            "clip_id": clip_id,
+        })
+    return out
 
 
 def comandos(updates: list[dict]) -> list[dict]:

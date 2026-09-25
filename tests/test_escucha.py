@@ -177,3 +177,56 @@ def test_ayuda_lista_todos_los_comandos_con_ejemplo():
         assert uso in texto and que in texto
         assert f"<code>{ejemplo}</code>" in texto
     assert {c[0].split()[0] for c in m.COMANDOS} == {"/ya", "/buscar", "/reclamo", "/ayuda"}
+
+
+# ---- votos 👍/👎 ----------------------------------------------------------------
+
+
+def test_los_votos_se_guardan_con_el_puntaje(conn, monkeypatch, tmp_path):
+    """El puntaje va junto al voto: es lo que después deja elegir el corte con datos en vez de
+    con un número puesto a ojo."""
+    import json
+
+    from clips_bot import telegram as tgmod
+
+    ready = tmp_path / "ready"
+    ready.mkdir()
+    (ready / "c1.json").write_text(json.dumps({"puntaje": 4, "relleno": True}), encoding="utf-8")
+    monkeypatch.setattr("clips_bot.process.READY_DIR", ready)
+
+    class TG(FakeTG):
+        def __init__(self):
+            super().__init__()
+            self.editados, self.contestados = [], []
+
+        def edit_reply_markup(self, chat_id, message_id, teclado):
+            self.editados.append(teclado)
+
+        def answer_callback(self, callback_id, texto=""):
+            self.contestados.append(texto)
+
+    tg = TG()
+    up = [{"callback_query": {"id": "q", "data": "voto:-1:c1", "from": {"id": 7},
+                              "message": {"message_id": 3, "chat": {"id": 9}}}}]
+    assert m._atender_votos(conn, tg, up, {"7"}) == 1
+    assert db.voto_de(conn, "c1", "7") == -1
+    assert db.votos_por_puntaje(conn) == [(4, 0, 1)]
+    assert tg.contestados == ["👎 anotado"]          # sin esto el botón queda girando
+    botones = tg.editados[0]["inline_keyboard"][0]    # y queda marcado cuál votaste
+    assert botones[1]["text"].endswith("✓") and not botones[0]["text"].endswith("✓")
+
+    # el mismo voto de otra persona no pisa el tuyo
+    up[0]["callback_query"]["from"]["id"] = 55
+    assert m._atender_votos(conn, tg, up, {"7"}) == 0  # 55 no está autorizado
+    assert db.voto_de(conn, "c1", "55") is None
+
+
+def test_el_corte_sale_de_donde_ganan_los_pulgares_arriba(conn):
+    """Regla que acordamos: el corte es el puntaje desde el cual hay más 👍 que 👎."""
+    for i, (puntaje, voto) in enumerate(
+            [(3, -1), (3, -1), (4, -1), (4, 1), (4, -1), (5, 1), (5, 1), (5, -1), (6, 1), (6, 1)]):
+        db.votar(conn, f"c{i}", voto, "7", puntaje=puntaje)
+    tabla = db.votos_por_puntaje(conn)
+    assert tabla == [(3, 0, 2), (4, 1, 2), (5, 2, 1), (6, 2, 0)]
+    corte = next(p for p, arriba, abajo in tabla if arriba > abajo)
+    assert corte == 5
