@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-09-24 | **Versión:** v0.18.0 | **Modo:** Fase 1 andando: primera entrega real hecha (3 Shorts por Telegram)
+**Snapshot:** 2026-09-24 | **Versión:** v0.19.0 | **Modo:** Fase 1 andando: primera entrega real hecha (3 Shorts por Telegram)
 
 > **Reglas de trabajo sobre este archivo:** se edita con Edit o se reescribe entero. NADA de scripts
 > de reemplazo encadenados: uno rompió el archivo el 2026-09-22 (37 MB de texto repetido) y hubo que
@@ -151,6 +151,20 @@ y por eso la unidad va con `Nice=10` y prioridad de CPU baja. NO paralelizar.
    oración) tienen que aparecer en la transcripción, la categoría o los títulos originales; si no,
    cuenta como error de validación y se regenera. La primera palabra no se mira: en español va en
    mayúscula siempre, y mirarla haría saltar "Reconoce" como si fuera un nombre.
+   En la MISMA llamada vienen **`sensible`** y **`puntaje`**, con `textos.frames_para_puntaje` (4)
+   frames del clip adjuntos:
+   - **`sensible` → descarte duro** con motivo `tono_sensible`, sin excepciones y sin relleno:
+     muerte, duelo, homenajes, enfermedad, accidentes, llanto real, violencia real entre personas
+     (algo que pasó y se muestra o se cuenta) o salud mental. NO cuentan el humor normal, las
+     puteadas, las derrotas, las peleas DENTRO de un juego ni una charla hipotética sobre quién
+     ganaría una pelea.
+   - **`puntaje` 1–10** (se entiende solo + tiene remate). Abajo de `textos.puntaje_min` (5) el clip
+     NO se tira: se renderiza igual y queda marcado como **relleno**, y solo entra si la corrida no
+     llega al cupo sin él. Sale con `RELLENO (puntaje X)` en el mensaje.
+     **Los frames son imprescindibles**: sin ellos el puntaje castiga al humor visual. Medido sobre
+     los mismos 27 clips, sin imagen y con 4 frames: mediana 5 → 6, y con corte 5 pasaban 14/27 →
+     pasan 20/27. Los que más subieron son los visuales (renrize 2→9 con un parkour y un festejo,
+     spreen 5→9 con un balde en la cabeza, vegetta777 4→8 cuando le explotan con misiles).
 7b. **Multi-POV (grupo evento). APAGADO desde el 2026-09-24** (`multipov.activo: false`).
    La agrupación de "mismo momento entre streamers" usa la hora de CREACIÓN del clip (±2 min), que
    NO es la hora del hecho: con 54 canales del evento, cualquier ventana de 2 min junta clips de
@@ -166,6 +180,12 @@ y por eso la unidad va con `Nice=10` y prioridad de CPU baja. NO paralelizar.
    no pasa: (1) se rehace con fit_blur, que muestra el 16:9 entero; (2) si tampoco alcanza, se
    reemplaza por otro canal del mismo momento (se procesan hasta 2 más); (3) si no se llega a
    `min_angulos`, no se arma el multi-POV.
+   **Verificación de "mismo hecho"** (tienen que pasar las DOS): superposición léxica entre las
+   transcripciones (`multipov.superposicion_min`, 12 %) **y** una pregunta a Gemini. La léxica va
+   primero porque es gratis: si no llega, no se gasta la llamada. Probado con los 5 grupos reales
+   del 2026-09-24: el único que era de verdad el mismo momento (cuatro streamers recitando el mismo
+   diálogo del evento) dio 36 %, y los otros cuatro 0, 2, 4 y 5 % — incluido el que se armó y salió
+   mal. El umbral cae en el medio de esa separación.
 8. Elegir con cupos por GRUPO (`seleccion.mezcla`, default 1 kick_reciente + 1 evento + 1 catálogo).
    Cada grupo compite solo en su cupo; lo que un grupo no llena pasa al grupo `catalogo`, y si a ese
    le sobra vuelve a repartirse. Tope 2 por streamer entre todos. Empate en el corte → Gemini
@@ -173,7 +193,9 @@ y por eso la unidad va con `Nice=10` y prioridad de CPU baja. NO paralelizar.
 9. YouTube (SOLO con la auditoría aprobada; flag `youtube_upload_enabled`, default false):
    `videos.insert` privado con `publishAt` en el slot correspondiente. Guardar `video_id` en
    `clips.db` (tabla `posts`). Reintento con backoff; si falla 3 veces, alerta y se manda igual.
-10. Telegram: por cada clip, el mp4 + un mensaje con `Título:` / `Descripción:` / `Hashtags:` /
+10. Telegram: por cada clip, el mp4 + botones **👍/👎** (el voto va a la tabla `votos` junto con el
+    puntaje que le puso Gemini: con eso, en dos semanas, el corte de calidad se elige con datos —
+    el puntaje desde el cual hay más 👍 que 👎, `db.votos_por_puntaje`) + un mensaje con `Título:` / `Descripción:` / `Hashtags:` /
     `Crédito:` en bloques copiables, id interno, horario sugerido, el recordatorio fijo
     **"Subir en PRIVADO → esperar Chequeos de copyright en Studio → si sale limpio, publicar"** y el
     `/reclamo <id>` listo para copiar. Santi sube a mano y responde con los links; el bot los asocia
@@ -311,7 +333,7 @@ clips_bot/telegram.py    paso 10: sendVideo (width/height/duration + miniatura),
                          usuarios_permitidos (TELEGRAM_ALLOWED_USERS)
 clips_bot/process.py     orquesta 3–7 por clip, tiempos por etapa, registra estado en la DB
 clips_bot/db.py          SQLite data/clips.db: clips, posts, catalogo_cursor, streamer_estado
-                         (exclusiones), bot_estado (offset de Telegram)
+                         (exclusiones), votos (👍/👎 con el puntaje), bot_estado (offset, turnos)
 clips_bot/__main__.py    CLI
 tests/                   120 tests sin red ni video
 ```
@@ -430,6 +452,13 @@ palabras coincidentes en el decil de abajo); renrize tiene texto abajo pero 0 co
 pattymeza y filisgg, nada. Los tres quedaron con `subtitulos_propios: true`, confirmado mirando los
 frames.
 
+**Filtro de tono y puntaje de calidad (2026-09-24).** Antes de programarlos se pasaron los 10
+últimos entregados por los criterios: con el puntaje sacado SOLO de la transcripción se habrían
+descartado 9 de 10, porque el humor visual no se puede juzgar leyendo. Medido sobre 30 clips: de los
+24 que no llegaban a 6, 13 estaban marcados como "solo se entiende con la imagen", con mediana 4,0
+contra 5,0 del resto (1,60 palabras/s contra 2,45). Por eso van 4 frames en la llamada. Corte
+provisorio en 5; el definitivo sale de los votos 👍/👎 en dos semanas.
+
 Problemas abiertos:
 - **Co-streams por URL manual:** `procesar` solo ve título y categoría del clip; el título del
   stream (vía /videos) solo está en `candidatos`.
@@ -504,6 +533,11 @@ Problemas abiertos:
   requests/día, fallback automático a `gemini-3.5-flash-lite` ante 429 por cuota, reintentos 3 → 2 y
   `textos_pendientes` para no perder el render. Fútbol: segunda señal por fracción de verde-césped
   (calibrada con 8 clips reales; agarra el caso que el marcador no veía). 122 tests OK.
+- v0.19.0 (2026-09-24) — Filtro de tono (`tono_sensible`, descarte duro) y puntaje de calidad
+  (1–10, corte provisorio 5) en la MISMA llamada de textos, con 4 frames del clip. Relleno marcado
+  para llenar el cupo solo con lo que falló únicamente por calidad, aviso de "0 clips hoy", botones
+  👍/👎 con el voto y el puntaje en la DB, y verificación de "mismo hecho" para el multi-POV
+  (superposición léxica + Gemini, las dos), probada con 5 grupos reales. 175 tests OK.
 - v0.18.0 (2026-09-24) — Multi-POV APAGADO hasta tener verificación de "mismo hecho" (la
   agrupación usa la hora de creación del clip, no la del hecho). Título validado contra la
   transcripción. `/ya`, `/buscar` con varios streamers repartiendo el tope, y `/ayuda` con un
