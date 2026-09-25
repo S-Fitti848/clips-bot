@@ -185,6 +185,11 @@ multipov:
   min_angulos: 3
   frames_muestra: 10
   frames_vacios_max: 0.34
+  # Verificación de "mismo hecho": tienen que pasar las DOS, la superposición léxica entre las
+  # transcripciones y la pregunta a Gemini. Probado con los 5 grupos reales del 2026-09-24: el único
+  # que era de verdad el mismo momento dio 36 % y los otros cuatro 0, 2, 4 y 5 %. El umbral cae en
+  # el medio de esa separación.
+  superposicion_min: 0.12
   luma_negro: 0.08
   pixeles_negros_min: 0.90
 

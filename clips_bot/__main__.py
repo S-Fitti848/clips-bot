@@ -620,6 +620,17 @@ def armar_multipov(settings: Settings, clip_ids: list[str], gemini: GeminiClient
     por_id = {m["clip_id"]: m for m in metas}
     candidatos = multipov.preparar(metas, READY_DIR, cfg_mp.margen_s)
     candidatos.sort(key=lambda a: a.vistas, reverse=True)  # se prueban de más a menos visto
+    # Verificación de "mismo hecho": la agrupación por hora de creación junta clips de cosas
+    # distintas (ver CLAUDE.md §8). Va ANTES de medir el panel, que es lo caro.
+    ok, det = multipov.es_el_mismo_hecho(
+        gemini, [m["streamer"] for m in metas], [m.get("transcripcion") or "" for m in metas],
+        cfg_mp.superposicion_min)
+    avisar(f"  mismo hecho: superposición {det['superposicion']:.0%}"
+           + (f" · Gemini: {det.get('hecho', '')[:60]}" if "mismo_hecho" in det else ""))
+    if not ok:
+        avisar(f"  no parecen el mismo hecho ({det.get('razon', '')}): no armo el multi-POV")
+        return None
+
     angulos = _angulos_con_contenido(candidatos, por_id, settings, cfg_mp.max_angulos, avisar)
     if len(angulos) < minimo:
         avisar(f"  solo {len(angulos)} de {len(candidatos)} ángulos muestran algo en su tramo "
