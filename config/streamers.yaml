@@ -190,6 +190,8 @@ evento_dedsafio:
   - login: rivers_gg
     plataforma: twitch
     fuentes: [reciente]
+    # Quema sus propios subtítulos en el stream: si además quemamos los nuestros quedan los dos.
+    subtitulos_propios: true
     permiso:
       experimento: true
     # rivers_GG — Minecraft en clips recientes

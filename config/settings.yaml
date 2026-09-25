@@ -173,6 +173,13 @@ marcador:
 # Calibrado 2026-09-23: el tramo de PattyMeza daba 56 % de frames vacíos; de los 13 clips split
 # ya renderizados, 11 dan 0 % y los dos peores 22 % y 11 % (un corte a negro puntual).
 multipov:
+  # APAGADO (2026-09-24): la agrupación por hora de CREACIÓN del clip no distingue el mismo hecho.
+  # Medido con el Short que salió mal: rivers_gg 02:04:18, gamstergaming 02:05:31 y pattymeza
+  # 02:06:25, los tres en Minecraft y dentro de la ventana de 2 min, pero eran el menú de pausa, unos
+  # créditos y una despedida. Con 54 canales del evento eso pasa seguido. No se vuelve a prender
+  # hasta que la verificación de "mismo hecho" esté andando y probada con 5 casos reales.
+  # El comando `multipov <id1> <id2> [id3]` sigue funcionando a mano, justamente para esas pruebas.
+  activo: false
   margen_s: 4.0
   max_angulos: 3
   min_angulos: 3

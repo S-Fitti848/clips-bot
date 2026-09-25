@@ -421,6 +421,9 @@ def procesar_multipov_del_dia(settings: Settings, streamers: list, res: Resultad
     """
     from .process import READY_DIR, procesar
 
+    if not settings.multipov.activo:
+        print("\n=== Multi-POV APAGADO (multipov.activo: false en settings.yaml)")
+        return 0
     if not res.grupos_evento or tope < 3:
         return 0
     # el grupo con más canales distintos; a igualdad, el de más vistas

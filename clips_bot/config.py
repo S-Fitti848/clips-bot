@@ -170,6 +170,11 @@ class MarcadorDeportivo:
 @dataclass(frozen=True)
 class MultiPov:
     """§3 paso 7b. `margen_s`: mitad de la ventana de cada ángulo alrededor de su pico."""
+    # APAGADO desde el 2026-09-24. La agrupación de "mismo momento entre streamers" usa la hora de
+    # CREACIÓN del clip (±2 min), que no es la hora del hecho: en un evento con 54 canales, cualquier
+    # ventana de 2 minutos junta clips de cosas distintas. Ver el caso medido en CLAUDE.md §8.
+    # Se vuelve a prender cuando exista la verificación de "mismo hecho" y esté probada con 5 casos.
+    activo: bool = False
     margen_s: float = 4.0
     max_angulos: int = 3
     min_angulos: int = 3

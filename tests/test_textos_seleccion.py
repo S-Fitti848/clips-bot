@@ -323,3 +323,50 @@ def test_telegram_error_de_api():
     with pytest.raises(TelegramError, match="chat not found"):
         TelegramClient("T", session=s).send_message("1", "hola")
     assert s.llamadas[0]["data"]["parse_mode"] == "HTML"
+
+
+# ---- el título contra lo que se dice ------------------------------------------------
+
+
+def test_nombres_propios_del_titulo():
+    from clips_bot.textos import nombres_propios
+
+    # mayúscula en medio de la oración = nombra algo
+    assert nombres_propios("Reconoce que no conoce a Zelda") == ["Zelda"]
+    assert nombres_propios("¿Podría Luka ganar contra Nani?") == ["Luka", "Nani"]
+    # la primera palabra NO se mira: en español va en mayúscula siempre y no dice nada.
+    # Es un agujero conocido y a propósito: mirarla haría saltar "Reconoce" como si fuera un nombre.
+    assert nombres_propios("Zelda le gana a todos") == []
+    assert nombres_propios("no hay manera de que pase esto") == []
+
+
+def test_un_titulo_que_nombra_algo_que_nadie_dijo_no_vale():
+    from clips_bot.config import Textos
+    from clips_bot.textos import nombres_sin_respaldo, validar
+
+    def texto(titulo):
+        return {"titulo": titulo, "descripcion": "algo pasa en el clip",
+                "hashtags": ["#Shorts", "#Uno", "#Dos"], "gancho": "reaccion",
+                "depende_de_fecha": False}
+
+    dicho = "uy no puedo creer lo que hizo el Mario ese"
+    assert nombres_sin_respaldo("Se pelea con Mario", dicho) == []
+    assert nombres_sin_respaldo("Se pelea con Zelda", dicho) == ["Zelda"]
+    # la categoría y el nombre del canal también cuentan como respaldo
+    assert nombres_sin_respaldo("Un fail en Minecraft", "que desastre | Minecraft") == []
+
+    errores = validar(texto("Se pelea con Zelda"), Textos(), contexto=dicho)
+    assert any("Zelda" in e for e in errores)
+    assert validar(texto("Se pelea con Mario"), Textos(), contexto=dicho) == []
+    # sin contexto no se chequea nada (ruta vieja, ej. tests o textos regenerados sin transcripción)
+    assert validar(texto("Se pelea con Zelda"), Textos()) == []
+
+
+def test_el_caso_real_de_zelda_NO_lo_agarra_este_chequeo():
+    """Honestidad sobre el alcance: en el Short que salió mal, "Zelda" SÍ estaba en la
+    transcripción ("en memoria de Zelda", de unos créditos). El título estaba mal porque el
+    multi-POV juntó tres momentos sin relación, no porque inventara un nombre."""
+    from clips_bot.textos import nombres_sin_respaldo
+
+    real = "Campfire Studios, los constructores, los builders. En memoria de Zelda, el tiempo siempre"
+    assert nombres_sin_respaldo("Reconoce que no conoce a Zelda", real) == []

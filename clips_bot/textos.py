@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import re
+import unicodedata
 from dataclasses import asdict, dataclass
 
 from .config import Textos
@@ -75,12 +76,71 @@ class TextosClip:
                    bool(d.get("depende_de_fecha", False)))
 
 
+# Palabras que arrancan en mayúscula pero no nombran nada: pronombres, días, y el arranque de una
+# oración. Se sacan antes de pedirle a Gemini que justifique un nombre propio.
+_NO_SON_NOMBRES = frozenset("""
+el la los las un una unos unas y o pero si no que se de del al en con por para como cuando donde
+yo tu vos el ella nosotros ustedes ellos me te le lo nos les su sus mi mis tu tus
+lunes martes miercoles jueves viernes sabado domingo hoy ayer manana
+que quien cual cuanto porque ahora despues antes siempre nunca nada todo algo
+""".split())
+
+# Tras estos caracteres, una mayúscula es principio de oración y no dice nada de si es un nombre.
+_ABRE_ORACION = ('', '.', '!', '?', '¡', '¿', ':', ';', '-', '—', '"', "'")
+
+
+def _sin_tildes(texto: str) -> str:
+    return "".join(c for c in unicodedata.normalize("NFKD", texto) if not unicodedata.combining(c))
+
+
+def _palabras(texto: str) -> set[str]:
+    return set(re.findall(r"[a-z0-9]+", _sin_tildes(texto).lower()))
+
+
+def nombres_propios(titulo: str) -> list[str]:
+    """Palabras del título que nombran algo: mayúscula en medio de la oración.
+
+    Es una heurística, no un NER: alcanza porque lo que nos interesa (un juego, una persona, un
+    objeto) casi siempre va en mayúscula, y los falsos positivos los resuelve el propio chequeo
+    (si la palabra está en lo que se dice, pasa igual).
+    """
+    tokens = re.findall(r"[^\W\d_]+", titulo, flags=re.UNICODE)
+    if not tokens:
+        return []
+    nombres, previo = [], ""
+    for t in tokens:
+        antes = titulo[: titulo.index(t, len(previo) and titulo.index(previo) + len(previo))].rstrip()
+        arranca_oracion = not antes or antes[-1] in _ABRE_ORACION
+        base = _sin_tildes(t).lower()
+        if t[0].isupper() and not arranca_oracion and base not in _NO_SON_NOMBRES and len(t) > 2:
+            nombres.append(t)
+        previo = t
+    return nombres
+
+
+def nombres_sin_respaldo(titulo: str, contexto: str) -> list[str]:
+    """Los nombres del título que NO aparecen en el contexto (transcripción + categoría + título
+    original del clip y del stream).
+
+    El 2026-09-24 salió un Short titulado "Reconoce que no conoce a Zelda" sobre tres momentos sin
+    relación. OJO: ese caso NO lo agarra este chequeo — "Zelda" sí estaba en la transcripción
+    ("en memoria de Zelda", de unos créditos). Esto cubre el otro problema, el de inventar un
+    nombre que nadie dijo; lo de juntar momentos distintos se arregla en la agrupación.
+    """
+    respaldo = _palabras(contexto)
+    return [n for n in nombres_propios(titulo) if _sin_tildes(n).lower() not in respaldo]
+
+
 def credito(canal: str, login: str) -> str:
     return f"Clip de {canal} — twitch.tv/{login}"
 
 
-def validar(data: object, cfg: Textos) -> list[str]:
-    """Lista de errores (vacía = válido). Estricto: tipos, claves exactas, largos y formato."""
+def validar(data: object, cfg: Textos, contexto: str = "") -> list[str]:
+    """Lista de errores (vacía = válido). Estricto: tipos, claves exactas, largos y formato.
+
+    `contexto` es lo que realmente hay en el clip (transcripción + categoría + títulos): si el
+    título nombra algo que no está ahí, se cuenta como error y `generar` lo manda a regenerar.
+    """
     if not isinstance(data, dict):
         return ["la respuesta no es un objeto JSON"]
     errores = []
@@ -99,6 +159,12 @@ def validar(data: object, cfg: Textos) -> list[str]:
             errores.append(f"titulo tiene {len(titulo.strip())} caracteres (máximo {cfg.max_titulo})")
         if "\n" in titulo or "#" in titulo:
             errores.append("titulo no puede tener saltos de línea ni hashtags")
+        inventados = nombres_sin_respaldo(titulo, contexto) if contexto else []
+        if inventados:
+            errores.append(
+                f"el titulo nombra {inventados}, que no aparece en lo que se dice en el clip. "
+                "Usá solo nombres (juegos, personas, objetos) que estén en la transcripción, "
+                "la categoría o el título original")
 
     desc = data.get("descripcion")
     if not isinstance(desc, str) or not desc.strip():
@@ -131,7 +197,8 @@ def validar(data: object, cfg: Textos) -> list[str]:
     return errores
 
 
-def parsear(texto: str, cfg: Textos, canal: str, login: str) -> tuple[TextosClip | None, list[str]]:
+def parsear(texto: str, cfg: Textos, canal: str, login: str,
+            contexto: str = "") -> tuple[TextosClip | None, list[str]]:
     try:
         data = json.loads(texto)
     except json.JSONDecodeError as e:
@@ -177,12 +244,15 @@ Generá: titulo (máximo {cfg.max_titulo} caracteres), descripcion, hashtags (en
 def generar(cliente: GeminiClient, cfg: Textos, *, canal: str, login: str, categoria: str,
             titulo_twitch: str, duracion: float, transcripcion: str, fecha: str | None = None) -> TextosClip:
     prompt = armar_prompt(canal, categoria, titulo_twitch, duracion, transcripcion, cfg, fecha)
+    # Contra esto se chequean los nombres del título. El nombre del canal entra a propósito: el
+    # streamer puede ir en el título aunque no se nombre a sí mismo hablando.
+    contexto = " ".join([transcripcion, categoria, titulo_twitch, canal, login])
     errores: list[str] = []
     for _ in range(1 + cfg.reintentos):
         p = prompt
         if errores:
             p += "\n\nTu respuesta anterior no era válida. Corregí esto:\n- " + "\n- ".join(errores)
-        textos, errores = parsear(cliente.json(SISTEMA, p, SCHEMA), cfg, canal, login)
+        textos, errores = parsear(cliente.json(SISTEMA, p, SCHEMA), cfg, canal, login, contexto)
         if textos:
             return textos
     raise TextosError("Gemini no devolvió textos válidos: " + "; ".join(errores))
