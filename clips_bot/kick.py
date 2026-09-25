@@ -32,6 +32,7 @@ log = logging.getLogger(__name__)
 
 API = "https://kick.com/api/v2/channels/{slug}/clips"
 API_VIDEOS = "https://kick.com/api/v2/channels/{slug}/videos"
+API_CANAL = "https://kick.com/api/v2/channels/{slug}"
 UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) "
       "Chrome/141.0.0.0 Safari/537.36")
 
@@ -70,6 +71,8 @@ class KickClient:
                     return r.json()
                 except ValueError as e:  # HTML de Cloudflare en vez de JSON
                     error = f"respuesta no JSON ({e})"
+            if r is not None and r.status_code == 404:
+                raise KickError(f"Kick {url}: 404 (no existe)")  # no es una falla: es la respuesta
             intento += 1
             if intento > self.max_reintentos:
                 raise KickError(f"Kick {url}: {error}")
@@ -94,6 +97,18 @@ class KickClient:
             if not page or not cursor:
                 break
         return clips[:max_clips]
+
+    def get_canal(self, slug: str) -> dict | None:
+        """Datos del canal, o None si no existe. Para confirmar un alta antes de sumarlo."""
+        try:
+            d = self._get(API_CANAL.format(slug=slug))
+        except KickError:
+            return None
+        if not isinstance(d, dict) or not d.get("slug"):
+            return None
+        return {"slug": str(d["slug"]), "nombre": str((d.get("user") or {}).get("username") or d["slug"]),
+                "seguidores": int(d.get("followers_count") or 0),
+                "verificado": bool(d.get("verified")), "baneado": bool(d.get("is_banned"))}
 
     def get_session_titles(self, slug: str) -> dict[str, str]:
         """{livestream_id: título del stream} de los últimos streams del canal.

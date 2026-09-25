@@ -176,7 +176,8 @@ def test_ayuda_lista_todos_los_comandos_con_ejemplo():
     for uso, que, ejemplo in m.COMANDOS:
         assert uso in texto and que in texto
         assert f"<code>{ejemplo}</code>" in texto
-    assert {c[0].split()[0] for c in m.COMANDOS} == {"/ya", "/buscar", "/reclamo", "/ayuda"}
+    assert {c[0].split()[0] for c in m.COMANDOS} == {
+        "/ya", "/buscar", "/streamers", "/agregar", "/quitar", "/reclamo", "/ayuda"}
 
 
 # ---- votos 👍/👎 ----------------------------------------------------------------
@@ -341,3 +342,78 @@ def test_seguro_devuelve_lo_que_devuelve_la_funcion(conn):
     assert m._seguro(tg, "1", "x", lambda: "resultado") == "resultado"
     assert m._seguro(tg, "1", "x", lambda: m.OCUPADO) is m.OCUPADO
     assert tg.mensajes == []
+
+
+# ---- /streamers, /agregar, /quitar -------------------------------------------------
+
+
+def test_los_botones_entran_en_los_64_bytes_de_telegram(conn):
+    """Telegram corta el callback_data en 64 bytes. Por eso viajan índices y no logins: con 54
+    streamers del Dedsafío, varios logins largos no entrarían."""
+    from clips_bot.config import Streamer
+    from clips_bot.menu import LIMITE_CALLBACK, teclado_grupos, teclado_streamer, teclado_streamers
+
+    largos = [Streamer("x" * 40 + str(i), grupo="evento") for i in range(54)]
+    teclados = [teclado_grupos({"evento": largos}),
+                teclado_streamers(0, largos, 4, {largos[50].login: "reclamo"}),
+                teclado_streamer(0, 53, 4)]
+    for t in teclados:
+        for fila in t["inline_keyboard"]:
+            for boton in fila:
+                assert len(boton["callback_data"].encode()) <= LIMITE_CALLBACK
+
+
+def test_paginado_y_excluidos(conn):
+    from clips_bot.config import Streamer
+    from clips_bot.menu import POR_PAGINA, teclado_streamers
+
+    lista = [Streamer(f"s{i:02d}", grupo="evento") for i in range(30)]
+    primera = teclado_streamers(0, lista, 0, {})
+    botones = [b for f in primera["inline_keyboard"] for b in f]
+    assert sum(1 for b in botones if b["callback_data"].startswith("st:s:")) == POR_PAGINA
+    assert "◀️" not in [b["text"] for b in botones]      # en la primera no hay "anterior"
+    assert "▶️" in [b["text"] for b in botones]
+    ultima = teclado_streamers(0, lista, 2, {})
+    textos = [b["text"] for f in ultima["inline_keyboard"] for b in f]
+    assert "◀️" in textos and "▶️" not in textos          # en la última no hay "siguiente"
+    assert "⬅️ Volver" in textos
+
+    # un excluido se ve pero su botón no lleva a ningún lado
+    con_excl = teclado_streamers(0, lista, 0, {"s03": "reclamo de copyright"})
+    excl = [b for f in con_excl["inline_keyboard"] for b in f if b["text"].startswith("🚫")]
+    assert len(excl) == 1 and excl[0]["callback_data"].startswith("st:x:")
+
+
+def test_agregar_y_quitar_van_a_la_db_y_no_al_yaml(conn, monkeypatch, tmp_path):
+    """La lista efectiva es el YAML combinado con la DB: así una alta por Telegram no choca con
+    el git de la Pi."""
+    import json
+
+    from clips_bot import registro
+    from clips_bot.config import Streamer
+
+    yaml = [Streamer("delyaml", grupo="argentinos", experimento=True),
+            Streamer("otro", grupo="evento", experimento=True)]
+    monkeypatch.setattr(m, "load_streamers", lambda: yaml)
+
+    assert sorted(s.login for s in m._streamers(conn)) == ["delyaml", "otro"]
+
+    # alta
+    registro.guardar(conn, "nuevo", registro.ALTA, "7", plataforma="kick", grupo="argentinos")
+    efectivos = {s.login: s for s in m._streamers(conn)}
+    assert set(efectivos) == {"delyaml", "otro", "nuevo"}
+    assert efectivos["nuevo"].plataforma == "kick"
+    assert efectivos["nuevo"].experimento and efectivos["nuevo"].permitido
+
+    # baja de uno que viene del YAML: no se toca el YAML, manda la DB
+    assert "Saqué" in m._quitar(conn, ["delyaml"], "7")
+    assert "delyaml" not in {s.login for s in m._streamers(conn)}
+    assert [s.login for s in yaml] == ["delyaml", "otro"]   # el YAML quedó intacto
+
+    # baja de uno que habías agregado vos: se borra la anotación
+    assert "por Telegram" in m._quitar(conn, ["nuevo"], "7")
+    assert registro.anotados(conn).get("nuevo") is None
+
+    # quitar algo que no está
+    assert "no está" in m._quitar(conn, ["fantasma"], "7")
+    assert "Uso:" in m._quitar(conn, [], "7")

@@ -117,7 +117,7 @@ def buscar_todo(settings: Settings, streamers: list, incluir_sin_permiso: bool,
 
 def cmd_candidatos(args: argparse.Namespace) -> int:
     settings = load_settings()
-    res = buscar_todo(settings, load_streamers(), args.incluir_sin_permiso, args.avanzar_cursor)
+    res = buscar_todo(settings, _streamers(), args.incluir_sin_permiso, args.avanzar_cursor)
 
     if not res.total_por_streamer and not res.no_encontrados:
         print("Ningún streamer habilitado. Completá permiso.cita y permiso.fuente en config/streamers.yaml,")
@@ -158,7 +158,7 @@ def cmd_procesar(args: argparse.Namespace) -> int:
     from .process import procesar  # importa faster-whisper/OpenCV solo si hace falta
 
     settings = load_settings()
-    streamers = load_streamers()
+    streamers = _streamers()
     permitidos = {s.login for s in streamers if s.permitido}
     gemini = _gemini(settings)
     codigo = 0
@@ -254,7 +254,7 @@ def ejecutar_seleccion(settings: Settings, gemini: GeminiClient | None, enviar: 
 
     cfg = settings.seleccion
     ahora = datetime.now(timezone.utc)
-    permitidos = {s.login for s in load_streamers() if s.permitido}
+    permitidos = {s.login for s in _streamers() if s.permitido}
 
     conn = db.connect(DB_PATH)
     try:
@@ -422,7 +422,7 @@ def cmd_diario(args: argparse.Namespace) -> int:
 def _diario(args: argparse.Namespace, settings: Settings, atender: bool = True) -> int:
     from .process import procesar
 
-    streamers = load_streamers()
+    streamers = _streamers()
     gemini = _gemini(settings)
 
     # Desde /ya no se atiende Telegram: el modo escucha ya está leyendo los updates y una segunda
@@ -949,7 +949,7 @@ def escuchar_telegram(settings: Settings, timeout_poll: int = 50) -> int:
     tira, se guarda y arranca sola cuando se libera el turno. Mientras hay algo en la cola el
     polling baja a unos segundos, así no se queda esperando 50 s para reaccionar.
     """
-    from .telegram import comandos, usuarios_permitidos
+    from .telegram import callbacks, comandos, textos_sueltos, usuarios_permitidos
 
     tg = TelegramClient(env("TELEGRAM_BOT_TOKEN"), timeout=timeout_poll + 30)
     permitidos = usuarios_permitidos(env("TELEGRAM_ALLOWED_USERS", requerido=False))
@@ -973,6 +973,24 @@ def escuchar_telegram(settings: Settings, timeout_poll: int = 50) -> int:
                 continue
             _seguro(tg, str(chat_ultimo or ""), "votos", _atender_votos, conn, tg, updates,
                     permitidos)
+            for cb in callbacks(updates):
+                if cb["user_id"] not in permitidos:
+                    log.warning("Botón de %s: no autorizado", cb["user_id"])
+                    continue
+                chat_ultimo = cb["chat_id"]
+                fn = _menu_callback if cb["data"].startswith("st:") else _alta_callback
+                extra = (settings, cola) if fn is _menu_callback else (settings,)
+                _seguro(tg, cb["chat_id"], cb["data"], fn, conn, tg, cb, *extra)
+            for t in textos_sueltos(updates):
+                if t["user_id"] not in permitidos:
+                    continue
+                login = db.get_valor(conn, f"{ESPERA_PALABRA}:{t['user_id']}")
+                if not login:
+                    continue
+                db.borrar_valor(conn, f"{ESPERA_PALABRA}:{t['user_id']}")
+                chat_ultimo = t["chat_id"]
+                _seguro(tg, t["chat_id"], f"/buscar {login} {t['texto']}", _encolar_busqueda,
+                        conn, tg, t["chat_id"], [login] + t["texto"].split(), settings, cola)
             for c in comandos(updates):
                 chat_ultimo = c["chat_id"]
                 if c["user_id"] not in permitidos:
@@ -1007,7 +1025,14 @@ def _despachar(conn, tg: TelegramClient, c: dict, settings: Settings, cola: list
         elif r:
             tg.send_message(c["chat_id"], r)
         return
-    if c["comando"] == "/reclamo":
+    if c["comando"] == "/streamers":
+        return _seguro(tg, c["chat_id"], c["comando"], _menu_streamers, conn, tg, c["chat_id"])             and None
+    if c["comando"] == "/agregar":
+        respuesta = _seguro(tg, c["chat_id"], c["comando"], _agregar, conn, tg, c["chat_id"],
+                            c["args"], c["user_id"])
+    elif c["comando"] == "/quitar":
+        respuesta = _seguro(tg, c["chat_id"], c["comando"], _quitar, conn, c["args"], c["user_id"])
+    elif c["comando"] == "/reclamo":
         respuesta = _seguro(tg, c["chat_id"], c["comando"], _reclamo, conn, c["args"])
     elif c["comando"] in ("/ayuda", "/start", "/help"):
         respuesta = _ayuda()
@@ -1106,7 +1131,7 @@ def _pesado(conn, tg: TelegramClient, chat_id: str, comando: str, args: list[str
     """Los comandos que procesan clips y comparten el turno pesado: /buscar y /ya."""
     if comando == "/ya":
         return _ya(conn, tg, chat_id, settings)
-    return _buscar(conn, tg, chat_id, args, settings, load_streamers(), _gemini(settings))
+    return _buscar(conn, tg, chat_id, args, settings, _streamers(conn), _gemini(settings))
 
 
 def _drenar_cola(conn, tg: TelegramClient, cola: list[dict], settings: Settings) -> None:
@@ -1142,6 +1167,17 @@ COMANDOS = [
      "marcá que ese video recibió un reclamo o strike: excluyo al streamer de las próximas "
      "corridas. El id va en cada mensaje de entrega.",
      "/reclamo clip_01M30DMET68MDS9QBMW0H7DZ5M"),
+    ("/streamers",
+     "la lista por grupo, con botones para navegar y buscar sin escribir nada. Los excluidos "
+     "salen con 🚫 y no se pueden tocar.",
+     "/streamers"),
+    ("/agregar &lt;streamer&gt; [grupo]",
+     "lo busco en Kick y en Twitch, te muestro qué encontré (seguidores y clips de la semana) y "
+     "lo sumo si me decís que sí. Grupo por default: argentinos. Entra con permiso de experimento.",
+     "/agregar coscu argentinos"),
+    ("/quitar &lt;streamer&gt;",
+     "lo saco de las corridas. Queda anotado en la DB, no se toca streamers.yaml.",
+     "/quitar coscu"),
     ("/ayuda",
      "esto.",
      "/ayuda"),
@@ -1155,6 +1191,244 @@ def _ayuda() -> str:
     partes.append("\n\n/ya y /buscar procesan clips, así que van de a uno: si hay algo pesado "
                   f"andando quedan en cola (hasta {MAX_BUSQUEDAS}) y arrancan solos al terminar.")
     return "".join(partes)
+
+
+
+# ---- streamers: listar, agregar y quitar desde Telegram --------------------------
+# Las altas y bajas van a la DB y no a streamers.yaml: el YAML está en git y lo editamos a mano, y
+# si el bot escribiera ahí cada alta sería un conflicto en el próximo `git pull` de la Pi.
+
+ESPERA_PALABRA = "esperando_palabra"   # clave en bot_estado: <user_id> -> login
+
+
+def _streamers(conn=None) -> list:
+    """La lista efectiva: el YAML combinado con las altas y bajas de la DB."""
+    from . import registro
+
+    del_yaml = load_streamers()
+    if conn is not None:
+        return registro.combinar(del_yaml, conn)
+    c = db.connect(DB_PATH)
+    try:
+        return registro.combinar(del_yaml, c)
+    finally:
+        c.close()
+
+
+def _texto_grupos(grupos: dict) -> str:
+    total = sum(len(l) for l in grupos.values())
+    return f"<b>Streamers</b> ({total}). Elegí un grupo:"
+
+
+def _texto_grupo(grupo: str, streamers: list, pagina: int, excluidos: dict) -> str:
+    from .menu import POR_PAGINA, etiqueta_grupo
+
+    paginas = max(1, -(-len(streamers) // POR_PAGINA))
+    n_excl = sum(1 for s in streamers if s.login in excluidos)
+    plataformas = {}
+    for s in streamers:
+        plataformas[s.plataforma] = plataformas.get(s.plataforma, 0) + 1
+    detalle = ", ".join(f"{n} en {p}" for p, n in sorted(plataformas.items()))
+    linea = f"{etiqueta_grupo(grupo, len(streamers))} — {detalle}"
+    if n_excl:
+        linea += f" · 🚫 {n_excl} excluido{'s' if n_excl > 1 else ''}"
+    return f"{linea}\nPágina {pagina + 1} de {paginas}. Elegí un streamer:"
+
+
+def _texto_streamer(s, excluidos: dict) -> str:
+    estado = f"\n🚫 EXCLUIDO: {html.escape(excluidos[s.login])}" if s.login in excluidos else ""
+    permiso = "experimento" if s.experimento else ("cita" if s.permitido else "SIN PERMISO")
+    return (f"<b>{html.escape(s.login)}</b> · {s.plataforma} · grupo {s.grupo or '—'} · {permiso}"
+            f"{estado}\n\n¿Qué busco?")
+
+
+def _menu_streamers(conn, tg: TelegramClient, chat_id: str, message_id: int | None = None) -> None:
+    from . import registro
+    from .menu import teclado_grupos
+
+    grupos = registro.por_grupo(_streamers(conn))
+    if message_id:
+        tg.edit_message(chat_id, message_id, _texto_grupos(grupos), teclado_grupos(grupos))
+    else:
+        tg.send_message(chat_id, _texto_grupos(grupos), teclado=teclado_grupos(grupos))
+
+
+def _menu_callback(conn, tg: TelegramClient, cb: dict, settings: Settings, cola: list) -> None:
+    """Un toque en el menú de /streamers. Siempre edita el mismo mensaje."""
+    from . import registro
+    from .menu import parse_callback, teclado_streamer, teclado_streamers
+
+    d = parse_callback(cb["data"])
+    if not d or d["menu"] != "st":
+        return
+    chat, msg = cb["chat_id"], cb["message_id"]
+    grupos = registro.por_grupo(_streamers(conn))
+    nombres = list(grupos)
+    excluidos = db.excluidos(conn)
+
+    if d["accion"] == "r":
+        tg.answer_callback(cb["callback_id"])
+        return _menu_streamers(conn, tg, chat, msg)
+    if d["accion"] == "x":
+        return tg.answer_callback(cb["callback_id"], "Está excluido: no lo puedo usar.")
+
+    gi = int(d["args"][0]) if d["args"] else 0
+    if gi >= len(nombres):
+        tg.answer_callback(cb["callback_id"], "Ese grupo ya no está.")
+        return _menu_streamers(conn, tg, chat, msg)
+    grupo = nombres[gi]
+    lista = grupos[grupo]
+
+    if d["accion"] == "g":
+        pagina = int(d["args"][1]) if len(d["args"]) > 1 else 0
+        tg.answer_callback(cb["callback_id"])
+        return tg.edit_message(chat, msg, _texto_grupo(grupo, lista, pagina, excluidos),
+                               teclado_streamers(gi, lista, pagina, excluidos))
+
+    si = int(d["args"][1]) if len(d["args"]) > 1 else 0
+    if si >= len(lista):
+        tg.answer_callback(cb["callback_id"], "Esa lista cambió.")
+        return _menu_streamers(conn, tg, chat, msg)
+    s = lista[si]
+    from .menu import POR_PAGINA
+    pagina = si // POR_PAGINA
+
+    if d["accion"] == "s":
+        tg.answer_callback(cb["callback_id"])
+        return tg.edit_message(chat, msg, _texto_streamer(s, excluidos),
+                               teclado_streamer(gi, si, pagina))
+    if d["accion"] == "w":
+        db.set_valor(conn, f"{ESPERA_PALABRA}:{cb['user_id']}", s.login)
+        tg.answer_callback(cb["callback_id"])
+        return tg.edit_message(chat, msg,
+                               f"Escribime la palabra para buscar en <b>{html.escape(s.login)}</b>."
+                               f"\n(o mandá /streamers para volver al menú)", {"inline_keyboard": []})
+    if d["accion"] == "b":
+        dias = int(d["args"][2]) if len(d["args"]) > 2 else 7
+        tg.answer_callback(cb["callback_id"], f"Buscando en {s.login}…")
+        tg.edit_message(chat, msg, f"🔎 <b>{html.escape(s.login)}</b>, últimos {dias} días.",
+                        {"inline_keyboard": []})
+        return _encolar_busqueda(conn, tg, chat, [s.login, str(dias)], settings, cola)
+
+
+def _encolar_busqueda(conn, tg: TelegramClient, chat_id: str, args: list, settings: Settings,
+                      cola: list) -> None:
+    """Dispara el /buscar de siempre, con la misma cola: el menú no es un camino aparte."""
+    c = {"comando": "/buscar", "args": args, "chat_id": chat_id, "usuario": "", "user_id": ""}
+    _despachar(conn, tg, c, settings, cola)
+
+
+def _alta_callback(conn, tg: TelegramClient, cb: dict, settings: Settings) -> None:
+    """Los ✅/❌ de /agregar, y la elección cuando el nombre era ambiguo."""
+    import json as _json
+
+    from . import registro
+    from .menu import parse_callback, teclado_confirmar
+
+    d = parse_callback(cb["data"])
+    if not d or d["menu"] != "add":
+        return
+    token = str(d["args"][0]) if d["args"] else ""
+    crudo = db.get_valor(conn, f"alta:{token}")
+    if not crudo:
+        return tg.answer_callback(cb["callback_id"], "Ese pedido ya venció. Mandá /agregar de nuevo.")
+    pendiente = _json.loads(crudo)
+
+    if d["accion"] == "n":
+        db.borrar_valor(conn, f"alta:{token}")
+        tg.answer_callback(cb["callback_id"], "Listo, no agrego nada.")
+        return tg.edit_message(cb["chat_id"], cb["message_id"], "❌ No agregué nada.",
+                               {"inline_keyboard": []})
+
+    if d["accion"] == "o":   # eligió uno de los ambiguos
+        i = int(d["args"][1])
+        opciones = pendiente["opciones"]
+        if i >= len(opciones):
+            return tg.answer_callback(cb["callback_id"], "Esa opción ya no está.")
+        elegido = opciones[i]
+        pendiente = {**pendiente, "elegido": elegido, "opciones": []}
+        db.set_valor(conn, f"alta:{token}", _json.dumps(pendiente))
+        tg.answer_callback(cb["callback_id"])
+        return tg.edit_message(
+            cb["chat_id"], cb["message_id"],
+            f"¿Agrego a <b>{html.escape(elegido['login'])}</b> ({elegido['plataforma']}) "
+            f"al grupo <b>{pendiente['grupo']}</b>?", teclado_confirmar(token))
+
+    elegido = pendiente.get("elegido")
+    if not elegido:
+        return tg.answer_callback(cb["callback_id"], "Elegí uno de la lista primero.")
+    registro.guardar(conn, elegido["login"], registro.ALTA, cb["user_id"],
+                     plataforma=elegido["plataforma"], grupo=pendiente["grupo"])
+    db.borrar_valor(conn, f"alta:{token}")
+    tg.answer_callback(cb["callback_id"], "Agregado.")
+    tg.edit_message(cb["chat_id"], cb["message_id"],
+                    f"✅ <b>{html.escape(elegido['login'])}</b> agregado al grupo "
+                    f"<b>{pendiente['grupo']}</b> ({elegido['plataforma']}, permiso experimento)."
+                    f"\nEntra en la próxima corrida.", {"inline_keyboard": []})
+
+
+def _agregar(conn, tg: TelegramClient, chat_id: str, args: list, user_id: str) -> str | None:
+    """/agregar <login> [grupo]. Contesta con lo que encontró y los botones de confirmación."""
+    import json as _json
+    import secrets
+
+    from . import registro
+    from .menu import teclado_confirmar, teclado_opciones
+
+    if not args:
+        return ("Uso: <code>/agregar &lt;streamer&gt; [grupo]</code>"
+                f"\nEj: <code>/agregar coscu argentinos</code>")
+    login = args[0].strip().lower().lstrip("@")
+    grupo = (args[1] if len(args) > 1 else "argentinos").strip().lower()
+    actuales = {s.login for s in _streamers(conn)}
+    if login in actuales:
+        return f"<code>{html.escape(login)}</code> ya está en la lista."
+
+    tg.send_message(chat_id, f"Buscando <b>{html.escape(login)}</b> en Kick y en Twitch…")
+    try:
+        kick = KickClient(pausa_s=0.5)
+    except Exception:
+        kick = None
+    try:
+        twitch = _twitch()
+    except ConfigError:
+        twitch = None
+    r = registro.resolver(login, kick, twitch)
+    if r.error:
+        return r.error
+
+    token = secrets.token_hex(3)   # 6 caracteres: el login no siempre entra en los 64 bytes
+    base = {"grupo": grupo, "pedido": login}
+    if r.elegido:
+        db.set_valor(conn, f"alta:{token}", _json.dumps({**base, "elegido": vars(r.elegido)}))
+        tg.send_message(chat_id, f"Encontré: {r.elegido.resumen()}\n\n¿Lo agrego al grupo "
+                                 f"<b>{html.escape(grupo)}</b>?", teclado=teclado_confirmar(token))
+        return None
+    db.set_valor(conn, f"alta:{token}",
+                 _json.dumps({**base, "elegido": None, "opciones": [vars(o) for o in r.opciones]}))
+    tg.send_message(chat_id, f"<b>{html.escape(login)}</b> es ambiguo o no tiene clips recientes. "
+                             f"Encontré esto — elegí cuál:",
+                    teclado=teclado_opciones(token, r.opciones))
+    return None
+
+
+def _quitar(conn, args: list, user_id: str) -> str:
+    """/quitar <login>: lo saca de las corridas. Si estaba en el YAML, queda anotada la baja."""
+    from . import registro
+
+    if not args:
+        return f"Uso: <code>/quitar &lt;streamer&gt;</code>\nEj: <code>/quitar coscu</code>"
+    login = args[0].strip().lower().lstrip("@")
+    actuales = {s.login for s in _streamers(conn)}
+    if login not in actuales:
+        return f"<code>{html.escape(login)}</code> no está en la lista."
+    anotado = registro.anotados(conn).get(login)
+    if anotado and anotado["accion"] == registro.ALTA:
+        registro.olvidar(conn, login)   # lo habías agregado vos: se borra la anotación y listo
+        return f"Saqué a <code>{html.escape(login)}</code> (lo habías agregado por Telegram)."
+    registro.guardar(conn, login, registro.BAJA, user_id)
+    return (f"Saqué a <code>{html.escape(login)}</code>. Sigue en streamers.yaml pero la baja de la "
+            f"DB manda, así que no entra en ninguna corrida.")
 
 
 def _reclamo(conn, args: list[str]) -> str:

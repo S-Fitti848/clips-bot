@@ -57,6 +57,15 @@ class TelegramClient:
         """Le saca el relojito al botón. Si no se contesta, Telegram lo deja girando."""
         self._llamar("answerCallbackQuery", {"callback_query_id": callback_id, "text": texto})
 
+    def edit_message(self, chat_id: str, message_id: int, texto_html: str,
+                     teclado: dict | None = None) -> None:
+        """Reescribe el mensaje en lugar de mandar uno nuevo: así el menú no llena el chat."""
+        data = {"chat_id": chat_id, "message_id": message_id, "text": texto_html,
+                "parse_mode": "HTML", "disable_web_page_preview": "true"}
+        if teclado is not None:
+            data["reply_markup"] = json.dumps(teclado)
+        self._llamar("editMessageText", data)
+
     def edit_reply_markup(self, chat_id: str, message_id: int, teclado: dict) -> None:
         self._llamar("editMessageReplyMarkup", {"chat_id": chat_id, "message_id": message_id,
                                                 "reply_markup": json.dumps(teclado)})
@@ -153,6 +162,40 @@ def teclado_voto(clip_id: str, elegido: int = 0) -> dict:
         {"text": etiqueta("👍", 1), "callback_data": f"voto:1:{clip_id}"},
         {"text": etiqueta("👎", -1), "callback_data": f"voto:-1:{clip_id}"},
     ]]}
+
+
+def textos_sueltos(updates: list[dict]) -> list[dict]:
+    """Los mensajes que NO son comandos: [{chat_id, user_id, texto}].
+
+    Hacen falta para el "🔎 Con palabra…": el bot queda esperando que escribas algo y lo que llega
+    es texto pelado, no un /comando.
+    """
+    out = []
+    for u in updates:
+        msg = u.get("message") or {}
+        texto = (msg.get("text") or "").strip()
+        if not texto or texto.startswith("/"):
+            continue
+        out.append({"chat_id": str((msg.get("chat") or {}).get("id", "")),
+                    "user_id": str((msg.get("from") or {}).get("id") or ""),
+                    "texto": texto})
+    return out
+
+
+def callbacks(updates: list[dict], prefijos: tuple[str, ...] = ("st", "add")) -> list[dict]:
+    """Los botones de menú apretados (los de voto los toma `votos`)."""
+    out = []
+    for u in updates:
+        cb = u.get("callback_query")
+        data = str((cb or {}).get("data", ""))
+        if not cb or not data.split(":")[0] in prefijos:
+            continue
+        msg = cb.get("message") or {}
+        out.append({"callback_id": cb.get("id"), "data": data,
+                    "chat_id": str((msg.get("chat") or {}).get("id", "")),
+                    "message_id": msg.get("message_id"),
+                    "user_id": str((cb.get("from") or {}).get("id") or "")})
+    return out
 
 
 def votos(updates: list[dict]) -> list[dict]:

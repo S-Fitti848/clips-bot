@@ -122,6 +122,28 @@ class TwitchClient:
                 out[u["login"].lower()] = u["id"]
         return out
 
+    def get_users(self, logins: list[str]) -> list[dict]:
+        """Los usuarios que existen, con su login, nombre visible y descripción.
+
+        Twitch ya no deja leer la cantidad de seguidores con un app token (hace falta el token del
+        propio canal), así que para un alta la señal es: existe + tiene clips.
+        """
+        out = []
+        for grupo in _chunks(logins, MAX_IDS_POR_REQUEST):
+            for u in self._get("/users", [("login", l) for l in grupo]).get("data", []):
+                out.append({"login": u["login"].lower(), "id": u["id"],
+                            "nombre": u.get("display_name") or u["login"],
+                            "descripcion": (u.get("description") or "")[:120]})
+        return out
+
+    def search_channels(self, consulta: str, limite: int = 8) -> list[dict]:
+        """Canales que se parecen al nombre. Para cuando lo que pidieron es ambiguo."""
+        data = self._get("/search/channels", [("query", consulta), ("first", str(limite))])
+        return [{"login": c["broadcaster_login"].lower(), "id": c.get("id", ""),
+                 "nombre": c.get("display_name") or c["broadcaster_login"],
+                 "en_vivo": bool(c.get("is_live")), "juego": c.get("game_name") or ""}
+                for c in data.get("data", [])]
+
     def get_clips(
         self, broadcaster_id: str, started_at: datetime, ended_at: datetime, max_clips: int = 100
     ) -> list[dict]:

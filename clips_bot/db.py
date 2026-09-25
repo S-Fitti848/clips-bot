@@ -136,6 +136,15 @@ CREATE TABLE IF NOT EXISTS streamer_estado (
     clip_id   TEXT,
     fecha     TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
 );
+CREATE TABLE IF NOT EXISTS streamers_extra (
+    login      TEXT PRIMARY KEY,
+    accion     TEXT NOT NULL,            -- alta | baja
+    plataforma TEXT NOT NULL DEFAULT 'twitch',
+    grupo      TEXT NOT NULL DEFAULT 'argentinos',
+    quien      TEXT NOT NULL,
+    ts         TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS votos (
     clip_id    TEXT NOT NULL,
     user_id    TEXT NOT NULL,
@@ -181,6 +190,11 @@ def get_valor(conn: sqlite3.Connection, clave: str) -> str | None:
 def set_valor(conn: sqlite3.Connection, clave: str, valor: str) -> None:
     conn.execute("INSERT INTO bot_estado (clave, valor) VALUES (?, ?) "
                  "ON CONFLICT(clave) DO UPDATE SET valor = excluded.valor", (clave, valor))
+    conn.commit()
+
+
+def borrar_valor(conn: sqlite3.Connection, clave: str) -> None:
+    conn.execute("DELETE FROM bot_estado WHERE clave = ?", (clave,))
     conn.commit()
 
 
