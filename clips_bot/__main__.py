@@ -317,7 +317,12 @@ def ejecutar_seleccion(settings: Settings, gemini: GeminiClient | None, enviar: 
         return 2
 
     tg = TelegramClient(env("TELEGRAM_BOT_TOKEN"))
-    chat_id = resolver_chat_id(tg, env("TELEGRAM_CHAT_ID", requerido=False))
+    conn_chat = db.connect(DB_PATH)
+    try:
+        chat_id = resolver_chat_id(tg, env("TELEGRAM_CHAT_ID", requerido=False),
+                                   db.chat_entrega(conn_chat))
+    finally:
+        conn_chat.close()
     conn = db.connect(DB_PATH)
     try:
         for i, o in enumerate(elegidos, 1):
@@ -380,7 +385,13 @@ def _avisar_cero(settings: Settings, detalle: str) -> None:
         cuerpo += f"\n\nDescartes de las últimas 24 h:\n<pre>{filas}</pre>"
     try:
         tg = TelegramClient(env("TELEGRAM_BOT_TOKEN"))
-        tg.send_message(resolver_chat_id(tg, env("TELEGRAM_CHAT_ID", requerido=False)), cuerpo)
+        c2 = db.connect(DB_PATH)
+        try:
+            destino = resolver_chat_id(tg, env("TELEGRAM_CHAT_ID", requerido=False),
+                                       db.chat_entrega(c2))
+        finally:
+            c2.close()
+        tg.send_message(destino, cuerpo)
     except (TelegramError, ConfigError) as e:
         log.warning("No pude avisar que hoy no salió nada: %s", e)
 
@@ -1029,6 +1040,11 @@ def _despachar(conn, tg: TelegramClient, c: dict, settings: Settings, cola: list
         elif r:
             tg.send_message(c["chat_id"], r)
         return
+    if c["comando"] == "/aca":
+        respuesta = _seguro(tg, c["chat_id"], c["comando"], _aca, conn, c["chat_id"], c["args"])
+        if respuesta is not FALLO and respuesta:
+            tg.send_message(c["chat_id"], respuesta)
+        return
     if c["comando"] == "/streamers":
         return _seguro(tg, c["chat_id"], c["comando"], _menu_streamers, conn, tg, c["chat_id"])             and None
     if c["comando"] == "/agregar":
@@ -1182,6 +1198,10 @@ COMANDOS = [
     ("/quitar &lt;streamer&gt;",
      "lo saco de las corridas. Queda anotado en la DB, no se toca streamers.yaml.",
      "/quitar coscu"),
+    ("/aca",
+     "de acá en adelante te entrego los Shorts en ESTE chat. Mandalo dentro del grupo para que "
+     "vayan ahí. Con <code>/aca no</code> vuelve al chat del .env.",
+     "/aca"),
     ("/ayuda",
      "esto.",
      "/ayuda"),
@@ -1433,6 +1453,26 @@ def _quitar(conn, args: list, user_id: str) -> str:
     registro.guardar(conn, login, registro.BAJA, user_id)
     return (f"Saqué a <code>{html.escape(login)}</code>. Sigue en streamers.yaml pero la baja de la "
             f"DB manda, así que no entra en ninguna corrida.")
+
+
+def _aca(conn, chat_id: str, args: list[str]) -> str:
+    """/aca: de acá en adelante los Shorts se entregan en ESTE chat.
+
+    Existe porque el id de un grupo no se puede poner en el .env antes de tiempo: recién se sabe
+    estando adentro del grupo. Se guarda en la DB, así no hay que editar archivos en la Pi ni
+    reiniciar nada.
+    """
+    if args and args[0].lower() in ("no", "reset", "volver"):
+        db.borrar_chat_entrega(conn)
+        return ("Listo, vuelvo al chat de <code>TELEGRAM_CHAT_ID</code> "
+                f"(<code>{html.escape(env('TELEGRAM_CHAT_ID', requerido=False) or '?')}</code>).")
+    anterior = db.chat_entrega(conn) or env("TELEGRAM_CHAT_ID", requerido=False) or "?"
+    db.set_chat_entrega(conn, chat_id)
+    grupo = str(chat_id).startswith("-")
+    return (f"✅ Listo. Los Shorts diarios se entregan <b>acá</b> "
+            f"(<code>{html.escape(str(chat_id))}</code>{', un grupo' if grupo else ''})."
+            f"\nAntes iban a <code>{html.escape(str(anterior))}</code>."
+            f"\nPara volver atrás: <code>/aca no</code>")
 
 
 def _reclamo(conn, args: list[str]) -> str:

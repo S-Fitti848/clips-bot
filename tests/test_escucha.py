@@ -177,7 +177,8 @@ def test_ayuda_lista_todos_los_comandos_con_ejemplo():
         assert uso in texto and que in texto
         assert f"<code>{ejemplo}</code>" in texto
     assert {c[0].split()[0] for c in m.COMANDOS} == {
-        "/ya", "/buscar", "/streamers", "/agregar", "/quitar", "/reclamo", "/ayuda"}
+        "/ya", "/buscar", "/streamers", "/agregar", "/quitar", "/aca", "/reclamo",
+        "/ayuda"}
 
 
 # ---- votos 👍/👎 ----------------------------------------------------------------
@@ -417,3 +418,24 @@ def test_agregar_y_quitar_van_a_la_db_y_no_al_yaml(conn, monkeypatch, tmp_path):
     # quitar algo que no está
     assert "no está" in m._quitar(conn, ["fantasma"], "7")
     assert "Uso:" in m._quitar(conn, [], "7")
+
+
+def test_aca_fija_el_chat_de_entrega(conn):
+    """El id de un grupo no se puede poner en el .env antes de tiempo: recién se sabe estando
+    adentro. Por eso /aca lo anota en la DB, que gana sobre TELEGRAM_CHAT_ID."""
+    from clips_bot.telegram import resolver_chat_id
+
+    assert db.chat_entrega(conn) is None
+    r = m._aca(conn, "-1001234567890", [])
+    assert "-1001234567890" in r and "grupo" in r
+    assert db.chat_entrega(conn) == "-1001234567890"
+    # la DB manda sobre el .env
+    assert resolver_chat_id(None, "8668060171", db.chat_entrega(conn)) == "-1001234567890"
+
+    # y se puede volver atrás
+    m._aca(conn, "-1001234567890", ["no"])
+    assert db.chat_entrega(conn) is None
+    assert resolver_chat_id(None, "8668060171", db.chat_entrega(conn)) == "8668060171"
+
+    # un chat privado no dice "grupo"
+    assert "grupo" not in m._aca(conn, "8668060171", [])

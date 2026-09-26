@@ -116,8 +116,14 @@ def chats(updates: list[dict]) -> list[dict]:
     return list(vistos.values())
 
 
-def resolver_chat_id(cliente: TelegramClient, configurado: str) -> str:
-    """TELEGRAM_CHAT_ID si está; si no, el único chat privado que le escribió al bot (getUpdates)."""
+def resolver_chat_id(cliente: TelegramClient, configurado: str, guardado: str | None = None) -> str:
+    """El chat de entrega: lo que dejó `/aca` en la DB, si no TELEGRAM_CHAT_ID, si no getUpdates.
+
+    La DB va PRIMERO porque es lo último que eligió una persona, y porque el id de un grupo no se
+    puede poner en el .env antes de tiempo: hay que estar adentro del grupo para verlo.
+    """
+    if guardado:
+        return guardado
     if configurado:
         return configurado
     privados = [c for c in chats(cliente.get_updates()) if c["tipo"] == "private"]

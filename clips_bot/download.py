@@ -82,3 +82,63 @@ def descargar(url: str, destino: Path) -> Descarga:
         creado=datetime.fromtimestamp(ts, timezone.utc) if ts else None,
         categoria=((info.get("categories") or [""])[0]) or "",
     )
+
+
+# ---- videos que manda Santi (modos /editar y /narrar) ------------------------
+# No son clips de un streamer: no tienen login, ni categoría, ni permiso que chequear. Igual entran
+# al mismo pipeline, así que se arma una Descarga con lo que haya.
+
+MAX_MB_APORTE = 200  # tope de lo que se baja de un link; los archivos de Telegram ya vienen topeados
+
+
+def _descarga_de(path: Path, url: str, info: dict | None = None) -> Descarga:
+    info = info or {}
+    ts = info.get("timestamp")
+    canal = str(info.get("channel") or info.get("uploader") or "")
+    return Descarga(
+        path=path,
+        clip_id=path.stem,
+        url=url,
+        titulo=str(info.get("title") or ""),
+        plataforma="aporte",
+        streamer="",          # vacío a propósito: no hay a quién acreditar ni a quién excluir
+        canal=canal,
+        duracion=float(info.get("duration") or 0),
+        vistas=int(info.get("view_count") or 0),
+        creado=datetime.fromtimestamp(ts, timezone.utc) if ts else None,
+        categoria=((info.get("categories") or [""])[0]) or "",
+    )
+
+
+def adoptar(origen: Path, destino: Path, nombre: str) -> Descarga:
+    """Toma un archivo que ya está en disco (el que bajó Telegram) y lo mete en output/raw/."""
+    destino.mkdir(parents=True, exist_ok=True)
+    final = destino / f"{nombre}{origen.suffix or '.mp4'}"
+    if origen.resolve() != final.resolve():
+        final.write_bytes(origen.read_bytes())
+    return _descarga_de(final, url="", info={"title": origen.stem})
+
+
+def descargar_libre(url: str, destino: Path, nombre: str, max_mb: int = MAX_MB_APORTE) -> Descarga:
+    """Baja CUALQUIER link que yt-dlp entienda (no solo clips de Twitch o Kick).
+
+    Con tope de tamaño: un link puede ser un stream de 6 horas, y en la Pi eso es media tarde de
+    render además del disco.
+    """
+    destino.mkdir(parents=True, exist_ok=True)
+    opts = {
+        "outtmpl": str(destino / f"{nombre}.%(ext)s"),
+        "format": f"best[ext=mp4][filesize<{max_mb}M]/best[filesize<{max_mb}M]/best[ext=mp4]/best",
+        "quiet": True, "no_warnings": True, "noprogress": True,
+        "max_filesize": max_mb * 1024 * 1024,
+        "noplaylist": True,
+    }
+    try:
+        with YoutubeDL(opts) as ydl:
+            info = ydl.extract_info(url, download=True)
+            path = Path(ydl.prepare_filename(info))
+    except DownloadError as e:
+        raise DescargaError(str(e)) from e
+    if not path.exists():
+        raise DescargaError(f"No pude bajar {url} (¿supera los {max_mb} MB?)")
+    return _descarga_de(path, url=url, info=info)

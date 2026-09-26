@@ -347,3 +347,22 @@ def pulgares_abajo_multipov(conn: sqlite3.Connection, desde: str | None = None) 
            + (" AND ts >= ?" if desde else "") + " ORDER BY ts")
     args = [PREFIJO_MULTIPOV + "%"] + ([_como_sqlite(desde)] if desde else [])
     return [r[0] for r in conn.execute(sql, args)]
+
+
+# ---- a qué chat se entregan los Shorts --------------------------------------
+# Va en la DB y no solo en el .env porque el id de un grupo no se sabe de antemano: hay que estar
+# adentro del grupo para verlo. Con `/aca` el bot lo anota solo, sin editar archivos ni pedir sudo.
+
+CLAVE_CHAT = "chat_entrega"
+
+
+def chat_entrega(conn: sqlite3.Connection) -> str | None:
+    return get_valor(conn, CLAVE_CHAT)
+
+
+def set_chat_entrega(conn: sqlite3.Connection, chat_id: str) -> None:
+    set_valor(conn, CLAVE_CHAT, str(chat_id))
+
+
+def borrar_chat_entrega(conn: sqlite3.Connection) -> None:
+    borrar_valor(conn, CLAVE_CHAT)
