@@ -952,13 +952,15 @@ def escuchar_telegram(settings: Settings, timeout_poll: int = 50) -> int:
     from .telegram import callbacks, comandos, textos_sueltos, usuarios_permitidos
 
     tg = TelegramClient(env("TELEGRAM_BOT_TOKEN"), timeout=timeout_poll + 30)
-    permitidos = usuarios_permitidos(env("TELEGRAM_ALLOWED_USERS", requerido=False))
-    if not permitidos:
+    if not usuarios_permitidos(env("TELEGRAM_ALLOWED_USERS", requerido=False)):
         log.warning("TELEGRAM_ALLOWED_USERS vacío: no obedezco ningún comando")
     cola: list[dict] = []
     chat_ultimo = env("TELEGRAM_CHAT_ID", requerido=False)
     print(f"Escuchando (long polling {timeout_poll}s). Ctrl-C para salir.")
     while True:
+        # Se relee en cada vuelta: sumar a alguien a la lista tiene que andar sin reiniciar el
+        # servicio, porque el restart pide sudo y no siempre está a mano.
+        permitidos = usuarios_permitidos(env("TELEGRAM_ALLOWED_USERS", requerido=False))
         conn = db.connect(DB_PATH)
         try:
             _seguro(tg, str(chat_ultimo or ""), "la cola", _drenar_cola, conn, tg, cola, settings)
@@ -994,8 +996,9 @@ def escuchar_telegram(settings: Settings, timeout_poll: int = 50) -> int:
             for c in comandos(updates):
                 chat_ultimo = c["chat_id"]
                 if c["user_id"] not in permitidos:
-                    log.warning("%s de %s (id %s): no autorizado", c["comando"], c["usuario"],
-                                c["user_id"])
+                    log.warning("%s de %s (id %s) en el chat %s: NO AUTORIZADO. Para darle acceso, "
+                                "sumá ese id a TELEGRAM_ALLOWED_USERS en el .env",
+                                c["comando"], c["usuario"], c["user_id"], c["chat_id"])
                     continue
                 _seguro(tg, c["chat_id"], c["comando"], _despachar, conn, tg, c, settings, cola)
             if updates:
@@ -1006,7 +1009,8 @@ def escuchar_telegram(settings: Settings, timeout_poll: int = 50) -> int:
 
 def _despachar(conn, tg: TelegramClient, c: dict, settings: Settings, cola: list[dict]) -> None:
     """Un comando del modo escucha. /buscar puede quedar en cola; el resto contesta al toque."""
-    print(f"  {c['comando']} {' '.join(c['args'])} de {c['usuario'] or c['user_id']}")
+    print(f"  {c['comando']} {' '.join(c['args'])} de {c['usuario'] or c['user_id']} "
+          f"(chat {c['chat_id']})")
     if c["comando"] in ("/buscar", "/ya"):
         if len(cola) >= MAX_BUSQUEDAS:
             tg.send_message(c["chat_id"], f"Ya tengo {len(cola)} búsquedas en cola. Esperá a que "
