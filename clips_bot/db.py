@@ -136,6 +136,16 @@ CREATE TABLE IF NOT EXISTS streamer_estado (
     clip_id   TEXT,
     fecha     TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
 );
+CREATE TABLE IF NOT EXISTS pedidos (
+    token   TEXT PRIMARY KEY,
+    tipo    TEXT NOT NULL,             -- buscar | ya | diario
+    chat_id TEXT NOT NULL,
+    user_id TEXT NOT NULL DEFAULT '',
+    criterio TEXT NOT NULL DEFAULT '{}',  -- json: logins, palabras, dias
+    dados   TEXT NOT NULL DEFAULT '[]',   -- json: clip_ids ya entregados de este pedido
+    creado  TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS chats (
     chat_id TEXT PRIMARY KEY,
     tipo    TEXT NOT NULL DEFAULT '',      -- private | group | supergroup
@@ -423,3 +433,64 @@ def alternar_destino(conn: sqlite3.Connection, chat_id: str) -> bool:
     nuevo = not (fila and fila[0])
     marcar_destino(conn, chat_id, nuevo)
     return nuevo
+
+
+# ---- cuántos clips por entrega, y los pedidos ---------------------------------
+# El "pedido" es lo que permite que los botones "➕ 3 más" y "🔁 Reemplazar" sepan de dónde sacar el
+# siguiente: guarda con qué criterio se armó la entrega y qué ya se mandó, para no repetir.
+
+CANTIDAD_DEFAULT = 3
+CANTIDAD_MAX = 6
+
+
+def cantidad_diaria(conn: sqlite3.Connection) -> int:
+    v = get_valor(conn, "cantidad_diaria")
+    try:
+        return max(1, min(CANTIDAD_MAX, int(v))) if v else CANTIDAD_DEFAULT
+    except ValueError:
+        return CANTIDAD_DEFAULT
+
+
+def set_cantidad_diaria(conn: sqlite3.Connection, n: int) -> int:
+    n = max(1, min(CANTIDAD_MAX, int(n)))
+    set_valor(conn, "cantidad_diaria", str(n))
+    return n
+
+
+def crear_pedido(conn: sqlite3.Connection, token: str, tipo: str, chat_id: str, user_id: str,
+                 criterio: dict) -> None:
+    import json as _json
+
+    conn.execute(
+        """INSERT INTO pedidos (token, tipo, chat_id, user_id, criterio, dados, creado)
+           VALUES (?, ?, ?, ?, ?, '[]', datetime('now'))
+           ON CONFLICT(token) DO UPDATE SET criterio = excluded.criterio""",
+        (token, tipo, str(chat_id), str(user_id), _json.dumps(criterio, ensure_ascii=False)),
+    )
+    conn.commit()
+
+
+def pedido(conn: sqlite3.Connection, token: str) -> dict | None:
+    import json as _json
+
+    f = conn.execute(
+        "SELECT token, tipo, chat_id, user_id, criterio, dados FROM pedidos WHERE token = ?",
+        (token,)).fetchone()
+    if not f:
+        return None
+    return {"token": f[0], "tipo": f[1], "chat_id": f[2], "user_id": f[3],
+            "criterio": _json.loads(f[4] or "{}"), "dados": _json.loads(f[5] or "[]")}
+
+
+def anotar_dado(conn: sqlite3.Connection, token: str, clip_id: str) -> None:
+    """Deja constancia de que ese clip ya salió por este pedido: los botones no repiten."""
+    import json as _json
+
+    p = pedido(conn, token)
+    if not p:
+        return
+    if clip_id not in p["dados"]:
+        p["dados"].append(clip_id)
+    conn.execute("UPDATE pedidos SET dados = ? WHERE token = ?",
+                 (_json.dumps(p["dados"]), token))
+    conn.commit()

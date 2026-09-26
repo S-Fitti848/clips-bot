@@ -166,15 +166,26 @@ def mensaje_textos(numero: int, streamer: str, clip_id: str, horario: str | None
     return "\n".join(partes)
 
 
-def teclado_voto(clip_id: str, elegido: int = 0) -> dict:
-    """Los dos botones debajo del mensaje de un clip. `elegido` marca el que ya votaste."""
+def teclado_voto(clip_id: str, elegido: int = 0, pedido: str = "", ultimo: bool = False,
+                 cuantos_mas: int = 0) -> dict:
+    """Los botones debajo de un clip: 👍/👎 y, según el caso, "más" o "reemplazar".
+
+    - `ultimo` + `pedido`: debajo del ÚLTIMO clip de la entrega va "➕ N más", que trae los
+      siguientes del mismo pedido.
+    - después de un 👎 aparece "🔁 Reemplazar", que manda otro en lugar de ese.
+    """
     def etiqueta(icono: str, valor: int) -> str:
         return f"{icono} ✓" if elegido == valor else icono
 
-    return {"inline_keyboard": [[
+    filas = [[
         {"text": etiqueta("👍", 1), "callback_data": f"voto:1:{clip_id}"},
         {"text": etiqueta("👎", -1), "callback_data": f"voto:-1:{clip_id}"},
-    ]]}
+    ]]
+    if pedido and elegido < 0:
+        filas.append([{"text": "🔁 Reemplazar", "callback_data": f"ped:r:{pedido}:{clip_id}"}])
+    if pedido and ultimo and cuantos_mas:
+        filas.append([{"text": f"➕ {cuantos_mas} más", "callback_data": f"ped:m:{pedido}"}])
+    return {"inline_keyboard": filas}
 
 
 def _chat(msg: dict) -> dict:
@@ -264,6 +275,25 @@ def comandos(updates: list[dict]) -> list[dict]:
             "args": partes[1:],
         })
     return out
+
+
+def sacar_cantidad(args: list[str], tope: int) -> tuple[list[str], int | None]:
+    """Saca un token tipo `x5` de los argumentos y devuelve el resto y el número.
+
+    Va con `x` adelante y no como número suelto porque los días también son un número: en
+    `/buscar davoo gol 3` el 3 son días, y en `/buscar davoo gol x3` son tres clips.
+    """
+    quedan, cantidad = [], None
+    for a in args:
+        t = a.strip().lower()
+        if len(t) > 1 and t[0] == "x" and t[1:].isdigit():
+            n = int(t[1:])
+            if not 1 <= n <= tope:
+                raise ValueError(f"La cantidad tiene que estar entre 1 y {tope} (pediste {n}).")
+            cantidad = n
+        else:
+            quedan.append(a)
+    return quedan, cantidad
 
 
 def parse_buscar(args: list[str], dias_default: int = 7, dias_max: int = 90, max_logins: int = 3

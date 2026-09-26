@@ -136,7 +136,7 @@ def test_ya_usa_el_mismo_turno_que_buscar(conn, monkeypatch):
     cola, tg = [], FakeTG()
     corridas = []
 
-    def falso_diario(args, settings, atender=True, destinos=None):
+    def falso_diario(args, settings, atender=True, destinos=None, cuantos=None):
         assert atender is False, "desde /ya no se atiende Telegram: le robaría los updates al modo escucha"
         assert destinos == ["1"], "lo pidió por este chat: la entrega va acá, no a los destinos"
         corridas.append("diario")
@@ -164,7 +164,7 @@ def test_ya_toma_el_turno_y_lo_suelta(conn, monkeypatch):
     cola, tg = [], FakeTG()
     vistos = []
     monkeypatch.setattr(m, "_diario",
-                        lambda a, s, atender=True, destinos=None:
+                        lambda a, s, atender=True, destinos=None, cuantos=None:
                         vistos.append(db.hay_trabajo_pesado(conn)) or 0)
     monkeypatch.setattr(m, "_cuantos_entregados", lambda conn_: 0)
 
@@ -189,8 +189,8 @@ def test_ayuda_por_secciones_con_un_ejemplo_por_comando():
             assert uso in texto and que in texto
             assert f"<code>{ejemplo}</code>" in texto
             vistos.append(uso.split()[0])
-    assert set(vistos) == {"/streamers", "/buscar", "/ya", "/agregar", "/quitar", "/reclamo",
-                           "/editar", "/narrar", "/destinos", "/aca"}
+    assert set(vistos) == {"/streamers", "/buscar", "/ya", "/agregar", "/quitar", "/cantidad",
+                           "/reclamo", "/editar", "/narrar", "/destinos", "/aca"}
     botones = [b for f in m.teclado_ayuda()["inline_keyboard"] for b in f]
     assert [b["callback_data"] for b in botones] == [f"ay:s:{i}" for i in range(len(m.SECCIONES))]
 
@@ -498,3 +498,80 @@ def test_el_teclado_de_destinos_marca_lo_prendido(conn):
     assert any(x.startswith("⬜ 👥 rots clips") for x in textos)
     falta = [b for f in t["inline_keyboard"] for b in f if "falta su /start" in b["text"]][0]
     assert falta["callback_data"] == "dst:x"      # no navega: no se le puede escribir
+
+
+# ---- cantidad, ➕ más y 🔁 reemplazar ---------------------------------------------
+
+
+def test_xN_se_distingue_de_los_dias():
+    """`/buscar davoo gol 3` son 3 DÍAS; `/buscar davoo gol x3` son 3 CLIPS. Por eso la cantidad
+    lleva x adelante: si fuera un número suelto, chocaría con los días."""
+    from clips_bot.telegram import parse_buscar, sacar_cantidad
+
+    resto, n = sacar_cantidad(["davoo", "gol", "3"], 6)
+    assert n is None and parse_buscar(resto)[2] == 3          # 3 días
+
+    resto, n = sacar_cantidad(["davoo", "gol", "x3"], 6)
+    assert n == 3 and parse_buscar(resto)[2] == 7             # 3 clips, días por default
+
+    resto, n = sacar_cantidad(["davoo", "x5", "gol", "3"], 6)
+    assert n == 5 and parse_buscar(resto) == (("davoo",), ("gol",), 3)
+
+    assert sacar_cantidad(["X2"], 6)[1] == 2                   # mayúscula también
+    for malo in (["x0"], ["x7"], ["x99"]):
+        with pytest.raises(ValueError):
+            sacar_cantidad(malo, 6)
+
+
+def test_cantidad_diaria(conn):
+    assert db.cantidad_diaria(conn) == db.CANTIDAD_DEFAULT
+    assert "3" in m._cantidad(conn, [])                        # sin argumento, informa
+    assert "5" in m._cantidad(conn, ["5"]) and db.cantidad_diaria(conn) == 5
+    assert "entre 1 y 6" in m._cantidad(conn, ["9"])           # no se pasa del tope
+    assert db.cantidad_diaria(conn) == 5                       # y no cambió nada
+    assert "número" in m._cantidad(conn, ["muchos"])
+
+
+def test_el_boton_de_mas_usa_primero_lo_ya_procesado(conn, monkeypatch, tmp_path):
+    """Lo ya procesado sale al instante y no gasta una llamada a Gemini: los textos ya están."""
+    import json
+
+    ready = tmp_path / "ready"
+    ready.mkdir()
+    for i, (puntaje, relleno) in enumerate([(7, False), (4, True), (9, False)]):
+        mp4 = ready / f"c{i}.mp4"
+        mp4.write_bytes(b"x")
+        (ready / f"c{i}.json").write_text(json.dumps({
+            "clip_id": f"c{i}", "streamer": "spreen", "puntaje": puntaje, "relleno": relleno,
+            "salida": str(mp4), "textos": {"titulo": f"t{i}"}}), encoding="utf-8")
+    # uno ya entregado no vuelve a salir
+    (ready / "usado.mp4").write_bytes(b"x")
+    (ready / "usado.json").write_text(json.dumps({
+        "clip_id": "usado", "streamer": "spreen", "salida": str(ready / "usado.mp4"),
+        "textos": {"titulo": "ya salió"}, "entregado": {"fecha": "hoy"}}), encoding="utf-8")
+    monkeypatch.setattr("clips_bot.process.READY_DIR", ready)
+
+    listos = m._listos_sin_mandar(conn, {"logins": ["spreen"]}, excluir=set())
+    assert [x["clip_id"] for x in listos] == ["c2", "c0", "c1"]   # mejor puntaje primero, relleno al final
+
+    # los de otro streamer no entran
+    assert m._listos_sin_mandar(conn, {"logins": ["otro"]}, excluir=set()) == []
+    # y lo ya dado por este pedido tampoco
+    assert [x["clip_id"] for x in m._listos_sin_mandar(conn, {"logins": ["spreen"]}, {"c2"})] == \
+        ["c0", "c1"]
+
+
+def test_el_teclado_del_ultimo_clip_ofrece_mas(conn):
+    from clips_bot.telegram import teclado_voto
+
+    solo = [b["callback_data"] for f in teclado_voto("c1")["inline_keyboard"] for b in f]
+    assert solo == ["voto:1:c1", "voto:-1:c1"]                 # sin pedido, no hay botones extra
+
+    ultimo = teclado_voto("c1", pedido="ab12", ultimo=True, cuantos_mas=3)
+    textos = [b["text"] for f in ultimo["inline_keyboard"] for b in f]
+    assert "➕ 3 más" in textos
+
+    votado = teclado_voto("c1", elegido=-1, pedido="ab12")
+    datos = [b["callback_data"] for f in votado["inline_keyboard"] for b in f]
+    assert "ped:r:ab12:c1" in datos                             # el 👎 ofrece reemplazo
+    assert "ped:m:ab12" not in datos                            # pero no "más": no era el último

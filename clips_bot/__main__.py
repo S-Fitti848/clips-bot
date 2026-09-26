@@ -280,7 +280,11 @@ def ejecutar_seleccion(settings: Settings, gemini: GeminiClient | None, enviar: 
     relleno = sorted((o for o in opciones if o.meta.get("relleno")),
                      key=lambda o: o.meta.get("puntaje", 0), reverse=True)
     elegidos = seleccionar(buenos, cfg, ahora, desempate_gemini(gemini) if gemini else None)
-    cupo = n or sum(cfg.mezcla.values()) or 3
+    conn_c = db.connect(DB_PATH)
+    try:
+        cupo = n or db.cantidad_diaria(conn_c)
+    finally:
+        conn_c.close()
     if len(elegidos) < cupo and relleno:
         # Solo puede salir de acá lo que falló ÚNICAMENTE por calidad: lo que se descarta por tono,
         # copyright, datos en pantalla o cualquier filtro de seguridad nunca llega a `opciones`.
@@ -320,6 +324,9 @@ def ejecutar_seleccion(settings: Settings, gemini: GeminiClient | None, enviar: 
         print("ERROR: no mando clips de streamers sin permiso cargado.", file=sys.stderr)
         return 2
 
+    import secrets
+
+    token = secrets.token_hex(3)
     tg = TelegramClient(env("TELEGRAM_BOT_TOKEN"))
     conn_chat = db.connect(DB_PATH)
     try:
@@ -331,9 +338,11 @@ def ejecutar_seleccion(settings: Settings, gemini: GeminiClient | None, enviar: 
         return 2
     conn = db.connect(DB_PATH)
     try:
+        db.crear_pedido(conn, token, "diario", str(chats[0]), "", {"cantidad": cupo})
         for i, o in enumerate(elegidos, 1):
             horario = horarios[i - 1] if i <= len(horarios) else None
-            enviar_clip(tg, chats, conn, o.clip_id, o.meta, i, horario)
+            enviar_clip(tg, chats, conn, o.clip_id, o.meta, i, horario, pedido=token,
+                        ultimo=(i == len(elegidos)), cuantos_mas=cupo)
             print(f"  enviado #{i}: {o.clip_id}")
     finally:
         conn.close()
@@ -341,7 +350,8 @@ def ejecutar_seleccion(settings: Settings, gemini: GeminiClient | None, enviar: 
 
 
 def enviar_clip(tg: TelegramClient, chat_id, conn, clip_id: str, meta: dict, numero: int,
-                horario: str | None) -> None:
+                horario: str | None, pedido: str = "", ultimo: bool = False,
+                cuantos_mas: int = 0) -> None:
     """`chat_id` puede ser uno o una lista. El mp4 se sube UNA vez: a partir del segundo destino se
     manda el file_id que devolvió Telegram, que en la Pi ahorra varios minutos de subida."""
     """El mp4 + el mensaje con los textos, y el clip queda `entregado`. §3 paso 10.
@@ -371,7 +381,9 @@ def enviar_clip(tg: TelegramClient, chat_id, conn, clip_id: str, meta: dict, num
             enviado = tg.send_video(destino, video, caption, width=info.ancho, height=info.alto,
                                     duration=round(info.duracion), thumbnail=thumb, file_id=file_id)
             file_id = file_id or (enviado or {}).get("video", {}).get("file_id")
-            tg.send_message(destino, cuerpo, teclado=teclado_voto(clip_id))
+            tg.send_message(destino, cuerpo,
+                            teclado=teclado_voto(clip_id, pedido=pedido, ultimo=ultimo,
+                                                 cuantos_mas=cuantos_mas))
         except TelegramError as e:
             # Que un destino falle (bloqueado, sacaron al bot del grupo) no puede tumbar el resto.
             log.warning("No pude entregar %s en %s: %s", clip_id, destino, e)
@@ -384,8 +396,12 @@ def enviar_clip(tg: TelegramClient, chat_id, conn, clip_id: str, meta: dict, num
                 log.warning("No pude mandar el .srt a %s: %s", destino, e)
     meta["entregado"] = {"fecha": datetime.now(timezone.utc).isoformat(), "orden": numero,
                          "horario": horario}
+    if pedido:
+        meta["pedido"] = pedido
     guardar_meta(READY_DIR / f"{clip_id}.json", meta)
     db.set_estado(conn, clip_id, "entregado")
+    if pedido:
+        db.anotar_dado(conn, pedido, clip_id)
 
 
 def _avisar_cero(settings: Settings, detalle: str, destinos: list[str] | None = None) -> None:
@@ -454,7 +470,7 @@ def cmd_diario(args: argparse.Namespace) -> int:
 
 
 def _diario(args: argparse.Namespace, settings: Settings, atender: bool = True,
-            destinos: list[str] | None = None) -> int:
+            destinos: list[str] | None = None, cuantos: int | None = None) -> int:
     from .process import procesar
 
     streamers = _streamers()
@@ -514,7 +530,8 @@ def _diario(args: argparse.Namespace, settings: Settings, atender: bool = True,
             print(f"  (grupo {grupo}: {ok}/{objetivo} del cupo; lo que falte lo cubre el catálogo)")
 
     print("\n=== Pasos 8 y 10: elegir y entregar")
-    return ejecutar_seleccion(settings, gemini, enviar=not args.simular, destinos=destinos)
+    return ejecutar_seleccion(settings, gemini, enviar=not args.simular, n=cuantos,
+                              destinos=destinos)
 
 
 def procesar_multipov_del_dia(settings: Settings, streamers: list, res: Resultado,
@@ -817,6 +834,7 @@ def atender_telegram(settings: Settings, silencioso: bool = False) -> int:
 
 
 MAX_BUSQUEDAS = 2      # búsquedas esperando en la cola del modo escucha
+CANTIDAD_MAX_PEDIDO = 6  # tope de clips por pedido con xN; más no entra en la Pi
 TOPE_BUSCAR = 3        # clips procesados por búsqueda: cada uno es Whisper + OCR + render
 VENCIMIENTO_PESADO_S = 3 * 3600   # un turno pesado colgado se suelta solo a las 3 h
 ESPERA_DIARIO_S = 20 * 60         # lo que `diario` aguanta a una búsqueda antes de arrancar igual
@@ -832,16 +850,20 @@ def _buscar(conn, tg: TelegramClient, chat_id: str, args: list[str], settings: S
     Contesta "buscando..." con cuántos candidatos hay ANTES de procesar, porque procesar 3 clips en
     la Pi son varios minutos y si no parece que el bot se colgó.
     """
+    import secrets
+
     from .candidates import buscar_candidatos, buscar_kick
     from .process import READY_DIR, procesar
-    from .telegram import parse_buscar, repartir
+    from .telegram import parse_buscar, repartir, sacar_cantidad
 
     from dataclasses import replace as _replace
 
     try:
+        args, cantidad = sacar_cantidad(list(args), CANTIDAD_MAX_PEDIDO)
         logins, palabras, dias = parse_buscar(args, max_logins=TOPE_BUSCAR)
     except ValueError as e:
         return str(e)
+    cupo = cantidad or TOPE_BUSCAR
 
     excluidos = db.excluidos(conn)
     elegidos_st, problemas = [], []
@@ -855,6 +877,7 @@ def _buscar(conn, tg: TelegramClient, chat_id: str, args: list[str], settings: S
             problemas.append(f"{login} está EXCLUIDO ({excluidos[login]})")
         else:
             elegidos_st.append(st)
+    token = secrets.token_hex(3)
     if not elegidos_st:
         return ("No puedo buscar en ninguno: " + "; ".join(problemas) + ". Los que hay: "
                 + ", ".join(sorted(x.login for x in streamers)[:25]) + "...")
@@ -891,7 +914,7 @@ def _buscar(conn, tg: TelegramClient, chat_id: str, args: list[str], settings: S
             return (f"Busqué en {quienes}{que} de los últimos {dias} días y no quedó ninguno."
                     + _resumen(descartes) + _problemas(problemas))
 
-        cupos = repartir(TOPE_BUSCAR, [len(c) for _, c in por_streamer])
+        cupos = repartir(cupo, [len(c) for _, c in por_streamer])
         detalle = ", ".join(f"{st.login} {len(c)}" for st, c in por_streamer)
         tg.send_message(chat_id, f"Buscando{html.escape(que)} en los últimos {dias} días: "
                                  f"<b>{total} candidatos</b> ({html.escape(detalle)}). "
@@ -915,8 +938,12 @@ def _buscar(conn, tg: TelegramClient, chat_id: str, args: list[str], settings: S
                     fallados.append(f"{r.clip_id[:14]}: sin textos (¿cuota de Gemini?)")
                     continue
                 enviados += 1
-                enviar_clip(tg, chat_id, conn, r.clip_id, meta, enviados, None)
+                enviar_clip(tg, chat_id, conn, r.clip_id, meta, enviados, None, pedido=token)
 
+        if enviados:
+            db.crear_pedido(conn, token, "buscar", chat_id, "",
+                            {"logins": list(logins), "palabras": list(palabras), "dias": dias,
+                             "cantidad": cupo})
         final = [f"Listo: <b>{enviados}</b> de {total} candidatos ({quienes}{que}, {dias} días)."]
         if fallados:
             final.append("No salieron: " + "; ".join(html.escape(f) for f in fallados[:3]))
@@ -927,23 +954,30 @@ def _buscar(conn, tg: TelegramClient, chat_id: str, args: list[str], settings: S
         db.soltar_turno(conn, db.RECURSO_PESADO, token, VENCIMIENTO_PESADO_S)
 
 
-def _ya(conn, tg: TelegramClient, chat_id: str, settings: Settings):
+def _ya(conn, tg: TelegramClient, chat_id: str, settings: Settings, args: list | None = None):
     """/ya: la mezcla diaria ahora, con el mismo turno pesado y la misma cola que /buscar.
 
     No repite el `diario` entero por su cuenta: llama al mismo código, para que lo que sale por /ya
     sea exactamente lo que va a salir a las 05:00 y no una segunda versión que se despeina sola.
     """
+    from .telegram import sacar_cantidad
+
+    try:
+        _, cantidad = sacar_cantidad(list(args or []), CANTIDAD_MAX_PEDIDO)
+    except ValueError as e:
+        return str(e)
+    cuantos = cantidad or db.cantidad_diaria(conn)
     token = f"diario:ya:{datetime.now(timezone.utc).timestamp():.0f}"
     if not db.tomar_turno(conn, db.RECURSO_PESADO, token, maximo=1,
                           vencimiento_s=VENCIMIENTO_PESADO_S):
         return OCUPADO
     try:
         antes = _cuantos_entregados(conn)
-        tg.send_message(chat_id, "Arranco la mezcla diaria. Son varios clips: tarda "
-                                 "entre 15 y 30 minutos en la Pi.")
+        tg.send_message(chat_id, f"Arranco la mezcla diaria: <b>{cuantos}</b> clips. "
+                                 "Tarda entre 15 y 30 minutos en la Pi.")
         args = argparse.Namespace(simular=False, max_procesar=None, incluir_sin_permiso=False)
         # Lo pediste vos y por acá: la entrega va a ESTE chat, no a la lista de las 05:00.
-        codigo = _diario(args, settings, atender=False, destinos=[chat_id])
+        codigo = _diario(args, settings, atender=False, destinos=[chat_id], cuantos=cuantos)
         nuevos = _cuantos_entregados(conn) - antes
         if nuevos:
             return f"Mezcla diaria lista: <b>{nuevos}</b> entregados."
@@ -953,6 +987,101 @@ def _ya(conn, tg: TelegramClient, chat_id: str, settings: Settings):
                 "<pre>journalctl -u clips-bot-telegram -n 200 --no-pager</pre>")
     finally:
         db.soltar_turno(conn, db.RECURSO_PESADO, token, VENCIMIENTO_PESADO_S)
+
+
+
+# ---- traer más clips de un pedido ya hecho --------------------------------------
+# "➕ 3 más" y "🔁 Reemplazar" no vuelven a buscar desde cero: primero miran lo que YA está
+# procesado y no se mandó. Esos salen al instante y no gastan ni una llamada a Gemini, porque los
+# textos ya están hechos. Recién si no hay nada se procesa de nuevo, y ahí sí va por la cola.
+
+
+def _listos_sin_mandar(conn, criterio: dict, excluir: set) -> list[dict]:
+    """Clips ya procesados, con textos, que todavía no salieron. Ordenados por puntaje."""
+    from .process import READY_DIR
+
+    logins = {l.lower() for l in (criterio.get("logins") or [])}
+    out = []
+    for j in sorted(READY_DIR.glob("*.json")):
+        if j.stem in excluir:
+            continue
+        try:
+            m = json.loads(j.read_text(encoding="utf-8"))
+        except ValueError:
+            continue
+        if m.get("entregado") or not m.get("textos") or not m.get("salida"):
+            continue
+        if not Path(m["salida"]).exists():
+            continue
+        if logins and str(m.get("streamer", "")).lower() not in logins:
+            continue
+        out.append(m)
+    # los mejores primero, y lo que no llegó al corte de calidad al final
+    out.sort(key=lambda m: (bool(m.get("relleno")), -int(m.get("puntaje") or 0)))
+    return out
+
+
+def _pedido_callback(conn, tg: TelegramClient, cb: dict, settings: Settings, cola: list) -> None:
+    from .menu import parse_callback
+
+    d = parse_callback(cb["data"])
+    if not d or d["menu"] != "ped":
+        return
+    token = str(d["args"][0]) if d["args"] else ""
+    p = db.pedido(conn, token)
+    if not p:
+        return tg.answer_callback(cb["callback_id"], "Ese pedido ya no está. Mandá el comando de nuevo.")
+
+    cuantos = 1 if d["accion"] == "r" else int(p["criterio"].get("cantidad") or 3)
+    entregados = set(p["dados"]) | set(db.estados(conn))
+    listos = _listos_sin_mandar(conn, p["criterio"], set(p["dados"]))
+
+    if d["accion"] == "r":
+        tg.answer_callback(cb["callback_id"], "Busco otro…")
+    else:
+        tg.answer_callback(cb["callback_id"], f"Van {cuantos} más…")
+
+    if listos:
+        usar = listos[:cuantos]
+        tg.send_message(cb["chat_id"],
+                        f"Tengo {len(usar)} listo{'s' if len(usar) > 1 else ''} de antes, "
+                        f"van ahora mismo.")
+        for k, meta in enumerate(usar, 1):
+            ultimo = k == len(usar)
+            enviar_clip(tg, cb["chat_id"], conn, meta["clip_id"], meta, k, None,
+                        pedido=token, ultimo=ultimo,
+                        cuantos_mas=int(p["criterio"].get("cantidad") or 3) if ultimo else 0)
+        return
+
+    # No hay nada procesado: hay que salir a buscar, y eso tarda.
+    tg.send_message(cb["chat_id"], "No me queda ninguno procesado de ese pedido: salgo a buscar "
+                                   "más. Procesando, tarda unos minutos.")
+    args = list(p["criterio"].get("logins") or []) + list(p["criterio"].get("palabras") or [])
+    if p["criterio"].get("dias"):
+        args.append(str(p["criterio"]["dias"]))
+    args.append(f"x{cuantos}")
+    comando = "/buscar" if args and p["criterio"].get("logins") else "/ya"
+    _despachar(conn, tg, {"comando": comando, "args": args if comando == "/buscar" else [f"x{cuantos}"],
+                          "chat_id": cb["chat_id"], "usuario": "", "user_id": cb["user_id"]},
+               settings, cola)
+
+
+def _cantidad(conn, args: list) -> str:
+    """/cantidad <n>: cuántos Shorts trae la corrida de las 05:00."""
+    actual = db.cantidad_diaria(conn)
+    if not args:
+        return (f"Ahora te mando <b>{actual}</b> por día."
+                f"\nPara cambiarlo: <code>/cantidad 5</code> (entre 1 y {db.CANTIDAD_MAX}).")
+    try:
+        n = int(args[0])
+    except ValueError:
+        return f"Eso no es un número. Probá <code>/cantidad 5</code>."
+    if not 1 <= n <= db.CANTIDAD_MAX:
+        return (f"Tiene que estar entre 1 y {db.CANTIDAD_MAX}: más que eso no entra en la Pi "
+                f"(cada clip son varios minutos de Whisper y render).")
+    puesto = db.set_cantidad_diaria(conn, n)
+    return (f"✅ Listo, de ahora en más te mando <b>{puesto}</b> por día en la corrida de las 05:00."
+            f"\nPara un pedido puntual podés usar <code>/ya x{min(puesto + 1, db.CANTIDAD_MAX)}</code>.")
 
 
 def _cuantos_entregados(conn) -> int:
@@ -1019,6 +1148,10 @@ def escuchar_telegram(settings: Settings, timeout_poll: int = 50) -> int:
                 chat_ultimo = cb["chat_id"]
                 db.ver_chat(conn, cb["chat_id"], cb.get("chat_tipo", ""),
                             cb.get("chat_nombre", ""), cb["user_id"])
+                if cb["data"].startswith("ped:"):
+                    _seguro(tg, cb["chat_id"], cb["data"], _pedido_callback, conn, tg, cb,
+                            settings, cola)
+                    continue
                 if cb["data"].startswith("ay:"):
                     _seguro(tg, cb["chat_id"], cb["data"], _ayuda_callback, tg, cb)
                     continue
@@ -1078,6 +1211,11 @@ def _despachar(conn, tg: TelegramClient, c: dict, settings: Settings, cola: list
         elif r:
             tg.send_message(c["chat_id"], r)
         return
+    if c["comando"] == "/cantidad":
+        respuesta = _seguro(tg, c["chat_id"], c["comando"], _cantidad, conn, c["args"])
+        if respuesta is not FALLO and respuesta:
+            tg.send_message(c["chat_id"], respuesta)
+        return
     if c["comando"] == "/destinos":
         return _seguro(tg, c["chat_id"], c["comando"], _menu_destinos, conn, tg, c["chat_id"])             and None
     if c["comando"] == "/aca":
@@ -1127,7 +1265,9 @@ def _atender_votos(conn, tg: TelegramClient, updates: list[dict], permitidos: se
         db.votar(conn, v["clip_id"], v["voto"], v["user_id"],
                  puntaje=int(meta.get("puntaje") or 0), relleno=bool(meta.get("relleno")))
         try:
-            tg.edit_reply_markup(v["chat_id"], v["message_id"], teclado_voto(v["clip_id"], v["voto"]))
+            tg.edit_reply_markup(
+                v["chat_id"], v["message_id"],
+                teclado_voto(v["clip_id"], v["voto"], pedido=str(meta.get("pedido") or "")))
         except TelegramError as e:
             log.warning("No pude marcar el botón votado: %s", e)
         tg.answer_callback(v["callback_id"], "👍 anotado" if v["voto"] > 0 else "👎 anotado")
@@ -1191,7 +1331,7 @@ def _pesado(conn, tg: TelegramClient, chat_id: str, comando: str, args: list[str
             settings: Settings):
     """Los comandos que procesan clips y comparten el turno pesado: /buscar y /ya."""
     if comando == "/ya":
-        return _ya(conn, tg, chat_id, settings)
+        return _ya(conn, tg, chat_id, settings, args)
     return _buscar(conn, tg, chat_id, args, settings, _streamers(conn), _gemini(settings))
 
 
@@ -1224,12 +1364,13 @@ SECCIONES = [
         ("/buscar &lt;streamer[,streamer]&gt; [palabras] [días]",
          f"busco en sus clips de los últimos días (default 7, tope 90) los que tengan esas "
          f"palabras en el título del clip o del stream, proceso hasta {TOPE_BUSCAR} y te los "
-         "mando. Con varios streamers separados por coma, el tope se reparte entre ellos.",
-         "/buscar spreen,davooxeneize gol 3"),
+         "mando. Con varios streamers separados por coma, el tope se reparte entre ellos. Con "
+         "<code>x5</code> pedís esa cantidad (tope 6).",
+         "/buscar spreen,davooxeneize gol x5"),
         ("/ya",
          "corro la mezcla diaria ahora mismo, sin esperar a las 05:00. Tarda 15-30 min en la Pi "
-         "y te la entrego en este chat.",
-         "/ya"),
+         "y te la entrego en este chat. Con <code>x2</code> pedís esa cantidad.",
+         "/ya x2"),
         ("/agregar &lt;streamer&gt; [grupo]",
          "lo busco en Kick y en Twitch, te muestro qué encontré (seguidores y clips de la "
          "semana) y lo sumo si me decís que sí. Entra con permiso de experimento.",
@@ -1237,6 +1378,10 @@ SECCIONES = [
         ("/quitar &lt;streamer&gt;",
          "lo saca de las corridas. Queda anotado en la DB, no se toca streamers.yaml.",
          "/quitar coscu"),
+        ("/cantidad &lt;n&gt;",
+         f"cuántos Shorts te mando en la corrida de las 05:00 (default {db.CANTIDAD_DEFAULT}, "
+         f"tope {db.CANTIDAD_MAX}). Para un pedido puntual usá <code>x5</code> en el comando.",
+         "/cantidad 5"),
         ("/reclamo &lt;id del clip&gt;",
          "marcá que ese video recibió un reclamo o strike: excluyo al streamer de las próximas "
          "corridas. El id va en cada mensaje de entrega.",
