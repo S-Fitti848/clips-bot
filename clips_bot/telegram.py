@@ -71,22 +71,29 @@ class TelegramClient:
                                                 "reply_markup": json.dumps(teclado)})
 
     def send_video(self, chat_id: str, path: Path, caption: str = "", *, width: int | None = None,
-                   height: int | None = None, duration: int | None = None, thumbnail: Path | None = None) -> None:
+                   height: int | None = None, duration: int | None = None,
+                   thumbnail: Path | None = None, file_id: str | None = None) -> dict:
         """Sin width/height (y sin miniatura) la app de Telegram no sabe que es vertical y lo muestra
-        en un cuadro que no corresponde, con negro arriba y abajo. Siempre pasar las dimensiones."""
-        _chequear_tamano(path)
+        en un cuadro que no corresponde, con negro arriba y abajo. Siempre pasar las dimensiones.
+
+        `file_id`: si el mismo video ya se subió a Telegram, se manda esa referencia en vez del
+        archivo. Con varios destinos eso evita subir el mp4 una vez por chat, que en la Pi son
+        varios minutos cada vez. Devuelve el mensaje, del que sale el file_id para los siguientes.
+        """
         data = {"chat_id": chat_id, "caption": caption[:MAX_CAPTION], "supports_streaming": "true"}
         for clave, valor in (("width", width), ("height", height), ("duration", duration)):
             if valor:
                 data[clave] = str(valor)
+        if file_id:
+            return self._llamar("sendVideo", {**data, "video": file_id})  # type: ignore[return-value]
+        _chequear_tamano(path)
         with path.open("rb") as f:
             files = {"video": (path.name, f, "video/mp4")}
             if thumbnail:
                 with thumbnail.open("rb") as t:
                     files["thumbnail"] = (thumbnail.name, t, "image/jpeg")
-                    self._llamar("sendVideo", data, files)
-            else:
-                self._llamar("sendVideo", data, files)
+                    return self._llamar("sendVideo", data, files)  # type: ignore[return-value]
+            return self._llamar("sendVideo", data, files)  # type: ignore[return-value]
 
     def send_document(self, chat_id: str, path: Path, caption: str = "") -> None:
         _chequear_tamano(path)
@@ -170,6 +177,15 @@ def teclado_voto(clip_id: str, elegido: int = 0) -> dict:
     ]]}
 
 
+def _chat(msg: dict) -> dict:
+    """De qué chat vino: id, tipo y un nombre para mostrar en /destinos."""
+    chat = msg.get("chat") or {}
+    nombre = chat.get("title") or " ".join(
+        filter(None, [chat.get("first_name"), chat.get("last_name")])) or chat.get("username") or ""
+    return {"chat_id": str(chat.get("id", "")), "chat_tipo": chat.get("type", ""),
+            "chat_nombre": nombre.strip()}
+
+
 def textos_sueltos(updates: list[dict]) -> list[dict]:
     """Los mensajes que NO son comandos: [{chat_id, user_id, texto}].
 
@@ -182,8 +198,7 @@ def textos_sueltos(updates: list[dict]) -> list[dict]:
         texto = (msg.get("text") or "").strip()
         if not texto or texto.startswith("/"):
             continue
-        out.append({"chat_id": str((msg.get("chat") or {}).get("id", "")),
-                    "user_id": str((msg.get("from") or {}).get("id") or ""),
+        out.append({**_chat(msg), "user_id": str((msg.get("from") or {}).get("id") or ""),
                     "texto": texto})
     return out
 
@@ -197,8 +212,7 @@ def callbacks(updates: list[dict], prefijos: tuple[str, ...] = ("st", "add")) ->
         if not cb or not data.split(":")[0] in prefijos:
             continue
         msg = cb.get("message") or {}
-        out.append({"callback_id": cb.get("id"), "data": data,
-                    "chat_id": str((msg.get("chat") or {}).get("id", "")),
+        out.append({**_chat(msg), "callback_id": cb.get("id"), "data": data,
                     "message_id": msg.get("message_id"),
                     "user_id": str((cb.get("from") or {}).get("id") or "")})
     return out
@@ -214,8 +228,8 @@ def votos(updates: list[dict]) -> list[dict]:
         _, valor, clip_id = cb["data"].split(":", 2)
         msg = cb.get("message") or {}
         out.append({
+            **_chat(msg),
             "callback_id": cb.get("id"),
-            "chat_id": str((msg.get("chat") or {}).get("id", "")),
             "message_id": msg.get("message_id"),
             "user_id": str((cb.get("from") or {}).get("id") or ""),
             "voto": int(valor),
@@ -242,8 +256,8 @@ def comandos(updates: list[dict]) -> list[dict]:
         if quien.get("username"):
             nombre = (nombre + f" (@{quien['username']})").strip()
         out.append({
+            **_chat(msg),
             "update_id": u.get("update_id"),
-            "chat_id": str((msg.get("chat") or {}).get("id", "")),
             "user_id": str(quien.get("id") or ""),
             "usuario": nombre.strip(),
             "comando": partes[0].split("@")[0].lower(),  # /reclamo@mi_bot → /reclamo

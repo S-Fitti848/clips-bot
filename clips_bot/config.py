@@ -189,6 +189,14 @@ class MultiPov:
 
 
 @dataclass(frozen=True)
+class Voz:
+    """TTS para el modo /narrar. Piper, local y gratis: ver la comparación en CLAUDE.md §8."""
+    motor: str = "piper"
+    modelo: str = "voces/es_AR-daniela-high.onnx"
+    volumen_original: float = 0.15   # el audio del video queda de fondo, abajo de la voz
+
+
+@dataclass(frozen=True)
 class PantallaCfg:
     """OCR sobre frames muestreados: datos personales o pantallas de pago (§ pantalla.py)."""
     activo: bool = True
@@ -248,6 +256,7 @@ class Settings:
     filtro_audio: FiltroAudio = FiltroAudio()
     marcador: MarcadorDeportivo = MarcadorDeportivo()
     pantalla: PantallaCfg = PantallaCfg()
+    voz: Voz = Voz()
     multipov: MultiPov = MultiPov()
     textos: Textos = Textos()
     seleccion: Seleccion = Seleccion()
@@ -315,6 +324,7 @@ def load_settings(path: Path = CONFIG_DIR / "settings.yaml") -> Settings:
         filtro_audio=_seccion(FiltroAudio, raw, "filtro_audio", path),
         marcador=_seccion(MarcadorDeportivo, raw, "marcador", path),
         pantalla=_seccion(PantallaCfg, raw, "pantalla", path),
+        voz=_seccion(Voz, raw, "voz", path),
         multipov=_seccion(MultiPov, raw, "multipov", path),
         textos=_seccion(Textos, raw, "textos", path),
         seleccion=seleccion,

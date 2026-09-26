@@ -136,6 +136,15 @@ CREATE TABLE IF NOT EXISTS streamer_estado (
     clip_id   TEXT,
     fecha     TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
 );
+CREATE TABLE IF NOT EXISTS chats (
+    chat_id TEXT PRIMARY KEY,
+    tipo    TEXT NOT NULL DEFAULT '',      -- private | group | supergroup
+    nombre  TEXT NOT NULL DEFAULT '',
+    user_id TEXT NOT NULL DEFAULT '',      -- si es privado, de quién es
+    activo  INTEGER NOT NULL DEFAULT 0,    -- ¿recibe la entrega de las 05:00?
+    visto   TEXT NOT NULL DEFAULT ''
+);
+
 CREATE TABLE IF NOT EXISTS streamers_extra (
     login      TEXT PRIMARY KEY,
     accion     TEXT NOT NULL,            -- alta | baja
@@ -366,3 +375,51 @@ def set_chat_entrega(conn: sqlite3.Connection, chat_id: str) -> None:
 
 def borrar_chat_entrega(conn: sqlite3.Connection) -> None:
     borrar_valor(conn, CLAVE_CHAT)
+
+
+# ---- destinos de la entrega diaria ------------------------------------------
+# Un bot NO puede escribirle primero a nadie: la persona tiene que haberle mandado algo antes. Por
+# eso los chats se van anotando solos cada vez que alguien escribe, y /destinos solo puede ofrecer
+# los que ya existen. A un permitido que nunca escribió, /destinos le muestra que falta su /start.
+
+def ver_chat(conn: sqlite3.Connection, chat_id: str, tipo: str = "", nombre: str = "",
+             user_id: str = "") -> None:
+    """Anota que este chat existe y que el bot puede escribirle. No toca `activo`."""
+    if not chat_id:
+        return
+    conn.execute(
+        """INSERT INTO chats (chat_id, tipo, nombre, user_id, activo, visto)
+           VALUES (?, ?, ?, ?, 0, datetime('now'))
+           ON CONFLICT(chat_id) DO UPDATE SET
+               tipo = COALESCE(NULLIF(excluded.tipo, ''), chats.tipo),
+               nombre = COALESCE(NULLIF(excluded.nombre, ''), chats.nombre),
+               user_id = COALESCE(NULLIF(excluded.user_id, ''), chats.user_id),
+               visto = excluded.visto""",
+        (str(chat_id), tipo, nombre, str(user_id)),
+    )
+    conn.commit()
+
+
+def chats_conocidos(conn: sqlite3.Connection) -> list[dict]:
+    filas = conn.execute(
+        "SELECT chat_id, tipo, nombre, user_id, activo FROM chats ORDER BY tipo, nombre").fetchall()
+    return [{"chat_id": f[0], "tipo": f[1], "nombre": f[2], "user_id": f[3], "activo": bool(f[4])}
+            for f in filas]
+
+
+def destinos(conn: sqlite3.Connection) -> list[str]:
+    """A dónde va la entrega de las 05:00. Vacío = a ninguno (lo dice el aviso de la corrida)."""
+    return [f[0] for f in conn.execute("SELECT chat_id FROM chats WHERE activo = 1 ORDER BY tipo")]
+
+
+def marcar_destino(conn: sqlite3.Connection, chat_id: str, activo: bool) -> None:
+    conn.execute("UPDATE chats SET activo = ? WHERE chat_id = ?", (1 if activo else 0, str(chat_id)))
+    conn.commit()
+
+
+def alternar_destino(conn: sqlite3.Connection, chat_id: str) -> bool:
+    """Prende o apaga. Devuelve cómo quedó."""
+    fila = conn.execute("SELECT activo FROM chats WHERE chat_id = ?", (str(chat_id),)).fetchone()
+    nuevo = not (fila and fila[0])
+    marcar_destino(conn, chat_id, nuevo)
+    return nuevo

@@ -134,8 +134,9 @@ def test_ya_usa_el_mismo_turno_que_buscar(conn, monkeypatch):
     cola, tg = [], FakeTG()
     corridas = []
 
-    def falso_diario(args, settings, atender=True):
+    def falso_diario(args, settings, atender=True, destinos=None):
         assert atender is False, "desde /ya no se atiende Telegram: le robaría los updates al modo escucha"
+        assert destinos == ["1"], "lo pidió por este chat: la entrega va acá, no a los destinos"
         corridas.append("diario")
         return 0
 
@@ -161,7 +162,8 @@ def test_ya_toma_el_turno_y_lo_suelta(conn, monkeypatch):
     cola, tg = [], FakeTG()
     vistos = []
     monkeypatch.setattr(m, "_diario",
-                        lambda a, s, atender=True: vistos.append(db.hay_trabajo_pesado(conn)) or 0)
+                        lambda a, s, atender=True, destinos=None:
+                        vistos.append(db.hay_trabajo_pesado(conn)) or 0)
     monkeypatch.setattr(m, "_cuantos_entregados", lambda conn_: 0)
 
     m._despachar(conn, tg, {"comando": "/ya", "args": [], "chat_id": "1", "usuario": "",
@@ -177,8 +179,8 @@ def test_ayuda_lista_todos_los_comandos_con_ejemplo():
         assert uso in texto and que in texto
         assert f"<code>{ejemplo}</code>" in texto
     assert {c[0].split()[0] for c in m.COMANDOS} == {
-        "/ya", "/buscar", "/streamers", "/agregar", "/quitar", "/aca", "/reclamo",
-        "/ayuda"}
+        "/ya", "/buscar", "/streamers", "/agregar", "/quitar", "/destinos", "/aca",
+        "/reclamo", "/ayuda"}
 
 
 # ---- votos 👍/👎 ----------------------------------------------------------------
@@ -420,22 +422,43 @@ def test_agregar_y_quitar_van_a_la_db_y_no_al_yaml(conn, monkeypatch, tmp_path):
     assert "Uso:" in m._quitar(conn, [], "7")
 
 
-def test_aca_fija_el_chat_de_entrega(conn):
+def test_aca_suma_este_chat_a_los_destinos(conn):
     """El id de un grupo no se puede poner en el .env antes de tiempo: recién se sabe estando
-    adentro. Por eso /aca lo anota en la DB, que gana sobre TELEGRAM_CHAT_ID."""
-    from clips_bot.telegram import resolver_chat_id
+    adentro. /aca lo suma desde ahí, y se pueden tener varios destinos prendidos a la vez."""
+    db.ver_chat(conn, "-1001234567890", "supergroup", "rots clips")
+    db.ver_chat(conn, "8668060171", "private", "Santi", "8668060171")
+    assert db.destinos(conn) == []
 
-    assert db.chat_entrega(conn) is None
     r = m._aca(conn, "-1001234567890", [])
-    assert "-1001234567890" in r and "grupo" in r
-    assert db.chat_entrega(conn) == "-1001234567890"
-    # la DB manda sobre el .env
-    assert resolver_chat_id(None, "8668060171", db.chat_entrega(conn)) == "-1001234567890"
+    assert "Sumado" in r and db.destinos(conn) == ["-1001234567890"]
 
-    # y se puede volver atrás
-    m._aca(conn, "-1001234567890", ["no"])
-    assert db.chat_entrega(conn) is None
-    assert resolver_chat_id(None, "8668060171", db.chat_entrega(conn)) == "8668060171"
+    r = m._aca(conn, "8668060171", [])           # se suma sin sacar el anterior
+    assert "rots clips" in r                      # y avisa a quién más le llega
+    assert sorted(db.destinos(conn)) == ["-1001234567890", "8668060171"]
 
-    # un chat privado no dice "grupo"
-    assert "grupo" not in m._aca(conn, "8668060171", [])
+    m._aca(conn, "8668060171", ["no"])            # se saca de a uno
+    assert db.destinos(conn) == ["-1001234567890"]
+
+
+def test_destinos_avisa_de_quien_falta_el_start(conn, monkeypatch):
+    """Telegram NO deja que un bot le escriba primero a nadie: si el permitido nunca mandó /start,
+    no hay chat privado al que mandarle y el destino fallaría callado."""
+    monkeypatch.setenv("TELEGRAM_ALLOWED_USERS", "7,55")
+    db.ver_chat(conn, "7", "private", "Santi", "7")
+    assert [f["user_id"] for f in m._faltan_start(conn)] == ["55"]
+    db.ver_chat(conn, "55", "private", "Tommy", "55")
+    assert m._faltan_start(conn) == []
+
+
+def test_el_teclado_de_destinos_marca_lo_prendido(conn):
+    from clips_bot.menu import teclado_destinos
+
+    db.ver_chat(conn, "-100", "supergroup", "rots clips")
+    db.ver_chat(conn, "7", "private", "Santi", "7")
+    db.marcar_destino(conn, "7", True)
+    t = teclado_destinos(db.chats_conocidos(conn), [{"user_id": "55", "nombre": "Tommy"}])
+    textos = [b["text"] for f in t["inline_keyboard"] for b in f]
+    assert any(x.startswith("✅ 👤 Santi") for x in textos)
+    assert any(x.startswith("⬜ 👥 rots clips") for x in textos)
+    falta = [b for f in t["inline_keyboard"] for b in f if "falta su /start" in b["text"]][0]
+    assert falta["callback_data"] == "dst:x"      # no navega: no se le puede escribir

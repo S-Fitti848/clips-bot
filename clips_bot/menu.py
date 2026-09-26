@@ -91,10 +91,30 @@ def teclado_opciones(token_base: str, opciones: list) -> dict:
     return {"inline_keyboard": filas}
 
 
+def teclado_destinos(chats: list[dict], faltan: list[dict]) -> dict:
+    """Un botón por chat conocido, con ✅/⬜ según reciba o no la entrega de las 05:00.
+
+    `faltan` son los permitidos que nunca le escribieron al bot: se muestran apagados y sin acción,
+    porque Telegram NO deja que un bot escriba primero. Sin esto el destino fallaría callado.
+    """
+    filas = []
+    for i, c in enumerate(chats):
+        icono = "👥" if c["tipo"] in ("group", "supergroup") else "👤"
+        marca = "✅" if c["activo"] else "⬜"
+        nombre = c["nombre"] or c["chat_id"]
+        filas.append([{"text": f"{marca} {icono} {nombre}",
+                       "callback_data": _cb("dst", "t", i)}])
+    for f in faltan:
+        filas.append([{"text": f"🚫 👤 {f['nombre']} — falta su /start",
+                       "callback_data": _cb("dst", "x")}])
+    filas.append([{"text": "🔄 Actualizar", "callback_data": _cb("dst", "r")}])
+    return {"inline_keyboard": filas}
+
+
 def parse_callback(data: str) -> dict | None:
     """`st:s:2:37` → {'menu': 'st', 'accion': 's', 'args': [2, 37]}. None si no es de los nuestros."""
     partes = data.split(":")
-    if len(partes) < 2 or partes[0] not in ("st", "add"):
+    if len(partes) < 2 or partes[0] not in ("st", "add", "dst"):
         return None
     args = []
     for p in partes[2:]:

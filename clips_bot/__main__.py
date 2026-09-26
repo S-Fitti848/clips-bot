@@ -246,8 +246,12 @@ def cmd_seleccionar(args: argparse.Namespace) -> int:
 
 
 def ejecutar_seleccion(settings: Settings, gemini: GeminiClient | None, enviar: bool,
-                       n: int | None = None) -> int:
-    """Paso 8 + paso 10. Sin `enviar` muestra lo que mandaría y no toca Telegram ni la DB."""
+                       n: int | None = None, destinos: list[str] | None = None) -> int:
+    """Paso 8 + paso 10. Sin `enviar` muestra lo que mandaría y no toca Telegram ni la DB.
+
+    `destinos`: a qué chats entregar. None = la lista de /destinos (la corrida de las 05:00).
+    Un comando como /ya pasa el chat desde donde lo pidieron, que es donde hay que contestar.
+    """
     from .process import READY_DIR, guardar_meta
     from .seleccion import desempate_gemini, score, seleccionar
     from .telegram import mensaje_textos, resolver_chat_id
@@ -319,23 +323,27 @@ def ejecutar_seleccion(settings: Settings, gemini: GeminiClient | None, enviar: 
     tg = TelegramClient(env("TELEGRAM_BOT_TOKEN"))
     conn_chat = db.connect(DB_PATH)
     try:
-        chat_id = resolver_chat_id(tg, env("TELEGRAM_CHAT_ID", requerido=False),
-                                   db.chat_entrega(conn_chat))
+        chats = list(destinos) if destinos is not None else db.destinos(conn_chat)
     finally:
         conn_chat.close()
+    if not chats:
+        print("No hay destinos prendidos: mandá /destinos y prendé al menos uno.", file=sys.stderr)
+        return 2
     conn = db.connect(DB_PATH)
     try:
         for i, o in enumerate(elegidos, 1):
             horario = horarios[i - 1] if i <= len(horarios) else None
-            enviar_clip(tg, chat_id, conn, o.clip_id, o.meta, i, horario)
+            enviar_clip(tg, chats, conn, o.clip_id, o.meta, i, horario)
             print(f"  enviado #{i}: {o.clip_id}")
     finally:
         conn.close()
     return 0
 
 
-def enviar_clip(tg: TelegramClient, chat_id: str, conn, clip_id: str, meta: dict, numero: int,
+def enviar_clip(tg: TelegramClient, chat_id, conn, clip_id: str, meta: dict, numero: int,
                 horario: str | None) -> None:
+    """`chat_id` puede ser uno o una lista. El mp4 se sube UNA vez: a partir del segundo destino se
+    manda el file_id que devolvió Telegram, que en la Pi ahorra varios minutos de subida."""
     """El mp4 + el mensaje con los textos, y el clip queda `entregado`. §3 paso 10.
 
     El mensaje lleva los botones 👍/👎: con dos semanas de votos, el corte de calidad se elige con
@@ -344,28 +352,43 @@ def enviar_clip(tg: TelegramClient, chat_id: str, conn, clip_id: str, meta: dict
     from .process import READY_DIR, guardar_meta
     from .telegram import mensaje_textos, teclado_voto
 
+    destinos = [chat_id] if isinstance(chat_id, (str, int)) else list(chat_id)
+    if not destinos:
+        log.warning("No hay a quién entregarle %s", clip_id)
+        return
     video = Path(meta["salida"])
     info = probe(video)  # dimensiones reales del archivo: sin esto Telegram lo muestra angosto
     thumb = miniatura(video, video.with_suffix(".thumb.jpg"))
     marca = f" · RELLENO (puntaje {meta.get('puntaje', 0)})" if meta.get("relleno") else ""
-    tg.send_video(chat_id, video,
-                  f"#{numero} · {meta['streamer']} · {meta['textos']['titulo']}{marca}",
-                  width=info.ancho, height=info.alto, duration=round(info.duracion), thumbnail=thumb)
     cuerpo = mensaje_textos(numero, meta["streamer"], clip_id, horario, meta["textos"])
     if meta.get("relleno"):
         cuerpo = (f"⚠️ <b>RELLENO (puntaje {meta.get('puntaje', 0)} de 10)</b> — no llegó al corte "
                   f"de calidad; entró porque faltaban clips. Mirá si vale la pena.\n\n" + cuerpo)
-    tg.send_message(chat_id, cuerpo, teclado=teclado_voto(clip_id))
+    caption = f"#{numero} · {meta['streamer']} · {meta['textos']['titulo']}{marca}"
+    file_id = None
+    for destino in destinos:
+        try:
+            enviado = tg.send_video(destino, video, caption, width=info.ancho, height=info.alto,
+                                    duration=round(info.duracion), thumbnail=thumb, file_id=file_id)
+            file_id = file_id or (enviado or {}).get("video", {}).get("file_id")
+            tg.send_message(destino, cuerpo, teclado=teclado_voto(clip_id))
+        except TelegramError as e:
+            # Que un destino falle (bloqueado, sacaron al bot del grupo) no puede tumbar el resto.
+            log.warning("No pude entregar %s en %s: %s", clip_id, destino, e)
     if not meta.get("subtitulos_quemados", True):  # el .srt va como pista de subtítulos en YouTube
-        tg.send_document(chat_id, READY_DIR / f"{clip_id}.srt",
-                         "Subtítulos para cargar como pista en YouTube")
+        for destino in destinos:
+            try:
+                tg.send_document(destino, READY_DIR / f"{clip_id}.srt",
+                                 "Subtítulos para cargar como pista en YouTube")
+            except TelegramError as e:
+                log.warning("No pude mandar el .srt a %s: %s", destino, e)
     meta["entregado"] = {"fecha": datetime.now(timezone.utc).isoformat(), "orden": numero,
                          "horario": horario}
     guardar_meta(READY_DIR / f"{clip_id}.json", meta)
     db.set_estado(conn, clip_id, "entregado")
 
 
-def _avisar_cero(settings: Settings, detalle: str) -> None:
+def _avisar_cero(settings: Settings, detalle: str, destinos: list[str] | None = None) -> None:
     """Un día sin entrega tiene que avisar. Si no, no se distingue de un bot colgado."""
     from .telegram import resolver_chat_id
 
@@ -387,11 +410,11 @@ def _avisar_cero(settings: Settings, detalle: str) -> None:
         tg = TelegramClient(env("TELEGRAM_BOT_TOKEN"))
         c2 = db.connect(DB_PATH)
         try:
-            destino = resolver_chat_id(tg, env("TELEGRAM_CHAT_ID", requerido=False),
-                                       db.chat_entrega(c2))
+            adonde = db.destinos(c2)
         finally:
             c2.close()
-        tg.send_message(destino, cuerpo)
+        for d in adonde:
+            tg.send_message(d, cuerpo)
     except (TelegramError, ConfigError) as e:
         log.warning("No pude avisar que hoy no salió nada: %s", e)
 
@@ -430,7 +453,8 @@ def cmd_diario(args: argparse.Namespace) -> int:
             conn.close()
 
 
-def _diario(args: argparse.Namespace, settings: Settings, atender: bool = True) -> int:
+def _diario(args: argparse.Namespace, settings: Settings, atender: bool = True,
+            destinos: list[str] | None = None) -> int:
     from .process import procesar
 
     streamers = _streamers()
@@ -490,7 +514,7 @@ def _diario(args: argparse.Namespace, settings: Settings, atender: bool = True) 
             print(f"  (grupo {grupo}: {ok}/{objetivo} del cupo; lo que falte lo cubre el catálogo)")
 
     print("\n=== Pasos 8 y 10: elegir y entregar")
-    return ejecutar_seleccion(settings, gemini, enviar=not args.simular)
+    return ejecutar_seleccion(settings, gemini, enviar=not args.simular, destinos=destinos)
 
 
 def procesar_multipov_del_dia(settings: Settings, streamers: list, res: Resultado,
@@ -917,7 +941,8 @@ def _ya(conn, tg: TelegramClient, chat_id: str, settings: Settings):
         tg.send_message(chat_id, "Arranco la mezcla diaria. Son varios clips: tarda "
                                  "entre 15 y 30 minutos en la Pi.")
         args = argparse.Namespace(simular=False, max_procesar=None, incluir_sin_permiso=False)
-        codigo = _diario(args, settings, atender=False)
+        # Lo pediste vos y por acá: la entrega va a ESTE chat, no a la lista de las 05:00.
+        codigo = _diario(args, settings, atender=False, destinos=[chat_id])
         nuevos = _cuantos_entregados(conn) - antes
         if nuevos:
             return f"Mezcla diaria lista: <b>{nuevos}</b> entregados."
@@ -991,6 +1016,11 @@ def escuchar_telegram(settings: Settings, timeout_poll: int = 50) -> int:
                     log.warning("Botón de %s: no autorizado", cb["user_id"])
                     continue
                 chat_ultimo = cb["chat_id"]
+                db.ver_chat(conn, cb["chat_id"], cb.get("chat_tipo", ""),
+                            cb.get("chat_nombre", ""), cb["user_id"])
+                if cb["data"].startswith("dst:"):
+                    _seguro(tg, cb["chat_id"], cb["data"], _destinos_callback, conn, tg, cb)
+                    continue
                 fn = _menu_callback if cb["data"].startswith("st:") else _alta_callback
                 extra = (settings, cola) if fn is _menu_callback else (settings,)
                 _seguro(tg, cb["chat_id"], cb["data"], fn, conn, tg, cb, *extra)
@@ -1006,6 +1036,10 @@ def escuchar_telegram(settings: Settings, timeout_poll: int = 50) -> int:
                         conn, tg, t["chat_id"], [login] + t["texto"].split(), settings, cola)
             for c in comandos(updates):
                 chat_ultimo = c["chat_id"]
+                # Se anota SIEMPRE, aunque no esté autorizado: así /destinos sabe qué chats existen
+                # y, sobre todo, a quién se le puede escribir por privado.
+                db.ver_chat(conn, c["chat_id"], c.get("chat_tipo", ""), c.get("chat_nombre", ""),
+                            c["user_id"] if c.get("chat_tipo") == "private" else "")
                 if c["user_id"] not in permitidos:
                     log.warning("%s de %s (id %s) en el chat %s: NO AUTORIZADO. Para darle acceso, "
                                 "sumá ese id a TELEGRAM_ALLOWED_USERS en el .env",
@@ -1040,6 +1074,8 @@ def _despachar(conn, tg: TelegramClient, c: dict, settings: Settings, cola: list
         elif r:
             tg.send_message(c["chat_id"], r)
         return
+    if c["comando"] == "/destinos":
+        return _seguro(tg, c["chat_id"], c["comando"], _menu_destinos, conn, tg, c["chat_id"])             and None
     if c["comando"] == "/aca":
         respuesta = _seguro(tg, c["chat_id"], c["comando"], _aca, conn, c["chat_id"], c["args"])
         if respuesta is not FALLO and respuesta:
@@ -1198,9 +1234,13 @@ COMANDOS = [
     ("/quitar &lt;streamer&gt;",
      "lo saco de las corridas. Queda anotado en la DB, no se toca streamers.yaml.",
      "/quitar coscu"),
+    ("/destinos",
+     "a quiénes les llegan los Shorts de las 05:00, con botones para prender y apagar cada uno. "
+     "Lo que pidas por comando se contesta siempre donde lo pediste, esté o no en esta lista.",
+     "/destinos"),
     ("/aca",
-     "de acá en adelante te entrego los Shorts en ESTE chat. Mandalo dentro del grupo para que "
-     "vayan ahí. Con <code>/aca no</code> vuelve al chat del .env.",
+     "suma ESTE chat a los destinos de las 05:00. Mandalo dentro del grupo para que lleguen ahí. "
+     "Con <code>/aca no</code> lo saca.",
      "/aca"),
     ("/ayuda",
      "esto.",
@@ -1455,6 +1495,74 @@ def _quitar(conn, args: list, user_id: str) -> str:
             f"DB manda, así que no entra en ninguna corrida.")
 
 
+
+# ---- a quién se le entrega ------------------------------------------------------
+# Regla (2026-09-26): lo que se PIDE con un comando se contesta en el chat desde donde se pidió; la
+# corrida de las 05:00 va a la lista de destinos. Son cosas distintas y antes eran la misma.
+
+
+def _nombre_de_usuario(conn, user_id: str) -> str:
+    fila = conn.execute(
+        "SELECT nombre FROM chats WHERE user_id = ? AND tipo = 'private' LIMIT 1",
+        (str(user_id),)).fetchone()
+    return fila[0] if fila and fila[0] else f"id {user_id}"
+
+
+def _faltan_start(conn) -> list[dict]:
+    """Permitidos que nunca le escribieron al bot: no se les puede mandar nada por privado."""
+    from .telegram import usuarios_permitidos
+
+    permitidos = usuarios_permitidos(env("TELEGRAM_ALLOWED_USERS", requerido=False))
+    con_privado = {c["user_id"] for c in db.chats_conocidos(conn) if c["tipo"] == "private"}
+    return [{"user_id": u, "nombre": _nombre_de_usuario(conn, u)}
+            for u in sorted(permitidos - con_privado)]
+
+
+def _texto_destinos(conn) -> str:
+    activos = db.destinos(conn)
+    if not activos:
+        cuerpo = "⚠️ <b>Ningún destino prendido</b>: la corrida de las 05:00 no le va a mandar nada a nadie."
+    else:
+        nombres = [c["nombre"] or c["chat_id"] for c in db.chats_conocidos(conn) if c["activo"]]
+        cuerpo = f"Los Shorts de las 05:00 van a: <b>{html.escape(', '.join(nombres))}</b>."
+    return (f"<b>Destinos de la entrega diaria</b>\n{cuerpo}\n\n"
+            f"Tocá para prender o apagar. Lo que pidas con un comando se contesta siempre en el "
+            f"chat desde donde lo pediste, esté o no en esta lista.")
+
+
+def _menu_destinos(conn, tg: TelegramClient, chat_id: str, message_id: int | None = None) -> None:
+    from .menu import teclado_destinos
+
+    chats = db.chats_conocidos(conn)
+    teclado = teclado_destinos(chats, _faltan_start(conn))
+    if message_id:
+        tg.edit_message(chat_id, message_id, _texto_destinos(conn), teclado)
+    else:
+        tg.send_message(chat_id, _texto_destinos(conn), teclado=teclado)
+
+
+def _destinos_callback(conn, tg: TelegramClient, cb: dict) -> None:
+    from .menu import parse_callback
+
+    d = parse_callback(cb["data"])
+    if not d or d["menu"] != "dst":
+        return
+    if d["accion"] == "x":
+        return tg.answer_callback(
+            cb["callback_id"],
+            "Tiene que mandarle /start al bot primero: Telegram no deja que un bot escriba primero.")
+    if d["accion"] == "t":
+        chats = db.chats_conocidos(conn)
+        i = int(d["args"][0]) if d["args"] else -1
+        if 0 <= i < len(chats):
+            ahora = db.alternar_destino(conn, chats[i]["chat_id"])
+            tg.answer_callback(cb["callback_id"],
+                               ("Prendido: " if ahora else "Apagado: ") + (chats[i]["nombre"] or ""))
+    else:
+        tg.answer_callback(cb["callback_id"])
+    _menu_destinos(conn, tg, cb["chat_id"], cb["message_id"])
+
+
 def _aca(conn, chat_id: str, args: list[str]) -> str:
     """/aca: de acá en adelante los Shorts se entregan en ESTE chat.
 
@@ -1462,17 +1570,16 @@ def _aca(conn, chat_id: str, args: list[str]) -> str:
     estando adentro del grupo. Se guarda en la DB, así no hay que editar archivos en la Pi ni
     reiniciar nada.
     """
-    if args and args[0].lower() in ("no", "reset", "volver"):
-        db.borrar_chat_entrega(conn)
-        return ("Listo, vuelvo al chat de <code>TELEGRAM_CHAT_ID</code> "
-                f"(<code>{html.escape(env('TELEGRAM_CHAT_ID', requerido=False) or '?')}</code>).")
-    anterior = db.chat_entrega(conn) or env("TELEGRAM_CHAT_ID", requerido=False) or "?"
-    db.set_chat_entrega(conn, chat_id)
-    grupo = str(chat_id).startswith("-")
-    return (f"✅ Listo. Los Shorts diarios se entregan <b>acá</b> "
-            f"(<code>{html.escape(str(chat_id))}</code>{', un grupo' if grupo else ''})."
-            f"\nAntes iban a <code>{html.escape(str(anterior))}</code>."
-            f"\nPara volver atrás: <code>/aca no</code>")
+    if args and args[0].lower() in ("no", "sacar", "quitar"):
+        db.marcar_destino(conn, chat_id, False)
+        return ("Listo, este chat ya NO recibe la entrega de las 05:00."
+                f"\nLo que pidas por comando se sigue contestando acá.")
+    db.marcar_destino(conn, chat_id, True)
+    otros = [c["nombre"] or c["chat_id"] for c in db.chats_conocidos(conn)
+             if c["activo"] and c["chat_id"] != str(chat_id)]
+    extra = f"\nTambién le llega a: {html.escape(', '.join(otros))}." if otros else ""
+    return (f"✅ Sumado. Los Shorts de las 05:00 se entregan <b>acá</b> también.{extra}"
+            f"\nPara sacarlo: <code>/aca no</code> · Para ver todo: <code>/destinos</code>")
 
 
 def _reclamo(conn, args: list[str]) -> str:

@@ -256,6 +256,20 @@ pantalla:
     - departamento
     - billing
 
+# Voz del modo /narrar. Piper, local y gratis. Medido en la Pi el 2026-09-26 con el mismo texto:
+#   gemini-3.8-flash-tts   6,5 s de generación, 0,63x tiempo real, GASTA una request de la cuota
+#   piper es_AR-daniela    16,3 s,  2,13x tiempo real, gratis e ilimitado
+#   piper es_MX-claude      3,3 s,  0,32x
+#   piper es_ES-davefx      2,9 s,  0,34x
+# Decide la cuota, no la calidad: el free tier de Gemini son ~20 requests/día y ya se agota todos
+# los días solo con los textos (se ve en el log, cae al fallback constantemente). Si el TTS comiera
+# de ahí, /narrar fallaría justo los días que se use. La voz argentina es la más lenta de Piper
+# (2,13x: un guion de 60 s son ~2 min de síntesis) pero es la que suena bien para el público.
+voz:
+  motor: piper
+  modelo: voces/es_AR-daniela-high.onnx
+  volumen_original: 0.15
+
 # §3 paso 7: textos con Gemini.
 textos:
   # El free tier de los Flash está en ~20 requests/día (reseteo a medianoche del Pacífico). Con 3

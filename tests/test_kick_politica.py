@@ -231,9 +231,11 @@ def test_comandos_ignora_lo_que_no_es_comando():
                                                                  "username": "santi"},
                                      "text": "/reclamo@Clipsito_bot clip_1 strike"}},
     ]
-    assert comandos(updates) == [{"update_id": 2, "chat_id": "9", "user_id": "77",
-                                  "usuario": "Santi (@santi)", "comando": "/reclamo",
-                                  "args": ["clip_1", "strike"]}]
+    c = comandos(updates)[0]
+    assert {k: c[k] for k in ("update_id", "chat_id", "user_id", "usuario", "comando", "args")} == {
+        "update_id": 2, "chat_id": "9", "user_id": "77", "usuario": "Santi (@santi)",
+        "comando": "/reclamo", "args": ["clip_1", "strike"]}
+    assert "chat_tipo" in c and "chat_nombre" in c   # para /destinos
 
 
 def test_usuarios_permitidos_y_quien_escribio():
