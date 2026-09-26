@@ -114,7 +114,7 @@ def teclado_destinos(chats: list[dict], faltan: list[dict]) -> dict:
 def parse_callback(data: str) -> dict | None:
     """`st:s:2:37` → {'menu': 'st', 'accion': 's', 'args': [2, 37]}. None si no es de los nuestros."""
     partes = data.split(":")
-    if len(partes) < 2 or partes[0] not in ("st", "add", "dst"):
+    if len(partes) < 2 or partes[0] not in ("st", "add", "dst", "ay"):
         return None
     args = []
     for p in partes[2:]:

@@ -796,7 +796,8 @@ def atender_telegram(settings: Settings, silencioso: bool = False) -> int:
                                  "Probá de nuevo cuando termine, o dejá andando "
                                  "<code>clips-bot-telegram</code> para que quede en cola.")
             elif c["comando"] in ("/ayuda", "/start", "/help"):
-                respuesta = _ayuda()
+                tg.send_message(c["chat_id"], _ayuda(), teclado=teclado_ayuda())
+                respuesta = None
             else:
                 respuesta = f"No conozco {c['comando']}. Probá /ayuda."
             if respuesta:
@@ -1018,6 +1019,9 @@ def escuchar_telegram(settings: Settings, timeout_poll: int = 50) -> int:
                 chat_ultimo = cb["chat_id"]
                 db.ver_chat(conn, cb["chat_id"], cb.get("chat_tipo", ""),
                             cb.get("chat_nombre", ""), cb["user_id"])
+                if cb["data"].startswith("ay:"):
+                    _seguro(tg, cb["chat_id"], cb["data"], _ayuda_callback, tg, cb)
+                    continue
                 if cb["data"].startswith("dst:"):
                     _seguro(tg, cb["chat_id"], cb["data"], _destinos_callback, conn, tg, cb)
                     continue
@@ -1091,7 +1095,8 @@ def _despachar(conn, tg: TelegramClient, c: dict, settings: Settings, cola: list
     elif c["comando"] == "/reclamo":
         respuesta = _seguro(tg, c["chat_id"], c["comando"], _reclamo, conn, c["args"])
     elif c["comando"] in ("/ayuda", "/start", "/help"):
-        respuesta = _ayuda()
+        tg.send_message(c["chat_id"], _ayuda(), teclado=teclado_ayuda())
+        return
     else:
         respuesta = f"No conozco {c['comando']}. Probá /ayuda."
     if respuesta is not FALLO and respuesta:
@@ -1208,54 +1213,95 @@ def _drenar_cola(conn, tg: TelegramClient, cola: list[dict], settings: Settings)
             tg.send_message(pedido["chat_id"], r)
 
 
-# Un comando por fila: (uso, qué hace, ejemplo). El ejemplo va aparte para que se pueda tocar y
-# copiar de una en Telegram.
-COMANDOS = [
-    ("/ya",
-     "corro la mezcla diaria ahora mismo, sin esperar a las 05:00. Tarda 15-30 min en la Pi.",
-     "/ya"),
-    ("/buscar &lt;streamer[,streamer]&gt; [palabras] [días]",
-     f"busco en sus clips de los últimos días (default 7, tope 90) los que tengan esas palabras "
-     f"en el título del clip o del stream, proceso hasta {TOPE_BUSCAR} y te los mando. Con varios "
-     "streamers separados por coma, el tope se reparte entre ellos.",
-     "/buscar spreen,davooxeneize gol 3"),
-    ("/reclamo &lt;id del clip&gt;",
-     "marcá que ese video recibió un reclamo o strike: excluyo al streamer de las próximas "
-     "corridas. El id va en cada mensaje de entrega.",
-     "/reclamo clip_01M30DMET68MDS9QBMW0H7DZ5M"),
-    ("/streamers",
-     "la lista por grupo, con botones para navegar y buscar sin escribir nada. Los excluidos "
-     "salen con 🚫 y no se pueden tocar.",
-     "/streamers"),
-    ("/agregar &lt;streamer&gt; [grupo]",
-     "lo busco en Kick y en Twitch, te muestro qué encontré (seguidores y clips de la semana) y "
-     "lo sumo si me decís que sí. Grupo por default: argentinos. Entra con permiso de experimento.",
-     "/agregar coscu argentinos"),
-    ("/quitar &lt;streamer&gt;",
-     "lo saco de las corridas. Queda anotado en la DB, no se toca streamers.yaml.",
-     "/quitar coscu"),
-    ("/destinos",
-     "a quiénes les llegan los Shorts de las 05:00, con botones para prender y apagar cada uno. "
-     "Lo que pidas por comando se contesta siempre donde lo pediste, esté o no en esta lista.",
-     "/destinos"),
-    ("/aca",
-     "suma ESTE chat a los destinos de las 05:00. Mandalo dentro del grupo para que lleguen ahí. "
-     "Con <code>/aca no</code> lo saca.",
-     "/aca"),
-    ("/ayuda",
-     "esto.",
-     "/ayuda"),
+# Los comandos agrupados por para qué sirven. /ayuda arranca mostrando solo las secciones: con
+# once comandos, la lista entera en un mensaje es una pared de texto que nadie lee.
+SECCIONES = [
+    ("🎮 Clips de streamers", [
+        ("/streamers",
+         "la lista por grupo, con botones para navegar y buscar sin escribir nada. Los excluidos "
+         "salen con 🚫 y no se pueden tocar.",
+         "/streamers"),
+        ("/buscar &lt;streamer[,streamer]&gt; [palabras] [días]",
+         f"busco en sus clips de los últimos días (default 7, tope 90) los que tengan esas "
+         f"palabras en el título del clip o del stream, proceso hasta {TOPE_BUSCAR} y te los "
+         "mando. Con varios streamers separados por coma, el tope se reparte entre ellos.",
+         "/buscar spreen,davooxeneize gol 3"),
+        ("/ya",
+         "corro la mezcla diaria ahora mismo, sin esperar a las 05:00. Tarda 15-30 min en la Pi "
+         "y te la entrego en este chat.",
+         "/ya"),
+        ("/agregar &lt;streamer&gt; [grupo]",
+         "lo busco en Kick y en Twitch, te muestro qué encontré (seguidores y clips de la "
+         "semana) y lo sumo si me decís que sí. Entra con permiso de experimento.",
+         "/agregar coscu argentinos"),
+        ("/quitar &lt;streamer&gt;",
+         "lo saca de las corridas. Queda anotado en la DB, no se toca streamers.yaml.",
+         "/quitar coscu"),
+        ("/reclamo &lt;id del clip&gt;",
+         "marcá que ese video recibió un reclamo o strike: excluyo al streamer de las próximas "
+         "corridas. El id va en cada mensaje de entrega.",
+         "/reclamo clip_01M30DMET68MDS9QBMW0H7DZ5M"),
+    ]),
+    ("✂️ Editar videos", [
+        ("/editar",
+         "mandame un video (archivo de hasta 20 MB) o un link y te lo devuelvo en vertical, con "
+         "subtítulos, título, descripción y hashtags.",
+         "/editar https://www.youtube.com/watch?v=..."),
+        ("/narrar",
+         "lo mismo, pero además miro el video, escribo un guion y lo narro con voz argentina. El "
+         "guion te llega primero para aprobar o cambiar, porque puedo equivocarme en lo que veo.",
+         "/narrar https://www.instagram.com/reel/..."),
+    ]),
+    ("⚙️ Configuración", [
+        ("/destinos",
+         "a quiénes les llegan los Shorts de las 05:00, con botones para prender y apagar cada "
+         "uno. Lo que pidas por comando se contesta siempre donde lo pediste, esté o no acá.",
+         "/destinos"),
+        ("/aca",
+         "suma ESTE chat a los destinos de las 05:00. Mandalo dentro del grupo para que lleguen "
+         "ahí. Con <code>/aca no</code> lo saca.",
+         "/aca"),
+    ]),
 ]
+
+# Plano, para los tests y para buscar un comando por nombre.
+COMANDOS = [c for _, lista in SECCIONES for c in lista] + [("/ayuda", "esto.", "/ayuda")]
+
+
+def teclado_ayuda() -> dict:
+    return {"inline_keyboard": [
+        [{"text": nombre, "callback_data": f"ay:s:{i}"}]
+        for i, (nombre, _) in enumerate(SECCIONES)]}
 
 
 def _ayuda() -> str:
-    partes = ["<b>Comandos</b>"]
-    for uso, que, ejemplo in COMANDOS:
+    return ("<b>¿Qué necesitás?</b>\n\n"
+            "Elegí una sección. Todo lo que pidas se contesta en el chat desde donde lo pediste, y "
+            f"lo que procesa clips va de a uno: si hay algo pesado andando queda en cola (hasta "
+            f"{MAX_BUSQUEDAS}) y arranca solo al terminar.")
+
+
+def _ayuda_seccion(i: int) -> str:
+    nombre, comandos = SECCIONES[i]
+    partes = [f"<b>{nombre}</b>"]
+    for uso, que, ejemplo in comandos:
         partes.append(f"\n\n<b>{uso}</b>\n{que}\nEjemplo: <code>{ejemplo}</code>")
-    partes.append("\n\n/ya y /buscar procesan clips, así que van de a uno: si hay algo pesado "
-                  f"andando quedan en cola (hasta {MAX_BUSQUEDAS}) y arrancan solos al terminar.")
     return "".join(partes)
 
+
+def _ayuda_callback(tg: TelegramClient, cb: dict) -> None:
+    """Navega la ayuda editando el mismo mensaje, como /streamers y /destinos."""
+    from .menu import parse_callback
+
+    d = parse_callback(cb["data"])
+    if not d or d["menu"] != "ay":
+        return
+    tg.answer_callback(cb["callback_id"])
+    i = int(d["args"][0]) if (d["accion"] == "s" and d["args"]) else -1
+    if not 0 <= i < len(SECCIONES):
+        return tg.edit_message(cb["chat_id"], cb["message_id"], _ayuda(), teclado_ayuda())
+    volver = {"inline_keyboard": [[{"text": "⬅️ Volver", "callback_data": "ay:r"}]]}
+    tg.edit_message(cb["chat_id"], cb["message_id"], _ayuda_seccion(i), volver)
 
 
 # ---- streamers: listar, agregar y quitar desde Telegram --------------------------

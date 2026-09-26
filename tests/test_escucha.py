@@ -13,9 +13,11 @@ from clips_bot.config import load_settings
 class FakeTG:
     def __init__(self):
         self.mensajes = []
+        self.teclados = []
 
-    def send_message(self, chat_id, texto):
+    def send_message(self, chat_id, texto, teclado=None):
         self.mensajes.append(texto)
+        self.teclados.append(teclado)
 
 
 @pytest.fixture
@@ -122,7 +124,7 @@ def test_los_comandos_livianos_no_pasan_por_la_cola(conn, monkeypatch):
     m._despachar(conn, tg, {"comando": "/ayuda", "args": [], "chat_id": "1",
                             "usuario": "", "user_id": "7"}, load_settings(), cola)
     assert tg.mensajes[0] == "reclamo anotado"
-    assert "/buscar" in tg.mensajes[1]
+    assert "¿Qué necesitás?" in tg.mensajes[1]   # la ayuda arranca por secciones
     assert cola == []
 
 
@@ -173,14 +175,48 @@ def test_ya_toma_el_turno_y_lo_suelta(conn, monkeypatch):
     assert "no salió ninguno" in tg.mensajes[-1]
 
 
-def test_ayuda_lista_todos_los_comandos_con_ejemplo():
-    texto = m._ayuda()
-    for uso, que, ejemplo in m.COMANDOS:
-        assert uso in texto and que in texto
-        assert f"<code>{ejemplo}</code>" in texto
-    assert {c[0].split()[0] for c in m.COMANDOS} == {
-        "/ya", "/buscar", "/streamers", "/agregar", "/quitar", "/destinos", "/aca",
-        "/reclamo", "/ayuda"}
+def test_ayuda_por_secciones_con_un_ejemplo_por_comando():
+    """Con once comandos, la lista entera en un mensaje es una pared que nadie lee."""
+    portada = m._ayuda()
+    assert "¿Qué necesitás?" in portada
+    assert "/buscar" not in portada              # la portada NO lista comandos
+
+    vistos = []
+    for i, (nombre, comandos) in enumerate(m.SECCIONES):
+        texto = m._ayuda_seccion(i)
+        assert nombre in texto
+        for uso, que, ejemplo in comandos:
+            assert uso in texto and que in texto
+            assert f"<code>{ejemplo}</code>" in texto
+            vistos.append(uso.split()[0])
+    assert set(vistos) == {"/streamers", "/buscar", "/ya", "/agregar", "/quitar", "/reclamo",
+                           "/editar", "/narrar", "/destinos", "/aca"}
+    botones = [b for f in m.teclado_ayuda()["inline_keyboard"] for b in f]
+    assert [b["callback_data"] for b in botones] == [f"ay:s:{i}" for i in range(len(m.SECCIONES))]
+
+
+def test_la_ayuda_navega_editando_el_mismo_mensaje():
+    class TG:
+        def __init__(self):
+            self.editados = []
+
+        def answer_callback(self, cid, texto=""):
+            pass
+
+        def edit_message(self, chat, mid, texto, teclado=None):
+            self.editados.append((texto, teclado))
+
+    tg = TG()
+    cb = {"data": "ay:s:1", "chat_id": "1", "message_id": 5, "callback_id": "q"}
+    m._ayuda_callback(tg, cb)
+    texto, teclado = tg.editados[-1]
+    assert "Editar videos" in texto and "/narrar" in texto
+    assert teclado["inline_keyboard"][0][0]["callback_data"] == "ay:r"
+
+    m._ayuda_callback(tg, {**cb, "data": "ay:r"})
+    assert "¿Qué necesitás?" in tg.editados[-1][0]
+    m._ayuda_callback(tg, {**cb, "data": "ay:s:99"})   # sección inexistente: vuelve a la portada
+    assert "¿Qué necesitás?" in tg.editados[-1][0]
 
 
 # ---- votos 👍/👎 ----------------------------------------------------------------
