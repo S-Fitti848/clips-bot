@@ -149,7 +149,23 @@ def nombres_sin_respaldo(titulo: str, contexto: str) -> list[str]:
 
 
 def credito(canal: str, login: str) -> str:
+    if not login:
+        # Un video propio (/editar, /narrar) no tiene streamer: antes salía "twitch.tv/" pelado.
+        # Queda un hueco a la vista para completar, o `cc: <link>` lo reemplaza por el crédito CC.
+        return f"Video original: {canal or '(completar autor)'} – (completar link)"
     return f"Clip de {canal} — twitch.tv/{login}"
+
+
+def credito_cc(canal: str, link: str) -> str:
+    """Crédito de un video Creative Commons (formato pedido el 2026-09-27)."""
+    return f"Video original: {canal or '(completar canal)'} – {link}, licencia CC BY"
+
+
+def con_credito(textos: dict, nuevo: str) -> dict:
+    """Cambia el crédito de unos textos ya hechos, también en la última línea de la descripción."""
+    desc, viejo = textos["descripcion"], textos.get("credito") or ""
+    cuerpo = desc[: -len(viejo)].rstrip() if viejo and desc.endswith(viejo) else desc.rstrip()
+    return {**textos, "credito": nuevo, "descripcion": f"{cuerpo}\n\n{nuevo}"}
 
 
 def validar(data: object, cfg: Textos, contexto: str = "") -> list[str]:

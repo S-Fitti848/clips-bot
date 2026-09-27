@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-09-27 | **Versión:** v0.23.0 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 + escucha de Telegram 24/7)
+**Snapshot:** 2026-09-27 | **Versión:** v0.24.0 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 + escucha de Telegram 24/7)
 
 > **SI ESTÁS EMPEZANDO UNA SESIÓN NUEVA, LEÉ §10.** Ahí está qué está hecho, qué quedó a medias,
 > qué falta, y las trampas que ya nos mordieron.
@@ -398,13 +398,14 @@ clips_bot/db.py          SQLite data/clips.db: clips, posts, catalogo_cursor, st
 clips_bot/registro.py    altas/bajas en la DB + `combinar` con el YAML + `resolver` un alta
 clips_bot/menu.py        teclados de /streamers y /agregar (callback_data de 64 bytes como tope)
 clips_bot/narrar.py      modo /narrar: guion con Gemini viendo frames, TTS con Piper, mezcla y
-                         subtítulos sacados de LA VOZ (no del audio original)
+                         subtítulos sacados de LA VOZ (no del audio original). Videos de más de
+                         90 s: resumen por escenas (ver abajo)
 clips_bot/__main__.py    CLI + todo el bot de Telegram (comandos, menús, cola, turnos)
 deploy/sudoers-clips-bot permite a santi reiniciar SOLO las unidades del clips-bot sin contraseña
 voces/                   modelos de Piper (NO están en git: ~110 MB, se bajan en la Pi)
 clips_bot/envivo.py      modo en vivo (§3b): quién está al aire, momentos por creadores distintos,
                          alertas en la DB (no repetir, tope, vencer) y el resumen de tiempos
-tests/                   217 tests sin red ni video
+tests/                   243 tests sin red ni video
 ```
 
 Comandos:
@@ -588,6 +589,21 @@ Problemas abiertos:
 
 ## 9. CHANGELOG
 
+- v0.24.0 (2026-09-27) — `/narrar` con videos de más de 90 s: cortes de escena con ffmpeg
+  (`select=gt(scene,0.3)`, a 320 px), escenas normalizadas a 12-40 (se funden las cortas, se parte
+  un plano secuencia), un frame por escena a Gemini que elige 8-10 pasos en orden (validado: rango,
+  orden, sin repetir; un reintento con los errores), 4-5 s por paso centrados en la escena (8 → 40 s,
+  10 → 48 s), hoja de miniaturas numeradas + una línea por paso con ✅/✏️, y recién con ✅ se corta
+  (una pasada de ffmpeg, re-encodeando) y sigue el camino de siempre: procesar → guion → voz.
+  Probado a mano con un video sintético de 120 s: 11 de 14 cortes detectados (los que faltan son
+  colores de luminancia parecida), resumen de 40,0 s y 48,0 s exactos, con audio, 4 s de ffmpeg.
+  `cc: <link>` en /editar y /narrar (en el comando, abajo del video o solo antes de mandarlo): crédito
+  "Video original: canal – link, licencia CC BY", el canal sale del link con yt-dlp sin bajarlo, y
+  avisa si YouTube informa una licencia que no es CC. Sin `cc:`, un video propio ya no sale con
+  "twitch.tv/" pelado en el crédito: queda "(completar autor)". **Arreglado: los botones de
+  /ayuda, /destinos, ➕ más y ✅ del guion no llegaban a la escucha** (`callbacks` filtraba por
+  st/add; ahora una sola lista, `telegram.PREFIJOS_BOTONES`, que usa también `menu.parse_callback`).
+  243 tests OK.
 - v0.23.0 (2026-09-27) — Modo en vivo (`/envivo on|off`, §3b): detección dentro de la escucha,
   Twitch en lote cada 5 min y Kick cada 2, momento = 3 creadores distintos, procesado con prioridad
   sobre la cola, "🔥 SUBIR YA" al chat que lo prendió, tope 3/h, y los tiempos de cada tramo en
@@ -771,8 +787,12 @@ de Telegram 24/7. Los comandos se atienden en el momento.
    Decisión abierta: con 3 creadores el replay da ~27 alertas/día y el tope manda en 31 de 72 h;
    spreen solo satura. Opciones: subir `min_creadores` (5 → ~20/día), umbral por plataforma, o
    umbral relativo al ritmo normal de clips del canal (un pico sobre SU base, no un número fijo).
-2. **`/narrar` con videos de más de 90 s** (pedido 2026-09-27): resumir por escenas antes del guion
-   (8-10 pasos con miniaturas para aprobar) y crédito `cc: <link>` para Creative Commons.
+2. **Probar el resumen de `/narrar` con un video real de proceso** (v0.24.0 solo se probó con un
+   video sintético y con Gemini falso). RIESGO que hay que mirar primero: `procesar` corre los
+   filtros de audio también en /narrar, y un video de proceso suele no tener habla (música o nada):
+   puede caer en "pocas palabras" o "casi todo silencio" y descartarse, justo el caso para el que
+   existe narrar. No se tocó porque es una decisión de copyright: la música de fondo del original
+   sigue sonando al 15 % debajo de la voz.
 3. **Efemérides** y **modo recortar**. Pedidos el 2026-09-24 ("después seguimos con efemérides y el
    modo recortar") y nunca especificados. También hay que preguntar qué son.
 4. **Revisión del corte de calidad (lo del "9 de 10").** El corte está en `textos.puntaje_min: 5`,

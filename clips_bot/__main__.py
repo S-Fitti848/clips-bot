@@ -1115,20 +1115,33 @@ def _pedir_video(conn, user_id: str, modo: str) -> str:
 
 def _editar(conn, tg: TelegramClient, chat_id: str, user_id: str, args: list,
             settings: Settings, modo: str = "editar"):
-    """El video ya tiene que estar acá: `args[0]` es un link, o ya se bajó el archivo."""
+    """El video ya tiene que estar acá: `args[0]` es un link, o ya se bajó el archivo.
+
+    `cc: <link>` en cualquier lado de los argumentos es el original Creative Commons: va al crédito.
+    Si viene solo (sin video todavía), queda guardado hasta que llegue el video."""
+    from .telegram import sacar_cc
+
+    args, cc = sacar_cc(list(args))
     if not args:
+        if cc:
+            db.set_valor(conn, f"{ESPERA_CC}:{user_id}", cc)
         return _pedir_video(conn, user_id, modo)
-    return _procesar_aporte(conn, tg, chat_id, user_id, {"url": args[0]}, settings, modo)
+    return _procesar_aporte(conn, tg, chat_id, user_id, {"url": args[0], "cc": cc}, settings, modo)
 
 
 def _procesar_aporte(conn, tg: TelegramClient, chat_id: str, user_id: str, fuente: dict,
                      settings: Settings, modo: str):
-    """Baja (si hace falta), procesa y entrega. Toma el turno pesado como /buscar y /ya."""
+    """Baja (si hace falta), procesa y entrega. Toma el turno pesado como /buscar y /ya.
+
+    /narrar con un video de más de `narrar.LARGO_MAX_S`: en vez de procesarlo entero, propone los
+    pasos del resumen y corta ahí; el resto sigue cuando se aprueban (`_pasos_callback`)."""
     import secrets
 
+    from . import narrar
     from .download import DescargaError, adoptar, descargar_libre
-    from .process import RAW_DIR, READY_DIR, procesar
+    from .process import RAW_DIR
 
+    cc = fuente.get("cc") or db.get_valor(conn, f"{ESPERA_CC}:{user_id}")
     token = f"aporte:{secrets.token_hex(3)}"
     if not db.tomar_turno(conn, db.RECURSO_PESADO, token, maximo=1,
                           vencimiento_s=VENCIMIENTO_PESADO_S):
@@ -1145,25 +1158,179 @@ def _procesar_aporte(conn, tg: TelegramClient, chat_id: str, user_id: str, fuent
                 d = descargar_libre(fuente["url"], RAW_DIR, nombre)
         except (DescargaError, TelegramError) as e:
             return f"No pude bajar el video: {html.escape(str(e)[:250])}"
+        db.borrar_valor(conn, f"{ESPERA_CC}:{user_id}")   # ya tiene su video: no se arrastra al próximo
 
         dur = probe(d.path).duracion
+        if modo == "narrar" and dur > narrar.LARGO_MAX_S:
+            return _proponer_pasos(conn, tg, chat_id, {
+                "raw": str(d.path), "url": d.url, "canal": d.canal, "titulo": d.titulo,
+                "duracion": dur, "cc": cc, "chat_id": chat_id, "user_id": user_id}, settings)
         tg.send_message(chat_id, f"Listo, {dur:.0f} s. Procesando: subtítulos, vertical y textos. "
                                  "Tarda unos minutos en la Pi.")
-        r = procesar("", settings, [], gemini=_gemini(settings), descarga=d,
-                     avisar=lambda *_: None)
-        if r.descartado:
-            return (f"El video quedó descartado: <b>{html.escape(r.descartado[:200])}</b>."
-                    "\nSi creés que está mal, decime y lo miro.")
-        meta_p = READY_DIR / f"{r.clip_id}.json"
-        meta = json.loads(meta_p.read_text(encoding="utf-8"))
-        if not meta.get("textos"):
-            return "Lo edité pero Gemini no me dio los textos (¿cuota?). El mp4 quedó en ready/."
-        if modo == "narrar":
-            return _narrar_guion(conn, tg, chat_id, user_id, meta, settings)
-        enviar_clip(tg, chat_id, conn, r.clip_id, meta, 1, None)
-        return None
+        return _seguir_aporte(conn, tg, chat_id, user_id, d, settings, modo, cc)
     finally:
         db.soltar_turno(conn, db.RECURSO_PESADO, token, VENCIMIENTO_PESADO_S)
+
+
+def _seguir_aporte(conn, tg: TelegramClient, chat_id: str, user_id: str, d, settings: Settings,
+                   modo: str, cc: str | None):
+    """Procesar + crédito + (guion o entrega). Lo usan el video corto y el resumen aprobado."""
+    from .process import READY_DIR, guardar_meta, procesar
+
+    r = procesar("", settings, [], gemini=_gemini(settings), descarga=d, avisar=lambda *_: None)
+    if r.descartado:
+        return (f"El video quedó descartado: <b>{html.escape(r.descartado[:200])}</b>."
+                "\nSi creés que está mal, decime y lo miro.")
+    meta_p = READY_DIR / f"{r.clip_id}.json"
+    meta = json.loads(meta_p.read_text(encoding="utf-8"))
+    if not meta.get("textos"):
+        return "Lo edité pero Gemini no me dio los textos (¿cuota?). El mp4 quedó en ready/."
+    if cc:
+        aviso = _aplicar_cc(meta, cc, d)
+        guardar_meta(meta_p, meta)
+        if aviso:
+            tg.send_message(chat_id, aviso)
+    if modo == "narrar":
+        return _narrar_guion(conn, tg, chat_id, user_id, meta, settings)
+    enviar_clip(tg, chat_id, conn, r.clip_id, meta, 1, None)
+    return None
+
+
+def _aplicar_cc(meta: dict, cc: str, d) -> str:
+    """Pone el crédito Creative Commons en los textos. Devuelve un aviso si algo no cierra."""
+    from .download import info_cc
+    from .textos import con_credito, credito_cc
+
+    info = info_cc(cc)
+    # Si el video se bajó de ese mismo link, el canal ya se sabe; si vino como archivo, sale del link.
+    canal = info["canal"] or (d.canal if d.url == cc else "")
+    meta["textos"] = con_credito(meta["textos"], credito_cc(canal, cc))
+    meta["cc"] = {"link": cc, "canal": canal, "licencia": info["licencia"]}
+    if info.get("error"):
+        return (f"⚠️ No pude leer el link de <code>cc:</code> ({html.escape(info['error'][:120])}). "
+                "Completá el canal a mano en el crédito.")
+    if info["licencia"] and "creative commons" not in info["licencia"].lower():
+        return (f"⚠️ El original dice licencia <b>{html.escape(info['licencia'])}</b>, no Creative "
+                "Commons. Revisalo antes de subir: sin CC el crédito no alcanza.")
+    return ""
+
+
+# ---- /narrar con videos largos: los pasos del resumen se aprueban antes de cortar ----------
+
+ESPERA_CC = "cc_pendiente"          # bot_estado: <user_id> -> link del original CC
+ESPERA_PASOS = "esperando_pasos"    # bot_estado: <user_id> -> token de los pasos a corregir
+
+
+def _proponer_pasos(conn, tg: TelegramClient, chat_id: str, estado: dict, settings: Settings,
+                    correccion: str = "", anteriores: list | None = None):
+    """Escenas → frames → Gemini elige los pasos → hoja de miniaturas + lista con ✅/✏️."""
+    import secrets
+
+    from . import narrar
+    from .process import WORK_DIR
+
+    gemini = _gemini(settings)
+    if gemini is None:
+        return "Sin GEMINI_API_KEY no puedo elegir los pasos del resumen."
+    raw, dur = Path(estado["raw"]), float(estado["duracion"])
+    if "escenas" not in estado:
+        tg.send_message(chat_id, f"El video dura {dur / 60:.1f} min: antes de narrarlo lo resumo "
+                                 "en 40-55 s. Busco los cambios de escena…")
+        estado["escenas"] = narrar.escenas(narrar.cortes_de_escena(raw), dur)
+    esc = [tuple(e) for e in estado["escenas"]]
+    try:
+        imgs = narrar.frames_en(raw, [(a + b) / 2 for a, b in esc])
+        pasos, sensible = narrar.elegir_pasos(gemini, esc, imgs, correccion=correccion,
+                                              anteriores=anteriores)
+    except (narrar.NarrarError, GeminiError) as e:
+        return f"No pude armar el resumen: {html.escape(str(e)[:250])}"
+    if sensible:
+        return ("El video parece tratar un tema sensible (muerte, duelo, enfermedad, violencia "
+                "real). No lo resumo ni le pongo voz.")
+    tramos = narrar.ventanas(esc, pasos, dur)
+    token = secrets.token_hex(3)
+    hoja = narrar.hoja_de_pasos([imgs[p.escena] for p in pasos], WORK_DIR / f"pasos_{token}.jpg")
+    db.set_valor(conn, f"pasos:{token}", json.dumps(
+        {**estado, "pasos": [p.a_dict() for p in pasos], "tramos": tramos}, ensure_ascii=False))
+    tg.send_photo(chat_id, hoja, f"Pasos 1–{len(pasos)} del resumen")
+    teclado = {"inline_keyboard": [[
+        {"text": "✅ Aprobar", "callback_data": f"pas:ok:{token}"},
+        {"text": "✏️ Cambiar", "callback_data": f"pas:no:{token}"},
+    ]]}
+    tg.send_message(chat_id, narrar.texto_pasos(pasos, tramos, dur)
+                    + "\n\nSi está bien, lo corto y sigo con el guion.", teclado=teclado)
+    return None
+
+
+def _pasos_callback(conn, tg: TelegramClient, cb: dict, settings: Settings) -> None:
+    """✅ corta el resumen y sigue con el guion; ✏️ espera que escribas qué cambiar."""
+    import secrets
+
+    from . import narrar
+    from .download import Descarga
+    from .menu import parse_callback
+    from .process import RAW_DIR
+
+    d = parse_callback(cb["data"])
+    if not d or d["menu"] != "pas":
+        return
+    token = str(d["args"][0]) if d["args"] else ""
+    crudo = db.get_valor(conn, f"pasos:{token}")
+    if not crudo:
+        return tg.answer_callback(cb["callback_id"], "Esos pasos vencieron. Mandá /narrar de nuevo.")
+    estado = json.loads(crudo)
+
+    if d["accion"] == "no":
+        db.set_valor(conn, f"{ESPERA_PASOS}:{cb['user_id']}", token)
+        tg.answer_callback(cb["callback_id"])
+        return tg.edit_message(cb["chat_id"], cb["message_id"],
+                               "✏️ Decime qué cambiar y los vuelvo a elegir. Por ejemplo: "
+                               "<i>sacá el 3</i>, <i>falta cuando lo pinta</i>, "
+                               "<i>el último no es el resultado final</i>.", {"inline_keyboard": []})
+
+    turno = f"resumen:{token}"
+    if not db.tomar_turno(conn, db.RECURSO_PESADO, turno, maximo=1,
+                          vencimiento_s=VENCIMIENTO_PESADO_S):
+        # No se consume el estado: el mismo ✅ sirve cuando se libere.
+        return tg.answer_callback(cb["callback_id"], "Hay algo pesado andando: tocá ✅ en un rato.")
+    try:
+        tg.answer_callback(cb["callback_id"], "Aprobado, corto el resumen…")
+        tg.edit_message(cb["chat_id"], cb["message_id"], "✅ Pasos aprobados. Armando el resumen…",
+                        {"inline_keyboard": []})
+        db.borrar_valor(conn, f"pasos:{token}")
+        raw = Path(estado["raw"])
+        salida = narrar.armar_resumen(raw, [tuple(t) for t in estado["tramos"]],
+                                      RAW_DIR / f"{raw.stem}_resumen.mp4")
+        dur = probe(salida).duracion
+        tg.send_message(cb["chat_id"], f"Resumen de {dur:.0f} s. Procesando: subtítulos, vertical y "
+                                       "textos, y después el guion.")
+        resumen = Descarga(path=salida, clip_id=salida.stem, url=estado.get("url") or "",
+                           titulo=estado.get("titulo") or "", plataforma="aporte", streamer="",
+                           canal=estado.get("canal") or "", duracion=dur, vistas=0, creado=None,
+                           categoria="")
+        r = _seguir_aporte(conn, tg, cb["chat_id"], cb["user_id"], resumen, settings, "narrar",
+                           estado.get("cc"))
+        if r:
+            tg.send_message(cb["chat_id"], r)
+    finally:
+        db.soltar_turno(conn, db.RECURSO_PESADO, turno, VENCIMIENTO_PESADO_S)
+
+
+def _repensar_pasos(conn, tg: TelegramClient, t: dict, token: str, settings: Settings) -> None:
+    from . import narrar
+
+    crudo = db.get_valor(conn, f"pasos:{token}")
+    if not crudo:
+        return tg.send_message(t["chat_id"], "Esos pasos vencieron. Mandá /narrar de nuevo.")
+    estado = json.loads(crudo)
+    db.borrar_valor(conn, f"pasos:{token}")
+    tg.send_message(t["chat_id"], "Los vuelvo a elegir…")
+    anteriores = [narrar.Paso(p["escena"], p["descripcion"]) for p in estado.pop("pasos")]
+    estado.pop("tramos", None)
+    r = _proponer_pasos(conn, tg, t["chat_id"], estado, settings, correccion=t["texto"],
+                        anteriores=anteriores)
+    if r:
+        tg.send_message(t["chat_id"], r)
 
 
 
@@ -1298,13 +1465,13 @@ def _narrar_voz(conn, tg: TelegramClient, chat_id: str, guardado: dict, settings
 def _aporte_o_cola(conn, tg: TelegramClient, v: dict, modo: str, settings: Settings,
                    cola: list) -> None:
     """Un video que mandaron: si hay algo pesado andando, va a la cola como cualquier pedido."""
-    r = _procesar_aporte(conn, tg, v["chat_id"], v["user_id"], {"file_id": v["file_id"]},
-                         settings, modo)
+    r = _procesar_aporte(conn, tg, v["chat_id"], v["user_id"],
+                         {"file_id": v["file_id"], "cc": v.get("cc")}, settings, modo)
     if r is OCUPADO:
         if len(cola) >= MAX_BUSQUEDAS:
             return tg.send_message(v["chat_id"], "Tengo la cola llena; probá en un rato.")
         cola.append({"chat_id": v["chat_id"], "comando": f"/{modo}", "args": [],
-                     "user_id": v["user_id"], "file_id": v["file_id"]})
+                     "user_id": v["user_id"], "file_id": v["file_id"], "cc": v.get("cc")})
         return tg.send_message(v["chat_id"], f"En cola ({len(cola)}º), lo edito cuando se libere.")
     if r:
         tg.send_message(v["chat_id"], r)
@@ -1355,7 +1522,8 @@ def escuchar_telegram(settings: Settings, timeout_poll: int = 50) -> int:
     tira, se guarda y arranca sola cuando se libera el turno. Mientras hay algo en la cola el
     polling baja a unos segundos, así no se queda esperando 50 s para reaccionar.
     """
-    from .telegram import (callbacks, comandos, textos_sueltos, usuarios_permitidos, videos)
+    from .telegram import (callbacks, comandos, sacar_cc, textos_sueltos, usuarios_permitidos,
+                           videos)
 
     tg = TelegramClient(env("TELEGRAM_BOT_TOKEN"), timeout=timeout_poll + 30)
     if not usuarios_permitidos(env("TELEGRAM_ALLOWED_USERS", requerido=False)):
@@ -1396,6 +1564,9 @@ def escuchar_telegram(settings: Settings, timeout_poll: int = 50) -> int:
                 if cb["data"].startswith("gui:"):
                     _seguro(tg, cb["chat_id"], cb["data"], _guion_callback, conn, tg, cb, settings)
                     continue
+                if cb["data"].startswith("pas:"):
+                    _seguro(tg, cb["chat_id"], cb["data"], _pasos_callback, conn, tg, cb, settings)
+                    continue
                 if cb["data"].startswith("ped:"):
                     _seguro(tg, cb["chat_id"], cb["data"], _pedido_callback, conn, tg, cb,
                             settings, cola)
@@ -1418,6 +1589,8 @@ def escuchar_telegram(settings: Settings, timeout_poll: int = 50) -> int:
                 if modo not in ("editar", "narrar"):
                     continue
                 db.borrar_valor(conn, f"{ESPERA_VIDEO}:{v['user_id']}")
+                if v["texto"].startswith("/"):   # "/narrar cc: <link>" escrito abajo del video
+                    v = {**v, "cc": sacar_cc(v["texto"].split()[1:])[1]}
                 if v["mb"] > MAX_MB_TELEGRAM:
                     tg.send_message(v["chat_id"], f"El archivo pesa {v['mb']} MB y Telegram me deja "
                                                   f"bajar hasta {MAX_MB_TELEGRAM}. Mandame el link.")
@@ -1426,6 +1599,12 @@ def escuchar_telegram(settings: Settings, timeout_poll: int = 50) -> int:
                         cola)
             for t in textos_sueltos(updates):
                 if t["user_id"] not in permitidos:
+                    continue
+                pasos = db.get_valor(conn, f"{ESPERA_PASOS}:{t['user_id']}")
+                if pasos:
+                    db.borrar_valor(conn, f"{ESPERA_PASOS}:{t['user_id']}")
+                    _seguro(tg, t["chat_id"], "reelegir los pasos", _repensar_pasos, conn, tg,
+                            t, pasos, settings)
                     continue
                 pendiente = db.get_valor(conn, f"{ESPERA_CORRECCION}:{t['user_id']}")
                 if pendiente:
@@ -1630,7 +1809,7 @@ def _drenar_cola(conn, tg: TelegramClient, cola: list[dict], settings: Settings)
         if pedido.get("file_id"):   # un video que estaba esperando turno
             r = _seguro(tg, pedido["chat_id"], etiqueta, _procesar_aporte, conn, tg,
                         pedido["chat_id"], pedido.get("user_id", ""),
-                        {"file_id": pedido["file_id"]}, settings,
+                        {"file_id": pedido["file_id"], "cc": pedido.get("cc")}, settings,
                         pedido.get("comando", "/editar").lstrip("/"))
         else:
             r = _seguro(tg, pedido["chat_id"], etiqueta, _pesado, conn, tg, pedido["chat_id"],
@@ -1863,12 +2042,15 @@ SECCIONES = [
     ("✂️ Editar videos", [
         ("/editar",
          "mandame un video (archivo de hasta 20 MB) o un link y te lo devuelvo en vertical, con "
-         "subtítulos, título, descripción y hashtags.",
+         "subtítulos, título, descripción y hashtags. Si es Creative Commons, sumá "
+         "<code>cc: &lt;link al original&gt;</code> y lo acredito en la descripción.",
          "/editar https://www.youtube.com/watch?v=..."),
         ("/narrar",
          "lo mismo, pero además miro el video, escribo un guion y lo narro con voz argentina. El "
-         "guion te llega primero para aprobar o cambiar, porque puedo equivocarme en lo que veo.",
-         "/narrar https://www.instagram.com/reel/..."),
+         "guion te llega primero para aprobar o cambiar, porque puedo equivocarme en lo que veo. "
+         "Si dura más de 90 s, antes lo resumo en 8-10 pasos (40-55 s) y te muestro cuáles elegí. "
+         "<code>cc: &lt;link&gt;</code> igual que en /editar.",
+         "/narrar https://youtu.be/... cc: https://youtu.be/..."),
     ]),
     ("⚙️ Configuración", [
         ("/destinos",

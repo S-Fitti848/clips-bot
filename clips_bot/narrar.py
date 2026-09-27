@@ -189,3 +189,249 @@ def aviso_largo(guion: Guion, duracion: float) -> str:
         return (f"⚠️ El guion son ~{guion.segundos_estimados:.0f}s y el video dura "
                 f"{duracion:.0f}s: va a quedar mucho silencio.")
     return ""
+
+
+# ---- videos largos: resumir por escenas antes de narrar -----------------------------
+# Un video de más de LARGO_MAX_S (un proceso: una receta, una construcción, una restauración) no
+# entra en un Short. Antes del guion se arma un resumen: cambios de escena con ffmpeg → un frame por
+# escena → Gemini elige 8-10 pasos en orden (inicio, intermedios, resultado) → 4-5 s de cada uno →
+# un video de 40-55 s. Los pasos se aprueban ANTES de cortar, igual que el guion antes de la voz.
+
+LARGO_MAX_S = 90
+PASOS_MIN, PASOS_MAX = 8, 10
+SEG_MIN, SEG_MAX = 4.0, 5.0
+RESUMEN_OBJETIVO_S = 48.0      # 8 pasos → 40 s, 9 → 45 s, 10 → 48 s: siempre entre 40 y 55
+ESCENAS_MAX = 40               # frames que van a Gemini: más no cambia la elección y gasta tokens
+ESCENAS_MIN = 12               # un plano secuencia sin cortes igual tiene que dar de dónde elegir
+ESCENA_MIN_S = 1.0
+
+
+class NarrarError(RuntimeError):
+    pass
+
+
+def cortes_de_escena(video: Path, umbral: float = 0.3) -> list[float]:
+    """Segundos donde ffmpeg ve un cambio de escena (`select=gt(scene,U)` + showinfo).
+
+    Se achica a 320 px antes de medir: decodificar es inevitable, pero comparar frames chicos es
+    mucho más barato en la Pi y el puntaje de escena casi no cambia."""
+    r = run([find_bin("ffmpeg"), "-hide_banner", "-nostats", "-i", str(video.resolve()),
+             "-vf", f"scale=320:-2,select='gt(scene,{umbral})',showinfo", "-an", "-f", "null", "-"])
+    return [float(x) for x in re.findall(r"pts_time:([0-9.]+)", r.stderr)]
+
+
+def escenas(cortes: list[float], duracion: float, minimo: int = ESCENAS_MIN,
+            maximo: int = ESCENAS_MAX, min_s: float = ESCENA_MIN_S) -> list[tuple[float, float]]:
+    """Cortes → [(inicio, fin)] contiguos, sin escenas de menos de `min_s`, entre `minimo` y `maximo`.
+
+    Muy cortas o demasiadas (un video muy editado): se funde la más corta con su vecina.
+    Muy pocas (un plano secuencia): se parte al medio la más larga, hasta llegar al mínimo.
+    """
+    puntos = [0.0] + sorted(c for c in cortes if 0 < c < duracion) + [duracion]
+    out = [[a, b] for a, b in zip(puntos, puntos[1:]) if b > a]
+
+    def largo(k: int) -> float:
+        return out[k][1] - out[k][0]
+
+    def fundir(i: int) -> None:
+        """La escena i se une con la vecina más corta."""
+        if i == 0:
+            j = 1
+        elif i == len(out) - 1:
+            j = i - 1
+        else:
+            j = i - 1 if largo(i - 1) <= largo(i + 1) else i + 1
+        a, b = sorted((i, j))
+        out[a:b + 1] = [[out[a][0], out[b][1]]]
+
+    while len(out) > 1 and min(largo(k) for k in range(len(out))) < min_s:
+        fundir(min(range(len(out)), key=largo))
+    while len(out) > maximo:
+        fundir(min(range(len(out)), key=largo))
+    while len(out) < minimo:
+        i = max(range(len(out)), key=largo)
+        if largo(i) < 2 * min_s:
+            break
+        a, b = out[i]
+        out[i:i + 1] = [[a, (a + b) / 2], [(a + b) / 2, b]]
+    return [(round(a, 2), round(b, 2)) for a, b in out]
+
+
+def frames_en(video: Path, tiempos: list[float], ancho: int = 384, calidad: int = 75) -> list[bytes]:
+    """Un JPEG chico por cada segundo pedido (el medio de cada escena)."""
+    import cv2
+
+    cap = cv2.VideoCapture(str(video))
+    if not cap.isOpened():
+        raise NarrarError(f"No puedo abrir {video.name}")
+    out = []
+    try:
+        for t in tiempos:
+            cap.set(cv2.CAP_PROP_POS_MSEC, t * 1000)
+            ok, frame = cap.read()
+            if not ok:
+                raise NarrarError(f"No pude leer el frame del segundo {t:.1f}")
+            h, w = frame.shape[:2]
+            frame = cv2.resize(frame, (ancho, int(h * ancho / w)))
+            ok, buf = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, calidad])
+            out.append(buf.tobytes())
+    finally:
+        cap.release()
+    return out
+
+
+SISTEMA_PASOS = """Resumís un video largo de un PROCESO (una receta, una construcción, una
+restauración, un armado) en un video corto que se entienda solo.
+
+Te paso un frame por escena, en orden. Elegís las escenas que cuentan el proceso de punta a punta:
+la primera muestra CÓMO ARRANCA, las del medio los pasos que cambian algo visible, y la última el
+RESULTADO FINAL. Nada de escenas repetidas, de gente hablando a cámara sin hacer nada, ni de
+pantallas de título.
+
+Cada paso lleva una línea corta de lo que SE VE en ese frame. Si no estás seguro de qué es algo,
+describilo de forma general: no inventes materiales, herramientas ni nombres.
+Respondé solo con el JSON pedido."""
+
+SCHEMA_PASOS = {
+    "type": "OBJECT",
+    "properties": {
+        "pasos": {"type": "ARRAY", "items": {
+            "type": "OBJECT",
+            "properties": {"escena": {"type": "INTEGER"}, "descripcion": {"type": "STRING"}},
+            "required": ["escena", "descripcion"]}},
+        "sensible": {"type": "BOOLEAN"},
+    },
+    "required": ["pasos", "sensible"],
+}
+
+
+@dataclass
+class Paso:
+    escena: int            # índice en la lista de escenas (desde 0)
+    descripcion: str
+
+    def a_dict(self) -> dict:
+        return {"escena": self.escena, "descripcion": self.descripcion}
+
+
+def validar_pasos(d: dict, n_escenas: int) -> list[str]:
+    pasos = d.get("pasos") if isinstance(d, dict) else None
+    if not isinstance(pasos, list) or not all(isinstance(p, dict) for p in pasos):
+        return ["falta la lista de pasos"]
+    errores = []
+    minimo, maximo = min(PASOS_MIN, n_escenas), min(PASOS_MAX, n_escenas)
+    if not minimo <= len(pasos) <= maximo:
+        errores.append(f"tienen que ser entre {minimo} y {maximo} pasos, no {len(pasos)}")
+    nums = [p.get("escena") for p in pasos]
+    if any(not isinstance(x, int) or not 1 <= x <= n_escenas for x in nums):
+        errores.append(f"las escenas van del 1 al {n_escenas}")
+    elif nums != sorted(set(nums)):
+        errores.append("las escenas tienen que ir en orden y sin repetir")
+    if any(not str(p.get("descripcion") or "").strip() for p in pasos):
+        errores.append("cada paso necesita su descripción")
+    return errores
+
+
+def elegir_pasos(cliente, escenas_: list[tuple[float, float]], imagenes: list[bytes],
+                 transcripcion: str = "", correccion: str = "",
+                 anteriores: list[Paso] | None = None, reintentos: int = 1) -> tuple[list[Paso], bool]:
+    """Gemini elige los pasos. Devuelve (pasos, sensible). Reintenta una vez si no valida."""
+    lista = "\n".join(f"escena {i}: {a:.0f}-{b:.0f} s" for i, (a, b) in enumerate(escenas_, 1))
+    prompt = (f"Son {len(escenas_)} escenas; la imagen k es la escena k.\n{lista}\n\n"
+              f"Elegí entre {min(PASOS_MIN, len(escenas_))} y {min(PASOS_MAX, len(escenas_))}, "
+              "en orden. `escena` es el número de la lista (desde 1). `descripcion`: una línea de "
+              "hasta 80 caracteres.")
+    if transcripcion.strip():
+        prompt += f"\n\nLo que se escucha (puede ayudar a ubicar los pasos): {transcripcion[:1200]}"
+    if correccion:
+        antes = ", ".join(str(p.escena + 1) for p in anteriores or [])
+        prompt += (f"\n\nLa elección anterior fue: escenas {antes}. No sirvió. "
+                   f"Lo que hay que cambiar: {correccion}")
+    errores: list[str] = []
+    for _ in range(reintentos + 1):
+        extra = f"\n\nTu respuesta anterior tenía estos errores: {'; '.join(errores)}" if errores else ""
+        d = json.loads(cliente.json(SISTEMA_PASOS, prompt + extra, SCHEMA_PASOS, temperatura=0.3,
+                                    imagenes=imagenes))
+        errores = validar_pasos(d, len(escenas_))
+        if not errores:
+            pasos = [Paso(int(p["escena"]) - 1, str(p["descripcion"]).strip()[:90])
+                     for p in d["pasos"]]
+            return pasos, bool(d.get("sensible"))
+    raise NarrarError("Gemini no eligió pasos válidos: " + "; ".join(errores))
+
+
+def ventanas(escenas_: list[tuple[float, float]], pasos: list[Paso],
+             duracion: float) -> list[tuple[float, float]]:
+    """4-5 s de cada paso, centrados en su escena, sin pisarse y dentro del video.
+
+    El largo por paso sale del total buscado (48 s): 8 pasos → 5 s c/u (40 s), 10 → 4,8 s (48 s)."""
+    seg = max(SEG_MIN, min(SEG_MAX, RESUMEN_OBJETIVO_S / max(len(pasos), 1)))
+    out: list[tuple[float, float]] = []
+    for p in pasos:
+        a, b = escenas_[p.escena]
+        ini = max(0.0, min((a + b) / 2 - seg / 2, duracion - seg))
+        if out and ini < out[-1][1]:
+            ini = out[-1][1]
+        fin = min(duracion, ini + seg)
+        if fin - ini >= 1.0:
+            out.append((round(ini, 2), round(fin, 2)))
+    return out
+
+
+def armar_resumen(video: Path, tramos: list[tuple[float, float]], salida: Path) -> Path:
+    """Corta los tramos y los pega en orden, en una sola pasada de ffmpeg. Re-encodea a propósito:
+    los cortes no caen en keyframes y con `-c copy` cada tramo arrancaría con frames congelados."""
+    salida.parent.mkdir(parents=True, exist_ok=True)
+    audio = _tiene_audio(video)
+    partes, entradas = [], ""
+    for i, (a, b) in enumerate(tramos):
+        partes.append(f"[0:v]trim=start={a}:end={b},setpts=PTS-STARTPTS[v{i}]")
+        entradas += f"[v{i}]"
+        if audio:
+            partes.append(f"[0:a]atrim=start={a}:end={b},asetpts=PTS-STARTPTS[a{i}]")
+            entradas += f"[a{i}]"
+    partes.append(f"{entradas}concat=n={len(tramos)}:v=1:a={1 if audio else 0}"
+                  + ("[v][a]" if audio else "[v]"))
+    mapeo = ["-map", "[v]"] + (["-map", "[a]", "-c:a", "aac", "-b:a", "160k"] if audio else [])
+    run([find_bin("ffmpeg"), "-hide_banner", "-loglevel", "error", "-y", "-i", str(video.resolve()),
+         "-filter_complex", ";".join(partes), *mapeo,
+         "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p",
+         str(salida.resolve())])
+    return salida
+
+
+def hoja_de_pasos(imagenes: list[bytes], salida: Path, columnas: int = 2, ancho: int = 360) -> Path:
+    """Una sola imagen con las miniaturas numeradas. Va con la lista de pasos en el caption y los
+    botones ✅/✏️ abajo: un álbum de Telegram no admite botones."""
+    import cv2
+    import numpy as np
+
+    tiles = []
+    for n, img in enumerate(imagenes, 1):
+        f = cv2.imdecode(np.frombuffer(img, np.uint8), cv2.IMREAD_COLOR)
+        h, w = f.shape[:2]
+        f = cv2.resize(f, (ancho, int(h * ancho / w)))
+        cv2.rectangle(f, (0, 0), (54 if n < 10 else 78, 44), (0, 0, 0), -1)
+        cv2.putText(f, str(n), (8, 34), cv2.FONT_HERSHEY_SIMPLEX, 1.1, (255, 255, 255), 2,
+                    cv2.LINE_AA)
+        tiles.append(f)
+    alto = max(t.shape[0] for t in tiles)
+    tiles = [cv2.copyMakeBorder(t, 0, alto - t.shape[0], 0, 0, cv2.BORDER_CONSTANT) for t in tiles]
+    filas = [tiles[i:i + columnas] for i in range(0, len(tiles), columnas)]
+    filas[-1] += [np.zeros_like(tiles[0])] * (columnas - len(filas[-1]))
+    salida.parent.mkdir(parents=True, exist_ok=True)
+    cv2.imwrite(str(salida), np.vstack([np.hstack(f) for f in filas]),
+                [cv2.IMWRITE_JPEG_QUALITY, 82])
+    return salida
+
+
+def texto_pasos(pasos: list[Paso], tramos: list[tuple[float, float]], duracion: float) -> str:
+    """Una línea por paso, con el minuto del original, para leer debajo de la hoja."""
+    import html as _html
+
+    total = sum(b - a for a, b in tramos)
+    lineas = [f"<b>Resumen en {len(pasos)} pasos</b> (video de {duracion / 60:.1f} min → "
+              f"{total:.0f} s)"]
+    for n, (p, (a, _)) in enumerate(zip(pasos, tramos), 1):
+        lineas.append(f"{n}. <i>{int(a // 60)}:{int(a % 60):02d}</i> {_html.escape(p.descripcion)}")
+    return "\n".join(lineas)

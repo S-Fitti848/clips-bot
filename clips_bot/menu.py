@@ -113,8 +113,10 @@ def teclado_destinos(chats: list[dict], faltan: list[dict]) -> dict:
 
 def parse_callback(data: str) -> dict | None:
     """`st:s:2:37` → {'menu': 'st', 'accion': 's', 'args': [2, 37]}. None si no es de los nuestros."""
+    from .telegram import PREFIJOS_BOTONES   # una sola lista: dos listas separadas ya se despegaron
+
     partes = data.split(":")
-    if len(partes) < 2 or partes[0] not in ("st", "add", "dst", "ay", "ped", "gui"):
+    if len(partes) < 2 or partes[0] not in PREFIJOS_BOTONES:
         return None
     args = []
     for p in partes[2:]:

@@ -119,6 +119,21 @@ def adoptar(origen: Path, destino: Path, nombre: str) -> Descarga:
     return _descarga_de(final, url="", info={"title": origen.stem})
 
 
+def info_cc(link: str) -> dict:
+    """Canal y licencia del original, sin bajarlo. Para el crédito `cc:` de /editar y /narrar.
+
+    YouTube informa `license` ("Creative Commons Attribution license (reuse allowed)"); otras
+    plataformas no. Si no se puede leer, vuelve vacío y el crédito lleva un hueco a completar."""
+    try:
+        with YoutubeDL({"quiet": True, "no_warnings": True, "skip_download": True,
+                        "noplaylist": True}) as ydl:
+            info = ydl.extract_info(link, download=False) or {}
+    except DownloadError as e:
+        return {"canal": "", "licencia": "", "error": str(e)[:200]}
+    return {"canal": str(info.get("channel") or info.get("uploader") or ""),
+            "licencia": str(info.get("license") or "")}
+
+
 def descargar_libre(url: str, destino: Path, nombre: str, max_mb: int = MAX_MB_APORTE) -> Descarga:
     """Baja CUALQUIER link que yt-dlp entienda (no solo clips de Twitch o Kick).
 

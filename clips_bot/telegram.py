@@ -112,6 +112,14 @@ class TelegramClient:
                     f.write(trozo)
         return final
 
+    def send_photo(self, chat_id: str, path: Path, caption_html: str = "",
+                   teclado: dict | None = None) -> None:
+        data = {"chat_id": chat_id, "caption": caption_html[:MAX_CAPTION], "parse_mode": "HTML"}
+        if teclado:
+            data["reply_markup"] = json.dumps(teclado)
+        with path.open("rb") as f:
+            self._llamar("sendPhoto", data, {"photo": (path.name, f, "image/jpeg")})
+
     def send_document(self, chat_id: str, path: Path, caption: str = "") -> None:
         _chequear_tamano(path)
         with path.open("rb") as f:
@@ -324,6 +332,25 @@ def comandos(updates: list[dict]) -> list[dict]:
             "args": partes[1:],
         })
     return out
+
+
+def sacar_cc(args: list[str]) -> tuple[list[str], str | None]:
+    """Saca `cc: <link>` (o `cc:<link>`) de los argumentos: el link al original Creative Commons.
+
+    `/narrar https://... cc: https://youtu.be/xyz` → (["https://..."], "https://youtu.be/xyz")."""
+    quedan, cc, i = [], None, 0
+    while i < len(args):
+        t = args[i]
+        if t.lower().startswith("cc:"):
+            resto = t[3:].strip()
+            if not resto and i + 1 < len(args):
+                i += 1
+                resto = args[i]
+            cc = resto or None
+        else:
+            quedan.append(t)
+        i += 1
+    return quedan, cc
 
 
 def sacar_cantidad(args: list[str], tope: int) -> tuple[list[str], int | None]:
