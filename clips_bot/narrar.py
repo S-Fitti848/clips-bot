@@ -14,10 +14,12 @@ Tres cosas que lo separan de /editar:
 
 from __future__ import annotations
 
+import html as _html
 import json
 import logging
 import math
 import re
+import subprocess
 import wave
 from dataclasses import dataclass
 from pathlib import Path
@@ -45,6 +47,10 @@ Reglas del guion:
 - Hablado, no escrito: frases cortas, como se lo contarías a un amigo.
 - Sin emojis, sin hashtags, sin "suscribite".
 
+Si te paso el audio, decí también si tiene música: "ninguna", "de_fondo" (música sin letra o que
+no reconocés) o "cancion" (una canción con letra, o un tema que reconocés). Si reconocés cuál es,
+ponela en `cancion` ("Artista – Tema"); si no, dejalo vacío. No adivines el nombre.
+
 Respondé solo con el JSON pedido."""
 
 SCHEMA = {
@@ -54,9 +60,13 @@ SCHEMA = {
         "guion": {"type": "STRING"},
         "sensible": {"type": "BOOLEAN"},
         "confianza": {"type": "INTEGER"},
+        "musica": {"type": "STRING", "enum": ["ninguna", "de_fondo", "cancion"]},
+        "cancion": {"type": "STRING"},
     },
     "required": ["que_pasa", "guion", "sensible", "confianza"],
 }
+
+MUSICAS = ("ninguna", "de_fondo", "cancion")
 
 
 @dataclass
@@ -67,17 +77,21 @@ class Guion:
     confianza: int = 0          # 1 a 10: cuánto entendió de lo que vio
     palabras: int = 0
     segundos_estimados: float = 0.0
+    musica: str = ""            # ninguna | de_fondo | cancion; vacío = no se le pasó el audio
+    cancion: str = ""           # "Artista – Tema" si la reconoció
 
     def a_dict(self) -> dict:
         return {"texto": self.texto, "que_pasa": list(self.que_pasa), "sensible": self.sensible,
                 "confianza": self.confianza, "palabras": self.palabras,
-                "segundos_estimados": round(self.segundos_estimados, 1)}
+                "segundos_estimados": round(self.segundos_estimados, 1),
+                "musica": self.musica, "cancion": self.cancion}
 
     @classmethod
     def de_dict(cls, d: dict) -> "Guion":
         return cls(d["texto"], tuple(d.get("que_pasa") or ()), bool(d.get("sensible")),
                    int(d.get("confianza") or 0), int(d.get("palabras") or 0),
-                   float(d.get("segundos_estimados") or 0))
+                   float(d.get("segundos_estimados") or 0), str(d.get("musica") or ""),
+                   str(d.get("cancion") or ""))
 
 
 def _medir(texto: str) -> tuple[int, float]:
@@ -86,8 +100,11 @@ def _medir(texto: str) -> tuple[int, float]:
 
 
 def escribir(cliente, duracion: float, transcripcion: str, imagenes: list[bytes],
-             correccion: str = "") -> Guion:
-    """Le pide a Gemini el guion. `correccion` es lo que pediste cambiar en el intento anterior."""
+             correccion: str = "", audio: bytes | None = None) -> Guion:
+    """Le pide a Gemini el guion. `correccion` es lo que pediste cambiar en el intento anterior.
+
+    `audio`: el del video, para que diga si hay música. Va en la MISMA llamada que el guion: la
+    cuota de Gemini (~20 por día) no da para una llamada aparte."""
     objetivo = max(4, int(duracion * PALABRAS_POR_SEGUNDO))
     prompt = (f"El video dura {duracion:.0f} segundos, así que el guion tiene que tener alrededor "
               f"de {objetivo} palabras (ni la mitad ni el doble).\n"
@@ -100,13 +117,43 @@ def escribir(cliente, duracion: float, transcripcion: str, imagenes: list[bytes]
                "frames. Si es bajo, escribí un guion más general en vez de inventar.")
     if correccion:
         prompt += f"\n\nEl guion anterior no sirvió. Lo que hay que cambiar: {correccion}"
-    crudo = cliente.json(SISTEMA, prompt, SCHEMA, temperatura=0.6, imagenes=imagenes)
+    if audio:
+        prompt += " También te paso el audio del video: decí si tiene música (campo `musica`)."
+    crudo = cliente.json(SISTEMA, prompt, SCHEMA, temperatura=0.6, imagenes=imagenes, audio=audio)
     d = json.loads(crudo)
     texto = str(d.get("guion") or "").strip()
     palabras, segundos = _medir(texto)
+    musica = str(d.get("musica") or "") if audio else ""
     return Guion(texto=texto, que_pasa=tuple(d.get("que_pasa") or ()),
                  sensible=bool(d.get("sensible")), confianza=int(d.get("confianza") or 0),
-                 palabras=palabras, segundos_estimados=segundos)
+                 palabras=palabras, segundos_estimados=segundos,
+                 musica=musica if musica in MUSICAS else "",
+                 cancion=str(d.get("cancion") or "").strip() if musica == "cancion" else "")
+
+
+def audio_para_gemini(video: Path, max_s: float = 60.0) -> bytes | None:
+    """El audio del video como MP3 mono chico (32 kbps, 16 kHz): ~240 KB por minuto. None si el
+    video no tiene audio (no hay nada que preguntar)."""
+    if not _tiene_audio(video):
+        return None
+    r = subprocess.run([find_bin("ffmpeg"), "-hide_banner", "-loglevel", "error", "-i",
+                        str(video.resolve()), "-t", str(max_s), "-vn", "-ac", "1", "-ar", "16000",
+                        "-b:a", "32k", "-f", "mp3", "-"], capture_output=True)
+    return r.stdout if r.returncode == 0 and r.stdout else None
+
+
+def aviso_musica(g: Guion) -> str:
+    """Si hay música, avisar ANTES de sintetizar: al 15 % debajo de la voz, Content ID la encuentra
+    igual. La salida es `sin audio`: el original se silencia y queda solo la voz."""
+    if g.musica == "cancion":
+        cual = f" (me suena a <b>{_html.escape(g.cancion)}</b>)" if g.cancion else ""
+        return (f"🎵 El video tiene una canción{cual}. Aunque quede al 15 % debajo de la voz, "
+                "Content ID la puede reclamar: te sugiero <b>✅ Aprobar sin audio</b>, que silencia "
+                "el original y deja solo la voz.")
+    if g.musica == "de_fondo":
+        return ("🎵 El video tiene música de fondo. Si no sabés de dónde es, mejor "
+                "<b>✅ Aprobar sin audio</b>: silencia el original y deja solo la voz.")
+    return ""
 
 
 def sintetizar(texto: str, modelo: Path, salida: Path) -> Path:
@@ -125,21 +172,27 @@ def duracion_wav(path: Path) -> float:
         return w.getnframes() / float(w.getframerate() or 1)
 
 
-def mezclar(video: Path, voz: Path, salida: Path, volumen_original: float = 0.15) -> Path:
+def mezclar(video: Path, voz: Path, salida: Path, volumen_original: float = 0.15,
+            sin_original: bool = False) -> Path:
     """Voz encima, audio del video de fondo. Si el video no tiene audio, va solo la voz.
+
+    `sin_original` (la opción `sin audio`): el original se descarta entero, no se baja a 0. Con
+    volumen 0 el stream seguiría en la mezcla, y lo que se quiere es que no haya nada que reclamar.
 
     El video NO se re-encodea: se copia el stream de imagen y solo se rearma el audio. En la Pi el
     render es la etapa más cara, y volver a pasarlo por x264 acá lo duplicaría al pedo.
     """
     salida.parent.mkdir(parents=True, exist_ok=True)
-    tiene_audio = _tiene_audio(video)
+    tiene_audio = _tiene_audio(video) and not sin_original
     if tiene_audio:
         filtro = (f"[0:a]volume={volumen_original}[fondo];"
                   f"[1:a]aresample=48000[voz];"
                   f"[fondo][voz]amix=inputs=2:duration=first:dropout_transition=0:normalize=0[a]")
         mapeo = ["-map", "0:v", "-map", "[a]"]
     else:
-        filtro = "[1:a]aresample=48000[a]"
+        # apad: la voz se rellena con silencio hasta el final. Sin eso, `-shortest` cortaba el
+        # VIDEO al largo de la voz (medido: un video de 40 s con una voz de 30 salía de 30 s).
+        filtro = "[1:a]aresample=48000,apad[a]"
         mapeo = ["-map", "0:v", "-map", "[a]"]
     run([find_bin("ffmpeg"), "-hide_banner", "-loglevel", "error", "-y",
          "-i", str(video.resolve()), "-i", str(voz.resolve()),
@@ -158,7 +211,8 @@ def _tiene_audio(video: Path) -> bool:
         return False
 
 
-def subtitular_voz(wav: Path, cfg_subs, texto_guion: str = "") -> list:
+def subtitular_voz(wav: Path, cfg_subs, texto_guion: str = "",
+                   palabra_por_palabra: bool = False) -> list:
     """Subtítulos de LA VOZ, no del audio original: se transcribe el wav sintetizado.
 
     Se pasa Whisper por encima de la propia voz en vez de repartir el guion a ojo por la duración.
@@ -173,6 +227,8 @@ def subtitular_voz(wav: Path, cfg_subs, texto_guion: str = "") -> list:
         palabras = sub.transcribir(modelo, wav, cfg_subs, duracion_wav(wav))
     finally:
         del modelo
+    if palabra_por_palabra:
+        return sub.palabra_por_palabra(palabras, cfg_subs)
     return sub.armar_subtitulos(palabras, cfg_subs)
 
 

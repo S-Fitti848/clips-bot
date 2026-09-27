@@ -39,18 +39,23 @@ class GeminiClient:
         self._sleep = sleep
 
     def json(self, sistema: str, prompt: str, schema: dict, temperatura: float = 0.7,
-             imagenes: list[bytes] | None = None) -> str:
+             imagenes: list[bytes] | None = None, audio: bytes | None = None) -> str:
         """Devuelve el texto crudo de la respuesta (debería ser JSON; lo valida quien llama).
 
         `imagenes`: JPEG en bytes, van en la misma llamada que el texto. Hacen falta porque el
         puntaje de calidad sacado solo de la transcripción castiga al humor visual: medido sobre 30
         clips, los marcados como "solo se entiende con la imagen" puntuaban 4,0 de mediana contra
         5,0 el resto, y tenían 1,60 palabras/s contra 2,45.
+
+        `audio`: MP3 en bytes (el de /narrar, para que diga si hay música antes de poner la voz).
         """
         partes: list[dict] = [{"text": prompt}]
         for img in imagenes or []:
             partes.append({"inlineData": {"mimeType": "image/jpeg",
                                           "data": base64.b64encode(img).decode()}})
+        if audio:
+            partes.append({"inlineData": {"mimeType": "audio/mp3",
+                                          "data": base64.b64encode(audio).decode()}})
         cuerpo = {
             "systemInstruction": {"parts": [{"text": sistema}]},
             "contents": [{"role": "user", "parts": partes}],

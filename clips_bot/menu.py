@@ -121,4 +121,6 @@ def parse_callback(data: str) -> dict | None:
     args = []
     for p in partes[2:]:
         args.append(int(p) if p.lstrip("-").isdigit() else p)
-    return {"menu": partes[0], "accion": partes[1], "args": args}
+    # `crudos`: los mismos, como texto. Los tokens hex de los botones (secrets.token_hex) a veces
+    # son todos dígitos: "012345" pasado a int es 12345, y el botón buscaba un pedido que no existe.
+    return {"menu": partes[0], "accion": partes[1], "args": args, "crudos": partes[2:]}

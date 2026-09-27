@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-09-27 | **Versión:** v0.24.1 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 + escucha de Telegram 24/7)
+**Snapshot:** 2026-09-27 | **Versión:** v0.24.2 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 + escucha de Telegram 24/7)
 
 > **SI ESTÁS EMPEZANDO UNA SESIÓN NUEVA, LEÉ §10.** Ahí está qué está hecho, qué quedó a medias,
 > qué falta, y las trampas que ya nos mordieron.
@@ -413,7 +413,7 @@ deploy/sudoers-clips-bot permite a santi reiniciar SOLO las unidades del clips-b
 voces/                   modelos de Piper (NO están en git: ~110 MB, se bajan en la Pi)
 clips_bot/envivo.py      modo en vivo (§3b): quién está al aire, momentos por creadores distintos,
                          alertas en la DB (no repetir, tope, vencer) y el resumen de tiempos
-tests/                   248 tests sin red ni video
+tests/                   264 tests sin red ni video
 ```
 
 Comandos:
@@ -597,6 +597,20 @@ Problemas abiertos:
 
 ## 9. CHANGELOG
 
+- v0.24.2 (2026-09-27) — `/editar` y `/narrar` ya no descartan por "casi todo silencio" ni "pocas
+  palabras" (se miden y se guardan igual): son filtros de clips de streamers, y un video de proceso
+  sin nadie hablando es justo lo que se quiere narrar. Una transcripción lenta en un video propio
+  sigue sin subtítulos del original en vez de tirarse. Opción `sin audio` (en el comando, abajo del
+  video o antes de mandarlo): en /narrar el original sale de la mezcla y queda solo la voz; en
+  /editar el mp4 sale mudo. Aviso de música: el audio del video va a Gemini en la MISMA llamada del
+  guion (no gasta cuota aparte) y devuelve `musica` (ninguna / de_fondo / cancion + cuál, si la
+  reconoce); si hay, el mensaje del guion lo dice y suma **✅ Aprobar sin audio**. NO calibrado:
+  cuánto acierta Gemini con la música no se midió (no se gastó cuota en pruebas). Arreglados en el
+  camino, los dos encontrados probando: (1) `del modelo` doble en `procesar` tras una transcripción
+  lenta que seguía (antes solo con --forzar; con el cambio habría roto cada aporte lento); (2) sin
+  audio de fondo, `mezclar` cortaba el video al largo de la voz (40 s → 30 s): ahora la voz se
+  rellena con `apad`. Y los tokens de los botones que eran todos dígitos con un 0 adelante se
+  rompían al pasarlos a número (`parse_callback` devuelve ahora también `crudos`). 264 tests OK.
 - v0.24.1 (2026-09-27) — Modo en vivo con umbral relativo al ritmo de cada canal:
   `max(4, 15 × ritmo de la última hora sin el momento)`. Simulado vuelta por vuelta sobre 72 h
   reales: 4,7 alertas/día (antes ~27), sin tocar el tope. `max_paginas_kick` 5 → 8 (spreen y davoo
@@ -798,12 +812,9 @@ de Telegram 24/7. Los comandos se atienden en el momento.
    NO desplegado ni probado con Telegram. En la Pi: `git pull`, reiniciar `clips-bot-telegram`,
    `/envivo on` en el grupo. Después de unos días, comparar las alertas reales con las 4,7/día
    simuladas (`/envivo` las cuenta) y mirar los tramos de tiempo.
-2. **Probar el resumen de `/narrar` con un video real de proceso** (v0.24.0 solo se probó con un
-   video sintético y con Gemini falso). RIESGO que hay que mirar primero: `procesar` corre los
-   filtros de audio también en /narrar, y un video de proceso suele no tener habla (música o nada):
-   puede caer en "pocas palabras" o "casi todo silencio" y descartarse, justo el caso para el que
-   existe narrar. No se tocó porque es una decisión de copyright: la música de fondo del original
-   sigue sonando al 15 % debajo de la voz.
+2. **Probar `/narrar` con un video real de proceso** (el resumen de v0.24.0 y el aviso de música de
+   v0.24.2 solo se probaron con videos sintéticos y con Gemini falso). Mirar: los pasos que elige,
+   si el aviso de música acierta (con música y sin música) y que `sin audio` deje solo la voz.
 3. **Efemérides** y **modo recortar**. Pedidos el 2026-09-24 ("después seguimos con efemérides y el
    modo recortar") y nunca especificados. También hay que preguntar qué son.
 4. **Revisión del corte de calidad (lo del "9 de 10").** El corte está en `textos.puntaje_min: 5`,

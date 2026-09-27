@@ -353,6 +353,22 @@ def sacar_cc(args: list[str]) -> tuple[list[str], str | None]:
     return quedan, cc
 
 
+def sacar_sin_audio(args: list[str]) -> tuple[list[str], bool]:
+    """Saca `sin audio` (o `sin_audio`, `sinaudio`, `mudo`): el original se silencia del todo."""
+    quedan, sin, i = [], False, 0
+    while i < len(args):
+        t = args[i].lower()
+        if t == "sin" and i + 1 < len(args) and args[i + 1].lower() == "audio":
+            sin, i = True, i + 2
+            continue
+        if t in ("sin_audio", "sinaudio", "mudo"):
+            sin = True
+        else:
+            quedan.append(args[i])
+        i += 1
+    return quedan, sin
+
+
 def sacar_cantidad(args: list[str], tope: int) -> tuple[list[str], int | None]:
     """Saca un token tipo `x5` de los argumentos y devuelve el resto y el número.
 

@@ -184,7 +184,12 @@ def procesar(url: str, cfg: Settings, streamers: list[Streamer], forzar: bool = 
         res.silencio = round(
             fraccion_silencio(d.path, info.duracion, fa.silencio_db, fa.silencio_min_s) if info.tiene_audio else 1.0, 3
         )
-    if res.silencio > fa.max_silencio and descartar(f"casi todo silencio ({res.silencio:.0%})", "silencio"):
+    # Silencio y pocas palabras son filtros de CLIPS DE STREAMERS (un clip sin habla es gameplay
+    # puro o música del stream). Un video propio de /editar o /narrar suele ser un proceso sin
+    # nadie hablando, justo lo que se quiere narrar (decisión 2026-09-27): se miden y se guardan,
+    # pero no descartan. La música de esos videos se avisa en /narrar y se resuelve con `sin audio`.
+    if (not aporte and res.silencio > fa.max_silencio
+            and descartar(f"casi todo silencio ({res.silencio:.0%})", "silencio")):
         return _cerrar(res)
 
     with crono.etapa("whisper: cargar modelo"):
@@ -193,8 +198,13 @@ def procesar(url: str, cfg: Settings, streamers: list[Streamer], forzar: bool = 
         with crono.etapa("whisper: transcribir"):
             palabras = sub.transcribir(modelo, d.path, cfg.subtitulos, info.duracion)
     except sub.TranscripcionLenta as e:
-        del modelo
-        if descartar(str(e), "transcripcion_lenta"):
+        # Un solo `del modelo`, abajo: antes había otro acá y, cuando el clip seguía (con --forzar),
+        # el segundo tiraba UnboundLocalError. Lo encontró el test de /editar sin habla.
+        if aporte:
+            # El tope de tiempo se respeta igual (cuida la Pi); solo que el video sigue sin
+            # subtítulos del original en vez de tirarse.
+            avisar(f"  ⚠ {e}: sigo sin subtítulos del audio original")
+        elif descartar(str(e), "transcripcion_lenta"):
             return _cerrar(res)
         palabras = []
     del modelo
@@ -202,7 +212,7 @@ def procesar(url: str, cfg: Settings, streamers: list[Streamer], forzar: bool = 
     res.palabras_por_s = round(len(palabras) / info.duracion, 2) if info.duracion else 0.0
     res.transcripcion = " ".join(p.texto for p in palabras)
     avisar(f"  {res.palabras} palabras ({res.palabras_por_s}/s)")
-    if res.palabras_por_s < fa.min_palabras_por_s and descartar(
+    if not aporte and res.palabras_por_s < fa.min_palabras_por_s and descartar(
         f"pocas palabras ({res.palabras_por_s}/s < {fa.min_palabras_por_s}): probable música o gameplay puro",
         "pocas palabras",
     ):
