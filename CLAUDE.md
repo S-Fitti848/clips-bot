@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-09-27 | **Versión:** v0.25.0 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 + escucha de Telegram 24/7)
+**Snapshot:** 2026-09-27 | **Versión:** v0.25.1 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 + escucha de Telegram 24/7)
 
 > **SI ESTÁS EMPEZANDO UNA SESIÓN NUEVA, LEÉ §10.** Ahí está qué está hecho, qué quedó a medias,
 > qué falta, y las trampas que ya nos mordieron.
@@ -415,7 +415,7 @@ clips_bot/serie.py       /serie: partes, división en etapas (validada), guiones
                          título numerado, horarios, hoja de miniaturas por etapa
 clips_bot/envivo.py      modo en vivo (§3b): quién está al aire, momentos por creadores distintos,
                          alertas en la DB (no repetir, tope, vencer) y el resumen de tiempos
-tests/                   288 tests sin red ni video
+tests/                   289 tests sin red ni video
 ```
 
 Comandos:
@@ -787,7 +787,7 @@ de Telegram 24/7. Los comandos se atienden en el momento.
 
 | | |
 |---|---|
-| commit | `98aea18` |
+| commit | `942bc0b` (desplegado 2026-09-27 18:41; 289 tests OK en la Pi) |
 | `clips-bot.timer` | activo, próxima 05:00 AR |
 | `clips-bot-telegram` | activo |
 | sudoers | instalado (`/etc/sudoers.d/clips-bot`) |
@@ -843,6 +843,13 @@ de Telegram 24/7. Los comandos se atienden en el momento.
    candidatos compartida, selección POR destino, y procesado deduplicado; el grupo usa la unión.
 
 ### Trampas que ya nos mordieron
+
+- **La Pi hace `git pull` desde GitHub: un commit sin `git push` no existe para ella.** El
+  2026-09-27 hubo 7 commits sin pushear; Santi hizo pull y reinició, la Pi siguió en `d226073`, y
+  /narrar le contestó "casi todo silencio" con un filtro que ya estaba sacado. Después de commitear
+  algo que tiene que llegar a la Pi: `git push`, y verificar con
+  `ssh santi@192.168.50.12 'cd ~/clips && git log --oneline -1'` (en la LAN; por Tailscale,
+  100.67.132.95). Nada pesado andando antes de reiniciar la escucha: `db.hay_trabajo_pesado`.
 
 - **Nunca escribas `\r` ni `\n` en un archivo de shell desde un script intermedio.** `alerta.sh`
   terminó con DOS retornos de carro reales adentro: uno partía un comentario en dos y la segunda
