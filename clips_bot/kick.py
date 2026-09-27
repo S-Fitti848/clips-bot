@@ -98,6 +98,33 @@ class KickClient:
                 break
         return clips[:max_clips]
 
+    def get_clips_desde(self, slug: str, desde: datetime, max_paginas: int = 5) -> list[dict]:
+        """Los últimos clips del canal hasta `desde` (modo en vivo). Sin `sort`, la API los devuelve
+        del más nuevo al más viejo (verificado 2026-09-27), así que se pagina hasta pasar `desde`."""
+        clips: list[dict] = []
+        cursor: str | None = None
+        for _ in range(max_paginas):
+            data = self._get(API.format(slug=slug), {"cursor": cursor} if cursor else {})
+            page = data.get("clips") or []
+            clips.extend(page)
+            cursor = data.get("nextCursor") or None
+            if not page or not cursor or _fecha(page[-1].get("created_at")) < desde:
+                break
+        return [c for c in clips if _fecha(c.get("created_at")) >= desde]
+
+    def get_livestream(self, slug: str) -> dict | None:
+        """El stream en vivo del canal, o None si no está al aire. Trae el título del stream
+        (`session_title`), que hace falta para los filtros de co-stream y de programa."""
+        d = self._get(API_CANAL.format(slug=slug))
+        ls = d.get("livestream") if isinstance(d, dict) else None
+        if not ls or not ls.get("is_live", True):
+            return None
+        cats = ls.get("categories") or []
+        return {"id": str(ls.get("id") or ""), "titulo": str(ls.get("session_title") or ""),
+                "juego": str((cats[0] or {}).get("name") or "") if cats else "",
+                "inicio": str(ls.get("start_time") or ls.get("created_at") or ""),
+                "espectadores": int(ls.get("viewer_count") or 0)}
+
     def get_canal(self, slug: str) -> dict | None:
         """Datos del canal, o None si no existe. Para confirmar un alta antes de sumarlo."""
         try:
@@ -124,6 +151,13 @@ class KickClient:
         if not isinstance(data, list):
             return {}
         return {str(d.get("id")): str(d.get("session_title") or "") for d in data if d.get("id")}
+
+
+def _fecha(valor) -> datetime:
+    try:
+        return datetime.fromisoformat(str(valor or "").replace("Z", "+00:00")).astimezone(timezone.utc)
+    except ValueError:
+        return datetime.min.replace(tzinfo=timezone.utc)
 
 
 def a_clip(d: dict, login: str) -> dict:

@@ -304,6 +304,27 @@ seleccion:
     reciente: 0.03
     catalogo: 0.10
 
+# Modo en vivo (/envivo on|off). Mientras está prendido, la escucha de Telegram mira qué streamers de
+# la lista están al aire y, si N creadores DISTINTOS clipearon el mismo momento en los últimos
+# minutos, procesa el mejor clip al toque (sin la espera de 24 h, con todos los filtros de seguridad
+# y tono) y lo manda con "🔥 SUBIR YA" al chat que prendió el modo.
+# Medido 2026-09-27 antes de programarlo:
+#   - Twitch NO informa vod_offset ni video_id mientras el stream está al aire (0 de 13 clips en
+#     vivo en djmariio y k1ng): ahí se agrupa por hora de creación, igual que Kick.
+#   - La densidad de clips es MUY distinta entre plataformas: lacobraaa en Kick con 10k espectadores
+#     tuvo ~25 clips de ~20 creadores en 15 min (muchos con títulos basura, 60-177 s de duración);
+#     k1ng en Twitch con 6k, 34 clips en 4 h. Con el mismo umbral, Kick dispara mucho más.
+envivo:
+  intervalo_twitch_s: 300
+  intervalo_kick_s: 120
+  ventana_min: 15
+  min_creadores: 3
+  ventana_vod_s: 60
+  ventana_real_s: 90
+  alertas_por_hora: 3
+  vencimiento_min: 60
+  max_paginas_kick: 5
+
 # §3 paso 10: entrega por Telegram.
 publicacion:
   horarios: ["13:00", "18:00", "21:30"]   # hora AR sugerida para cada seleccionado, en orden

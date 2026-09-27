@@ -224,6 +224,20 @@ class Textos:
     frames_para_puntaje: int = 4   # 0 = puntuar solo con la transcripción
 
 
+@dataclass(frozen=True)
+class EnVivo:
+    """Modo /envivo: detectar un momento mientras el stream sigue al aire (§3 modo en vivo)."""
+    intervalo_twitch_s: int = 300     # /streams va en lote: una llamada para todos los de Twitch
+    intervalo_kick_s: int = 120       # Kick no tiene lote: una llamada por canal, con kick.pausa_s
+    ventana_min: int = 15             # clips de los últimos N minutos de cada canal en vivo
+    min_creadores: int = 3            # creadores DISTINTOS clipeando el mismo momento
+    ventana_vod_s: int = 60           # Twitch con vod_offset: mismo VOD a ±N s
+    ventana_real_s: int = 90          # Kick, y Twitch sin vod_offset: hora de creación a ±N s
+    alertas_por_hora: int = 3         # pendientes + procesando + entregadas en los últimos 60 min
+    vencimiento_min: int = 60         # una alerta que esperó turno más que esto ya no es "YA"
+    max_paginas_kick: int = 5         # páginas de 20 clips por canal y por vuelta
+
+
 FUENTES = ("reciente", "catalogo")
 
 
@@ -261,6 +275,7 @@ class Settings:
     textos: Textos = Textos()
     seleccion: Seleccion = Seleccion()
     publicacion: Publicacion = Publicacion()
+    envivo: EnVivo = EnVivo()
     youtube_upload_enabled: bool = False
 
 
@@ -329,6 +344,7 @@ def load_settings(path: Path = CONFIG_DIR / "settings.yaml") -> Settings:
         textos=_seccion(Textos, raw, "textos", path),
         seleccion=seleccion,
         publicacion=_seccion(Publicacion, raw, "publicacion", path),
+        envivo=_seccion(EnVivo, raw, "envivo", path),
         youtube_upload_enabled=bool(raw.get("youtube_upload_enabled", False)),
     )
 

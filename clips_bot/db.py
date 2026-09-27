@@ -178,6 +178,26 @@ CREATE TABLE IF NOT EXISTS bot_estado (
     clave  TEXT PRIMARY KEY,
     valor  TEXT
 );
+
+CREATE TABLE IF NOT EXISTS envivo_alertas (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    streamer    TEXT NOT NULL,
+    plataforma  TEXT NOT NULL,
+    chat_id     TEXT NOT NULL,
+    estado      TEXT NOT NULL,           -- ver ESTADOS_ALERTA
+    motivo      TEXT,
+    clip_id     TEXT,                    -- el elegido para procesar
+    url         TEXT,
+    clips       TEXT NOT NULL DEFAULT '[]',  -- json: todos los clip_id del momento
+    creadores   INTEGER NOT NULL,
+    -- Los cuatro tiempos, en ISO UTC, para ver dónde se pierde el tiempo:
+    momento     TEXT NOT NULL,           -- el primer clip del momento (lo más cerca del hecho que se sabe)
+    umbral      TEXT NOT NULL,           -- cuando clipeó el N-ésimo creador: desde ahí era detectable
+    detectado   TEXT NOT NULL,           -- cuando lo vio el bot
+    inicio      TEXT,                    -- cuando arrancó a procesarlo (después de esperar turno)
+    entregado   TEXT,                    -- cuando salió el mensaje por Telegram
+    tiempos     TEXT                     -- json: tiempos por etapa de procesar()
+);
 """
 
 
@@ -493,4 +513,93 @@ def anotar_dado(conn: sqlite3.Connection, token: str, clip_id: str) -> None:
         p["dados"].append(clip_id)
     conn.execute("UPDATE pedidos SET dados = ? WHERE token = ?",
                  (_json.dumps(p["dados"]), token))
+    conn.commit()
+
+
+# ---- modo en vivo -------------------------------------------------------------
+# El interruptor va en la DB (como el del multi-POV): lo prende y lo apaga un comando de Telegram,
+# no un commit. Guardar el chat que lo prendió ES el interruptor: sin chat, está apagado.
+
+CLAVE_ENVIVO = "envivo_chat"
+ESTADOS_ALERTA = ("pendiente", "procesando", "entregada", "descartada", "sin_clip", "tope", "vencida")
+# Las que cuentan para el tope por hora: las que terminan (o pueden terminar) en un mensaje.
+ESTADOS_CON_MENSAJE = ("pendiente", "procesando", "entregada")
+
+
+def envivo_chat(conn: sqlite3.Connection) -> str | None:
+    return get_valor(conn, CLAVE_ENVIVO)
+
+
+def prender_envivo(conn: sqlite3.Connection, chat_id: str) -> None:
+    set_valor(conn, CLAVE_ENVIVO, str(chat_id))
+
+
+def apagar_envivo(conn: sqlite3.Connection) -> None:
+    borrar_valor(conn, CLAVE_ENVIVO)
+
+
+def _alerta(fila) -> dict:
+    import json as _json
+
+    claves = ("id", "streamer", "plataforma", "chat_id", "estado", "motivo", "clip_id", "url", "clips",
+              "creadores", "momento", "umbral", "detectado", "inicio", "entregado", "tiempos")
+    d = dict(zip(claves, fila))
+    d["clips"] = _json.loads(d["clips"] or "[]")
+    d["tiempos"] = _json.loads(d["tiempos"] or "{}")
+    return d
+
+
+_COLS_ALERTA = ("id, streamer, plataforma, chat_id, estado, motivo, clip_id, url, clips, creadores, "
+                "momento, umbral, detectado, inicio, entregado, tiempos")
+
+
+def crear_alerta(conn: sqlite3.Connection, *, streamer: str, plataforma: str, chat_id: str,
+                 estado: str, clips: list[str], creadores: int, momento: str, umbral: str,
+                 detectado: str, clip_id: str = "", url: str = "", motivo: str | None = None) -> int:
+    import json as _json
+
+    cur = conn.execute(
+        """INSERT INTO envivo_alertas (streamer, plataforma, chat_id, estado, motivo, clip_id, url,
+               clips, creadores, momento, umbral, detectado)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        (streamer, plataforma, str(chat_id), estado, motivo, clip_id, url, _json.dumps(clips),
+         creadores, momento, umbral, detectado))
+    conn.commit()
+    return int(cur.lastrowid)
+
+
+def actualizar_alerta(conn: sqlite3.Connection, alerta_id: int, **campos) -> None:
+    import json as _json
+
+    if not campos:
+        return
+    for k in ("clips", "tiempos"):
+        if k in campos and not isinstance(campos[k], str):
+            campos[k] = _json.dumps(campos[k], ensure_ascii=False)
+    sets = ", ".join(f"{k} = ?" for k in campos)
+    conn.execute(f"UPDATE envivo_alertas SET {sets} WHERE id = ?", (*campos.values(), alerta_id))
+    conn.commit()
+
+
+def alertas(conn: sqlite3.Connection, desde_iso: str | None = None, streamer: str | None = None,
+            estados: tuple[str, ...] | None = None) -> list[dict]:
+    """Alertas detectadas desde `desde_iso` (ISO UTC, se compara como texto: todas se escriben igual)."""
+    sql, args = f"SELECT {_COLS_ALERTA} FROM envivo_alertas WHERE 1 = 1", []
+    if desde_iso:
+        sql += " AND detectado >= ?"
+        args.append(desde_iso)
+    if streamer:
+        sql += " AND streamer = ?"
+        args.append(streamer)
+    if estados:
+        sql += f" AND estado IN ({', '.join('?' for _ in estados)})"
+        args.extend(estados)
+    return [_alerta(f) for f in conn.execute(sql + " ORDER BY id", args)]
+
+
+def marcar_si_nuevo(conn: sqlite3.Connection, clip_id: str, broadcaster: str, estado: str,
+                    motivo: str, url: str = "") -> None:
+    """Como registrar_clip, pero sin pisar un clip que ya estaba (ej. uno entregado)."""
+    conn.execute("INSERT OR IGNORE INTO clips (clip_id, broadcaster, url, estado, motivo) "
+                 "VALUES (?, ?, ?, ?, ?)", (clip_id, broadcaster, url, estado, motivo))
     conn.commit()

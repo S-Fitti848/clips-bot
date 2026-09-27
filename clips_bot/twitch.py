@@ -6,6 +6,7 @@ Endpoints usados:
   GET  /helix/clips?broadcaster_id=...         → clips (Twitch los devuelve ordenados por vistas)
   GET  /helix/games?id=...                     → game_id → nombre de categoría
   GET  /helix/videos?id=...                    → video_id (VOD) → título del stream
+  GET  /helix/streams?user_login=...           → quién está en vivo (modo /envivo), de a 100
 """
 
 from __future__ import annotations
@@ -143,6 +144,20 @@ class TwitchClient:
                  "nombre": c.get("display_name") or c["broadcaster_login"],
                  "en_vivo": bool(c.get("is_live")), "juego": c.get("game_name") or ""}
                 for c in data.get("data", [])]
+
+    def get_streams(self, logins: list[str]) -> dict[str, dict]:
+        """login → stream de los que están EN VIVO ahora (los que no, no aparecen). En lote de a 100:
+        para los ~50 canales de Twitch es una sola llamada, que es lo que permite el modo en vivo."""
+        out: dict[str, dict] = {}
+        for grupo in _chunks(logins, MAX_IDS_POR_REQUEST):
+            data = self._get("/streams", [("user_login", l) for l in grupo] + [("first", "100")])
+            for s in data.get("data", []):
+                if s.get("type", "live") == "live":
+                    out[s["user_login"].lower()] = {
+                        "user_id": s["user_id"], "titulo": s.get("title") or "",
+                        "juego": s.get("game_name") or "", "inicio": s.get("started_at") or "",
+                        "espectadores": int(s.get("viewer_count") or 0)}
+        return out
 
     def get_clips(
         self, broadcaster_id: str, started_at: datetime, ended_at: datetime, max_clips: int = 100

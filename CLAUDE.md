@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-09-27 | **Versión:** v0.22.0 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 + escucha de Telegram 24/7)
+**Snapshot:** 2026-09-27 | **Versión:** v0.23.0 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 + escucha de Telegram 24/7)
 
 > **SI ESTÁS EMPEZANDO UNA SESIÓN NUEVA, LEÉ §10.** Ahí está qué está hecho, qué quedó a medias,
 > qué falta, y las trampas que ya nos mordieron.
@@ -208,6 +208,55 @@ y por eso la unidad va con `Nice=10` y prioridad de CPU baja. NO paralelizar.
     `/reclamo <id>` listo para copiar. Santi sube a mano y responde con los links; el bot los asocia
     al clip en `posts` (esa 2ª mitad está pendiente).
 
+### 3b. Modo en vivo (`/envivo on|off`, `clips_bot/envivo.py`)
+Pedido 2026-09-27. Corre DENTRO de la escucha de Telegram (no hay servicio nuevo), solo si está
+prendido: el interruptor es el chat guardado en `bot_estado.envivo_chat`, que es además adonde van las
+alertas. Todos los streamers con permiso y sin reclamo, argentinos incluidos, de cualquier grupo.
+1. Quién está al aire: Twitch en lote (`/helix/streams`, cada `envivo.intervalo_twitch_s` = 5 min);
+   Kick canal por canal (`/api/v2/channels/{slug}` → `livestream`, cada 2 min, con `kick.pausa_s`).
+2. Clips de los últimos `ventana_min` (15) de los que están en vivo. Kick: sin `sort` la API los da
+   del más nuevo al más viejo, se pagina hasta pasar la ventana.
+3. Momento = N creadores DISTINTOS (`min_creadores`, 3) en el mismo canal a ±60 s de `vod_offset`
+   o, si no hay offset, a ±90 s de hora de creación. **Twitch no da `vod_offset` mientras el stream
+   está al aire** (medido: 0 de 13 clips en vivo), así que en la práctica las dos plataformas agrupan
+   por hora. Se arranca por el punto más denso: el que se alerta primero es el más clipeado.
+4. Del momento, el clip más visto que pase los filtros de siempre SIN la espera de 24 h. Si ninguno
+   pasa queda `sin_clip` y se reevalúa en la vuelta siguiente (alguien puede hacer uno de 30 s).
+5. Alerta en `envivo_alertas`. Nunca dos del mismo momento (clips en común o misma hora). Pasado
+   `alertas_por_hora` (3) se anota como `tope`, para medir cuánto se pierde. Una pendiente que esperó
+   turno más de `vencimiento_min` (60) queda `vencida`.
+6. Procesar con el turno pesado, ANTES que la cola de `/buscar`. `procesar(..., permitir_fecha=True)`:
+   todos los filtros de seguridad y tono corren, pero `depende_de_fecha` no descarta (para subir ya,
+   que sea de hoy es lo que se busca). Sin textos de Gemini no se manda: el filtro de tono va en esa
+   misma llamada. Los otros clips del momento se marcan vistos (`mismo momento (ya salió en vivo)`)
+   para que mañana no salgan en la corrida diaria.
+7. Se manda al chat que lo prendió con "🔥 SUBIR YA — N personas clipearon este momento de X hace
+   M min", y el mensaje de siempre abajo.
+**Tiempos por alerta** (ISO UTC en la tabla): `momento` (primer clip), `umbral` (cuando clipeó el
+N-ésimo creador: desde ahí era detectable), `detectado`, `inicio` (después de esperar turno),
+`entregado`, y `tiempos` por etapa de procesar. `/envivo` solo muestra las medianas de cada tramo
+en las últimas 24 h. OJO: el tramo umbral → detectado mezcla el reloj de la plataforma con el de la
+Pi; si da negativo o raro, mirar `timedatectl` (el Windows de desarrollo atrasaba 6 min).
+`python -m clips_bot envivo [--ventana-min N] [--min-creadores N]` hace una pasada sin procesar ni
+escribir nada, para calibrar.
+
+**Replay del 2026-09-27 (clips reales de 72 h por la misma función, con los filtros):**
+
+| min_creadores | momentos | pasan filtros | alertas con tope 3/h | horas con tope |
+|---|---|---|---|---|
+| 3 (el pedido) | 397 | 225 | 81 (~27/día) | 31 |
+| 4 | 242 | 133 | 74 | 29 |
+| 5 | 158 | 89 | 62 | 27 |
+| 6 | 111 | 62 | 51 | 24 |
+| 8 | 65 | 35 | 31 | 18 |
+
+spreen solo da 2,2 momentos por hora de stream con 3 creadores (y está subestimado: pegó en el tope
+de 1200 clips), davooxeneize 2,2/h pero 0 pasan (`programa_terceros`), lacobraaa 1,6/h y pasan 5 de
+76 (fútbol). En Twitch es más raro: aldo_geo 0,7/h, juansguarnizo 0,4/h. De Kick, el 38 % de los clips
+dura más de 60 s (`muy largo`). Entre el primer clip y el tercer creador pasan 59 s de mediana (p90
+114 s). O sea: con 3 el tope por hora es lo que manda casi siempre, y son ~27 procesados pesados por
+día en la Pi. Queda en 3 porque así se pidió; la decisión está abierta (ver §10).
+
 ### 4b. Módulo de métricas (feedback loop)
 Job cada 6 h: para cada post de los últimos 30 días, pedir vistas/likes/comentarios/shares
 (YouTube `videos.list` + Analytics API para retención promedio; Meta Graph insights para IG/FB;
@@ -353,7 +402,9 @@ clips_bot/narrar.py      modo /narrar: guion con Gemini viendo frames, TTS con P
 clips_bot/__main__.py    CLI + todo el bot de Telegram (comandos, menús, cola, turnos)
 deploy/sudoers-clips-bot permite a santi reiniciar SOLO las unidades del clips-bot sin contraseña
 voces/                   modelos de Piper (NO están en git: ~110 MB, se bajan en la Pi)
-tests/                   196 tests sin red ni video
+clips_bot/envivo.py      modo en vivo (§3b): quién está al aire, momentos por creadores distintos,
+                         alertas en la DB (no repetir, tope, vencer) y el resumen de tiempos
+tests/                   217 tests sin red ni video
 ```
 
 Comandos:
@@ -401,6 +452,10 @@ Comandos:
   - `/ayuda` — lista los comandos con un ejemplo copiable de cada uno (sale de `COMANDOS` en
     `__main__.py`, y hay un test que exige que todos tengan ejemplo).
 - `telegram-chat-id` — lista los chats de getUpdates y los ids de usuario (TELEGRAM_ALLOWED_USERS).
+  - `/envivo on|off` — modo en vivo (§3b); `/envivo` solo muestra el estado, la última vuelta y
+    las medianas de cada tramo de tiempo en las últimas 24 h.
+- `envivo [--ventana-min N] [--min-creadores N]` — una pasada del modo en vivo sin procesar ni
+  escribir: quién está al aire y qué momentos dispararían. Para calibrar.
 - `benchmark [--clips N] [--modelos small,base] [--limite-s S]` — mide OCR, Whisper (carga y
   transcripción por modelo), detección de cámara y render sobre los mp4 que ya están en
   `output/raw/`; no descarga nada. Dice si entra en el tope por clip y deja un `.srt` por modelo
@@ -533,6 +588,11 @@ Problemas abiertos:
 
 ## 9. CHANGELOG
 
+- v0.23.0 (2026-09-27) — Modo en vivo (`/envivo on|off`, §3b): detección dentro de la escucha,
+  Twitch en lote cada 5 min y Kick cada 2, momento = 3 creadores distintos, procesado con prioridad
+  sobre la cola, "🔥 SUBIR YA" al chat que lo prendió, tope 3/h, y los tiempos de cada tramo en
+  `envivo_alertas`. Replay de 72 h reales: con 3 creadores son ~27 alertas/día (ver tabla en §3b).
+  `procesar(permitir_fecha=True)`, `enviar_clip(encabezado=...)`. 217 tests OK.
 - v0.22.0 (2026-09-27) — Modos `/editar` y `/narrar` (video propio: archivo de Telegram o link con
   yt-dlp). `/ayuda` por secciones con botones. Cantidad por pedido (`xN`, tope 6), `/cantidad`, y
   los botones `➕ N más` / `🔁 Reemplazar`, que usan primero lo ya procesado sin gastar Gemini.
@@ -706,16 +766,20 @@ de Telegram 24/7. Los comandos se atienden en el momento.
 
 ### Pendiente, en orden
 
-1. **Modo en vivo.** Santi lo pidió el 2026-09-27 como "el modo en vivo que te pedí", pero **no hay
-   registro de ese pedido en el historial**. NO adivinar qué es: preguntar. La sospecha razonable
-   es procesar un stream mientras está al aire, que es un problema bastante distinto al de un clip.
-2. **Efemérides** y **modo recortar**. Pedidos el 2026-09-24 ("después seguimos con efemérides y el
+1. **Modo en vivo: deploy y umbral.** Programado y con tests (v0.23.0), NO desplegado ni probado
+   con Telegram. En la Pi: `git pull`, reiniciar `clips-bot-telegram`, `/envivo on` en el grupo.
+   Decisión abierta: con 3 creadores el replay da ~27 alertas/día y el tope manda en 31 de 72 h;
+   spreen solo satura. Opciones: subir `min_creadores` (5 → ~20/día), umbral por plataforma, o
+   umbral relativo al ritmo normal de clips del canal (un pico sobre SU base, no un número fijo).
+2. **`/narrar` con videos de más de 90 s** (pedido 2026-09-27): resumir por escenas antes del guion
+   (8-10 pasos con miniaturas para aprobar) y crédito `cc: <link>` para Creative Commons.
+3. **Efemérides** y **modo recortar**. Pedidos el 2026-09-24 ("después seguimos con efemérides y el
    modo recortar") y nunca especificados. También hay que preguntar qué son.
-3. **Revisión del corte de calidad (lo del "9 de 10").** El corte está en `textos.puntaje_min: 5`,
+4. **Revisión del corte de calidad (lo del "9 de 10").** El corte está en `textos.puntaje_min: 5`,
    puesto a mano. El trato es elegirlo con datos: el puntaje desde el cual Santi vota más 👍 que 👎
    (`db.votos_por_puntaje`). Arrancó el 2026-09-24, así que a partir del **2026-10-08** hay que
    mirarlo. Con 2 votos todavía no alcanza para nada.
-4. **Listas de streamers por persona.** Pedido y después postergado explícitamente por Santi el
+5. **Listas de streamers por persona.** Pedido y después postergado explícitamente por Santi el
    2026-09-27 ("las listas por persona no las hagas por ahora"). El diseño pensado: una corrida de
    candidatos compartida, selección POR destino, y procesado deduplicado; el grupo usa la unión.
 

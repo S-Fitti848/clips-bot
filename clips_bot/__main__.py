@@ -22,6 +22,7 @@ import argparse
 import html
 import json
 import logging
+import re
 import signal
 import sys
 import time
@@ -351,9 +352,12 @@ def ejecutar_seleccion(settings: Settings, gemini: GeminiClient | None, enviar: 
 
 def enviar_clip(tg: TelegramClient, chat_id, conn, clip_id: str, meta: dict, numero: int,
                 horario: str | None, pedido: str = "", ultimo: bool = False,
-                cuantos_mas: int = 0) -> None:
+                cuantos_mas: int = 0, encabezado: str = "") -> int:
     """`chat_id` puede ser uno o una lista. El mp4 se sube UNA vez: a partir del segundo destino se
-    manda el file_id que devolvió Telegram, que en la Pi ahorra varios minutos de subida."""
+    manda el file_id que devolvió Telegram, que en la Pi ahorra varios minutos de subida.
+
+    `encabezado` va arriba del caption y del mensaje (ej. "🔥 SUBIR YA" del modo en vivo).
+    Devuelve a cuántos destinos llegó."""
     """El mp4 + el mensaje con los textos, y el clip queda `entregado`. §3 paso 10.
 
     El mensaje lleva los botones 👍/👎: con dos semanas de votos, el corte de calidad se elige con
@@ -375,7 +379,11 @@ def enviar_clip(tg: TelegramClient, chat_id, conn, clip_id: str, meta: dict, num
         cuerpo = (f"⚠️ <b>RELLENO (puntaje {meta.get('puntaje', 0)} de 10)</b> — no llegó al corte "
                   f"de calidad; entró porque faltaban clips. Mirá si vale la pena.\n\n" + cuerpo)
     caption = f"#{numero} · {meta['streamer']} · {meta['textos']['titulo']}{marca}"
-    file_id = None
+    if encabezado:
+        plano = html.unescape(re.sub(r"<[^>]+>", "", encabezado))  # el caption va sin HTML
+        caption = f"{plano} · {caption}"[:1024]
+        cuerpo = encabezado + "\n\n" + cuerpo
+    file_id, llegaron = None, 0
     for destino in destinos:
         try:
             enviado = tg.send_video(destino, video, caption, width=info.ancho, height=info.alto,
@@ -384,6 +392,7 @@ def enviar_clip(tg: TelegramClient, chat_id, conn, clip_id: str, meta: dict, num
             tg.send_message(destino, cuerpo,
                             teclado=teclado_voto(clip_id, pedido=pedido, ultimo=ultimo,
                                                  cuantos_mas=cuantos_mas))
+            llegaron += 1
         except TelegramError as e:
             # Que un destino falle (bloqueado, sacaron al bot del grupo) no puede tumbar el resto.
             log.warning("No pude entregar %s en %s: %s", clip_id, destino, e)
@@ -402,6 +411,7 @@ def enviar_clip(tg: TelegramClient, chat_id, conn, clip_id: str, meta: dict, num
     db.set_estado(conn, clip_id, "entregado")
     if pedido:
         db.anotar_dado(conn, pedido, clip_id)
+    return llegaron
 
 
 def _avisar_cero(settings: Settings, detalle: str, destinos: list[str] | None = None) -> None:
@@ -1351,6 +1361,7 @@ def escuchar_telegram(settings: Settings, timeout_poll: int = 50) -> int:
     if not usuarios_permitidos(env("TELEGRAM_ALLOWED_USERS", requerido=False)):
         log.warning("TELEGRAM_ALLOWED_USERS vacío: no obedezco ningún comando")
     cola: list[dict] = []
+    reloj_envivo: dict[str, float] = {}   # última detección por plataforma (modo en vivo)
     chat_ultimo = env("TELEGRAM_CHAT_ID", requerido=False)
     print(f"Escuchando (long polling {timeout_poll}s). Ctrl-C para salir.")
     while True:
@@ -1359,9 +1370,13 @@ def escuchar_telegram(settings: Settings, timeout_poll: int = 50) -> int:
         permitidos = usuarios_permitidos(env("TELEGRAM_ALLOWED_USERS", requerido=False))
         conn = db.connect(DB_PATH)
         try:
+            # El modo en vivo va ANTES que la cola: un momento en vivo pierde valor por minuto.
+            _seguro(tg, str(db.envivo_chat(conn) or chat_ultimo or ""), "el modo en vivo",
+                    _envivo_tick, conn, tg, settings, reloj_envivo)
             _seguro(tg, str(chat_ultimo or ""), "la cola", _drenar_cola, conn, tg, cola, settings)
             guardado = db.get_valor(conn, "telegram_offset")
-            espera = 5 if cola else timeout_poll
+            pendientes = db.alertas(conn, estados=("pendiente",)) if db.envivo_chat(conn) else []
+            espera = 5 if (cola or pendientes) else timeout_poll
             try:
                 updates = tg.get_updates(offset=int(guardado) if guardado else None, timeout=espera)
             except TelegramError as e:
@@ -1475,6 +1490,12 @@ def _despachar(conn, tg: TelegramClient, c: dict, settings: Settings, cola: list
         return
     if c["comando"] == "/cantidad":
         respuesta = _seguro(tg, c["chat_id"], c["comando"], _cantidad, conn, c["args"])
+        if respuesta is not FALLO and respuesta:
+            tg.send_message(c["chat_id"], respuesta)
+        return
+    if c["comando"] == "/envivo":
+        respuesta = _seguro(tg, c["chat_id"], c["comando"], _envivo, conn, c["chat_id"], c["args"],
+                            settings)
         if respuesta is not FALLO and respuesta:
             tg.send_message(c["chat_id"], respuesta)
         return
@@ -1624,6 +1645,181 @@ def _drenar_cola(conn, tg: TelegramClient, cola: list[dict], settings: Settings)
             tg.send_message(pedido["chat_id"], r)
 
 
+# ---- modo en vivo (/envivo) ---------------------------------------------------------
+# Corre dentro de la escucha, en la misma vuelta que la cola: no hace falta otro servicio ni otro
+# proceso peleando la CPU. Detectar es liviano (unas llamadas a las APIs); procesar el clip usa el
+# turno pesado como todo lo demás, pero va ANTES que la cola: un momento en vivo pierde valor por
+# minuto y una búsqueda puede esperar.
+
+
+def _envivo_tick(conn, tg: TelegramClient, settings: Settings, reloj: dict,
+                 ahora=time.time) -> None:
+    chat = db.envivo_chat(conn)
+    if not chat:
+        return
+    cfg = settings.envivo
+    t = ahora()
+    tocan = [p for p, cada in (("twitch", cfg.intervalo_twitch_s), ("kick", cfg.intervalo_kick_s))
+             if t - reloj.get(p, 0.0) >= cada]
+    if tocan:
+        for p in tocan:  # antes de detectar: si falla, no se reintenta en cada vuelta del polling
+            reloj[p] = t
+        _envivo_detectar(conn, settings, chat, tocan)
+    _envivo_procesar(conn, tg, settings)
+
+
+def _envivo_detectar(conn, settings: Settings, chat: str, plataformas: list[str]) -> list[dict]:
+    from . import envivo
+
+    streamers = _streamers(conn)
+    vuelta = envivo.detectar(
+        streamers, settings.envivo, db.excluidos(conn),
+        twitch=_twitch() if "twitch" in plataformas else None,
+        kick=KickClient(pausa_s=settings.kick.pausa_s) if "kick" in plataformas else None)
+    for f in vuelta.fallos:
+        log.warning("envivo: %s", f)
+    cambios = envivo.registrar(conn, vuelta, settings.envivo, settings.filtros, streamers, chat)
+    db.set_valor(conn, "envivo_ultima_vuelta", json.dumps({
+        "ts": envivo.iso(datetime.now(timezone.utc)), "plataformas": plataformas,
+        "vivos": sorted(vuelta.vivos), "clips": vuelta.clips, "momentos": len(vuelta.momentos),
+        "fallos": vuelta.fallos[:5]}, ensure_ascii=False))
+    for a in cambios:
+        log.info("envivo: %s en %s, %d creadores → %s %s", a["clip_id"] or "(sin clip)",
+                 a["streamer"], a["creadores"], a["estado"], a["motivo"] or "")
+    return cambios
+
+
+def _envivo_procesar(conn, tg: TelegramClient, settings: Settings) -> None:
+    """Procesa la mejor alerta pendiente si el turno pesado está libre. Una por vuelta."""
+    from . import envivo
+
+    envivo.vencer(conn, settings.envivo)
+    alerta = envivo.siguiente(conn)
+    if not alerta or db.hay_trabajo_pesado(conn, VENCIMIENTO_PESADO_S):
+        return
+    token = f"envivo:{alerta['id']}"
+    if not db.tomar_turno(conn, db.RECURSO_PESADO, token, maximo=1,
+                          vencimiento_s=VENCIMIENTO_PESADO_S):
+        return
+    try:
+        _procesar_alerta(conn, tg, alerta, settings)
+    finally:
+        db.soltar_turno(conn, db.RECURSO_PESADO, token, VENCIMIENTO_PESADO_S)
+
+
+def _procesar_alerta(conn, tg: TelegramClient, alerta: dict, settings: Settings) -> None:
+    from . import envivo
+    from .process import READY_DIR, procesar
+
+    aid = alerta["id"]
+    db.actualizar_alerta(conn, aid, estado="procesando", inicio=envivo.iso(datetime.now(timezone.utc)))
+    # Los otros clips del mismo momento no pueden salir mañana en la corrida diaria: sería el mismo
+    # momento dos veces. Se marcan antes de procesar, así vale aunque este se descarte.
+    for cid in alerta["clips"]:
+        if cid != alerta["clip_id"]:
+            db.marcar_si_nuevo(conn, cid, alerta["streamer"], "descartado", envivo.MOTIVO_MISMO_MOMENTO)
+    streamers = _streamers(conn)
+    st = next((s for s in streamers if s.login == alerta["streamer"]), None)
+    try:
+        r = procesar(alerta["url"], settings, streamers, gemini=_gemini(settings), fuente="reciente",
+                     clips_mismo_momento=alerta["creadores"],
+                     grupo=st.grupo_de("reciente") if st else None,
+                     avisar=lambda *a: log.info("envivo: %s", " ".join(map(str, a))),
+                     permitir_fecha=True)
+    except (DescargaError, MediaError) as e:
+        db.actualizar_alerta(conn, aid, estado="descartada", motivo=f"no se pudo procesar: {e}"[:300])
+        return
+    if r.descartado:
+        db.actualizar_alerta(conn, aid, estado="descartada", motivo=r.descartado[:300],
+                             tiempos=r.tiempos)
+        return
+    meta = json.loads((READY_DIR / f"{r.clip_id}.json").read_text(encoding="utf-8"))
+    if not meta.get("textos"):
+        # Sin textos no corrió el filtro de tono (va en la misma llamada a Gemini): no se manda.
+        db.actualizar_alerta(conn, aid, estado="descartada", tiempos=r.tiempos,
+                             motivo="sin textos (¿cuota de Gemini?): no pasó por el filtro de tono")
+        return
+    hace = (datetime.now(timezone.utc) - envivo.desde_iso(alerta["momento"])).total_seconds() / 60
+    encabezado = (f"🔥 <b>SUBIR YA</b> — {alerta['creadores']} personas clipearon este momento de "
+                  f"<b>{html.escape(alerta['streamer'])}</b> hace {hace:.0f} min.")
+    llegaron = enviar_clip(tg, alerta["chat_id"], conn, r.clip_id, meta, 1, None, encabezado=encabezado)
+    if not llegaron:
+        db.actualizar_alerta(conn, aid, estado="descartada", tiempos=r.tiempos,
+                             motivo="no se pudo mandar por Telegram")
+        return
+    db.actualizar_alerta(conn, aid, estado="entregada", tiempos=r.tiempos,
+                         entregado=envivo.iso(datetime.now(timezone.utc)))
+
+
+def _envivo(conn, chat_id: str, args: list[str], settings: Settings) -> str:
+    """/envivo on | off | (nada: estado y tiempos)."""
+    from . import envivo
+
+    cfg = settings.envivo
+    arg = (args[0].lower() if args else "")
+    actual = db.envivo_chat(conn)
+    if arg in ("on", "si", "sí", "prender"):
+        db.prender_envivo(conn, chat_id)
+        movido = " (antes iban a otro chat)" if actual and actual != str(chat_id) else ""
+        return (f"🔴 <b>Modo en vivo prendido.</b> Las alertas llegan acá{movido}.\n"
+                f"Miro quién está al aire (Twitch cada {cfg.intervalo_twitch_s // 60} min, Kick cada "
+                f"{cfg.intervalo_kick_s // 60}) y si <b>{cfg.min_creadores} personas distintas</b> "
+                f"clipean el mismo momento, proceso el mejor clip al toque con todos los filtros "
+                f"y te lo mando con 🔥 SUBIR YA. Tope: {cfg.alertas_por_hora} por hora.\n"
+                "<code>/envivo</code> muestra cómo viene; <code>/envivo off</code> lo apaga.")
+    if arg in ("off", "no", "apagar"):
+        db.apagar_envivo(conn)
+        return "⚪ Modo en vivo apagado." if actual else "Ya estaba apagado."
+    if arg:
+        return "Uso: <code>/envivo on</code>, <code>/envivo off</code> o <code>/envivo</code> solo."
+    desde = envivo.iso(datetime.now(timezone.utc) - timedelta(days=1))
+    partes = [f"Modo en vivo: <b>{'prendido' if actual else 'apagado'}</b>"
+              + (f" (alertas al chat <code>{html.escape(actual)}</code>)" if actual else "")]
+    ultima = db.get_valor(conn, "envivo_ultima_vuelta")
+    if ultima:
+        u = json.loads(ultima)
+        partes.append(f"Última vuelta {u['ts'][11:16]} UTC ({'+'.join(u['plataformas'])}): "
+                      f"{len(u['vivos'])} en vivo, {u['clips']} clips, {u['momentos']} momentos."
+                      + (f"\nFallos: {html.escape('; '.join(u['fallos']))}" if u["fallos"] else ""))
+    partes.append(f"<b>Últimas 24 h</b>\n<pre>{html.escape(envivo.resumen(db.alertas(conn, desde)))}</pre>")
+    return "\n\n".join(partes)
+
+
+def cmd_envivo(args: argparse.Namespace) -> int:
+    """Una pasada de detección sin procesar ni escribir nada: para calibrar el umbral."""
+    from dataclasses import replace as _replace
+
+    from . import envivo
+
+    settings = load_settings()
+    cfg = settings.envivo
+    if args.ventana_min:
+        cfg = _replace(cfg, ventana_min=args.ventana_min)
+    if args.min_creadores:
+        cfg = _replace(cfg, min_creadores=args.min_creadores)
+    conn = db.connect(DB_PATH)
+    try:
+        streamers, excluidos, vistos = _streamers(conn), db.excluidos(conn), db.ids_vistos(conn)
+    finally:
+        conn.close()
+    v = envivo.detectar(streamers, cfg, excluidos, twitch=_twitch(),
+                        kick=KickClient(pausa_s=settings.kick.pausa_s),
+                        max_paginas_kick=max(cfg.max_paginas_kick, cfg.ventana_min // 5 + 1))
+    por_login = {s.login: s for s in streamers}
+    print(f"En vivo ({len(v.vivos)}): " + ", ".join(f"{l} ({p})" for l, p in sorted(v.vivos.items())))
+    for f in v.fallos:
+        print(f"FALLO: {f}")
+    print(f"{v.clips} clips en {cfg.ventana_min} min → {len(v.momentos)} momentos con "
+          f"{cfg.min_creadores}+ creadores (±{cfg.ventana_real_s} s):")
+    for m in v.momentos:
+        clip, desc = envivo.elegir(m, settings.filtros, vistos, por_login.get(m.streamer))
+        que = (f"→ {clip.url} ({clip.duration:.0f} s, «{clip.title[:40]}»)" if clip
+               else "→ ninguno pasa: " + ", ".join(f"{k} ×{n}" for k, n in desc.most_common(3)))
+        print(f"  {m.streamer:<14} {m.momento.astimezone(AR):%H:%M:%S}  {len(m.creadores):>2} creadores  "
+              f"{len(m.clips):>2} clips  {que}")
+    return 0
+
+
 # Los comandos agrupados por para qué sirven. /ayuda arranca mostrando solo las secciones: con
 # once comandos, la lista entera en un mensaje es una pared de texto que nadie lee.
 SECCIONES = [
@@ -1642,6 +1838,12 @@ SECCIONES = [
          "corro la mezcla diaria ahora mismo, sin esperar a las 05:00. Tarda 15-30 min en la Pi "
          "y te la entrego en este chat. Con <code>x2</code> pedís esa cantidad.",
          "/ya x2"),
+        ("/envivo on|off",
+         "modo en vivo: miro quién de la lista está al aire y, si 3 personas distintas clipean el "
+         "mismo momento, proceso el mejor clip al toque (con todos los filtros) y te lo mando acá "
+         "con 🔥 SUBIR YA. Tope de 3 por hora. <code>/envivo</code> solo muestra cómo viene y "
+         "cuánto tarda cada parte.",
+         "/envivo on"),
         ("/agregar &lt;streamer&gt; [grupo]",
          "lo busco en Kick y en Twitch, te muestro qué encontré (seguidores y clips de la "
          "semana) y lo sumo si me decís que sí. Entra con permiso de experimento.",
@@ -2180,6 +2382,12 @@ def main(argv: list[str] | None = None) -> int:
 
     pt = sub.add_parser("telegram-chat-id", help="listar chats que le escribieron al bot (getUpdates)")
     pt.set_defaults(func=cmd_telegram_chat_id)
+
+    pe = sub.add_parser("envivo", help="una pasada del modo en vivo: quién está al aire y qué momentos "
+                                       "dispararían (no procesa ni escribe nada)")
+    pe.add_argument("--ventana-min", type=int, help="mirar los clips de los últimos N min (default: settings)")
+    pe.add_argument("--min-creadores", type=int, help="umbral de creadores distintos (default: settings)")
+    pe.set_defaults(func=cmd_envivo)
 
     pb = sub.add_parser("benchmark", help="cuánto tarda un clip completo en esta máquina")
     pb.add_argument("--clips", type=int, default=2, help="cuántos mp4 de output/raw/ medir (default 2)")

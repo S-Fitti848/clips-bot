@@ -99,7 +99,7 @@ def fuente_por_antiguedad(creado: datetime | None, cfg: Settings, ahora: datetim
 def procesar(url: str, cfg: Settings, streamers: list[Streamer], forzar: bool = False,
              gemini: GeminiClient | None = None, avisar=print, *, fuente: str | None = None,
              clips_mismo_momento: int = 1, grupo: str | None = None,
-             descarga=None) -> Resultado:
+             descarga=None, permitir_fecha: bool = False) -> Resultado:
     """fuente/clips_mismo_momento vienen de `candidatos` en la corrida diaria; por URL manual la
     fuente se deduce de la antigüedad y el momento queda en 1 (sin VOD no se puede agrupar).
 
@@ -107,6 +107,10 @@ def procesar(url: str, cfg: Settings, streamers: list[Streamer], forzar: bool = 
     streamer, así que se saltean los filtros que son POR CANAL — co-stream, palabras de fútbol,
     marcador deportivo — que sin streamer no significan nada y solo tirarían videos buenos. Los
     filtros de seguridad (datos en pantalla, tono) y los de calidad corren igual.
+
+    `permitir_fecha`: el modo en vivo. `depende_de_fecha` existe para no publicar mañana algo que
+    solo tenía sentido hoy; un clip que se sube en el momento es justo lo contrario. No es un filtro
+    de seguridad ni de tono, así que ahí se anota y no se descarta.
     """
     res = Resultado(url=url, clips_mismo_momento=clips_mismo_momento)
     crono = Cronometro(res, avisar)
@@ -216,7 +220,9 @@ def procesar(url: str, cfg: Settings, streamers: list[Streamer], forzar: bool = 
         except (GeminiError, tx.TextosError) as e:
             avisar(f"  ⚠ textos: {e}")
             res.textos_pendientes = True
-        if res.textos and res.textos["depende_de_fecha"] and descartar(
+        if res.textos and res.textos["depende_de_fecha"] and permitir_fecha:
+            avisar("  depende de la fecha, pero es para subir ya: sigue")
+        elif res.textos and res.textos["depende_de_fecha"] and descartar(
             "depende de la fecha (referencia a algo puntual de ese día)", tx.MOTIVO_FECHA
         ):
             return _cerrar(res)
