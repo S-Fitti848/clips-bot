@@ -38,6 +38,7 @@ from .download import DescargaError
 from .gemini import GeminiClient, GeminiError
 from .kick import KickClient
 from .media import MediaError, miniatura, probe
+from .narrar import NarrarError
 from .seleccion import score_reciente
 from .telegram import TelegramClient, TelegramError
 from .textos import TextosError
@@ -1939,6 +1940,10 @@ def escuchar_telegram(settings: Settings, timeout_poll: int = 50) -> int:
                 if cb["data"].startswith("pas:"):
                     _seguro(tg, cb["chat_id"], cb["data"], _pasos_callback, conn, tg, cb, settings)
                     continue
+                if cb["data"].startswith("efe:"):
+                    _seguro(tg, cb["chat_id"], cb["data"], _efe_callback, conn, tg, cb, settings,
+                            cola)
+                    continue
                 if cb["data"].startswith("ser:"):
                     _seguro(tg, cb["chat_id"], cb["data"], _serie_callback, conn, tg, cb, settings,
                             cola)
@@ -1985,6 +1990,12 @@ def escuchar_telegram(settings: Settings, timeout_poll: int = 50) -> int:
                         cola)
             for t in textos_sueltos(updates):
                 if t["user_id"] not in permitidos:
+                    continue
+                espera_efe = db.get_valor(conn, f"{ESPERA_EFE}:{t['user_id']}")
+                if espera_efe:
+                    db.borrar_valor(conn, f"{ESPERA_EFE}:{t['user_id']}")
+                    _seguro(tg, t["chat_id"], "reescribir la efeméride", _efe_corregir, conn, tg,
+                            t, espera_efe, settings)
                     continue
                 espera_serie = db.get_valor(conn, f"{ESPERA_SERIE}:{t['user_id']}")
                 if espera_serie:
@@ -2042,7 +2053,7 @@ def _despachar(conn, tg: TelegramClient, c: dict, settings: Settings, cola: list
     """Un comando del modo escucha. /buscar puede quedar en cola; el resto contesta al toque."""
     print(f"  {c['comando']} {' '.join(c['args'])} de {c['usuario'] or c['user_id']} "
           f"(chat {c['chat_id']})")
-    if c["comando"] in ("/buscar", "/ya", "/editar", "/narrar", "/serie"):
+    if c["comando"] in ("/buscar", "/ya", "/editar", "/narrar", "/serie", "/efemeride"):
         if len(cola) >= MAX_BUSQUEDAS:
             tg.send_message(c["chat_id"], f"Ya tengo {len(cola)} búsquedas en cola. Esperá a que "
                                           "salgan esas y probá de nuevo.")
@@ -2196,6 +2207,10 @@ def _pesado(conn, tg: TelegramClient, chat_id: str, comando: str, args: list[str
         return _serie_partes(conn, tg, chat_id, args[0], settings)
     if comando == "serie:voces":    # ✅ de los guiones
         return _serie_voces(conn, tg, chat_id, args[0], settings)
+    if comando == "/efemeride":
+        return _efemeride(conn, tg, chat_id, args, settings)
+    if comando == "efe:video":      # ✅ de la efeméride
+        return _efe_video(conn, tg, chat_id, args[0], settings)
     return _buscar(conn, tg, chat_id, args, settings, _streamers(conn), _gemini(settings))
 
 
@@ -2404,6 +2419,239 @@ def cmd_envivo(args: argparse.Namespace) -> int:
     return 0
 
 
+def _fecha_efemeride(texto: str | None):
+    """"27/09", "09-27" o nada (hoy, hora argentina)."""
+    from datetime import date
+
+    hoy = datetime.now(AR).date()
+    if not texto:
+        return hoy
+    m = __import__("re").fullmatch(r"(\d{1,2})[/-](\d{1,2})", texto.strip())
+    if not m:
+        raise ValueError(f"No entiendo la fecha {texto!r}: usá 27/09.")
+    a, b = int(m.group(1)), int(m.group(2))
+    dia, mes = (a, b) if "/" in texto else (b, a)     # 27/09 (día/mes) o 09-27 (mes-día)
+    return date(hoy.year, mes, dia)
+
+
+# ---- /efemeride: Pasó Hoy ---------------------------------------------------------------
+# Igual que /narrar y /serie: nada se sintetiza sin ✅. La propuesta (evento, fotos, guion) vive
+# en bot_estado como "efe:<token>"; ✏️ reescribe el guion y 🔁 N cambia una foto sin volver a
+# empezar. Proponer y armar el video toman el turno pesado y van por la cola de siempre.
+
+ESPERA_EFE = "esperando_efemeride"   # bot_estado: <user_id> -> token del guion a corregir
+
+
+def _efe_estado(conn, token: str) -> dict | None:
+    crudo = db.get_valor(conn, f"efe:{token}")
+    return json.loads(crudo) if crudo else None
+
+
+def _efe_mostrar(conn, tg: TelegramClient, chat_id: str, token: str, estado: dict) -> None:
+    """La hoja con las fotos del guion (con sus números) y el guion con ✅ / ✏️ / 🔁 N."""
+    from datetime import date
+
+    from . import efemerides as ef
+
+    p = ef.Propuesta(**estado["propuesta"])
+    carpeta = Path(estado["carpeta"])
+    nums = ef.numeros_usados(p)
+    hoja = ef.hoja_de_fotos([ef.Foto.de_dict(p.fotos[n - 1]) for n in nums],
+                            carpeta / f"hoja_{token}.jpg", numeros=nums)
+    db.set_valor(conn, f"efe:{token}", json.dumps(estado, ensure_ascii=False))
+    tg.send_photo(chat_id, hoja, "Las fotos del guion, con su número")
+    filas = [[{"text": "✅ Aprobar", "callback_data": f"efe:ok:{token}"},
+              {"text": "✏️ Cambiar guion", "callback_data": f"efe:gno:{token}"}]]
+    botones = [{"text": f"🔁 foto {n}", "callback_data": f"efe:f:{token}:{n}"} for n in nums]
+    filas += [botones[i:i + 4] for i in range(0, len(botones), 4)]
+    texto = ef.texto_aprobacion(ef.Evento(**p.evento), ef.Guion.de_dict(p.guion),
+                                ef.usadas_en_orden(p), date.fromisoformat(p.fecha))
+    tg.send_message(chat_id, texto, teclado={"inline_keyboard": filas})
+
+
+def _efemeride(conn, tg: TelegramClient, chat_id: str, args: list, settings: Settings):
+    """/efemeride [27/09]: propone evento, fotos y guion para aprobar."""
+    import secrets
+
+    from . import efemerides as ef
+    from .config import OUTPUT_DIR
+
+    try:
+        dia = _fecha_efemeride(args[0] if args else None)
+    except ValueError as e:
+        return str(e)
+    gemini = _gemini(settings)
+    if gemini is None:
+        return "Sin GEMINI_API_KEY no puedo elegir el hecho ni escribir el guion."
+    turno = f"efemeride:{secrets.token_hex(3)}"
+    if not db.tomar_turno(conn, db.RECURSO_PESADO, turno, maximo=1,
+                          vencimiento_s=VENCIMIENTO_PESADO_S):
+        return OCUPADO
+    try:
+        token = secrets.token_hex(3)
+        carpeta = OUTPUT_DIR / "efemerides" / f"{dia:%m%d}_{token}"
+        tg.send_message(chat_id, f"Buscando qué pasó un {dia.day} de {ef.MESES[dia.month - 1]}…")
+        try:
+            p = ef.proponer(ef.Wiki(), gemini, dia, carpeta, avisar=log.info)
+        except (NarrarError, ef.WikiError, GeminiError) as e:
+            return f"No salió la efeméride: {html.escape(str(e)[:400])}"
+        _efe_mostrar(conn, tg, chat_id, token, {"propuesta": p.__dict__, "carpeta": str(carpeta),
+                                                "chat_id": chat_id})
+        return None
+    finally:
+        db.soltar_turno(conn, db.RECURSO_PESADO, turno, VENCIMIENTO_PESADO_S)
+
+
+def _efe_callback(conn, tg: TelegramClient, cb: dict, settings: Settings, cola: list) -> None:
+    """ok: al video (por la cola). gno: esperar la corrección del guion. f:N: cambiar la foto N."""
+    from . import efemerides as ef
+    from .menu import parse_callback
+
+    d = parse_callback(cb["data"])
+    if not d or d["menu"] != "efe":
+        return
+    token = d["crudos"][0] if d["crudos"] else ""
+    estado = _efe_estado(conn, token)
+    if not estado:
+        return tg.answer_callback(cb["callback_id"], "Esa efeméride venció. Mandá /efemeride de nuevo.")
+    if d["accion"] == "gno":
+        db.set_valor(conn, f"{ESPERA_EFE}:{cb['user_id']}", token)
+        tg.answer_callback(cb["callback_id"])
+        return tg.edit_message(cb["chat_id"], cb["message_id"],
+                               "✏️ Decime qué cambiar del guion. Por ejemplo: <i>el gancho más "
+                               "directo</i>, <i>contá más de cómo lo descubrieron</i>.",
+                               {"inline_keyboard": []})
+    if d["accion"] == "f":
+        n = int(d["crudos"][1]) if len(d["crudos"]) > 1 and d["crudos"][1].isdigit() else 0
+        p = ef.Propuesta(**estado["propuesta"])
+        if n not in ef.numeros_usados(p):
+            return tg.answer_callback(cb["callback_id"], "Esa foto ya no está en el guion.")
+        nueva = ef.cambiar_foto(p, n, ef.Wiki(), Path(estado["carpeta"]))
+        if nueva is None:
+            return tg.answer_callback(cb["callback_id"],
+                                      "No quedan más fotos libres de este hecho: probá ✏️ o aprobá así.")
+        tg.answer_callback(cb["callback_id"], f"Cambié la foto {n}")
+        tg.edit_message(cb["chat_id"], cb["message_id"], f"🔁 Foto {n} cambiada. Te mando cómo quedó:",
+                        {"inline_keyboard": []})
+        return _efe_mostrar(conn, tg, cb["chat_id"], token, {**estado, "propuesta": p.__dict__})
+    tg.answer_callback(cb["callback_id"], "Aprobado")
+    tg.edit_message(cb["chat_id"], cb["message_id"], "✅ Aprobado. Armo el video…",
+                    {"inline_keyboard": []})
+    r = _pesado(conn, tg, cb["chat_id"], "efe:video", [token], settings, cb["user_id"])
+    if r is OCUPADO:
+        cola.append({"chat_id": cb["chat_id"], "comando": "efe:video", "args": [token],
+                     "user_id": cb["user_id"]})
+        tg.send_message(cb["chat_id"], f"En cola ({len(cola)}º), arranco cuando se libere.")
+    elif r:
+        tg.send_message(cb["chat_id"], r)
+
+
+def _efe_corregir(conn, tg: TelegramClient, t: dict, token: str, settings: Settings) -> None:
+    """La respuesta a ✏️: el guion de nuevo, con las mismas fotos y el mismo artículo."""
+    from . import efemerides as ef
+
+    estado = _efe_estado(conn, token)
+    gemini = _gemini(settings)
+    if not estado or gemini is None:
+        return tg.send_message(t["chat_id"], "Esa efeméride venció. Mandá /efemeride de nuevo.")
+    p = ef.Propuesta(**estado["propuesta"])
+    fotos = [ef.Foto.de_dict(f) for f in p.fotos]
+    anterior = ef.Guion.de_dict(p.guion)
+    tg.send_message(t["chat_id"], "Lo reescribo…")
+    try:
+        g = ef.escribir_guion(gemini, ef.Evento(**p.evento), p.fuente, fotos,
+                              [ef._jpeg_chico(Path(f.ruta)) for f in fotos],
+                              correccion=t["texto"], anterior=anterior.texto)
+    except (NarrarError, GeminiError) as e:
+        db.set_valor(conn, f"{ESPERA_EFE}:{t['user_id']}", token)   # que pueda probar otra vez
+        return tg.send_message(t["chat_id"], f"No salió: {html.escape(str(e)[:300])}\n"
+                                             "Decime otra cosa para cambiar, o aprobá el anterior.")
+    # Lo que ya se había descartado (a mano con 🔁 o al verlas) sigue descartado.
+    g.descartadas = sorted(set(g.descartadas) | set(anterior.descartadas))
+    if set(g.fotos) & set(g.descartadas):
+        return tg.send_message(t["chat_id"], "El guion nuevo usa una foto que ya habías sacado. "
+                                             "Probá ✏️ de nuevo o aprobá el anterior.")
+    p.guion = g.a_dict()
+    _efe_mostrar(conn, tg, t["chat_id"], token, {**estado, "propuesta": p.__dict__})
+
+
+def _efe_video(conn, tg: TelegramClient, chat_id: str, token: str, settings: Settings):
+    """✅: voz, fotos con zoom, subtítulos y año; se entrega con los créditos en la descripción."""
+    import secrets
+
+    from . import efemerides as ef
+
+    estado = _efe_estado(conn, token)
+    if not estado:
+        return "Esa efeméride venció. Mandá /efemeride de nuevo."
+    turno = f"efemeride:{secrets.token_hex(3)}"
+    if not db.tomar_turno(conn, db.RECURSO_PESADO, turno, maximo=1,
+                          vencimiento_s=VENCIMIENTO_PESADO_S):
+        return OCUPADO
+    try:
+        tg.send_message(chat_id, "Poniendo la voz y armando el video. En la Pi son unos 3 minutos.")
+        try:
+            meta = ef.hacer_video(ef.Propuesta(**estado["propuesta"]), settings,
+                                  Path(estado["carpeta"]), avisar=log.info)
+        except NarrarError as e:
+            return f"No pude armar el video: {html.escape(str(e)[:300])}"
+        enviar_clip(tg, chat_id, conn, meta["clip_id"], meta, 1, None,
+                    encabezado="📅 <b>Pasó Hoy</b> — subilo al canal de efemérides")
+        db.borrar_valor(conn, f"efe:{token}")
+        return None
+    finally:
+        db.soltar_turno(conn, db.RECURSO_PESADO, turno, VENCIMIENTO_PESADO_S)
+
+
+def cmd_efemeride(args: argparse.Namespace) -> int:
+    """Efemérides sin Telegram: propone (Wikipedia + Gemini) y, con --aprobar, arma el video.
+    Con --propuesta arma el video de una propuesta ya guardada, sin volver a gastar Gemini."""
+    from . import efemerides as ef
+    from .config import OUTPUT_DIR
+
+    settings = load_settings()
+    if args.propuesta:
+        ruta = Path(args.propuesta)
+        p = ef.Propuesta(**json.loads(ruta.read_text(encoding="utf-8")))
+        carpeta = ruta.parent
+    else:
+        dia = _fecha_efemeride(args.fecha)
+        carpeta = OUTPUT_DIR / "efemerides" / f"{dia:%m%d}"
+        gemini = _gemini(settings)
+        if gemini is None:
+            print("Falta GEMINI_API_KEY", file=sys.stderr)
+            return 2
+        p = ef.proponer(ef.Wiki(), gemini, dia, carpeta, avisar=print)
+        (carpeta / "propuesta.json").write_text(json.dumps(p.__dict__, ensure_ascii=False, indent=2),
+                                               encoding="utf-8")
+        nums = ef.numeros_usados(p)
+        ef.hoja_de_fotos([ef.Foto.de_dict(p.fotos[n - 1]) for n in nums], carpeta / "hoja.jpg",
+                         numeros=nums)
+        g = ef.Guion.de_dict(p.guion)
+        texto = ef.texto_aprobacion(ef.Evento(**p.evento), g, ef.usadas_en_orden(p), dia)
+        (carpeta / "aprobacion.txt").write_text(html.unescape(re.sub(r"<[^>]+>", "", texto)),
+                                                encoding="utf-8")
+        print("\n" + html.unescape(re.sub(r"<[^>]+>", "", texto)))
+        print(f"\nFotos descartadas por Gemini al verlas: {[i + 1 for i in g.descartadas]}")
+        print(f"Hoja: {carpeta / 'hoja.jpg'}\nPropuesta: {carpeta / 'propuesta.json'}")
+    if not args.aprobar:
+        return 0
+    conn = db.connect(DB_PATH)
+    token = f"efemeride:cli:{datetime.now(timezone.utc).timestamp():.0f}"
+    if not db.tomar_turno(conn, db.RECURSO_PESADO, token, maximo=1, vencimiento_s=VENCIMIENTO_PESADO_S):
+        print(f"Hay algo pesado andando ({db.hay_trabajo_pesado(conn)}): probá después.", file=sys.stderr)
+        return 3
+    try:
+        meta = ef.hacer_video(p, settings, carpeta, avisar=print)
+    finally:
+        db.soltar_turno(conn, db.RECURSO_PESADO, token, VENCIMIENTO_PESADO_S)
+        conn.close()
+    (carpeta / f"{meta['clip_id']}.json").write_text(json.dumps(meta, ensure_ascii=False, indent=2),
+                                                    encoding="utf-8")
+    print(f"\nListo: {meta['salida']} ({meta['duracion_s']} s)")
+    return 0
+
+
 # Los comandos agrupados por para qué sirven. /ayuda arranca mostrando solo las secciones: con
 # once comandos, la lista entera en un mensaje es una pared de texto que nadie lee.
 SECCIONES = [
@@ -2464,6 +2712,14 @@ SECCIONES = [
          "se entiende sola y las primeras invitan a ver la siguiente), y recién con los dos ✅ "
          "pongo las voces. Te llegan todas juntas, con título numerado y horario.",
          "/serie https://youtu.be/... partes 3 cc: https://youtu.be/..."),
+    ]),
+    ("📅 Pasó Hoy", [
+        ("/efemeride [día/mes]",
+         "busco qué pasó en la fecha (default hoy) en Wikipedia, elijo el hecho más interesante para "
+         "el canal, junto fotos libres de su artículo y escribo un guion SOLO con lo que dice el "
+         "artículo. Te mando el guion y las fotos numeradas: ✅ lo armo, ✏️ cambio el guion, 🔁 "
+         "cambio una foto. Los créditos de las fotos van solos en la descripción.",
+         "/efemeride 20/07"),
     ]),
     ("⚙️ Configuración", [
         ("/destinos",
@@ -2983,6 +3239,13 @@ def main(argv: list[str] | None = None) -> int:
     pe.add_argument("--ventana-min", type=int, help="mirar los clips de los últimos N min (default: settings)")
     pe.add_argument("--min-creadores", type=int, help="umbral de creadores distintos (default: settings)")
     pe.set_defaults(func=cmd_envivo)
+
+    pf = sub.add_parser("efemeride", help="efemérides de Pasó Hoy sin Telegram: propone y, con "
+                                          "--aprobar, arma el video")
+    pf.add_argument("--fecha", help="27/09 (día/mes); default hoy")
+    pf.add_argument("--aprobar", action="store_true", help="armar el video (voz, fotos, subtítulos)")
+    pf.add_argument("--propuesta", help="propuesta.json ya guardada: arma el video sin gastar Gemini")
+    pf.set_defaults(func=cmd_efemeride)
 
     pb = sub.add_parser("benchmark", help="cuánto tarda un clip completo en esta máquina")
     pb.add_argument("--clips", type=int, default=2, help="cuántos mp4 de output/raw/ medir (default 2)")

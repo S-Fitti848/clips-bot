@@ -167,6 +167,37 @@ def sintetizar(texto: str, modelo: Path, salida: Path) -> Path:
     return salida
 
 
+def sintetizar_frases(frases: list[str], modelo: Path, salida: Path,
+                      pausa_s: float = 0.3) -> tuple[Path, list[float]]:
+    """Piper frase por frase, pegadas con una pausa: un solo wav y lo que dura cada frase (con su
+    pausa). Las efemérides cambian de foto en cada frase, y así los cortes caen justo donde
+    termina lo que se dice, sin adivinar tiempos. La voz se carga una sola vez."""
+    import io
+
+    from piper import PiperVoice
+
+    salida.parent.mkdir(parents=True, exist_ok=True)
+    voz = PiperVoice.load(str(modelo))
+    partes, duraciones, formato = [], [], None
+    for frase in frases:
+        buf = io.BytesIO()
+        with wave.open(buf, "wb") as w:
+            voz.synthesize_wav(frase, w)
+        buf.seek(0)
+        with wave.open(buf) as r:
+            formato = formato or (r.getnchannels(), r.getsampwidth(), r.getframerate())
+            datos = r.readframes(r.getnframes())
+        silencio = b"\x00" * (int(formato[2] * pausa_s) * formato[0] * formato[1])
+        partes.append(datos + silencio)
+        duraciones.append(len(datos + silencio) / (formato[0] * formato[1] * formato[2]))
+    with wave.open(str(salida), "wb") as w:
+        w.setnchannels(formato[0])
+        w.setsampwidth(formato[1])
+        w.setframerate(formato[2])
+        w.writeframes(b"".join(partes))
+    return salida, duraciones
+
+
 def duracion_wav(path: Path) -> float:
     with wave.open(str(path)) as w:
         return w.getnframes() / float(w.getframerate() or 1)

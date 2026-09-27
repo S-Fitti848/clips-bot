@@ -144,8 +144,9 @@ def _escapar_ass(t: str) -> str:
 
 
 def escribir_ass(subs: list[Subtitulo], path: Path, cfg: Subtitulos, render: Render,
-                 cartel: str = "", cartel_s: float = 3.0) -> None:
-    """`cartel`: un texto arriba durante los primeros `cartel_s` segundos (ej. "Parte 1/3")."""
+                 cartel: str = "", cartel_s: float = 3.0, cartel_grande: bool = False) -> None:
+    """`cartel`: un texto arriba durante los primeros `cartel_s` segundos (ej. "Parte 1/3").
+    `cartel_grande`: el año de las efemérides, tres veces más grande y más abajo."""
     # BorderStyle 3 = caja opaca detrás del texto; su color es OutlineColour (&HAABBGGRR, AA=00 opaco).
     cabecera = f"""[Script Info]
 ScriptType: v4.00+
@@ -170,10 +171,11 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
     ]
     if cartel:
         # Mismo estilo que los carteles del multi-POV, arriba al centro (Alignment 8).
+        tamano, margen = (int(cfg.tamano * 3.3), 300) if cartel_grande else (int(cfg.tamano * 1.1), 140)
         cabecera = cabecera.replace(
             "\n\n[Events]",
-            f"\nStyle: Cartel,{cfg.fuente},{int(cfg.tamano * 1.1)},&H00FFFFFF,&H000000FF,&H60000000,"
-            "&H60000000,-1,0,0,0,100,100,0,0,3,16,0,8,40,40,140,1\n\n[Events]")
+            f"\nStyle: Cartel,{cfg.fuente},{tamano},&H00FFFFFF,&H000000FF,&H60000000,"
+            f"&H60000000,-1,0,0,0,100,100,0,0,3,16,0,8,40,40,{margen},1\n\n[Events]")
         eventos.insert(0, f"Dialogue: 1,{_t_ass(0)},{_t_ass(cartel_s)},Cartel,,0,0,0,,"
                           f"{_escapar_ass(cartel)}")
     path.write_text(cabecera + "\n".join(eventos) + "\n", encoding="utf-8")
