@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-09-27 | **Versión:** v0.24.0 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 + escucha de Telegram 24/7)
+**Snapshot:** 2026-09-27 | **Versión:** v0.24.1 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 + escucha de Telegram 24/7)
 
 > **SI ESTÁS EMPEZANDO UNA SESIÓN NUEVA, LEÉ §10.** Ahí está qué está hecho, qué quedó a medias,
 > qué falta, y las trampas que ya nos mordieron.
@@ -216,10 +216,18 @@ alertas. Todos los streamers con permiso y sin reclamo, argentinos incluidos, de
    Kick canal por canal (`/api/v2/channels/{slug}` → `livestream`, cada 2 min, con `kick.pausa_s`).
 2. Clips de los últimos `ventana_min` (15) de los que están en vivo. Kick: sin `sort` la API los da
    del más nuevo al más viejo, se pagina hasta pasar la ventana.
-3. Momento = N creadores DISTINTOS (`min_creadores`, 3) en el mismo canal a ±60 s de `vod_offset`
-   o, si no hay offset, a ±90 s de hora de creación. **Twitch no da `vod_offset` mientras el stream
-   está al aire** (medido: 0 de 13 clips en vivo), así que en la práctica las dos plataformas agrupan
-   por hora. Se arranca por el punto más denso: el que se alerta primero es el más clipeado.
+3. Momento = creadores DISTINTOS en el mismo canal a ±60 s de `vod_offset` o, si no hay offset, a
+   ±90 s de hora de creación. **Twitch no da `vod_offset` mientras el stream está al aire** (medido:
+   0 de 13 clips en vivo), así que en la práctica las dos plataformas agrupan por hora. Se arranca
+   por el punto más denso: el que se alerta primero es el más clipeado.
+   **Umbral RELATIVO al canal (decisión 2026-09-27, v0.24.1):** dispara con
+   `max(min_creadores=4, factor_base=15 × ritmo)`, donde el ritmo son los clips de la última hora
+   (`ventana_base_min`) que NO son del momento, repartidos parejo en ventanas de ±90 s. Solo se
+   alertan los momentos que llegaron al umbral en los últimos 15 min. Simulado vuelta por vuelta
+   sobre 72 h reales: **4,7 alertas/día**, el tope por hora no dispara nunca (tabla en settings.yaml).
+   Dos bases se probaron y se tiraron antes de salir, las dos por tests: con los clips del momento
+   adentro un canal tranquilo con un solo pico se ponía la vara a sí mismo; con la mediana de
+   densidades, un pico anterior en la misma hora se volvía la base y el segundo no disparaba.
 4. Del momento, el clip más visto que pase los filtros de siempre SIN la espera de 24 h. Si ninguno
    pasa queda `sin_clip` y se reevalúa en la vuelta siguiente (alguien puede hacer uno de 30 s).
 5. Alerta en `envivo_alertas`. Nunca dos del mismo momento (clips en común o misma hora). Pasado
@@ -254,8 +262,8 @@ spreen solo da 2,2 momentos por hora de stream con 3 creadores (y está subestim
 de 1200 clips), davooxeneize 2,2/h pero 0 pasan (`programa_terceros`), lacobraaa 1,6/h y pasan 5 de
 76 (fútbol). En Twitch es más raro: aldo_geo 0,7/h, juansguarnizo 0,4/h. De Kick, el 38 % de los clips
 dura más de 60 s (`muy largo`). Entre el primer clip y el tercer creador pasan 59 s de mediana (p90
-114 s). O sea: con 3 el tope por hora es lo que manda casi siempre, y son ~27 procesados pesados por
-día en la Pi. Queda en 3 porque así se pidió; la decisión está abierta (ver §10).
+114 s). O sea: con 3 el tope por hora era lo que mandaba casi siempre, y eran ~27 procesados pesados
+por día en la Pi. Por eso se pasó al umbral relativo (punto 3).
 
 ### 4b. Módulo de métricas (feedback loop)
 Job cada 6 h: para cada post de los últimos 30 días, pedir vistas/likes/comentarios/shares
@@ -405,7 +413,7 @@ deploy/sudoers-clips-bot permite a santi reiniciar SOLO las unidades del clips-b
 voces/                   modelos de Piper (NO están en git: ~110 MB, se bajan en la Pi)
 clips_bot/envivo.py      modo en vivo (§3b): quién está al aire, momentos por creadores distintos,
                          alertas en la DB (no repetir, tope, vencer) y el resumen de tiempos
-tests/                   243 tests sin red ni video
+tests/                   248 tests sin red ni video
 ```
 
 Comandos:
@@ -589,6 +597,10 @@ Problemas abiertos:
 
 ## 9. CHANGELOG
 
+- v0.24.1 (2026-09-27) — Modo en vivo con umbral relativo al ritmo de cada canal:
+  `max(4, 15 × ritmo de la última hora sin el momento)`. Simulado vuelta por vuelta sobre 72 h
+  reales: 4,7 alertas/día (antes ~27), sin tocar el tope. `max_paginas_kick` 5 → 8 (spreen y davoo
+  llegan a ~150 clips/h). 248 tests OK.
 - v0.24.0 (2026-09-27) — `/narrar` con videos de más de 90 s: cortes de escena con ffmpeg
   (`select=gt(scene,0.3)`, a 320 px), escenas normalizadas a 12-40 (se funden las cortas, se parte
   un plano secuencia), un frame por escena a Gemini que elige 8-10 pasos en orden (validado: rango,
@@ -782,11 +794,10 @@ de Telegram 24/7. Los comandos se atienden en el momento.
 
 ### Pendiente, en orden
 
-1. **Modo en vivo: deploy y umbral.** Programado y con tests (v0.23.0), NO desplegado ni probado
-   con Telegram. En la Pi: `git pull`, reiniciar `clips-bot-telegram`, `/envivo on` en el grupo.
-   Decisión abierta: con 3 creadores el replay da ~27 alertas/día y el tope manda en 31 de 72 h;
-   spreen solo satura. Opciones: subir `min_creadores` (5 → ~20/día), umbral por plataforma, o
-   umbral relativo al ritmo normal de clips del canal (un pico sobre SU base, no un número fijo).
+1. **Modo en vivo: deploy.** Programado, con tests y con el umbral relativo calibrado (v0.24.1),
+   NO desplegado ni probado con Telegram. En la Pi: `git pull`, reiniciar `clips-bot-telegram`,
+   `/envivo on` en el grupo. Después de unos días, comparar las alertas reales con las 4,7/día
+   simuladas (`/envivo` las cuenta) y mirar los tramos de tiempo.
 2. **Probar el resumen de `/narrar` con un video real de proceso** (v0.24.0 solo se probó con un
    video sintético y con Gemini falso). RIESGO que hay que mirar primero: `procesar` corre los
    filtros de audio también en /narrar, y un video de proceso suele no tener habla (música o nada):

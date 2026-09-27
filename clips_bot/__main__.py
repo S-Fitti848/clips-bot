@@ -1942,9 +1942,10 @@ def _envivo(conn, chat_id: str, args: list[str], settings: Settings) -> str:
         movido = " (antes iban a otro chat)" if actual and actual != str(chat_id) else ""
         return (f"🔴 <b>Modo en vivo prendido.</b> Las alertas llegan acá{movido}.\n"
                 f"Miro quién está al aire (Twitch cada {cfg.intervalo_twitch_s // 60} min, Kick cada "
-                f"{cfg.intervalo_kick_s // 60}) y si <b>{cfg.min_creadores} personas distintas</b> "
-                f"clipean el mismo momento, proceso el mejor clip al toque con todos los filtros "
-                f"y te lo mando con 🔥 SUBIR YA. Tope: {cfg.alertas_por_hora} por hora.\n"
+                f"{cfg.intervalo_kick_s // 60}) y si un momento junta mucha más gente clipeando "
+                f"que lo normal en ESE canal (al menos <b>{cfg.min_creadores} personas "
+                f"distintas</b>), proceso el mejor clip al toque con todos los filtros y te lo "
+                f"mando con 🔥 SUBIR YA. Tope: {cfg.alertas_por_hora} por hora.\n"
                 "<code>/envivo</code> muestra cómo viene; <code>/envivo off</code> lo apaga.")
     if arg in ("off", "no", "apagar"):
         db.apagar_envivo(conn)
@@ -1988,14 +1989,16 @@ def cmd_envivo(args: argparse.Namespace) -> int:
     print(f"En vivo ({len(v.vivos)}): " + ", ".join(f"{l} ({p})" for l, p in sorted(v.vivos.items())))
     for f in v.fallos:
         print(f"FALLO: {f}")
-    print(f"{v.clips} clips en {cfg.ventana_min} min → {len(v.momentos)} momentos con "
-          f"{cfg.min_creadores}+ creadores (±{cfg.ventana_real_s} s):")
+    print(f"{v.clips} clips en {max(cfg.ventana_base_min, cfg.ventana_min)} min (el ritmo) → "
+          f"{len(v.momentos)} momentos en los últimos {cfg.ventana_min} min con "
+          f"max({cfg.min_creadores}, {cfg.factor_base:g} × ritmo del canal) creadores "
+          f"(±{cfg.ventana_real_s} s):")
     for m in v.momentos:
         clip, desc = envivo.elegir(m, settings.filtros, vistos, por_login.get(m.streamer))
         que = (f"→ {clip.url} ({clip.duration:.0f} s, «{clip.title[:40]}»)" if clip
                else "→ ninguno pasa: " + ", ".join(f"{k} ×{n}" for k, n in desc.most_common(3)))
-        print(f"  {m.streamer:<14} {m.momento.astimezone(AR):%H:%M:%S}  {len(m.creadores):>2} creadores  "
-              f"{len(m.clips):>2} clips  {que}")
+        print(f"  {m.streamer:<14} {m.momento.astimezone(AR):%H:%M:%S}  {len(m.creadores):>2} creadores "
+              f"(hacían falta {m.necesarios}, ritmo {m.base:.1f})  {len(m.clips):>2} clips  {que}")
     return 0
 
 
@@ -2018,9 +2021,9 @@ SECCIONES = [
          "y te la entrego en este chat. Con <code>x2</code> pedís esa cantidad.",
          "/ya x2"),
         ("/envivo on|off",
-         "modo en vivo: miro quién de la lista está al aire y, si 3 personas distintas clipean el "
-         "mismo momento, proceso el mejor clip al toque (con todos los filtros) y te lo mando acá "
-         "con 🔥 SUBIR YA. Tope de 3 por hora. <code>/envivo</code> solo muestra cómo viene y "
+         "modo en vivo: miro quién de la lista está al aire y, si un momento junta mucha más gente "
+         "clipeando que lo normal en ese canal (mínimo 4 personas), proceso el mejor clip al toque "
+         "(con todos los filtros) y te lo mando acá con 🔥 SUBIR YA. Unas 3-6 por día. <code>/envivo</code> solo muestra cómo viene y "
          "cuánto tarda cada parte.",
          "/envivo on"),
         ("/agregar &lt;streamer&gt; [grupo]",

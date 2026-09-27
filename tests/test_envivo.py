@@ -15,7 +15,8 @@ from clips_bot.candidates import Clip
 from clips_bot.config import EnVivo, Filtros, Streamer, load_settings
 
 T0 = datetime(2026, 9, 27, 20, 0, tzinfo=timezone.utc)
-CFG = EnVivo()
+# Umbral fijo de 3 para probar la mecánica de agrupar sin el umbral relativo (ese tiene sus tests).
+CFG = EnVivo(min_creadores=3, factor_base=0.0)
 FILTROS = Filtros(antiguedad_min_h=24, duracion_min_s=15, duracion_max_s=60)
 
 
@@ -72,6 +73,55 @@ def test_el_momento_mas_clipeado_sale_primero():
     b = [clip(10 + i, 1000 + i) for i in range(5)]        # 5 creadores
     ms = envivo.agrupar_en_vivo(a + b, CFG)
     assert [len(x.creadores) for x in ms] == [5, 3]
+
+
+# ---- umbral relativo al ritmo del canal ----------------------------------------------
+
+REL = EnVivo(min_creadores=4, factor_base=15.0, ventana_base_min=60, ventana_real_s=90)
+
+
+def _ruido(n, cada_s, login="spreen", desde=0):
+    """Un canal con su ritmo normal: clips de a uno, de gente distinta, cada `cada_s`."""
+    return [clip(1000 + desde + i, desde + i * cada_s, f"r{desde + i}", login=login) for i in range(n)]
+
+
+def test_canal_tranquilo_con_un_solo_pico_dispara_con_el_minimo():
+    """Si el pico es todo lo que hubo en la hora, no puede ponerse la vara a sí mismo."""
+    pico = [clip(i, 3000 + i * 5) for i in range(4)]
+    ms = envivo.agrupar_en_vivo(pico, REL)
+    assert len(ms) == 1 and ms[0].base == 0 and ms[0].necesarios == 4
+
+
+def test_canal_movido_necesita_varias_veces_su_ritmo():
+    # Ritmo normal: 40 clips en la hora → 2 por ventana de 180 s → hacen falta 15 × 2 = 30.
+    ruido = _ruido(40, 88)
+    pico = [clip(i, 3600 + i * 2) for i in range(12)]         # 12 creadores: mucho para Twitch, poco acá
+    assert envivo.agrupar_en_vivo(ruido + pico, REL) == []
+    grande = [clip(i, 3600 + i * 2) for i in range(31)]
+    ms = envivo.agrupar_en_vivo(ruido + grande, REL)
+    assert len(ms) == 1 and ms[0].necesarios == 30 and len(ms[0].creadores) == 31
+
+
+def test_otro_pico_en_la_misma_hora_no_sube_la_vara():
+    """Con la mediana de densidades, un pico anterior se volvía la base y el segundo no disparaba."""
+    primero = [clip(i, i * 5) for i in range(5)]
+    segundo = [clip(10 + i, 1800 + i * 5) for i in range(5)]
+    ms = envivo.agrupar_en_vivo(primero + segundo, REL)
+    assert len(ms) == 2 and all(m.necesarios == 4 for m in ms)
+
+
+def test_nunca_menos_que_el_minimo():
+    assert envivo.umbral_del_canal(0.0, REL) == 4
+    assert envivo.umbral_del_canal(0.2, REL) == 4
+    assert envivo.umbral_del_canal(1.0, REL) == 15
+
+
+def test_solo_se_alertan_los_momentos_de_la_ventana():
+    """La hora entera sirve para medir el ritmo; alertar, solo lo de los últimos 15 min."""
+    viejo = [clip(i, i * 5) for i in range(5)]                  # hace 60 min
+    nuevo = [clip(10 + i, 3500 + i * 5) for i in range(5)]      # hace 1 min
+    ms = envivo.agrupar_en_vivo(viejo + nuevo, REL, desde_alerta=T0 + timedelta(seconds=2700))
+    assert [m.clips[0].id[:2] for m in ms] == ["c1"] and ms[0].umbral > T0 + timedelta(seconds=2700)
 
 
 # ---- elegir -------------------------------------------------------------------

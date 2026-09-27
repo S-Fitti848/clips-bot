@@ -18,6 +18,7 @@ aire, así que casi siempre se agrupa por hora de creación.
 from __future__ import annotations
 
 import logging
+import math
 import sqlite3
 import statistics
 from collections import Counter
@@ -52,6 +53,8 @@ class Momento:
     creadores: tuple[str, ...]
     momento: datetime              # el primer clip: lo más cerca del hecho que se sabe
     umbral: datetime               # cuando clipeó el N-ésimo creador distinto: desde ahí se podía ver
+    base: float = 0.0              # ritmo normal del canal: clips esperables en una ventana
+    necesarios: int = 0            # los creadores que hacían falta en este canal
 
 
 @dataclass
@@ -79,8 +82,33 @@ def _umbral(clips: list[Clip], n: int) -> datetime | None:
     return None
 
 
-def agrupar_en_vivo(clips: list[Clip], cfg: EnVivo) -> list[Momento]:
-    """Momentos con al menos `min_creadores` creadores distintos, del más clipeado al menos.
+def base_del_canal(fuera: list[Clip], cfg: EnVivo) -> float:
+    """El ritmo normal del canal, en "clips que caen en una ventana de ±ventana_real_s": los clips
+    de la última hora que NO son del momento evaluado, repartidos parejo en la hora.
+
+    Dos versiones anteriores, descartadas por tests antes de salir:
+    - con los clips del momento adentro, un canal tranquilo con un solo pico se ponía la vara a sí
+      mismo y no disparaba nunca;
+    - con la mediana de densidades de los otros clips, si lo demás de la hora era OTRO pico, la
+      mediana era ese pico y el segundo no disparaba. Con el ritmo, un pico de 5 clips en una hora
+      suma 0,25 a la base, no 5.
+    Sin otros clips la base es 0 y manda `min_creadores`."""
+    horizonte_s = max(cfg.ventana_base_min, cfg.ventana_min) * 60
+    return len(fuera) * (2 * cfg.ventana_real_s) / horizonte_s
+
+
+def umbral_del_canal(base: float, cfg: EnVivo) -> int:
+    """Creadores distintos que hacen falta en ESTE canal: varias veces su ritmo, nunca menos del
+    mínimo. Decisión 2026-09-27: el umbral fijo de 3 daba ~27 alertas por día (ver CLAUDE.md §3b)."""
+    return max(cfg.min_creadores, math.ceil(cfg.factor_base * base))
+
+
+def agrupar_en_vivo(clips: list[Clip], cfg: EnVivo,
+                    desde_alerta: datetime | None = None) -> list[Momento]:
+    """Momentos que superan el umbral de su canal, del más clipeado al menos.
+
+    `clips` trae la última `ventana_base_min` (para medir el ritmo del canal); solo se alertan los
+    momentos que llegaron al umbral después de `desde_alerta` (la `ventana_min` de siempre).
 
     Por canal, y empezando por el punto más denso: se toma el clip que más creadores distintos tiene
     alrededor, ese grupo sale, y se repite con lo que queda. Así el momento que se alerta primero es
@@ -106,12 +134,17 @@ def agrupar_en_vivo(clips: list[Clip], cfg: EnVivo) -> list[Momento]:
             for x in grupo:
                 del libres[x.id]
             creadores = creadores_de(grupo)
-            umbral = _umbral(grupo, cfg.min_creadores)
-            if len(creadores) < cfg.min_creadores or umbral is None:
+            del_grupo = {x.id for x in grupo}
+            base = base_del_canal([x for x in del_canal if x.id not in del_grupo], cfg)
+            necesarios = umbral_del_canal(base, cfg)
+            umbral = _umbral(grupo, necesarios)
+            if len(creadores) < necesarios or umbral is None:
                 continue
+            if desde_alerta is not None and umbral < desde_alerta:
+                continue          # ya era un momento antes de esta ventana: sirvió para la base
             grupo.sort(key=lambda c: (c.view_count, c.created_at), reverse=True)
             out.append(Momento(login, ancla.plataforma, grupo, creadores,
-                               min(c.created_at for c in grupo), umbral))
+                               min(c.created_at for c in grupo), umbral, base, necesarios))
     out.sort(key=lambda m: (len(m.creadores), m.umbral), reverse=True)
     return out
 
@@ -147,7 +180,7 @@ def detectar(streamers: list[Streamer], cfg: EnVivo, excluidos: dict[str, str], 
 
     Si una plataforma falla, queda en `fallos` y la otra sigue (igual que la corrida diaria)."""
     ahora = ahora or datetime.now(timezone.utc)
-    desde = ahora - timedelta(minutes=cfg.ventana_min)
+    desde = ahora - timedelta(minutes=max(cfg.ventana_base_min, cfg.ventana_min))
     v = Vuelta()
     todos: list[Clip] = []
 
@@ -190,7 +223,7 @@ def detectar(streamers: list[Streamer], cfg: EnVivo, excluidos: dict[str, str], 
                                              s.grupo_de("reciente")))
 
     v.clips = len(todos)
-    v.momentos = agrupar_en_vivo(todos, cfg)
+    v.momentos = agrupar_en_vivo(todos, cfg, desde_alerta=ahora - timedelta(minutes=cfg.ventana_min))
     return v
 
 

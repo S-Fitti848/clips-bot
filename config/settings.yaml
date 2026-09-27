@@ -314,16 +314,33 @@ seleccion:
 #   - La densidad de clips es MUY distinta entre plataformas: lacobraaa en Kick con 10k espectadores
 #     tuvo ~25 clips de ~20 creadores en 15 min (muchos con títulos basura, 60-177 s de duración);
 #     k1ng en Twitch con 6k, 34 clips en 4 h. Con el mismo umbral, Kick dispara mucho más.
+#
+# UMBRAL RELATIVO (decisión 2026-09-27): con 3 creadores fijos, el replay de 72 h daba ~27 alertas
+# por día y spreen solo saturaba el tope. Ahora cada canal se mide contra SU ritmo: la base son los
+# clips de la última hora que NO son del momento, repartidos parejo, contados en una ventana de
+# ±ventana_real_s (spreen con 150 clips/h → 7,5; un Twitch tranquilo → 0,2). Un momento dispara con
+# max(min_creadores, factor_base × base). El factor es alto porque los clips vienen en ráfagas: el
+# promedio por ventana queda muy por debajo de lo que se ve alrededor de cualquier clip.
+# Simulado vuelta por vuelta sobre las mismas 72 h (Kick cada 2 min, Twitch cada 5, con filtros, sin
+# repetir y con tope), apuntando a 3-6 alertas por día:
+#   factor 8  → 11,1/día     factor 15 → 4,7/día  ← elegido: meseta entre 15 y 20
+#   factor 10 →  8,1/día     factor 20 → 4,1/día
+#   factor 12 →  6,1/día     factor 25 → 3,0/día
+# Con 15, el tope de 3 por hora no dispara nunca en las 72 h. Los canales tranquilos (aldo_geo,
+# arigameplays) disparan con el mínimo de 4; spreen, con picos de 7 a 30 creadores.
+# Se probaron y descartaron dos bases antes (ver envivo.base_del_canal).
 envivo:
   intervalo_twitch_s: 300
   intervalo_kick_s: 120
-  ventana_min: 15
-  min_creadores: 3
+  ventana_min: 15            # se alertan los momentos de los últimos 15 min...
+  ventana_base_min: 60       # ...y el ritmo del canal se mide sobre la última hora
+  min_creadores: 4
+  factor_base: 15.0
   ventana_vod_s: 60
   ventana_real_s: 90
   alertas_por_hora: 3
   vencimiento_min: 60
-  max_paginas_kick: 5
+  max_paginas_kick: 8        # spreen y davoo llegan a ~150 clips por hora (8 páginas de 20)
 
 # §3 paso 10: entrega por Telegram.
 publicacion:

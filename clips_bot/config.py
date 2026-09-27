@@ -229,8 +229,10 @@ class EnVivo:
     """Modo /envivo: detectar un momento mientras el stream sigue al aire (§3 modo en vivo)."""
     intervalo_twitch_s: int = 300     # /streams va en lote: una llamada para todos los de Twitch
     intervalo_kick_s: int = 120       # Kick no tiene lote: una llamada por canal, con kick.pausa_s
-    ventana_min: int = 15             # clips de los últimos N minutos de cada canal en vivo
-    min_creadores: int = 3            # creadores DISTINTOS clipeando el mismo momento
+    ventana_min: int = 15             # se alertan los momentos de los últimos N minutos
+    ventana_base_min: int = 60        # y el ritmo normal del canal se mide sobre la última hora
+    min_creadores: int = 4            # creadores DISTINTOS: nunca menos que esto
+    factor_base: float = 15.0         # ...y al menos factor × el ritmo normal del canal
     ventana_vod_s: int = 60           # Twitch con vod_offset: mismo VOD a ±N s
     ventana_real_s: int = 90          # Kick, y Twitch sin vod_offset: hora de creación a ±N s
     alertas_por_hora: int = 3         # pendientes + procesando + entregadas en los últimos 60 min
