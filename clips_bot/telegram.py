@@ -95,6 +95,23 @@ class TelegramClient:
                     return self._llamar("sendVideo", data, files)  # type: ignore[return-value]
             return self._llamar("sendVideo", data, files)  # type: ignore[return-value]
 
+    def get_file(self, file_id: str, destino: Path) -> Path:
+        """Baja un archivo que mandaron al bot. Tope de la Bot API: 20 MB para descargar."""
+        info = self._llamar("getFile", {"file_id": file_id})
+        ruta = (info or {}).get("file_path")  # type: ignore[union-attr]
+        if not ruta:
+            raise TelegramError("Telegram no me dio la ruta del archivo")
+        url = f"https://api.telegram.org/file/bot{self.token}/{ruta}"
+        destino.parent.mkdir(parents=True, exist_ok=True)
+        final = destino.with_suffix(Path(ruta).suffix or ".mp4")
+        with self.session.get(url, stream=True, timeout=self.timeout) as r:
+            if not r.ok:
+                raise TelegramError(f"getFile: {r.status_code}")
+            with final.open("wb") as f:
+                for trozo in r.iter_content(1 << 16):
+                    f.write(trozo)
+        return final
+
     def send_document(self, chat_id: str, path: Path, caption: str = "") -> None:
         _chequear_tamano(path)
         with path.open("rb") as f:
@@ -211,6 +228,32 @@ def textos_sueltos(updates: list[dict]) -> list[dict]:
             continue
         out.append({**_chat(msg), "user_id": str((msg.get("from") or {}).get("id") or ""),
                     "texto": texto})
+    return out
+
+
+MAX_MB_TELEGRAM = 20  # lo que la Bot API deja DESCARGAR (subir son 50)
+
+
+def videos(updates: list[dict]) -> list[dict]:
+    """Videos y archivos de video que mandaron: [{chat_id, user_id, file_id, mb, texto}].
+
+    `texto` es el caption, que es donde viene el comando cuando mandás el video con /editar o
+    /narrar escrito abajo.
+    """
+    out = []
+    for u in updates:
+        msg = u.get("message") or {}
+        media = msg.get("video") or msg.get("animation") or {}
+        doc = msg.get("document") or {}
+        if not media and str(doc.get("mime_type", "")).startswith("video/"):
+            media = doc
+        if not media.get("file_id"):
+            continue
+        out.append({**_chat(msg), "user_id": str((msg.get("from") or {}).get("id") or ""),
+                    "file_id": media["file_id"],
+                    "mb": round(int(media.get("file_size") or 0) / 1024 / 1024, 1),
+                    "duracion": float(media.get("duration") or 0),
+                    "texto": (msg.get("caption") or "").strip()})
     return out
 
 

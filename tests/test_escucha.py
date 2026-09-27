@@ -364,7 +364,7 @@ def test_lo_que_falla_sale_de_la_cola(conn, monkeypatch):
     cola, tg = [], FakeTG()
     intentos = []
 
-    def explota(conn_, tg_, chat, comando, args, settings):
+    def explota(conn_, tg_, chat, comando, args, settings, user_id=""):
         intentos.append(args[0])
         raise RuntimeError("boom")
 
@@ -575,3 +575,62 @@ def test_el_teclado_del_ultimo_clip_ofrece_mas(conn):
     datos = [b["callback_data"] for f in votado["inline_keyboard"] for b in f]
     assert "ped:r:ab12:c1" in datos                             # el 👎 ofrece reemplazo
     assert "ped:m:ab12" not in datos                            # pero no "más": no era el último
+
+
+# ---- /editar y /narrar ------------------------------------------------------------
+
+
+def test_los_videos_que_llegan_se_reconocen():
+    from clips_bot.telegram import videos
+
+    def msg(**extra):
+        return {"message": {"chat": {"id": 9, "type": "private", "first_name": "Santi"},
+                            "from": {"id": 7}, **extra}}
+
+    ups = [
+        msg(video={"file_id": "F1", "file_size": 5 << 20, "duration": 30}, caption="/editar"),
+        msg(document={"file_id": "F2", "file_size": 1 << 20, "mime_type": "video/mp4"}),
+        msg(animation={"file_id": "F3", "file_size": 1 << 20}),
+        msg(document={"file_id": "F4", "mime_type": "application/pdf"}),   # no es video
+        msg(text="hola"),                                                   # no es archivo
+    ]
+    v = videos(ups)
+    assert [x["file_id"] for x in v] == ["F1", "F2", "F3"]
+    assert v[0]["mb"] == 5.0 and v[0]["texto"] == "/editar"
+
+
+def test_el_guion_avisa_cuando_no_entra_en_el_video():
+    """Sobra o falta guion: hay que decirlo ANTES de sintetizar, no después."""
+    from clips_bot.narrar import Guion, _medir, aviso_largo
+
+    def guion(texto):
+        p, seg = _medir(texto)
+        return Guion(texto=texto, palabras=p, segundos_estimados=seg)
+
+    corto = guion("Mirá esto.")
+    largo = guion(" ".join(["palabra"] * 100))            # ~40 s hablados
+    justo = guion(" ".join(["palabra"] * 25))             # ~10 s
+
+    assert "sobran" in aviso_largo(largo, 10)
+    assert "silencio" in aviso_largo(corto, 30)
+    assert aviso_largo(justo, 10) == ""
+    assert aviso_largo(justo, 0) == ""                     # sin duración no se opina
+
+
+def test_el_guion_sensible_no_se_narra(conn, monkeypatch, tmp_path):
+    """Poner voz de locutor arriba de un duelo es peor que escribirlo mal."""
+    import json
+
+    from clips_bot import narrar
+
+    monkeypatch.setattr(m, "_gemini", lambda s: object())
+    monkeypatch.setattr("clips_bot.media.frames_jpeg", lambda *a, **k: [b"x"])
+    monkeypatch.setattr(m, "probe", lambda p: type("I", (), {"duracion": 20.0})())
+    monkeypatch.setattr(narrar, "escribir",
+                        lambda *a, **k: narrar.Guion(texto="algo", sensible=True))
+
+    mp4 = tmp_path / "c.mp4"
+    mp4.write_bytes(b"x")
+    meta = {"clip_id": "c", "salida": str(mp4), "duracion_s": 20, "transcripcion": ""}
+    r = m._narrar_guion(conn, FakeTG(), "1", "7", meta, load_settings())
+    assert "sensible" in r and "no le pongo voz" in r.lower()

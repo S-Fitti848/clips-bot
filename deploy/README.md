@@ -63,12 +63,30 @@ Dos cosas que sí aparecieron midiendo:
 Otra palanca, si hiciera falta: `render.x264_preset` a `veryfast`, que en ARM ahorra mucho más de lo
 que cuesta en calidad.
 
+## 2b. Voz para /narrar (opcional, solo si vas a usar `/narrar`)
+
+```bash
+cd ~/clips && mkdir -p voces
+V=es_AR-daniela-high
+B=https://huggingface.co/rhasspy/piper-voices/resolve/main/es/es_AR/daniela/high/$V
+curl -fsSL -o voces/$V.onnx "$B.onnx" && curl -fsSL -o voces/$V.onnx.json "$B.onnx.json"
+.venv/bin/pip install piper-tts
+```
+
+Son ~110 MB. Sin esto, `/narrar` avisa que falta la voz y `/editar` anda igual.
+
 ## 3. Instalar
 
 ```bash
 sudo ./deploy/instalar.sh --dry-run    # ver qué haría
 sudo ./deploy/instalar.sh
+sudo install -m 0440 -o root -g root deploy/sudoers-clips-bot /etc/sudoers.d/clips-bot
 ```
+
+La última línea deja a santi reiniciar SOLO las unidades del clips-bot sin contraseña: cada cambio
+de código necesita un `restart`, y pedir la clave en cada deploy hacía que el bot quedara horas con
+código viejo. Está acotado a `restart` y `reset-failed` de esas unidades, con la ruta absoluta de
+systemctl y sin comodines. Validalo antes con `visudo -c -f deploy/sudoers-clips-bot`.
 
 Qué deja:
 

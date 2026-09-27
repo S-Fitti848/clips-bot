@@ -67,6 +67,7 @@ class Resultado:
     relleno: bool = False   # no llegó al corte de calidad: solo se usa si falta para llenar el día
     descartado: str | None = None
     salida: str | None = None
+    raw: str | None = None  # el mp4 original, para re-renderizar (/narrar)
     tiempos: dict[str, float] = field(default_factory=dict)
 
 
@@ -97,15 +98,26 @@ def fuente_por_antiguedad(creado: datetime | None, cfg: Settings, ahora: datetim
 
 def procesar(url: str, cfg: Settings, streamers: list[Streamer], forzar: bool = False,
              gemini: GeminiClient | None = None, avisar=print, *, fuente: str | None = None,
-             clips_mismo_momento: int = 1, grupo: str | None = None) -> Resultado:
+             clips_mismo_momento: int = 1, grupo: str | None = None,
+             descarga=None) -> Resultado:
     """fuente/clips_mismo_momento vienen de `candidatos` en la corrida diaria; por URL manual la
-    fuente se deduce de la antigüedad y el momento queda en 1 (sin VOD no se puede agrupar)."""
+    fuente se deduce de la antigüedad y el momento queda en 1 (sin VOD no se puede agrupar).
+
+    `descarga`: un video que ya está bajado (los modos /editar y /narrar). Esos no son clips de un
+    streamer, así que se saltean los filtros que son POR CANAL — co-stream, palabras de fútbol,
+    marcador deportivo — que sin streamer no significan nada y solo tirarían videos buenos. Los
+    filtros de seguridad (datos en pantalla, tono) y los de calidad corren igual.
+    """
     res = Resultado(url=url, clips_mismo_momento=clips_mismo_momento)
     crono = Cronometro(res, avisar)
     fa = cfg.filtro_audio
+    aporte = descarga is not None
 
-    with crono.etapa("descarga"):
-        d = descargar(url, RAW_DIR)
+    if aporte:
+        d = descarga
+    else:
+        with crono.etapa("descarga"):
+            d = descargar(url, RAW_DIR)
     res.clip_id, res.streamer, res.canal, res.titulo_twitch = d.clip_id, d.streamer, d.canal, d.titulo
     res.categoria, res.vistas = d.categoria, d.vistas
     res.creado = d.creado.isoformat() if d.creado else None
@@ -130,7 +142,8 @@ def procesar(url: str, cfg: Settings, streamers: list[Streamer], forzar: bool = 
         return True
 
     # §3 paso 2 (versión URL manual): co-stream / evento por título o categoría.
-    if es_costream([d.titulo], d.categoria, cfg.filtros,
+    # No corre para un aporte: sin streamer, "co-stream" no quiere decir nada.
+    if not aporte and es_costream([d.titulo], d.categoria, cfg.filtros,
                    con_deportes=bool(streamer and streamer.detectar_marcador)) and descartar(
         f"co-stream o evento (título {d.titulo!r}, categoría {d.categoria!r})", MOTIVO_COSTREAM
     ):
@@ -266,6 +279,7 @@ def procesar(url: str, cfg: Settings, streamers: list[Streamer], forzar: bool = 
 
     shutil.copyfile(work / "subs.srt", READY_DIR / f"{d.clip_id}.srt")
     res.salida = str(salida)
+    res.raw = str(d.path)
 
     _registrar(res, "procesado", tx.MOTIVO_SIN_REMATE if res.relleno else None)
     return _cerrar(res)

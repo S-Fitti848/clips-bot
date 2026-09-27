@@ -1084,6 +1084,236 @@ def _cantidad(conn, args: list) -> str:
             f"\nPara un pedido puntual podés usar <code>/ya x{min(puesto + 1, db.CANTIDAD_MAX)}</code>.")
 
 
+
+# ---- /editar y /narrar: videos propios por el mismo pipeline --------------------
+# No son clips de un streamer: no hay login, ni permiso, ni crédito. Se saltean los filtros POR
+# CANAL (co-stream, fútbol, marcador) y se mantienen los de seguridad: datos en pantalla y tono.
+
+ESPERA_VIDEO = "esperando_video"   # bot_estado: <user_id> -> "editar" | "narrar"
+MAX_MB_TELEGRAM = 20
+
+
+def _pedir_video(conn, user_id: str, modo: str) -> str:
+    db.set_valor(conn, f"{ESPERA_VIDEO}:{user_id}", modo)
+    extra = (" Después lo miro, escribo un guion y te lo paso para aprobar antes de narrarlo."
+             if modo == "narrar" else "")
+    return (f"Mandame el video: un archivo (hasta {MAX_MB_TELEGRAM} MB, que es lo que Telegram me "
+            f"deja bajar) o un link.{extra}\n\n"
+            f"También podés mandarlo todo junto: el video con <code>/{modo}</code> escrito abajo, "
+            f"o <code>/{modo} &lt;link&gt;</code>.")
+
+
+def _editar(conn, tg: TelegramClient, chat_id: str, user_id: str, args: list,
+            settings: Settings, modo: str = "editar"):
+    """El video ya tiene que estar acá: `args[0]` es un link, o ya se bajó el archivo."""
+    if not args:
+        return _pedir_video(conn, user_id, modo)
+    return _procesar_aporte(conn, tg, chat_id, user_id, {"url": args[0]}, settings, modo)
+
+
+def _procesar_aporte(conn, tg: TelegramClient, chat_id: str, user_id: str, fuente: dict,
+                     settings: Settings, modo: str):
+    """Baja (si hace falta), procesa y entrega. Toma el turno pesado como /buscar y /ya."""
+    import secrets
+
+    from .download import DescargaError, adoptar, descargar_libre
+    from .process import RAW_DIR, READY_DIR, procesar
+
+    token = f"aporte:{secrets.token_hex(3)}"
+    if not db.tomar_turno(conn, db.RECURSO_PESADO, token, maximo=1,
+                          vencimiento_s=VENCIMIENTO_PESADO_S):
+        return OCUPADO
+    try:
+        nombre = f"aporte_{secrets.token_hex(4)}"
+        try:
+            if fuente.get("file_id"):
+                tg.send_message(chat_id, "Bajando el video…")
+                bajado = tg.get_file(fuente["file_id"], RAW_DIR / nombre)
+                d = adoptar(bajado, RAW_DIR, nombre)
+            else:
+                tg.send_message(chat_id, f"Bajando <code>{html.escape(fuente['url'][:80])}</code>…")
+                d = descargar_libre(fuente["url"], RAW_DIR, nombre)
+        except (DescargaError, TelegramError) as e:
+            return f"No pude bajar el video: {html.escape(str(e)[:250])}"
+
+        dur = probe(d.path).duracion
+        tg.send_message(chat_id, f"Listo, {dur:.0f} s. Procesando: subtítulos, vertical y textos. "
+                                 "Tarda unos minutos en la Pi.")
+        r = procesar("", settings, [], gemini=_gemini(settings), descarga=d,
+                     avisar=lambda *_: None)
+        if r.descartado:
+            return (f"El video quedó descartado: <b>{html.escape(r.descartado[:200])}</b>."
+                    "\nSi creés que está mal, decime y lo miro.")
+        meta_p = READY_DIR / f"{r.clip_id}.json"
+        meta = json.loads(meta_p.read_text(encoding="utf-8"))
+        if not meta.get("textos"):
+            return "Lo edité pero Gemini no me dio los textos (¿cuota?). El mp4 quedó en ready/."
+        if modo == "narrar":
+            return _narrar_guion(conn, tg, chat_id, user_id, meta, settings)
+        enviar_clip(tg, chat_id, conn, r.clip_id, meta, 1, None)
+        return None
+    finally:
+        db.soltar_turno(conn, db.RECURSO_PESADO, token, VENCIMIENTO_PESADO_S)
+
+
+
+# ---- /narrar: el guion primero, la voz después ----------------------------------
+# El guion se aprueba ANTES de sintetizar nada. Gemini puede inventar lo que ve —ya pasó con un
+# Short titulado "Reconoce que no conoce a Zelda" donde Zelda era un perro muerto— y narrar algo
+# inventado con voz de locutor es peor que escribirlo.
+
+ESPERA_CORRECCION = "esperando_correccion"   # bot_estado: <user_id> -> token del guion
+
+
+def _narrar_guion(conn, tg: TelegramClient, chat_id: str, user_id: str, meta: dict,
+                  settings: Settings, correccion: str = ""):
+    """Escribe el guion y lo manda a aprobar. No sintetiza nada todavía."""
+    import secrets
+
+    from . import narrar
+    from .media import frames_jpeg
+
+    gemini = _gemini(settings)
+    if gemini is None:
+        return "Sin GEMINI_API_KEY no puedo escribir el guion."
+    video = Path(meta["salida"])
+    dur = float(meta.get("duracion_s") or probe(video).duracion)
+    imgs = frames_jpeg(Path(meta.get("raw") or video), 6)
+    g = narrar.escribir(gemini, dur, meta.get("transcripcion") or "", imgs, correccion)
+
+    if g.sensible:
+        return ("El video parece tratar un tema sensible (muerte, duelo, enfermedad, violencia "
+                "real). No le pongo voz encima.")
+
+    token = secrets.token_hex(3)
+    db.set_valor(conn, f"guion:{token}", json.dumps(
+        {"clip_id": meta["clip_id"], "guion": g.a_dict(), "chat_id": chat_id}, ensure_ascii=False))
+
+    partes = [f"<b>Guion propuesto</b> ({g.palabras} palabras, ~{g.segundos_estimados:.0f}s "
+              f"para un video de {dur:.0f}s)"]
+    if g.confianza <= 5:
+        partes.append(f"⚠️ Confianza {g.confianza}/10 en lo que vi: leelo con cuidado antes de aprobar.")
+    aviso = narrar.aviso_largo(g, dur)
+    if aviso:
+        partes.append(aviso)
+    if g.que_pasa:
+        partes.append("<b>Lo que veo:</b>\n" + "\n".join(f"· {html.escape(x)}" for x in g.que_pasa[:5]))
+    partes.append(f"<b>Guion:</b>\n<pre>{html.escape(g.texto)}</pre>")
+    teclado = {"inline_keyboard": [[
+        {"text": "✅ Aprobar", "callback_data": f"gui:ok:{token}"},
+        {"text": "✏️ Cambiar", "callback_data": f"gui:no:{token}"},
+    ]]}
+    tg.send_message(chat_id, "\n\n".join(partes), teclado=teclado)
+    return None
+
+
+def _guion_callback(conn, tg: TelegramClient, cb: dict, settings: Settings) -> None:
+    from .menu import parse_callback
+
+    d = parse_callback(cb["data"])
+    if not d or d["menu"] != "gui":
+        return
+    token = str(d["args"][0]) if d["args"] else ""
+    crudo = db.get_valor(conn, f"guion:{token}")
+    if not crudo:
+        return tg.answer_callback(cb["callback_id"], "Ese guion venció. Mandá /narrar de nuevo.")
+    guardado = json.loads(crudo)
+
+    if d["accion"] == "no":
+        db.set_valor(conn, f"{ESPERA_CORRECCION}:{cb['user_id']}", token)
+        tg.answer_callback(cb["callback_id"])
+        return tg.edit_message(cb["chat_id"], cb["message_id"],
+                               "✏️ Decime qué cambiar y lo reescribo. Por ejemplo: "
+                               "<i>más corto</i>, <i>no digas el nombre del juego</i>, "
+                               "<i>arrancá con la caída</i>.", {"inline_keyboard": []})
+
+    tg.answer_callback(cb["callback_id"], "Aprobado, va la voz…")
+    tg.edit_message(cb["chat_id"], cb["message_id"], "✅ Guion aprobado. Generando la voz…",
+                    {"inline_keyboard": []})
+    db.borrar_valor(conn, f"guion:{token}")
+    _seguro(tg, cb["chat_id"], "narrar", _narrar_voz, conn, tg, cb["chat_id"], guardado, settings)
+
+
+def _narrar_voz(conn, tg: TelegramClient, chat_id: str, guardado: dict, settings: Settings) -> None:
+    """Sintetiza, mezcla y entrega. El turno pesado se toma acá: la síntesis en la Pi tarda."""
+    import secrets
+
+    from . import narrar
+    from .process import READY_DIR, WORK_DIR, guardar_meta
+
+    token = f"narrar:{secrets.token_hex(3)}"
+    if not db.tomar_turno(conn, db.RECURSO_PESADO, token, maximo=1,
+                          vencimiento_s=VENCIMIENTO_PESADO_S):
+        return tg.send_message(chat_id, "Hay otra cosa pesada andando; probá en un rato.")
+    try:
+        clip_id = guardado["clip_id"]
+        meta = json.loads((READY_DIR / f"{clip_id}.json").read_text(encoding="utf-8"))
+        texto = guardado["guion"]["texto"]
+        modelo = Path(settings.voz.modelo)
+        if not modelo.exists():
+            return tg.send_message(chat_id, f"Falta la voz en <code>{html.escape(str(modelo))}</code>. "
+                                            "Bajala con el script de deploy.")
+        work = WORK_DIR / clip_id
+        tg.send_message(chat_id, "Generando la voz…")
+        wav = narrar.sintetizar(texto, modelo, work / "voz.wav")
+
+        # Los subtítulos salen de LA VOZ, no del audio original: son los que hay que leer ahora.
+        tg.send_message(chat_id, "Sincronizando los subtítulos con la voz…")
+        subs = narrar.subtitular_voz(wav, settings.subtitulos)
+        from . import subtitles as _sub
+        from .layout import layout_fit_blur
+        from .render import renderizar
+
+        _sub.escribir_ass(subs, work / "subs.ass", settings.subtitulos, settings.render)
+        _sub.escribir_srt(subs, READY_DIR / f"{clip_id}_narrado.srt")
+        base = Path(meta.get("raw") or meta["salida"])
+        sin_voz = work / "narrado_sinvoz.mp4"
+        from . import layout as _lay
+        W, H, frames, _ = _lay.detectar_caras(base, settings.camara.frames_muestra)
+        lay = _lay.decidir_layout(W, H, frames, settings.camara, settings.render)
+        renderizar(base, sin_voz, lay, settings.render, work)
+        salida = READY_DIR / f"{clip_id}_narrado.mp4"
+        narrar.mezclar(sin_voz, wav, salida, settings.voz.volumen_original)
+
+        meta = {**meta, "clip_id": f"{clip_id}_narrado", "salida": str(salida),
+                "narrado": {"guion": texto, "voz": str(modelo.name),
+                            "segundos_voz": round(narrar.duracion_wav(wav), 1)}}
+        meta.pop("entregado", None)
+        guardar_meta(READY_DIR / f"{clip_id}_narrado.json", meta)
+        enviar_clip(tg, chat_id, conn, f"{clip_id}_narrado", meta, 1, None)
+    finally:
+        db.soltar_turno(conn, db.RECURSO_PESADO, token, VENCIMIENTO_PESADO_S)
+
+
+def _aporte_o_cola(conn, tg: TelegramClient, v: dict, modo: str, settings: Settings,
+                   cola: list) -> None:
+    """Un video que mandaron: si hay algo pesado andando, va a la cola como cualquier pedido."""
+    r = _procesar_aporte(conn, tg, v["chat_id"], v["user_id"], {"file_id": v["file_id"]},
+                         settings, modo)
+    if r is OCUPADO:
+        if len(cola) >= MAX_BUSQUEDAS:
+            return tg.send_message(v["chat_id"], "Tengo la cola llena; probá en un rato.")
+        cola.append({"chat_id": v["chat_id"], "comando": f"/{modo}", "args": [],
+                     "user_id": v["user_id"], "file_id": v["file_id"]})
+        return tg.send_message(v["chat_id"], f"En cola ({len(cola)}º), lo edito cuando se libere.")
+    if r:
+        tg.send_message(v["chat_id"], r)
+
+
+def _reescribir_guion(conn, tg: TelegramClient, t: dict, token: str, settings: Settings) -> None:
+    from .process import READY_DIR
+
+    crudo = db.get_valor(conn, f"guion:{token}")
+    if not crudo:
+        return tg.send_message(t["chat_id"], "Ese guion venció. Mandá /narrar de nuevo.")
+    guardado = json.loads(crudo)
+    meta = json.loads((READY_DIR / f"{guardado['clip_id']}.json").read_text(encoding="utf-8"))
+    tg.send_message(t["chat_id"], "Lo reescribo…")
+    r = _narrar_guion(conn, tg, t["chat_id"], t["user_id"], meta, settings, correccion=t["texto"])
+    if r:
+        tg.send_message(t["chat_id"], r)
+
+
 def _cuantos_entregados(conn) -> int:
     return conn.execute("SELECT COUNT(*) FROM clips WHERE estado = 'entregado'").fetchone()[0]
 
@@ -1115,7 +1345,7 @@ def escuchar_telegram(settings: Settings, timeout_poll: int = 50) -> int:
     tira, se guarda y arranca sola cuando se libera el turno. Mientras hay algo en la cola el
     polling baja a unos segundos, así no se queda esperando 50 s para reaccionar.
     """
-    from .telegram import callbacks, comandos, textos_sueltos, usuarios_permitidos
+    from .telegram import (callbacks, comandos, textos_sueltos, usuarios_permitidos, videos)
 
     tg = TelegramClient(env("TELEGRAM_BOT_TOKEN"), timeout=timeout_poll + 30)
     if not usuarios_permitidos(env("TELEGRAM_ALLOWED_USERS", requerido=False)):
@@ -1148,6 +1378,9 @@ def escuchar_telegram(settings: Settings, timeout_poll: int = 50) -> int:
                 chat_ultimo = cb["chat_id"]
                 db.ver_chat(conn, cb["chat_id"], cb.get("chat_tipo", ""),
                             cb.get("chat_nombre", ""), cb["user_id"])
+                if cb["data"].startswith("gui:"):
+                    _seguro(tg, cb["chat_id"], cb["data"], _guion_callback, conn, tg, cb, settings)
+                    continue
                 if cb["data"].startswith("ped:"):
                     _seguro(tg, cb["chat_id"], cb["data"], _pedido_callback, conn, tg, cb,
                             settings, cola)
@@ -1161,8 +1394,36 @@ def escuchar_telegram(settings: Settings, timeout_poll: int = 50) -> int:
                 fn = _menu_callback if cb["data"].startswith("st:") else _alta_callback
                 extra = (settings, cola) if fn is _menu_callback else (settings,)
                 _seguro(tg, cb["chat_id"], cb["data"], fn, conn, tg, cb, *extra)
+            for v in videos(updates):
+                if v["user_id"] not in permitidos:
+                    continue
+                chat_ultimo = v["chat_id"]
+                modo = (v["texto"].lstrip("/").split()[0].lower() if v["texto"].startswith("/")
+                        else db.get_valor(conn, f"{ESPERA_VIDEO}:{v['user_id']}"))
+                if modo not in ("editar", "narrar"):
+                    continue
+                db.borrar_valor(conn, f"{ESPERA_VIDEO}:{v['user_id']}")
+                if v["mb"] > MAX_MB_TELEGRAM:
+                    tg.send_message(v["chat_id"], f"El archivo pesa {v['mb']} MB y Telegram me deja "
+                                                  f"bajar hasta {MAX_MB_TELEGRAM}. Mandame el link.")
+                    continue
+                _seguro(tg, v["chat_id"], f"/{modo}", _aporte_o_cola, conn, tg, v, modo, settings,
+                        cola)
             for t in textos_sueltos(updates):
                 if t["user_id"] not in permitidos:
+                    continue
+                pendiente = db.get_valor(conn, f"{ESPERA_CORRECCION}:{t['user_id']}")
+                if pendiente:
+                    db.borrar_valor(conn, f"{ESPERA_CORRECCION}:{t['user_id']}")
+                    _seguro(tg, t["chat_id"], "reescribir el guion", _reescribir_guion, conn, tg,
+                            t, pendiente, settings)
+                    continue
+                esperando = db.get_valor(conn, f"{ESPERA_VIDEO}:{t['user_id']}")
+                if esperando and t["texto"].startswith("http"):
+                    db.borrar_valor(conn, f"{ESPERA_VIDEO}:{t['user_id']}")
+                    _despachar(conn, tg, {"comando": f"/{esperando}", "args": [t["texto"]],
+                                          "chat_id": t["chat_id"], "usuario": "",
+                                          "user_id": t["user_id"]}, settings, cola)
                     continue
                 login = db.get_valor(conn, f"{ESPERA_PALABRA}:{t['user_id']}")
                 if not login:
@@ -1193,18 +1454,19 @@ def _despachar(conn, tg: TelegramClient, c: dict, settings: Settings, cola: list
     """Un comando del modo escucha. /buscar puede quedar en cola; el resto contesta al toque."""
     print(f"  {c['comando']} {' '.join(c['args'])} de {c['usuario'] or c['user_id']} "
           f"(chat {c['chat_id']})")
-    if c["comando"] in ("/buscar", "/ya"):
+    if c["comando"] in ("/buscar", "/ya", "/editar", "/narrar"):
         if len(cola) >= MAX_BUSQUEDAS:
             tg.send_message(c["chat_id"], f"Ya tengo {len(cola)} búsquedas en cola. Esperá a que "
                                           "salgan esas y probá de nuevo.")
             return
         etiqueta = f"{c['comando']} {' '.join(c['args'])}".strip()
         r = _seguro(tg, c["chat_id"], etiqueta, _pesado, conn, tg, c["chat_id"], c["comando"],
-                    c["args"], settings)
+                    c["args"], settings, c.get("user_id", ""))
         if r is FALLO:
             return  # no se encola: si falló una vez, encolarlo lo hace fallar para siempre
         if r is OCUPADO:
-            cola.append({"chat_id": c["chat_id"], "comando": c["comando"], "args": c["args"]})
+            cola.append({"chat_id": c["chat_id"], "comando": c["comando"], "args": c["args"],
+                         "user_id": c.get("user_id", "")})
             quien = db.hay_trabajo_pesado(conn, VENCIMIENTO_PESADO_S) or ""
             que = "la corrida diaria" if quien.startswith("diario") else "la búsqueda anterior"
             tg.send_message(c["chat_id"], f"En cola ({len(cola)}º), arranco cuando termine {que}.")
@@ -1328,10 +1590,12 @@ def _seguro(tg: TelegramClient, chat_id: str, etiqueta: str, fn, *args, **kw):
 
 
 def _pesado(conn, tg: TelegramClient, chat_id: str, comando: str, args: list[str],
-            settings: Settings):
-    """Los comandos que procesan clips y comparten el turno pesado: /buscar y /ya."""
+            settings: Settings, user_id: str = ""):
+    """Los comandos que procesan clips y comparten el turno pesado."""
     if comando == "/ya":
         return _ya(conn, tg, chat_id, settings, args)
+    if comando in ("/editar", "/narrar"):
+        return _editar(conn, tg, chat_id, user_id, args, settings, comando.lstrip("/"))
     return _buscar(conn, tg, chat_id, args, settings, _streamers(conn), _gemini(settings))
 
 
@@ -1342,8 +1606,15 @@ def _drenar_cola(conn, tg: TelegramClient, cola: list[dict], settings: Settings)
             return
         pedido = cola.pop(0)   # sale de la cola ANTES de correr: si explota, no vuelve a entrar
         etiqueta = f"{pedido.get('comando', '/buscar')} {' '.join(pedido['args'])}".strip()
-        r = _seguro(tg, pedido["chat_id"], etiqueta, _pesado, conn, tg, pedido["chat_id"],
-                    pedido.get("comando", "/buscar"), pedido["args"], settings)
+        if pedido.get("file_id"):   # un video que estaba esperando turno
+            r = _seguro(tg, pedido["chat_id"], etiqueta, _procesar_aporte, conn, tg,
+                        pedido["chat_id"], pedido.get("user_id", ""),
+                        {"file_id": pedido["file_id"]}, settings,
+                        pedido.get("comando", "/editar").lstrip("/"))
+        else:
+            r = _seguro(tg, pedido["chat_id"], etiqueta, _pesado, conn, tg, pedido["chat_id"],
+                        pedido.get("comando", "/buscar"), pedido["args"], settings,
+                        pedido.get("user_id", ""))
         if r is FALLO:
             continue
         if r is OCUPADO:  # alguien tomó el turno entre el chequeo y la llamada
