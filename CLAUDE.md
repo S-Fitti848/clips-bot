@@ -1,6 +1,9 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-09-24 | **Versión:** v0.21.0 | **Modo:** Fase 1 andando: primera entrega real hecha (3 Shorts por Telegram)
+**Snapshot:** 2026-09-27 | **Versión:** v0.22.0 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 + escucha de Telegram 24/7)
+
+> **SI ESTÁS EMPEZANDO UNA SESIÓN NUEVA, LEÉ §10.** Ahí está qué está hecho, qué quedó a medias,
+> qué falta, y las trampas que ya nos mordieron.
 
 > **Reglas de trabajo sobre este archivo:** se edita con Edit o se reescribe entero. NADA de scripts
 > de reemplazo encadenados: uno rompió el archivo el 2026-09-22 (37 MB de texto repetido) y hubo que
@@ -345,8 +348,12 @@ clips_bot/db.py          SQLite data/clips.db: clips, posts, catalogo_cursor, st
                          bajas por Telegram), bot_estado (offset, turnos, estado de los menús)
 clips_bot/registro.py    altas/bajas en la DB + `combinar` con el YAML + `resolver` un alta
 clips_bot/menu.py        teclados de /streamers y /agregar (callback_data de 64 bytes como tope)
-clips_bot/__main__.py    CLI
-tests/                   120 tests sin red ni video
+clips_bot/narrar.py      modo /narrar: guion con Gemini viendo frames, TTS con Piper, mezcla y
+                         subtítulos sacados de LA VOZ (no del audio original)
+clips_bot/__main__.py    CLI + todo el bot de Telegram (comandos, menús, cola, turnos)
+deploy/sudoers-clips-bot permite a santi reiniciar SOLO las unidades del clips-bot sin contraseña
+voces/                   modelos de Piper (NO están en git: ~110 MB, se bajan en la Pi)
+tests/                   196 tests sin red ni video
 ```
 
 Comandos:
@@ -526,6 +533,11 @@ Problemas abiertos:
 
 ## 9. CHANGELOG
 
+- v0.22.0 (2026-09-27) — Modos `/editar` y `/narrar` (video propio: archivo de Telegram o link con
+  yt-dlp). `/ayuda` por secciones con botones. Cantidad por pedido (`xN`, tope 6), `/cantidad`, y
+  los botones `➕ N más` / `🔁 Reemplazar`, que usan primero lo ya procesado sin gastar Gemini.
+  Destinos separados: lo que se pide por comando se contesta donde se pidió, lo diario va a la
+  lista de `/destinos`. `/streamers`, `/agregar`, `/quitar`, `/aca`. Sudoers acotado. 196 tests OK.
 - v0.0.0 (2026-09-21) — Documento inicial. Sin código.
 - v0.0.1 (2026-09-21) — Publicación manual vía Telegram + módulo de métricas §4b.
 - v0.0.2 (2026-09-21) — Upload automático a YouTube Shorts por API; revisado después.
@@ -646,3 +658,86 @@ Problemas abiertos:
   `detectar_marcador` (medido: 6 de 12 descartes del evento eran falsos positivos de "final").
   Arreglados dos bugs de orden: Twitch pisaba los candidatos de Kick, y el filtro del evento corría
   después del corte al top N. 126 tests OK.
+
+---
+
+## 10. DÓNDE ESTAMOS (leer primero en una sesión nueva)
+
+**Snapshot del 2026-09-27.** El bot corre solo en la Raspberry: timer a las 05:00 AR y la escucha
+de Telegram 24/7. Los comandos se atienden en el momento.
+
+### Estado real de la Pi (verificado el 2026-09-27)
+
+| | |
+|---|---|
+| commit | `98aea18` |
+| `clips-bot.timer` | activo, próxima 05:00 AR |
+| `clips-bot-telegram` | activo |
+| sudoers | instalado (`/etc/sudoers.d/clips-bot`) |
+| destinos de la entrega diaria | el grupo **Rots clips** (`-5453399767`) |
+| chats conocidos | Rots clips (grupo), Santiago Fittipaldi y Tommy Bildo (privados, los dos alcanzables) |
+| `cantidad_diaria` | 3 |
+| prueba del multi-POV | desde 2026-09-25 02:03, **vence 2026-10-09**, no apagado |
+| votos hasta ahora | puntaje 6 → 1 👍 · puntaje 8 → 1 👎 |
+
+### Hecho y andando en producción
+
+- Pipeline completo de clips (§3) con todos los filtros: co-stream, programas de terceros, deportes,
+  datos en pantalla (OCR), tono sensible, calidad con puntaje, duración, idioma, música por audio.
+- Layout `split` / `fullcam` / `fit_blur` con chequeo post-render, y `layout_forzado` por streamer.
+- Entrega por Telegram con 👍/👎 por persona, relleno marcado y aviso de "0 clips hoy".
+- Comandos: `/ya`, `/buscar`, `/streamers`, `/agregar`, `/quitar`, `/cantidad`, `/reclamo`,
+  `/destinos`, `/aca`, `/ayuda`, `/editar`, `/narrar`.
+- Turno de trabajo pesado + cola: nunca hay dos clips procesándose a la vez, y un comando que
+  explota avisa sin tumbar el servicio.
+- Deploy: systemd, logrotate, alerta por Telegram con `OnFailure`, sudoers acotado.
+
+### A medias (el código está, la prueba real no)
+
+- **`/editar` y `/narrar` NUNCA se corrieron con un video de verdad.** Tienen tests unitarios y el
+  camino está completo, pero nadie mandó todavía un video al bot. **Es lo primero que hay que
+  probar**: `/editar` con un link corto y `/narrar` con un video de 15-20 s, mirando el guion, la
+  voz y que los subtítulos caigan sincronizados.
+- **Piper nunca sintetizó dentro del flujo real.** Se probó suelto en la Pi (ver §8), no desde
+  `/narrar`. La voz `es_AR-daniela-high` tarda **2,13× el tiempo real**: un guion de 60 s son ~2 min
+  de síntesis, encima del render.
+- **El multi-POV está a prueba hasta el 2026-10-09** y no se armó ninguno desde que se prendió con
+  la verificación de "mismo hecho". Todavía no sabemos si la verificación funciona en producción.
+
+### Pendiente, en orden
+
+1. **Modo en vivo.** Santi lo pidió el 2026-09-27 como "el modo en vivo que te pedí", pero **no hay
+   registro de ese pedido en el historial**. NO adivinar qué es: preguntar. La sospecha razonable
+   es procesar un stream mientras está al aire, que es un problema bastante distinto al de un clip.
+2. **Efemérides** y **modo recortar**. Pedidos el 2026-09-24 ("después seguimos con efemérides y el
+   modo recortar") y nunca especificados. También hay que preguntar qué son.
+3. **Revisión del corte de calidad (lo del "9 de 10").** El corte está en `textos.puntaje_min: 5`,
+   puesto a mano. El trato es elegirlo con datos: el puntaje desde el cual Santi vota más 👍 que 👎
+   (`db.votos_por_puntaje`). Arrancó el 2026-09-24, así que a partir del **2026-10-08** hay que
+   mirarlo. Con 2 votos todavía no alcanza para nada.
+4. **Listas de streamers por persona.** Pedido y después postergado explícitamente por Santi el
+   2026-09-27 ("las listas por persona no las hagas por ahora"). El diseño pensado: una corrida de
+   candidatos compartida, selección POR destino, y procesado deduplicado; el grupo usa la unión.
+
+### Trampas que ya nos mordieron
+
+- **Nunca escribas `\r` ni `\n` en un archivo de shell desde un script intermedio.** `alerta.sh`
+  terminó con DOS retornos de carro reales adentro: uno partía un comentario en dos y la segunda
+  mitad se ejecutaba como comando, y el otro hacía que `tr` borrara también los saltos de línea del
+  `.env`, que quedaba en una sola línea. La alerta estuvo rota un día entero por lo mismo que venía
+  a arreglar. Verificá siempre con `p.read_bytes().count(b"\r") == 0` antes de commitear.
+- **El `.gitattributes` fuerza LF** en `*.sh`, `*.service`, `*.timer` y el sudoers. Con CRLF, Linux
+  falla con `bad interpreter: ^M` y systemd no parsea la unidad.
+- **La escucha hay que reiniciarla después de cada deploy**, si no sigue con el código viejo:
+  `sudo systemctl restart clips-bot-telegram` (ya no pide contraseña).
+- **Si el servicio entra en crash-loop**, systemd pega contra el `StartLimitBurst` y NO vuelve a
+  arrancar: `systemctl restart` contesta "Start request repeated too quickly" y hace falta
+  `sudo systemctl reset-failed clips-bot-telegram` primero. La alerta ya trae ese comando.
+- **La cuota de Gemini se agota casi todos los días** (~20 requests del free tier). El fallback a
+  flash-lite funciona y se ve en el log constantemente. No gastar cuota en pruebas: para probar
+  algo, usá los clips ya procesados de `output/ready/`, que ya tienen textos.
+- **Los filtros nuevos no se aplican retroactivamente** a lo que ya está en `output/ready/`. Cuando
+  se agrega un filtro hay que revisar a mano lo que quedó de antes (ya pasó dos veces).
+- **Medir antes de decidir.** Todo lo que salió bien en este proyecto salió de medir sobre clips
+  reales: el umbral de césped, el de caras en la zona del juego, la superposición léxica, el
+  puntaje con y sin imagen. Todo lo que salió mal salió de suponer.
