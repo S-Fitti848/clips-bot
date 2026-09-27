@@ -83,6 +83,25 @@ def test_motivo_foto(info, motivo):
     assert (m_ is None) if motivo is None else m_.startswith(motivo)
 
 
+def test_el_autor_se_busca_en_attribution_y_credit():
+    """Dos fotos CC BY-SA de la piedra de Rosetta no traían `Artist` (prueba real del 27/09)."""
+    assert ef.autor_de({"Attribution": {"value": "Carlos Delgado"},
+                        "Credit": {"value": "Kadellar ( Own work )"}}) == "Carlos Delgado"
+    assert ef.autor_de({"Credit": {"value": "Captmondo ( Own work )"}}) == "Captmondo"
+    assert ef.autor_de({"Credit": {"value": "Captmondo ( Trabajo propio )"}}) == "Captmondo"
+    assert ef.autor_de({"Credit": {"value": "Own work"}}) == ""
+
+
+def test_cc_by_sin_autor_no_se_usa():
+    info = _info()
+    info["extmetadata"]["Artist"] = {"value": ""}
+    info["extmetadata"]["AttributionRequired"] = {"value": "true"}
+    assert ef.motivo_foto(info) == "sin autor para atribuir"
+    info["extmetadata"]["LicenseShortName"] = {"value": "Public domain"}
+    info["extmetadata"]["AttributionRequired"] = {"value": "false"}
+    assert ef.motivo_foto(info) is None             # dominio público: no hace falta
+
+
 def test_epigrafe_y_autor_sin_html():
     f = ef.a_foto(_info(desc="Wolfschanze &lt;abbr class=&quot;x&quot;&gt;BA&lt;/abbr&gt; Hitler"), "Art")
     assert f.epigrafe == "Wolfschanze BA Hitler" and f.autor == "Ana Pérez"

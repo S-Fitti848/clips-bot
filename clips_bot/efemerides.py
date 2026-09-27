@@ -305,12 +305,27 @@ def motivo_foto(info: dict) -> str | None:
         return f"licencia no libre ({corta or 'sin dato'})"
     if int(info.get("width") or 0) < MIN_ANCHO:
         return f"menos de {MIN_ANCHO} px ({info.get('width')})"
+    # CC BY / BY-SA obligan a nombrar al autor: si Commons no lo dice en ningún campo, no se usa.
+    if meta("AttributionRequired").lower() == "true" and not autor_de(em):
+        return "sin autor para atribuir"
     texto = " ".join([info.get("archivo", "").replace("_", " "), meta("ObjectName"),
                       meta("ImageDescription"), meta("Categories").replace("|", " ")])
     m = _NO_FOTO.search(texto)
     if m:
         return f"no es una foto del hecho ({m.group(0).lower()})"
     return None
+
+
+def autor_de(em: dict) -> str:
+    """El autor para el crédito. Commons no siempre lo pone en `Artist`: en la prueba del 27/09,
+    dos fotos CC BY-SA de la piedra de Rosetta salían "autor desconocido" y lo tenían en
+    `Attribution` ("Carlos Delgado") o en `Credit` ("Captmondo (Own work)")."""
+    for k in ("Artist", "Attribution", "Credit"):
+        v = sin_html((em.get(k) or {}).get("value", ""))
+        v = re.sub(r"\s*\(\s*(own work|trabajo propio)\s*\)\s*", "", v, flags=re.I).strip(" ,;")
+        if v and not re.fullmatch(r"own work|trabajo propio|unknown( author)?|desconocido", v, re.I):
+            return v
+    return ""
 
 
 def a_foto(info: dict, articulo: str) -> Foto:
@@ -323,7 +338,7 @@ def a_foto(info: dict, articulo: str) -> Foto:
         info["archivo"].split(":", 1)[-1].rsplit(".", 1)[0].replace("_", " ")
     return Foto(archivo=info["archivo"], url=info.get("thumburl") or info.get("url") or "",
                 ancho=int(info.get("width") or 0), alto=int(info.get("height") or 0),
-                licencia=meta("LicenseShortName"), autor=meta("Artist") or "autor desconocido",
+                licencia=meta("LicenseShortName"), autor=autor_de(em) or "autor desconocido",
                 epigrafe=epigrafe[:160], pagina=info.get("descriptionurl") or "", articulo=articulo)
 
 

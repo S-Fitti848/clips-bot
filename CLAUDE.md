@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-09-27 | **Versión:** v0.25.1 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 + escucha de Telegram 24/7)
+**Snapshot:** 2026-09-27 | **Versión:** v0.26.0 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 + escucha de Telegram 24/7)
 
 > **SI ESTÁS EMPEZANDO UNA SESIÓN NUEVA, LEÉ §10.** Ahí está qué está hecho, qué quedó a medias,
 > qué falta, y las trampas que ya nos mordieron.
@@ -265,6 +265,40 @@ dura más de 60 s (`muy largo`). Entre el primer clip y el tercer creador pasan 
 114 s). O sea: con 3 el tope por hora era lo que mandaba casi siempre, y eran ~27 procesados pesados
 por día en la Pi. Por eso se pasó al umbral relativo (punto 3).
 
+### 3c. Efemérides para el canal "Pasó Hoy" (`/efemeride [día/mes]`, `clips_bot/efemerides.py`)
+Pedido 2026-09-27. Un Short por día con un hecho de la fecha. **Todavía NO va en la corrida de las
+05:00**: Santi pidió verlo andar antes. Hoy es `/efemeride` a demanda y el CLI `efemeride`.
+1. Wikipedia "On this day" en es y en (REST `feed/onthisday/events`). Primer filtro sin Gemini
+   (`motivo_evento`): palabras sensibles (muertes, atentados, accidentes, desastres…), guerra desde
+   1945, "durante siglos". Medido el 27/09: 108 hechos → 84 candidatos.
+2. Gemini ordena los 8 más interesantes para público joven y, para cada uno, dice cuál de sus
+   artículos es EL DEL HECHO: el primero de la lista suele ser el país ("Nicaragua" para el cierre
+   de El Nuevo Diario traía fotos de playas y presidentes). Fotos y texto salen solo de ese artículo.
+3. Fotos (`motivo_foto`, reglas fijas): licencia libre (PD, CC0, CC BY, CC BY-SA; nada de NC, ND,
+   fair use ni GFDL sola), formato de foto (sin svg/gif), ≥ 800 px de ancho, y sin mapas, banderas,
+   escudos, firmas, diagramas, logos ni imágenes duras (cadáveres, heridos: el artículo del Pacto del
+   Eje traía un carro con muertos). Se piden miniaturas de 1280 px (ancho estándar de Wikimedia;
+   con 1600 devolvía originales y upload.wikimedia.org daba 429). En la MISMA llamada del guion
+   Gemini ve hasta 12 fotos y descarta lo que las reglas no ven (gráficos, retratos de alguien que
+   no protagoniza el hecho, otro tema). Menos de 4 → el siguiente del ranking. Tope de 2 eventos con
+   guion por día: peor caso 7 llamadas a Gemini.
+4. Guion: solo con el texto del artículo (si es en inglés, se suma el equivalente en castellano para
+   validar). Validación (`validar_guion` / `no_respaldados`): arranca con "Un día como hoy, en
+   <año>,", cierra con pregunta, 105-135 palabras (35-45 s con Piper MEDIDO a 3,1 palabras/s), 4+
+   fotos distintas y ninguna descartada, y todo nombre propio, cifra, número con letras ("mil
+   millones") y mes tiene que estar en el artículo. El primer guion real dijo "más de mil millones
+   de búsquedas diarias" (de la memoria de Gemini): de ahí el chequeo de números con letras.
+5. Aprobación por Telegram: hoja con las fotos del guion numeradas y su epígrafe (PIL, por las
+   tildes), el guion frase por frase con su foto, y los créditos. ✅ Aprobar · ✏️ Cambiar guion ·
+   🔁 foto N (usa primero una que Gemini ya vio y no descartó; después la reserva). Sin ✅ no se
+   sintetiza nada.
+6. Video (`hacer_video`): Piper frase por frase (`narrar.sintetizar_frases`, así cada foto dura lo
+   que su frase), fit_blur con zoom suave hasta 110 % sobre la foto agrandada 4× (zoompan redondea a
+   píxel entero y a tamaño normal tiembla), hacia la cara más grande o al centro, el año grande los
+   primeros 2 s, subtítulos palabra por palabra. Créditos de cada foto (autor, licencia, link a
+   Commons) al final de la descripción, en el orden en que aparecen.
+CLI: `python -m clips_bot efemeride [--fecha 27/09] [--aprobar] [--propuesta <json>]`.
+
 ### 4b. Módulo de métricas (feedback loop)
 Job cada 6 h: para cada post de los últimos 30 días, pedir vistas/likes/comentarios/shares
 (YouTube `videos.list` + Analytics API para retención promedio; Meta Graph insights para IG/FB;
@@ -411,11 +445,13 @@ clips_bot/narrar.py      modo /narrar: guion con Gemini viendo frames, TTS con P
 clips_bot/__main__.py    CLI + todo el bot de Telegram (comandos, menús, cola, turnos)
 deploy/sudoers-clips-bot permite a santi reiniciar SOLO las unidades del clips-bot sin contraseña
 voces/                   modelos de Piper (NO están en git: ~110 MB, se bajan en la Pi)
+clips_bot/efemerides.py  Pasó Hoy (§3c): Wikipedia/Commons, filtros de eventos y fotos, guion
+                         validado contra el artículo, hoja de aprobación y el video con zoom
 clips_bot/serie.py       /serie: partes, división en etapas (validada), guiones encadenados,
                          título numerado, horarios, hoja de miniaturas por etapa
 clips_bot/envivo.py      modo en vivo (§3b): quién está al aire, momentos por creadores distintos,
                          alertas en la DB (no repetir, tope, vencer) y el resumen de tiempos
-tests/                   289 tests sin red ni video
+tests/                   334 tests sin red ni video
 ```
 
 Comandos:
@@ -465,6 +501,9 @@ Comandos:
 - `telegram-chat-id` — lista los chats de getUpdates y los ids de usuario (TELEGRAM_ALLOWED_USERS).
   - `/envivo on|off` — modo en vivo (§3b); `/envivo` solo muestra el estado, la última vuelta y
     las medianas de cada tramo de tiempo en las últimas 24 h.
+- `efemeride [--fecha 27/09] [--aprobar] [--propuesta <json>]` — Pasó Hoy sin Telegram (§3c):
+  propone y deja `hoja.jpg`, `aprobacion.txt` y `propuesta.json` en `output/efemerides/<mmdd>/`;
+  con `--aprobar` arma el video (necesita Piper: en la Pi).
 - `envivo [--ventana-min N] [--min-creadores N]` — una pasada del modo en vivo sin procesar ni
   escribir: quién está al aire y qué momentos dispararían. Para calibrar.
 - `benchmark [--clips N] [--modelos small,base] [--limite-s S]` — mide OCR, Whisper (carga y
@@ -599,6 +638,23 @@ Problemas abiertos:
 
 ## 9. CHANGELOG
 
+- v0.26.0 (2026-09-27) — Pasó Hoy (§3c): `/efemeride [día/mes]` y el CLI `efemeride`, con
+  aprobación ✅ / ✏️ / 🔁 foto N. Todavía NO en la corrida diaria. Probado de punta a punta con el
+  27/09 real: en la Pi salió "El día que se descifró la piedra de Rosetta", 42,0 s, 12 fotos por
+  frase, año 2 s, subtítulos por palabra (voz 102 s, subtítulos 125 s, video 382 s: ~10 min en
+  total, el zoom sobre la foto 4× es lo caro). Todo lo que dice el guion está en el artículo
+  (verificado a mano, incluido "la pieza más visitada"). Lo que salió de probar con datos reales:
+  (1) el artículo del hecho lo elige Gemini (el primero de la lista era el país); (2) imágenes duras
+  fuera por epígrafe; (3) "mil millones" de la memoria de Gemini → chequeo de números con letras;
+  (4) Piper habla a 3,1 palabras/s MEDIDO, no 2,5: el rango pasó a 105-135 palabras y
+  `narrar.PALABRAS_POR_SEGUNDO` también (los guiones de /narrar y /serie salían ~20 % cortos);
+  (5) ranking de 8 y no de 3: con 3, ese día no había video (Google: Gemini descartó con razón 5
+  de 8 fotos; Vorónezh y E=mc² tenían 1-2 fotos libres); (6) Wikimedia da 429 si se le pega
+  seguido: pausa entre llamadas, Retry-After y miniaturas de 1280 (ancho estándar); (7) el autor
+  de las fotos CC BY-SA a veces está en `Attribution` o `Credit` y no en `Artist`; sin autor, una
+  foto que exige atribución no se usa. Con el modelo de fallback (flash-lite, el principal sin
+  cuota ese día) el descarte visual varió entre corridas (Google: 5, 2 y 6 de 8) y el título salió
+  sin tildes. 334 tests OK.
 - v0.25.1 (2026-09-27) — Un video SIN pista de audio (no silencioso: sin stream) hacía reventar
   faster-whisper (IndexError adentro de PyAV). Lo tapaba el filtro de silencio (100 %), que desde
   v0.24.2 no corre para /editar ni /narrar: ahora, sin pista de audio, no se llama a Whisper.
@@ -796,7 +852,7 @@ de Telegram 24/7. Los comandos se atienden en el momento.
 
 | | |
 |---|---|
-| commit | `942bc0b` (desplegado 2026-09-27 18:41; 289 tests OK en la Pi) |
+| commit | ver `git log -1` en la Pi (v0.26.0 desplegado 2026-09-27; escucha reiniciada) |
 | `clips-bot.timer` | activo, próxima 05:00 AR |
 | `clips-bot-telegram` | activo |
 | sudoers | instalado (`/etc/sudoers.d/clips-bot`) |
@@ -841,8 +897,9 @@ de Telegram 24/7. Los comandos se atienden en el momento.
    falso). Mirar: los pasos y las etapas que elige, si las partes se entienden solas, si el aviso de
    música acierta (con y sin música), que `sin audio` deje solo la voz, y cuánto tarda una serie de
    3 en la Pi (estimado: ~9 min las partes + ~12 min las voces).
-3. **Efemérides** y **modo recortar**. Pedidos el 2026-09-24 ("después seguimos con efemérides y el
-   modo recortar") y nunca especificados. También hay que preguntar qué son.
+3. **Efemérides en la corrida diaria.** `/efemeride` está (§3c); falta sumarlo a las 05:00, que
+   Santi pidió recién después de ver el resultado. **Modo recortar**: pedido el 2026-09-24 y nunca
+   especificado: preguntar qué es.
 4. **Revisión del corte de calidad (lo del "9 de 10").** El corte está en `textos.puntaje_min: 5`,
    puesto a mano. El trato es elegirlo con datos: el puntaje desde el cual Santi vota más 👍 que 👎
    (`db.votos_por_puntaje`). Arrancó el 2026-09-24, así que a partir del **2026-10-08** hay que
