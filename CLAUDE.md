@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-09-27 | **Versión:** v0.24.2 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 + escucha de Telegram 24/7)
+**Snapshot:** 2026-09-27 | **Versión:** v0.25.0 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 + escucha de Telegram 24/7)
 
 > **SI ESTÁS EMPEZANDO UNA SESIÓN NUEVA, LEÉ §10.** Ahí está qué está hecho, qué quedó a medias,
 > qué falta, y las trampas que ya nos mordieron.
@@ -411,9 +411,11 @@ clips_bot/narrar.py      modo /narrar: guion con Gemini viendo frames, TTS con P
 clips_bot/__main__.py    CLI + todo el bot de Telegram (comandos, menús, cola, turnos)
 deploy/sudoers-clips-bot permite a santi reiniciar SOLO las unidades del clips-bot sin contraseña
 voces/                   modelos de Piper (NO están en git: ~110 MB, se bajan en la Pi)
+clips_bot/serie.py       /serie: partes, división en etapas (validada), guiones encadenados,
+                         título numerado, horarios, hoja de miniaturas por etapa
 clips_bot/envivo.py      modo en vivo (§3b): quién está al aire, momentos por creadores distintos,
                          alertas en la DB (no repetir, tope, vencer) y el resumen de tiempos
-tests/                   264 tests sin red ni video
+tests/                   288 tests sin red ni video
 ```
 
 Comandos:
@@ -597,6 +599,19 @@ Problemas abiertos:
 
 ## 9. CHANGELOG
 
+- v0.25.0 (2026-09-27) — `/serie <link o video> [cc: <link>] [partes N] [sin audio]` (N de 2 a 5,
+  default 3; el original tiene que durar N × 45 s). Escenas (las de /narrar, pidiendo 12 × N) →
+  Gemini divide en N etapas en orden y elige 8-10 momentos por etapa (validado: exactamente N, sin
+  superponerse, momentos dentro de su etapa; un reintento con los errores) → hoja con una fila de
+  miniaturas por parte + una línea por etapa, ✅/✏️ → un resumen de 40-55 s por etapa procesado como
+  video propio (OCR, tono, textos; si una parte se descarta, no se arma la serie) → los N guiones en
+  UNA llamada, con título de serie, gancho, y los que no son el último cierran nombrando la parte
+  siguiente (se valida mirando el cierre; si no, reintenta), ✅/✏️ (+ ✅ Aprobar sin audio si hay
+  música) → voz, subtítulos palabra por palabra, "Parte X/N" arriba 3 s, original al 15 % → las N
+  juntas, "Título (Parte k)" (se recorta la base, nunca el número; ≤ 59) y horarios 13:00 / 18:00 /
+  21:30 (con más partes, al día siguiente). Las dos aprobaciones pesadas van por la cola de
+  siempre. Gemini: 1 (división) + N (textos) + 1 (guiones). Probado a mano el render de una parte
+  (cartel y subtítulos por palabra con libass) y la hoja; con Gemini y Piper reales, NO. 288 tests OK.
 - v0.24.2 (2026-09-27) — `/editar` y `/narrar` ya no descartan por "casi todo silencio" ni "pocas
   palabras" (se miden y se guardan igual): son filtros de clips de streamers, y un video de proceso
   sin nadie hablando es justo lo que se quiere narrar. Una transcripción lenta en un video propio
@@ -812,9 +827,11 @@ de Telegram 24/7. Los comandos se atienden en el momento.
    NO desplegado ni probado con Telegram. En la Pi: `git pull`, reiniciar `clips-bot-telegram`,
    `/envivo on` en el grupo. Después de unos días, comparar las alertas reales con las 4,7/día
    simuladas (`/envivo` las cuenta) y mirar los tramos de tiempo.
-2. **Probar `/narrar` con un video real de proceso** (el resumen de v0.24.0 y el aviso de música de
-   v0.24.2 solo se probaron con videos sintéticos y con Gemini falso). Mirar: los pasos que elige,
-   si el aviso de música acierta (con música y sin música) y que `sin audio` deje solo la voz.
+2. **Probar `/narrar` y `/serie` con un video real de proceso** (el resumen de v0.24.0, el aviso de
+   música de v0.24.2 y `/serie` de v0.25.0 solo se probaron con videos sintéticos y con Gemini
+   falso). Mirar: los pasos y las etapas que elige, si las partes se entienden solas, si el aviso de
+   música acierta (con y sin música), que `sin audio` deje solo la voz, y cuánto tarda una serie de
+   3 en la Pi (estimado: ~9 min las partes + ~12 min las voces).
 3. **Efemérides** y **modo recortar**. Pedidos el 2026-09-24 ("después seguimos con efemérides y el
    modo recortar") y nunca especificados. También hay que preguntar qué son.
 4. **Revisión del corte de calidad (lo del "9 de 10").** El corte está en `textos.puntaje_min: 5`,

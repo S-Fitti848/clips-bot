@@ -109,6 +109,21 @@ def armar_subtitulos(palabras: list[Palabra], cfg: Subtitulos) -> list[Subtitulo
     return subs
 
 
+def palabra_por_palabra(palabras: list[Palabra], cfg: Subtitulos) -> list[Subtitulo]:
+    """Un subtítulo por palabra, con el tiempo real de cada una (el estilo de los Shorts narrados).
+
+    Cada palabra se queda en pantalla hasta que arranca la siguiente si el hueco es chico: si no,
+    parpadea entre palabra y palabra."""
+    subs = []
+    for i, p in enumerate(palabras):
+        fin = max(p.fin, p.inicio + 0.2)
+        if i + 1 < len(palabras) and palabras[i + 1].inicio - fin < HUECO_UNIR_S:
+            fin = palabras[i + 1].inicio
+        texto = p.texto.upper() if cfg.mayusculas else p.texto
+        subs.append(Subtitulo(p.inicio, max(fin, p.inicio + 0.05), (texto,)))
+    return subs
+
+
 def _t_srt(s: float) -> str:
     ms = int(round(s * 1000))
     return f"{ms // 3600000:02}:{ms // 60000 % 60:02}:{ms // 1000 % 60:02},{ms % 1000:03}"
@@ -128,7 +143,9 @@ def _escapar_ass(t: str) -> str:
     return t.replace("\\", "\\\\").replace("{", "(").replace("}", ")")
 
 
-def escribir_ass(subs: list[Subtitulo], path: Path, cfg: Subtitulos, render: Render) -> None:
+def escribir_ass(subs: list[Subtitulo], path: Path, cfg: Subtitulos, render: Render,
+                 cartel: str = "", cartel_s: float = 3.0) -> None:
+    """`cartel`: un texto arriba durante los primeros `cartel_s` segundos (ej. "Parte 1/3")."""
     # BorderStyle 3 = caja opaca detrás del texto; su color es OutlineColour (&HAABBGGRR, AA=00 opaco).
     cabecera = f"""[Script Info]
 ScriptType: v4.00+
@@ -151,4 +168,12 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         + "\\N".join(_escapar_ass(l) for l in s.lineas)
         for s in subs
     ]
+    if cartel:
+        # Mismo estilo que los carteles del multi-POV, arriba al centro (Alignment 8).
+        cabecera = cabecera.replace(
+            "\n\n[Events]",
+            f"\nStyle: Cartel,{cfg.fuente},{int(cfg.tamano * 1.1)},&H00FFFFFF,&H000000FF,&H60000000,"
+            "&H60000000,-1,0,0,0,100,100,0,0,3,16,0,8,40,40,140,1\n\n[Events]")
+        eventos.insert(0, f"Dialogue: 1,{_t_ass(0)},{_t_ass(cartel_s)},Cartel,,0,0,0,,"
+                          f"{_escapar_ass(cartel)}")
     path.write_text(cabecera + "\n".join(eventos) + "\n", encoding="utf-8")

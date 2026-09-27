@@ -1104,9 +1104,13 @@ MAX_MB_TELEGRAM = 20
 
 
 def _pedir_video(conn, user_id: str, modo: str) -> str:
+    """`modo` es editar, narrar, o "serie:N" (las partes viajan pegadas hasta que llega el video)."""
     db.set_valor(conn, f"{ESPERA_VIDEO}:{user_id}", modo)
-    extra = (" Después lo miro, escribo un guion y te lo paso para aprobar antes de narrarlo."
-             if modo == "narrar" else "")
+    modo, _, n = modo.partition(":")
+    extra = {"narrar": " Después lo miro, escribo un guion y te lo paso para aprobar antes de "
+                       "narrarlo.",
+             "serie": f" Después lo parto en {n} y te muestro la división antes de cortar nada."
+             }.get(modo, "")
     return (f"Mandame el video: un archivo (hasta {MAX_MB_TELEGRAM} MB, que es lo que Telegram me "
             f"deja bajar) o un link.{extra}\n\n"
             f"También podés mandarlo todo junto: el video con <code>/{modo}</code> escrito abajo, "
@@ -1169,6 +1173,18 @@ def _procesar_aporte(conn, tg: TelegramClient, chat_id: str, user_id: str, fuent
         db.borrar_valor(conn, f"{ESPERA_SIN_AUDIO}:{user_id}")
 
         dur = probe(d.path).duracion
+        if modo == "serie":
+            from . import serie
+
+            n = int(fuente.get("partes") or serie.PARTES_DEFAULT)
+            if dur < n * serie.ORIGINAL_MIN_POR_PARTE_S:
+                return (f"El video dura {dur:.0f} s: para {n} partes de 40-55 s sin repetir "
+                        f"imágenes necesito al menos {n * serie.ORIGINAL_MIN_POR_PARTE_S} s. "
+                        f"Probá con menos partes o con /narrar.")
+            return _proponer_etapas(conn, tg, chat_id, {
+                "raw": str(d.path), "url": d.url, "canal": d.canal, "titulo": d.titulo,
+                "duracion": dur, "cc": cc, "sin_audio": sin_audio, "partes": n,
+                "chat_id": chat_id, "user_id": user_id}, settings)
         if modo == "narrar" and dur > narrar.LARGO_MAX_S:
             return _proponer_pasos(conn, tg, chat_id, {
                 "raw": str(d.path), "url": d.url, "canal": d.canal, "titulo": d.titulo,
@@ -1356,6 +1372,317 @@ def _repensar_pasos(conn, tg: TelegramClient, t: dict, token: str, settings: Set
         tg.send_message(t["chat_id"], r)
 
 
+# ---- /serie: un proceso largo partido en N Shorts ------------------------------------------
+# Dos aprobaciones antes de gastar lo caro, igual que /narrar: primero la división (antes de
+# cortar y procesar N videos), después los guiones (antes de sintetizar N voces). El estado vive
+# en bot_estado como "serie:<token>" y los pasos pesados pasan por la cola de siempre.
+
+ESPERA_SERIE = "esperando_serie"   # bot_estado: <user_id> -> {"token", "fase": division|guiones}
+
+
+def _serie(conn, tg: TelegramClient, chat_id: str, user_id: str, args: list, settings: Settings):
+    """/serie <link o video> [cc: <link>] [partes N] [sin audio]."""
+    from . import serie
+    from .telegram import sacar_cc, sacar_sin_audio
+
+    args, cc = sacar_cc(list(args))
+    args, sin_audio = sacar_sin_audio(args)
+    try:
+        args, n = serie.sacar_partes(args)
+    except ValueError as e:
+        return str(e)
+    n = n or serie.PARTES_DEFAULT
+    if not args:
+        if cc:
+            db.set_valor(conn, f"{ESPERA_CC}:{user_id}", cc)
+        if sin_audio:
+            db.set_valor(conn, f"{ESPERA_SIN_AUDIO}:{user_id}", "1")
+        return _pedir_video(conn, user_id, f"serie:{n}")
+    return _procesar_aporte(conn, tg, chat_id, user_id,
+                            {"url": args[0], "cc": cc, "sin_audio": sin_audio, "partes": n},
+                            settings, "serie")
+
+
+def _proponer_etapas(conn, tg: TelegramClient, chat_id: str, estado: dict, settings: Settings,
+                     correccion: str = "", anteriores: list | None = None):
+    """Escenas → frames → Gemini divide en N etapas → una fila de miniaturas por etapa, con ✅/✏️."""
+    import secrets
+
+    from . import narrar, serie
+    from .process import WORK_DIR
+
+    gemini = _gemini(settings)
+    if gemini is None:
+        return "Sin GEMINI_API_KEY no puedo dividir el video."
+    raw, dur, n = Path(estado["raw"]), float(estado["duracion"]), int(estado["partes"])
+    if "escenas" not in estado:
+        tg.send_message(chat_id, f"El video dura {dur / 60:.1f} min. Busco los cambios de escena "
+                                 f"para partirlo en {n}…")
+        minimo, maximo = serie.escenas_para(n)
+        estado["escenas"] = narrar.escenas(narrar.cortes_de_escena(raw), dur, minimo, maximo)
+    esc = [tuple(e) for e in estado["escenas"]]
+    try:
+        imgs = narrar.frames_en(raw, [(a + b) / 2 for a, b in esc])
+        etapas, sensible = serie.dividir(gemini, esc, imgs, n, correccion, anteriores)
+    except (narrar.NarrarError, GeminiError) as e:
+        return f"No pude dividir el video: {html.escape(str(e)[:250])}"
+    if sensible:
+        return ("El video parece tratar un tema sensible (muerte, duelo, enfermedad, violencia "
+                "real). No armo la serie.")
+    tramos = [narrar.ventanas(esc, e.pasos, dur) for e in etapas]
+    token = secrets.token_hex(3)
+    hoja = serie.hoja_de_etapas([[imgs[p.escena] for p in e.pasos] for e in etapas],
+                                WORK_DIR / f"serie_{token}.jpg")
+    db.set_valor(conn, f"serie:{token}", json.dumps(
+        {**estado, "etapas": [e.a_dict() for e in etapas], "tramos": tramos}, ensure_ascii=False))
+    tg.send_photo(chat_id, hoja, f"La serie en {n} partes: una fila por parte")
+    teclado = {"inline_keyboard": [[
+        {"text": "✅ Aprobar", "callback_data": f"ser:ok:{token}"},
+        {"text": "✏️ Cambiar", "callback_data": f"ser:no:{token}"},
+    ]]}
+    tg.send_message(chat_id, serie.texto_etapas(etapas, esc, tramos, dur)
+                    + "\n\nSi está bien, corto las partes y te paso los guiones.", teclado=teclado)
+    return None
+
+
+def _serie_estado(conn, token: str) -> dict | None:
+    crudo = db.get_valor(conn, f"serie:{token}")
+    return json.loads(crudo) if crudo else None
+
+
+def _serie_callback(conn, tg: TelegramClient, cb: dict, settings: Settings, cola: list) -> None:
+    """ok/no: la división. gok/gokm/gno: los guiones (gokm = aprobar sin el audio original)."""
+    from .menu import parse_callback
+
+    d = parse_callback(cb["data"])
+    if not d or d["menu"] != "ser":
+        return
+    token = d["crudos"][0] if d["crudos"] else ""
+    estado = _serie_estado(conn, token)
+    if not estado:
+        return tg.answer_callback(cb["callback_id"], "Esa serie venció. Mandá /serie de nuevo.")
+    accion = d["accion"]
+    if accion in ("no", "gno"):
+        fase = "division" if accion == "no" else "guiones"
+        db.set_valor(conn, f"{ESPERA_SERIE}:{cb['user_id']}",
+                     json.dumps({"token": token, "fase": fase}))
+        tg.answer_callback(cb["callback_id"])
+        ejemplo = ("<i>la parte 1 termina muy tarde</i>, <i>sacá el momento de la cámara</i>"
+                   if fase == "division" else
+                   "<i>la 2 más corta</i>, <i>el gancho de la 1 más directo</i>")
+        return tg.edit_message(cb["chat_id"], cb["message_id"],
+                               f"✏️ Decime qué cambiar y lo rehago. Por ejemplo: {ejemplo}.",
+                               {"inline_keyboard": []})
+
+    if accion == "gokm":
+        estado["sin_audio"] = True
+        db.set_valor(conn, f"serie:{token}", json.dumps(estado, ensure_ascii=False))
+    comando = "serie:partes" if accion == "ok" else "serie:voces"
+    tg.answer_callback(cb["callback_id"], "Aprobado")
+    tg.edit_message(cb["chat_id"], cb["message_id"],
+                    "✅ División aprobada. Corto las partes…" if accion == "ok" else
+                    "✅ Guiones aprobados" + (" (sin el audio original)" if estado.get("sin_audio")
+                                             else "") + ". Van las voces…",
+                    {"inline_keyboard": []})
+    r = _pesado(conn, tg, cb["chat_id"], comando, [token], settings, cb["user_id"])
+    if r is OCUPADO:   # la misma cola que /buscar, /editar y /narrar
+        cola.append({"chat_id": cb["chat_id"], "comando": comando, "args": [token],
+                     "user_id": cb["user_id"]})
+        tg.send_message(cb["chat_id"], f"En cola ({len(cola)}º), arranco cuando se libere.")
+    elif r:
+        tg.send_message(cb["chat_id"], r)
+
+
+def _serie_corregir(conn, tg: TelegramClient, t: dict, espera: dict, settings: Settings) -> None:
+    """La respuesta a ✏️: rehace la división o los guiones. Son solo llamadas a Gemini: sin turno."""
+    from . import serie
+
+    estado = _serie_estado(conn, espera["token"])
+    if not estado:
+        return tg.send_message(t["chat_id"], "Esa serie venció. Mandá /serie de nuevo.")
+    db.borrar_valor(conn, f"serie:{espera['token']}")
+    tg.send_message(t["chat_id"], "Lo rehago…")
+    if espera["fase"] == "division":
+        anteriores = [serie.Etapa.de_dict(e) for e in estado.pop("etapas")]
+        estado.pop("tramos", None)
+        r = _proponer_etapas(conn, tg, t["chat_id"], estado, settings, correccion=t["texto"],
+                             anteriores=anteriores)
+    else:
+        r = _proponer_guiones(conn, tg, t["chat_id"], estado, settings, correccion=t["texto"])
+    if r:
+        tg.send_message(t["chat_id"], r)
+
+
+def _serie_partes(conn, tg: TelegramClient, chat_id: str, token: str, settings: Settings):
+    """✅ de la división: un resumen de 40-55 s por etapa, procesado como cualquier video propio
+    (OCR, tono, textos, vertical). Después, los guiones."""
+    import secrets
+
+    from . import narrar
+    from .download import Descarga
+    from .process import RAW_DIR, READY_DIR, guardar_meta, procesar
+    from .textos import con_credito
+
+    estado = _serie_estado(conn, token)
+    if not estado:
+        return "Esa serie venció. Mandá /serie de nuevo."
+    turno = f"serie:{secrets.token_hex(3)}"
+    if not db.tomar_turno(conn, db.RECURSO_PESADO, turno, maximo=1,
+                          vencimiento_s=VENCIMIENTO_PESADO_S):
+        return OCUPADO
+    try:
+        n, raw = int(estado["partes"]), Path(estado["raw"])
+        tg.send_message(chat_id, f"Armando y procesando las {n} partes. En la Pi son unos "
+                                 f"{3 * n} minutos.")
+        gemini = _gemini(settings)
+        ids, credito = [], None
+        for k, tramos in enumerate(estado["tramos"], 1):
+            salida = narrar.armar_resumen(raw, [tuple(t) for t in tramos],
+                                          RAW_DIR / f"{raw.stem}_parte{k}.mp4")
+            d = Descarga(path=salida, clip_id=salida.stem, url=estado.get("url") or "",
+                         titulo=estado.get("titulo") or "", plataforma="aporte", streamer="",
+                         canal=estado.get("canal") or "", duracion=probe(salida).duracion,
+                         vistas=0, creado=None, categoria="")
+            r = procesar("", settings, [], gemini=gemini, descarga=d, avisar=lambda *_: None)
+            if r.descartado:
+                return (f"La parte {k} quedó descartada: <b>{html.escape(r.descartado[:200])}</b>. "
+                        "No armo la serie.")
+            meta_p = READY_DIR / f"{r.clip_id}.json"
+            meta = json.loads(meta_p.read_text(encoding="utf-8"))
+            if not meta.get("textos"):
+                return (f"La parte {k} no tiene textos (¿cuota de Gemini?), así que no pasó por el "
+                        "filtro de tono. No armo la serie.")
+            if estado.get("cc"):
+                if credito is None:   # el canal se busca UNA vez, no por parte
+                    aviso = _aplicar_cc(meta, estado["cc"], d)
+                    credito = meta["textos"]["credito"]
+                    if aviso:
+                        tg.send_message(chat_id, aviso)
+                else:
+                    meta["textos"] = con_credito(meta["textos"], credito)
+                    meta["cc"] = {"link": estado["cc"]}
+            guardar_meta(meta_p, meta)
+            ids.append(r.clip_id)
+            tg.send_message(chat_id, f"Parte {k}/{n} lista ({meta['duracion_s']:.0f} s).")
+        estado["ids"] = ids
+        return _proponer_guiones(conn, tg, chat_id, estado, settings)
+    finally:
+        db.soltar_turno(conn, db.RECURSO_PESADO, turno, VENCIMIENTO_PESADO_S)
+
+
+def _proponer_guiones(conn, tg: TelegramClient, chat_id: str, estado: dict, settings: Settings,
+                      correccion: str = ""):
+    """Los N guiones en UNA llamada (cuida la cuota), con ✅/✏️ y, si hay música, sin audio."""
+    import secrets
+
+    from . import narrar, serie
+    from .process import READY_DIR
+
+    gemini = _gemini(settings)
+    if gemini is None:
+        return "Sin GEMINI_API_KEY no puedo escribir los guiones."
+    metas = [json.loads((READY_DIR / f"{cid}.json").read_text(encoding="utf-8"))
+             for cid in estado["ids"]]
+    partes = []
+    for meta, e in zip(metas, estado["etapas"]):
+        video = Path(meta.get("raw") or meta["salida"])
+        dur = float(meta["duracion_s"])
+        partes.append({"duracion": dur, "pasos": [p["descripcion"] for p in e["pasos"]],
+                       "imagenes": narrar.frames_en(video, [dur * f for f in (0.15, 0.5, 0.85)])})
+    sin_audio = bool(estado.get("sin_audio"))
+    audio = None if sin_audio else narrar.audio_para_gemini(Path(metas[0].get("raw") or metas[0]["salida"]))
+    try:
+        g = serie.escribir_guiones(gemini, partes, correccion, estado.get("guiones"), audio=audio)
+    except (narrar.NarrarError, GeminiError) as e:
+        return f"No pude escribir los guiones: {html.escape(str(e)[:250])}"
+    if g.sensible:
+        return "Los guiones salieron marcados como tema sensible. No les pongo voz."
+    token = secrets.token_hex(3)
+    estado = {**estado, "guiones": g.textos, "titulo_serie": g.titulo}
+    db.set_valor(conn, f"serie:{token}", json.dumps(estado, ensure_ascii=False))
+
+    n = len(g.textos)
+    partes_txt = [f"<b>Guiones</b> · serie: <b>{html.escape(g.titulo)}</b>"]
+    musica = "" if sin_audio else narrar.aviso_musica(
+        narrar.Guion(texto="", musica=g.musica, cancion=g.cancion))
+    if musica:
+        partes_txt.append(musica)
+    if sin_audio:
+        partes_txt.append("🔇 Van sin el audio original (pediste <code>sin audio</code>).")
+    for k, (texto, conf, p) in enumerate(zip(g.textos, g.confianzas, partes), 1):
+        guion = narrar.Guion(texto=texto)
+        guion.palabras, guion.segundos_estimados = narrar._medir(texto)
+        aviso = narrar.aviso_largo(guion, p["duracion"])
+        cab = f"<b>Parte {k}/{n}</b> (~{guion.segundos_estimados:.0f} s de voz, video de {p['duracion']:.0f} s)"
+        if conf and conf <= 5:
+            cab += f" ⚠️ confianza {conf}/10"
+        partes_txt.append(cab + (f"\n{aviso}" if aviso else "") + f"\n<pre>{html.escape(texto)}</pre>")
+    filas = [[{"text": "✅ Aprobar", "callback_data": f"ser:gok:{token}"},
+              {"text": "✏️ Cambiar", "callback_data": f"ser:gno:{token}"}]]
+    if musica:
+        filas.append([{"text": "✅ Aprobar sin audio", "callback_data": f"ser:gokm:{token}"}])
+    tg.send_message(chat_id, "\n\n".join(partes_txt)[:4000], teclado={"inline_keyboard": filas})
+    return None
+
+
+def _serie_voces(conn, tg: TelegramClient, chat_id: str, token: str, settings: Settings):
+    """✅ de los guiones: voz, subtítulos palabra por palabra, "Parte X/N" y la entrega de las N."""
+    import secrets
+
+    from . import layout as _lay, narrar, serie, subtitles as _sub
+    from .process import READY_DIR, WORK_DIR, guardar_meta
+    from .render import renderizar
+
+    estado = _serie_estado(conn, token)
+    if not estado:
+        return "Esa serie venció. Mandá /serie de nuevo."
+    modelo = Path(settings.voz.modelo)
+    if not modelo.exists():
+        return f"Falta la voz en <code>{html.escape(str(modelo))}</code>. Bajala con el script de deploy."
+    turno = f"serie:{secrets.token_hex(3)}"
+    if not db.tomar_turno(conn, db.RECURSO_PESADO, turno, maximo=1,
+                          vencimiento_s=VENCIMIENTO_PESADO_S):
+        return OCUPADO
+    try:
+        n, sin_audio = len(estado["ids"]), bool(estado.get("sin_audio"))
+        tg.send_message(chat_id, f"Poniendo las {n} voces. En la Pi son unos {4 * n} minutos.")
+        listos = []
+        for k, (cid, texto) in enumerate(zip(estado["ids"], estado["guiones"]), 1):
+            meta = json.loads((READY_DIR / f"{cid}.json").read_text(encoding="utf-8"))
+            work = WORK_DIR / f"{cid}_serie"
+            wav = narrar.sintetizar(texto, modelo, work / "voz.wav")
+            subs = narrar.subtitular_voz(wav, settings.subtitulos, palabra_por_palabra=True)
+            _sub.escribir_ass(subs, work / "subs.ass", settings.subtitulos, settings.render,
+                              cartel=f"Parte {k}/{n}", cartel_s=serie.CARTEL_S)
+            _sub.escribir_srt(subs, READY_DIR / f"{cid}_serie.srt")
+            base = Path(meta.get("raw") or meta["salida"])
+            W, H, frames, _ = _lay.detectar_caras(base, settings.camara.frames_muestra)
+            lay = _lay.decidir_layout(W, H, frames, settings.camara, settings.render)
+            sin_voz = work / "serie_sinvoz.mp4"
+            renderizar(base, sin_voz, lay, settings.render, work)
+            salida = READY_DIR / f"{cid}_serie.mp4"
+            narrar.mezclar(sin_voz, wav, salida, settings.voz.volumen_original,
+                           sin_original=sin_audio)
+            textos = {**meta["textos"], "titulo": serie.titulo_numerado(estado["titulo_serie"], k)}
+            nuevo = {**meta, "clip_id": f"{cid}_serie", "salida": str(salida), "textos": textos,
+                     "subtitulos_quemados": True,
+                     "serie": {"parte": k, "de": n, "titulo": estado["titulo_serie"],
+                               "guion": texto, "sin_audio": sin_audio}}
+            nuevo.pop("entregado", None)
+            guardar_meta(READY_DIR / f"{cid}_serie.json", nuevo)
+            listos.append(nuevo)
+            tg.send_message(chat_id, f"Voz {k}/{n} lista.")
+        # Las N juntas, cada una con su horario: se suben en orden y la 1 invita a la 2.
+        for i, meta in enumerate(listos):
+            enviar_clip(tg, chat_id, conn, meta["clip_id"], meta, i + 1,
+                        serie.horario(settings.publicacion.horarios, i),
+                        encabezado=f"🎬 <b>Serie</b> · parte {i + 1} de {n}")
+        db.borrar_valor(conn, f"serie:{token}")
+        return None
+    finally:
+        db.soltar_turno(conn, db.RECURSO_PESADO, turno, VENCIMIENTO_PESADO_S)
+
+
 
 # ---- /narrar: el guion primero, la voz después ----------------------------------
 # El guion se aprueba ANTES de sintetizar nada. Gemini puede inventar lo que ve —ya pasó con un
@@ -1508,13 +1835,14 @@ def _aporte_o_cola(conn, tg: TelegramClient, v: dict, modo: str, settings: Setti
     """Un video que mandaron: si hay algo pesado andando, va a la cola como cualquier pedido."""
     r = _procesar_aporte(conn, tg, v["chat_id"], v["user_id"],
                          {"file_id": v["file_id"], "cc": v.get("cc"),
-                          "sin_audio": v.get("sin_audio")}, settings, modo)
+                          "sin_audio": v.get("sin_audio"), "partes": v.get("partes")},
+                         settings, modo)
     if r is OCUPADO:
         if len(cola) >= MAX_BUSQUEDAS:
             return tg.send_message(v["chat_id"], "Tengo la cola llena; probá en un rato.")
         cola.append({"chat_id": v["chat_id"], "comando": f"/{modo}", "args": [],
                      "user_id": v["user_id"], "file_id": v["file_id"], "cc": v.get("cc"),
-                     "sin_audio": v.get("sin_audio")})
+                     "sin_audio": v.get("sin_audio"), "partes": v.get("partes")})
         return tg.send_message(v["chat_id"], f"En cola ({len(cola)}º), lo edito cuando se libere.")
     if r:
         tg.send_message(v["chat_id"], r)
@@ -1565,6 +1893,7 @@ def escuchar_telegram(settings: Settings, timeout_poll: int = 50) -> int:
     tira, se guarda y arranca sola cuando se libera el turno. Mientras hay algo en la cola el
     polling baja a unos segundos, así no se queda esperando 50 s para reaccionar.
     """
+    from . import serie as serie_mod
     from .telegram import (callbacks, comandos, sacar_cc, sacar_sin_audio, textos_sueltos,
                            usuarios_permitidos, videos)
 
@@ -1610,6 +1939,10 @@ def escuchar_telegram(settings: Settings, timeout_poll: int = 50) -> int:
                 if cb["data"].startswith("pas:"):
                     _seguro(tg, cb["chat_id"], cb["data"], _pasos_callback, conn, tg, cb, settings)
                     continue
+                if cb["data"].startswith("ser:"):
+                    _seguro(tg, cb["chat_id"], cb["data"], _serie_callback, conn, tg, cb, settings,
+                            cola)
+                    continue
                 if cb["data"].startswith("ped:"):
                     _seguro(tg, cb["chat_id"], cb["data"], _pedido_callback, conn, tg, cb,
                             settings, cola)
@@ -1627,14 +1960,23 @@ def escuchar_telegram(settings: Settings, timeout_poll: int = 50) -> int:
                 if v["user_id"] not in permitidos:
                     continue
                 chat_ultimo = v["chat_id"]
-                modo = (v["texto"].lstrip("/").split()[0].lower() if v["texto"].startswith("/")
-                        else db.get_valor(conn, f"{ESPERA_VIDEO}:{v['user_id']}"))
-                if modo not in ("editar", "narrar"):
+                if v["texto"].startswith("/"):   # "/serie partes 4 cc: <link> sin audio" abajo
+                    modo, *extra = v["texto"].lstrip("/").split()
+                    modo = modo.split("@")[0].lower()
+                else:   # lo que quedó esperando: "narrar", o "serie:4" con las partes
+                    modo, _, n = (db.get_valor(conn, f"{ESPERA_VIDEO}:{v['user_id']}") or "").partition(":")
+                    extra = ["partes", n] if n else []
+                if modo not in ("editar", "narrar", "serie"):
                     continue
                 db.borrar_valor(conn, f"{ESPERA_VIDEO}:{v['user_id']}")
-                if v["texto"].startswith("/"):   # "/narrar cc: <link> sin audio" abajo del video
-                    resto, cc = sacar_cc(v["texto"].split()[1:])
-                    v = {**v, "cc": cc, "sin_audio": sacar_sin_audio(resto)[1]}
+                resto, cc = sacar_cc(extra)
+                resto, sin_audio = sacar_sin_audio(resto)
+                try:
+                    partes = serie_mod.sacar_partes(resto)[1] if modo == "serie" else None
+                except ValueError as e:
+                    tg.send_message(v["chat_id"], str(e))
+                    continue
+                v = {**v, "cc": cc, "sin_audio": sin_audio, "partes": partes}
                 if v["mb"] > MAX_MB_TELEGRAM:
                     tg.send_message(v["chat_id"], f"El archivo pesa {v['mb']} MB y Telegram me deja "
                                                   f"bajar hasta {MAX_MB_TELEGRAM}. Mandame el link.")
@@ -1643,6 +1985,12 @@ def escuchar_telegram(settings: Settings, timeout_poll: int = 50) -> int:
                         cola)
             for t in textos_sueltos(updates):
                 if t["user_id"] not in permitidos:
+                    continue
+                espera_serie = db.get_valor(conn, f"{ESPERA_SERIE}:{t['user_id']}")
+                if espera_serie:
+                    db.borrar_valor(conn, f"{ESPERA_SERIE}:{t['user_id']}")
+                    _seguro(tg, t["chat_id"], "rehacer la serie", _serie_corregir, conn, tg, t,
+                            json.loads(espera_serie), settings)
                     continue
                 pasos = db.get_valor(conn, f"{ESPERA_PASOS}:{t['user_id']}")
                 if pasos:
@@ -1659,7 +2007,9 @@ def escuchar_telegram(settings: Settings, timeout_poll: int = 50) -> int:
                 esperando = db.get_valor(conn, f"{ESPERA_VIDEO}:{t['user_id']}")
                 if esperando and t["texto"].startswith("http"):
                     db.borrar_valor(conn, f"{ESPERA_VIDEO}:{t['user_id']}")
-                    _despachar(conn, tg, {"comando": f"/{esperando}", "args": [t["texto"]],
+                    modo, _, n = esperando.partition(":")   # "serie:4" → /serie <link> partes 4
+                    _despachar(conn, tg, {"comando": f"/{modo}",
+                                          "args": [t["texto"]] + (["partes", n] if n else []),
                                           "chat_id": t["chat_id"], "usuario": "",
                                           "user_id": t["user_id"]}, settings, cola)
                     continue
@@ -1692,7 +2042,7 @@ def _despachar(conn, tg: TelegramClient, c: dict, settings: Settings, cola: list
     """Un comando del modo escucha. /buscar puede quedar en cola; el resto contesta al toque."""
     print(f"  {c['comando']} {' '.join(c['args'])} de {c['usuario'] or c['user_id']} "
           f"(chat {c['chat_id']})")
-    if c["comando"] in ("/buscar", "/ya", "/editar", "/narrar"):
+    if c["comando"] in ("/buscar", "/ya", "/editar", "/narrar", "/serie"):
         if len(cola) >= MAX_BUSQUEDAS:
             tg.send_message(c["chat_id"], f"Ya tengo {len(cola)} búsquedas en cola. Esperá a que "
                                           "salgan esas y probá de nuevo.")
@@ -1840,6 +2190,12 @@ def _pesado(conn, tg: TelegramClient, chat_id: str, comando: str, args: list[str
         return _ya(conn, tg, chat_id, settings, args)
     if comando in ("/editar", "/narrar"):
         return _editar(conn, tg, chat_id, user_id, args, settings, comando.lstrip("/"))
+    if comando == "/serie":
+        return _serie(conn, tg, chat_id, user_id, args, settings)
+    if comando == "serie:partes":   # ✅ de la división, directo o desde la cola
+        return _serie_partes(conn, tg, chat_id, args[0], settings)
+    if comando == "serie:voces":    # ✅ de los guiones
+        return _serie_voces(conn, tg, chat_id, args[0], settings)
     return _buscar(conn, tg, chat_id, args, settings, _streamers(conn), _gemini(settings))
 
 
@@ -1854,7 +2210,8 @@ def _drenar_cola(conn, tg: TelegramClient, cola: list[dict], settings: Settings)
             r = _seguro(tg, pedido["chat_id"], etiqueta, _procesar_aporte, conn, tg,
                         pedido["chat_id"], pedido.get("user_id", ""),
                         {"file_id": pedido["file_id"], "cc": pedido.get("cc"),
-                         "sin_audio": pedido.get("sin_audio")}, settings,
+                         "sin_audio": pedido.get("sin_audio"), "partes": pedido.get("partes")},
+                        settings,
                         pedido.get("comando", "/editar").lstrip("/"))
         else:
             r = _seguro(tg, pedido["chat_id"], etiqueta, _pesado, conn, tg, pedido["chat_id"],
@@ -2101,6 +2458,12 @@ SECCIONES = [
          "Si escucho música te aviso antes de poner la voz. <code>sin audio</code> silencia el "
          "original y deja solo la voz; <code>cc: &lt;link&gt;</code> igual que en /editar.",
          "/narrar https://youtu.be/... cc: https://youtu.be/..."),
+        ("/serie &lt;link o video&gt; [cc: link] [partes N] [sin audio]",
+         "un video largo de un proceso partido en N Shorts de 40-55 s (default 3, de 2 a 5). "
+         "Primero te muestro la división en partes con miniaturas, después los guiones (cada parte "
+         "se entiende sola y las primeras invitan a ver la siguiente), y recién con los dos ✅ "
+         "pongo las voces. Te llegan todas juntas, con título numerado y horario.",
+         "/serie https://youtu.be/... partes 3 cc: https://youtu.be/..."),
     ]),
     ("⚙️ Configuración", [
         ("/destinos",
