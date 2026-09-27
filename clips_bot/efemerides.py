@@ -44,7 +44,10 @@ MIN_ANCHO = 800          # la foto se escala a 1080 de ancho en fit_blur: menos 
 # Las que ve Gemini; el resto queda de reserva para "🔁 cambiar foto N". Eran 8: la Piedra de
 # Rosetta tenía 11 que pasaban las reglas y quedó afuera con 3 que Gemini nunca vio.
 MAX_FOTOS_GUION = 12
-PALABRAS_MIN, PALABRAS_MAX = 88, 115   # 35-45 s a ~2,5 palabras por segundo (86 daba ~34 s)
+# 35-45 s con la voz de Piper, MEDIDA: 3,0-3,2 palabras por segundo con las pausas entre frases
+# (narrar.PALABRAS_POR_SEGUNDO). El rango anterior, 88-115, salía de estimar 2,5 y daba 29-37 s:
+# en la Pi rechazó un guion de 117 palabras que eran ~38 s.
+PALABRAS_MIN, PALABRAS_MAX = 105, 135
 
 MESES = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre",
          "octubre", "noviembre", "diciembre"]
@@ -358,8 +361,9 @@ nombre, ni un número, ni una fecha que no esté ahí. Si el artículo no lo dic
 
 - La primera frase arranca EXACTAMENTE con "Un día como hoy, en <año>," y sigue con el gancho.
 - La última frase es una pregunta al público (termina con "?").
-- Entre 90 y 110 palabras en total (contalas: menos de 88 queda corto), en 8 a 12 frases cortas,
-  habladas, no escritas. Si el artículo da para poco, contá más detalle de lo que SÍ dice.
+- Entre 110 y 130 palabras en total (contalas: menos de 105 queda corto y más de 135 se pasa de
+  45 segundos), en 9 a 14 frases cortas, habladas, no escritas. Si el artículo da para poco,
+  contá más detalle de lo que SÍ dice.
 - Números: solo los que están en el artículo, escritos igual. Nada de "hoy tiene millones de…"
   si el artículo no lo dice con esas palabras.
 - Sin emojis, sin hashtags, sin "suscribite".
@@ -572,7 +576,9 @@ def texto_aprobacion(e: Evento, g: Guion, fotos: list[Foto], fecha: date) -> str
     for texto, foto in zip(g.frases, g.fotos):
         lineas.append(f"[{foto + 1}] {html.escape(texto)}")
     palabras = len(g.texto.split())
-    lineas.append(f"\n{palabras} palabras, ~{palabras / 2.5:.0f} s de voz.")
+    from .narrar import PALABRAS_POR_SEGUNDO
+
+    lineas.append(f"\n{palabras} palabras, ~{palabras / PALABRAS_POR_SEGUNDO:.0f} s de voz.")
     lineas.append("\n<b>Créditos</b>\n" + html.escape(creditos(fotos)))
     return "\n".join(lineas)[:4000]
 

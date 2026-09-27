@@ -28,9 +28,11 @@ from .media import find_bin, run
 
 log = logging.getLogger(__name__)
 
-# Una voz en español ronda las 2,5 palabras por segundo a ritmo de narración. Sirve para pedirle a
-# Gemini un guion del largo correcto y para avisar cuando se pasó.
-PALABRAS_POR_SEGUNDO = 2.5
+# Palabras por segundo de la voz, para pedirle a Gemini un guion del largo correcto y avisar cuando
+# se pasó. MEDIDO en la Pi el 2026-09-27 con es_AR-daniela-high y la pausa entre frases: 3,02 y
+# 3,17 en dos guiones de 101 y 83 palabras. Antes decía 2,5 (estimado, nunca medido), y los guiones
+# de /narrar y /serie salían ~20 % más cortos que el video.
+PALABRAS_POR_SEGUNDO = 3.1
 
 SISTEMA = """Escribís la voz en off de un video vertical corto, en español rioplatense (vos, no tú).
 
