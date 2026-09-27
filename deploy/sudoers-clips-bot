@@ -1,0 +1,24 @@
+# Permite a santi reiniciar SOLO las unidades del clips-bot sin contraseña.
+# Va en /etc/sudoers.d/clips-bot con permisos 0440 y propietario root:root.
+#
+# Por qué existe: cada cambio en el código necesita un `systemctl restart clips-bot-telegram`, y
+# cuando el servicio pega contra el StartLimit hace falta además un `reset-failed`. Pedir la
+# contraseña en cada deploy hacía que el bot quedara horas con código viejo.
+#
+# Reglas que lo mantienen acotado:
+#   - ruta absoluta de systemctl (/usr/bin/systemctl). Sin ruta absoluta, cualquier `systemctl` en
+#     el PATH del usuario serviría para escalar.
+#   - SIN comodines. Cada comando va escrito entero: sudoers compara la línea completa, así que
+#     `restart clips-bot-telegram` y `restart clips-bot-telegram.service` son dos entradas.
+#   - solo restart y reset-failed. NADA de start/stop/enable/disable/edit/daemon-reload, que
+#     permitirían apagar el bot de trading o cambiar unidades.
+#   - no incluye `reset-failed clips-bot.service`: esa unidad es oneshot y no entra en crash-loop.
+
+Cmnd_Alias CLIPS_BOT_REINICIAR = \
+    /usr/bin/systemctl restart clips-bot-telegram, \
+    /usr/bin/systemctl restart clips-bot-telegram.service, \
+    /usr/bin/systemctl restart clips-bot.service, \
+    /usr/bin/systemctl reset-failed clips-bot-telegram, \
+    /usr/bin/systemctl reset-failed clips-bot-telegram.service
+
+santi ALL=(root) NOPASSWD: CLIPS_BOT_REINICIAR

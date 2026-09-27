@@ -4,3 +4,4 @@
 *.service         text eol=lf
 *.timer           text eol=lf
 deploy/logrotate-* text eol=lf
+deploy/sudoers-*    text eol=lf
