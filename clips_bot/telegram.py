@@ -257,7 +257,13 @@ def videos(updates: list[dict]) -> list[dict]:
     return out
 
 
-def callbacks(updates: list[dict], prefijos: tuple[str, ...] = ("st", "add")) -> list[dict]:
+# Todos los botones que atiende la escucha, menos los votos (esos los toma `votos`). Si un teclado
+# nuevo usa otro prefijo, va acá: hasta el 2026-09-27 la lista era ("st", "add") y los botones de
+# /ayuda, /destinos, ➕ más y ✅ del guion de /narrar se tiraban en silencio.
+PREFIJOS_BOTONES = ("st", "add", "gui", "ay", "dst", "ped", "pas")
+
+
+def callbacks(updates: list[dict], prefijos: tuple[str, ...] = PREFIJOS_BOTONES) -> list[dict]:
     """Los botones de menú apretados (los de voto los toma `votos`)."""
     out = []
     for u in updates:

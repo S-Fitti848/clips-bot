@@ -634,3 +634,24 @@ def test_el_guion_sensible_no_se_narra(conn, monkeypatch, tmp_path):
     meta = {"clip_id": "c", "salida": str(mp4), "duracion_s": 20, "transcripcion": ""}
     r = m._narrar_guion(conn, FakeTG(), "1", "7", meta, load_settings())
     assert "sensible" in r and "no le pongo voz" in r.lower()
+
+
+def test_todos_los_botones_llegan_a_la_escucha():
+    """Los tests de cada menú llaman al handler directo; este pasa por el filtro de verdad.
+
+    Hasta el 2026-09-27 `callbacks` solo dejaba pasar st: y add:, y los botones de /ayuda,
+    /destinos, ➕ más y ✅ del guion se perdían sin que ningún test lo viera.
+    """
+    from clips_bot.telegram import callbacks, teclado_voto
+
+    teclados = [m.teclado_ayuda(), teclado_voto("c1", pedido="ab", ultimo=True, cuantos_mas=3),
+                teclado_voto("c1", -1, pedido="ab")]
+    datos = [b["callback_data"] for t in teclados for fila in t["inline_keyboard"] for b in fila]
+    datos += ["gui:ok:ab12cd", "gui:no:ab12cd", "dst:t:-100", "st:g", "add:ok:x", "pas:ok:ab"]
+    for d in datos:
+        if d.startswith("voto:"):
+            continue
+        u = [{"update_id": 1, "callback_query": {"id": "q", "data": d, "from": {"id": 7},
+                                                 "message": {"message_id": 3,
+                                                             "chat": {"id": 1, "type": "private"}}}}]
+        assert len(callbacks(u)) == 1, d
