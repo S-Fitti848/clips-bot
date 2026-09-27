@@ -73,6 +73,16 @@ def test_un_clip_de_streamer_sin_habla_se_sigue_descartando(pipeline_falso, monk
     assert r.descartado and "silencio" in r.descartado
 
 
+def test_sin_pista_de_audio_no_llama_a_whisper(pipeline_falso, monkeypatch):
+    """Un mp4 SIN stream de audio hacía reventar faster-whisper (IndexError adentro de PyAV).
+    Antes lo tapaba el filtro de silencio (100 %), que ahora no corre para videos propios."""
+    monkeypatch.setattr(process, "probe", lambda p: Info(1920, 1080, 20.0, 30.0, False))
+    monkeypatch.setattr(process.sub, "transcribir", lambda *a, **k: pytest.fail("no hay audio"))
+    monkeypatch.setattr(process.sub, "cargar_modelo", lambda cfg: pytest.fail("no hay audio"))
+    r = process.procesar("", load_settings(), [], descarga=pipeline_falso, avisar=lambda *_: None)
+    assert r.descartado is None and r.salida and r.palabras == 0 and r.silencio == 1.0
+
+
 def test_transcripcion_lenta_en_un_video_propio_sigue_sin_subtitulos(pipeline_falso, monkeypatch):
     def lenta(*a, **k):
         raise process.sub.TranscripcionLenta("se pasó")

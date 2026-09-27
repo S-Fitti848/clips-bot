@@ -192,22 +192,16 @@ def procesar(url: str, cfg: Settings, streamers: list[Streamer], forzar: bool = 
             and descartar(f"casi todo silencio ({res.silencio:.0%})", "silencio")):
         return _cerrar(res)
 
-    with crono.etapa("whisper: cargar modelo"):
-        modelo = sub.cargar_modelo(cfg.subtitulos)
-    try:
-        with crono.etapa("whisper: transcribir"):
-            palabras = sub.transcribir(modelo, d.path, cfg.subtitulos, info.duracion)
-    except sub.TranscripcionLenta as e:
-        # Un solo `del modelo`, abajo: antes había otro acá y, cuando el clip seguía (con --forzar),
-        # el segundo tiraba UnboundLocalError. Lo encontró el test de /editar sin habla.
-        if aporte:
-            # El tope de tiempo se respeta igual (cuida la Pi); solo que el video sigue sin
-            # subtítulos del original en vez de tirarse.
-            avisar(f"  ⚠ {e}: sigo sin subtítulos del audio original")
-        elif descartar(str(e), "transcripcion_lenta"):
-            return _cerrar(res)
+    if not info.tiene_audio:
+        # Sin pista de audio (no silencioso: SIN stream) faster-whisper revienta adentro de PyAV
+        # con IndexError (probado 2026-09-27 con un mp4 sin audio de verdad). No hay nada que
+        # transcribir: el video sigue sin palabras, y en /narrar queda solo la voz.
+        avisar("  sin pista de audio: no hay nada que transcribir")
         palabras = []
-    del modelo
+    else:
+        palabras = _transcribir(res, d, info, cfg, crono, descartar, aporte, avisar)
+        if palabras is None:
+            return _cerrar(res)
     res.palabras = len(palabras)
     res.palabras_por_s = round(len(palabras) / info.duracion, 2) if info.duracion else 0.0
     res.transcripcion = " ".join(p.texto for p in palabras)
@@ -299,6 +293,27 @@ def procesar(url: str, cfg: Settings, streamers: list[Streamer], forzar: bool = 
 
     _registrar(res, "procesado", tx.MOTIVO_SIN_REMATE if res.relleno else None)
     return _cerrar(res)
+
+
+def _transcribir(res: Resultado, d, info, cfg: Settings, crono: Cronometro, descartar, aporte: bool,
+                 avisar) -> list | None:
+    """Whisper con su tope de tiempo. None = el clip quedó descartado (el que llama corta ahí)."""
+    with crono.etapa("whisper: cargar modelo"):
+        modelo = sub.cargar_modelo(cfg.subtitulos)
+    try:
+        with crono.etapa("whisper: transcribir"):
+            return sub.transcribir(modelo, d.path, cfg.subtitulos, info.duracion)
+    except sub.TranscripcionLenta as e:
+        if aporte:
+            # El tope de tiempo se respeta igual (cuida la Pi); solo que el video sigue sin
+            # subtítulos del original en vez de tirarse.
+            avisar(f"  ⚠ {e}: sigo sin subtítulos del audio original")
+            return []
+        # Con --forzar `descartar` devuelve False y el clip sigue sin palabras. (Antes había un
+        # `del modelo` doble acá que en ese caso tiraba UnboundLocalError.)
+        return None if descartar(str(e), "transcripcion_lenta") else []
+    finally:
+        del modelo
 
 
 def generar_textos(gemini: GeminiClient, cfg: Settings, meta: dict,
