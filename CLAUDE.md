@@ -599,6 +599,15 @@ Problemas abiertos:
 
 ## 9. CHANGELOG
 
+- v0.25.1 (2026-09-27) — Un video SIN pista de audio (no silencioso: sin stream) hacía reventar
+  faster-whisper (IndexError adentro de PyAV). Lo tapaba el filtro de silencio (100 %), que desde
+  v0.24.2 no corre para /editar ni /narrar: ahora, sin pista de audio, no se llama a Whisper.
+  Probado con un mp4 sin audio de verdad: en Windows por `procesar` real, y en la Pi el camino de la
+  voz entero (Piper 3,5 s de voz en 14 s, Whisper sobre la voz 21 s, render 37 s, final 1080x1920
+  de 15 s con solo la voz). **Desplegado** en la Pi (`942bc0b`): hasta ahí seguía en `d226073`
+  porque nada de lo de hoy estaba pusheado (ver Trampas). Visto de paso: los subtítulos palabra por
+  palabra salen de Whisper escuchando la voz y pueden diferir del guion aprobado ("propia" por
+  "propio"); pendiente alinearlos al texto del guion. 289 tests OK (también en la Pi).
 - v0.25.0 (2026-09-27) — `/serie <link o video> [cc: <link>] [partes N] [sin audio]` (N de 2 a 5,
   default 3; el original tiene que durar N × 45 s). Escenas (las de /narrar, pidiendo 12 × N) →
   Gemini divide en N etapas en orden y elige 8-10 momentos por etapa (validado: exactamente N, sin
