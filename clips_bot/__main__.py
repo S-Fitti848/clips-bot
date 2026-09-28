@@ -156,6 +156,24 @@ def _gemini(settings: Settings) -> GeminiClient | None:
                         modelo_fallback=settings.textos.modelo_fallback) if key else None
 
 
+class ErrorPasajero(str):
+    """Un mensaje de error que viene de una falla que se arregla sola (Gemini con 503 después de
+    todos sus reintentos). Es un str: los que solo lo muestran no se enteran de la diferencia."""
+
+
+def _en_un_rato(settings: Settings, ahora: datetime) -> str | None:
+    """La hora ("HH:MM") del reintento por falla pasajera de Gemini, o None si se pasa del tope
+    del día (`textos.reintento_hasta`)."""
+    t = ahora + timedelta(minutes=settings.textos.reintento_pasajero_min)
+    hh, _, mm = settings.textos.reintento_hasta.partition(":")
+    if t.date() != ahora.date() or t.strftime("%H:%M") > f"{int(hh):02d}:{int(mm or 0):02d}":
+        return None
+    return t.strftime("%H:%M")
+
+
+CLIPS_REINTENTO = "clips_reintento"   # bot_estado: la entrega diaria quedó corta por Gemini caído
+
+
 def cmd_procesar(args: argparse.Namespace) -> int:
     from .process import procesar  # importa faster-whisper/OpenCV solo si hace falta
 
@@ -213,9 +231,10 @@ def _opciones_pendientes(ready: Path, settings: Settings) -> list:
 
 
 def completar_textos(opciones: list, gemini: GeminiClient | None, settings: Settings, ready: Path,
-                     marcar_descartado) -> list:
+                     marcar_descartado, pasajeros: list | None = None) -> list:
     """Genera los textos que falten (Gemini falló o no había key al procesar) y saca los que
-    dependen de la fecha. Los que no se pueden completar quedan afuera de esta selección."""
+    dependen de la fecha. Los que no se pueden completar quedan afuera de esta selección; los que
+    quedaron afuera porque Gemini está caído (falla pasajera) se anotan en `pasajeros`."""
     from .process import generar_textos, guardar_meta
     from .textos import MOTIVO_FECHA
 
@@ -231,6 +250,8 @@ def completar_textos(opciones: list, gemini: GeminiClient | None, settings: Sett
                 meta["textos"] = generar_textos(gemini, settings, meta).to_dict()
             except (GeminiError, TextosError) as e:
                 print(f"  {o.clip_id}: no se pudieron generar los textos ({e}) → queda afuera")
+                if pasajeros is not None and getattr(e, "pasajero", False):
+                    pasajeros.append(o.clip_id)
                 continue
             guardar_meta(ready / f"{o.clip_id}.json", meta)
             o.titulo = meta["textos"]["titulo"]
@@ -269,12 +290,39 @@ def ejecutar_seleccion(settings: Settings, gemini: GeminiClient | None, enviar: 
             conn.commit()
 
         pendientes = _opciones_pendientes(READY_DIR, settings)
-        opciones = completar_textos(pendientes, gemini, settings, READY_DIR, marcar_descartado)
+        pasajeros: list[str] = []
+        opciones = completar_textos(pendientes, gemini, settings, READY_DIR, marcar_descartado,
+                                    pasajeros)
     finally:
         conn.close()
+    conn_c = db.connect(DB_PATH)
+    try:
+        cupo = n or db.cantidad_diaria(conn_c)
+    finally:
+        conn_c.close()
+
+    def reintentar_mas_tarde(faltan: int) -> bool:
+        """La entrega diaria quedó corta porque Gemini está caído: en vez de avisar, se agenda un
+        reintento en una hora para los que faltan (los clips ya están renderizados; solo faltan
+        sus textos). Solo la diaria (sin `destinos`): a un /ya se le contesta ahí mismo."""
+        if not (enviar and destinos is None and pasajeros and faltan > 0):
+            return False
+        hora = _en_un_rato(settings, datetime.now(AR))
+        if not hora:
+            return False
+        c = db.connect(DB_PATH)
+        try:
+            db.set_valor(c, CLIPS_REINTENTO, json.dumps({
+                "fecha": datetime.now(AR).date().isoformat(), "hora": hora, "faltan": faltan}))
+        finally:
+            c.close()
+        print(f"Gemini no responde ({len(pasajeros)} clips sin textos): faltan {faltan}, la "
+              f"escucha de Telegram reintenta a las {hora}")
+        return True
+
     if not opciones:
         print("No hay clips procesados pendientes (estado 'procesado' en la DB con json en output/ready/).")
-        if enviar:
+        if enviar and not reintentar_mas_tarde(cupo):
             _avisar_cero(settings, "No quedó ningún clip procesado para elegir.")
         return 1
     # Los de relleno no compiten: se guardan aparte y solo entran si falta para llenar el día.
@@ -282,11 +330,6 @@ def ejecutar_seleccion(settings: Settings, gemini: GeminiClient | None, enviar: 
     relleno = sorted((o for o in opciones if o.meta.get("relleno")),
                      key=lambda o: o.meta.get("puntaje", 0), reverse=True)
     elegidos = seleccionar(buenos, cfg, ahora, desempate_gemini(gemini) if gemini else None)
-    conn_c = db.connect(DB_PATH)
-    try:
-        cupo = n or db.cantidad_diaria(conn_c)
-    finally:
-        conn_c.close()
     if len(elegidos) < cupo and relleno:
         # Solo puede salir de acá lo que falló ÚNICAMENTE por calidad: lo que se descarta por tono,
         # copyright, datos en pantalla o cualquier filtro de seguridad nunca llega a `opciones`.
@@ -302,9 +345,11 @@ def ejecutar_seleccion(settings: Settings, gemini: GeminiClient | None, enviar: 
     print(f"\n{len(opciones)} pendientes → elegidos {len(elegidos)} (cupos: {cupos}):")
     if not elegidos:
         print("Ninguno pasó los filtros.")
-        if enviar:
+        if enviar and not reintentar_mas_tarde(cupo):
             _avisar_cero(settings, f"Había {len(opciones)} clips procesados y ninguno quedó.")
         return 1
+    if len(elegidos) < cupo:
+        reintentar_mas_tarde(cupo - len(elegidos))   # los que hay salen ya; el resto, en una hora
     for i, o in enumerate(elegidos, 1):
         edad = f"{(ahora - o.creado).total_seconds() / 3600 / 24:.1f} d" if o.creado else "?"
         horario = horarios[i - 1] if i <= len(horarios) else "?"
@@ -1929,6 +1974,8 @@ def escuchar_telegram(settings: Settings, timeout_poll: int = 50) -> int:
                     _envivo_tick, conn, tg, settings, reloj_envivo)
             _seguro(tg, str(chat_ultimo or ""), "el reintento de la efeméride",
                     _efe_reintento_tick, conn, tg, settings)
+            _seguro(tg, str(chat_ultimo or ""), "el reintento de los clips",
+                    _clips_reintento_tick, conn, settings)
             _seguro(tg, str(chat_ultimo or ""), "la cola", _drenar_cola, conn, tg, cola, settings)
             guardado = db.get_valor(conn, "telegram_offset")
             pendientes = db.alertas(conn, estados=("pendiente",)) if db.envivo_chat(conn) else []
@@ -2552,7 +2599,8 @@ def _efe_proponer(conn, tg: TelegramClient, chats: list[str], dia, settings: Set
     try:
         p = ef.proponer(ef.Wiki(), gemini, dia, carpeta, avisar=log.info)
     except (NarrarError, ef.WikiError, GeminiError) as e:
-        return f"No salió la efeméride: {html.escape(str(e)[:400])}"
+        error = f"No salió la efeméride: {html.escape(str(e)[:400])}"
+        return ErrorPasajero(error) if getattr(e, "pasajero", False) else error
     estado = {"propuesta": p.__dict__, "carpeta": str(carpeta), "chat_id": chats[0]}
     for chat in chats:
         _efe_mostrar(conn, tg, chat, token, estado)   # el mismo token: se aprueba desde cualquiera
@@ -2571,6 +2619,40 @@ def _efe_horas_que_faltan(horas, ahora: datetime) -> list[str]:
         if hora > ahora.strftime("%H:%M"):
             out.append(hora)
     return sorted(out)
+
+
+def _con_reintento_pasajero(horas: list[str], error, settings: Settings, ahora: datetime) -> list[str]:
+    """Si el error es pasajero (Gemini caído), suma un intento dentro de una hora, en vez de avisar
+    la falla: las fotos ya están en la caché, así que el reintento solo depende de Gemini."""
+    if not isinstance(error, ErrorPasajero):
+        return horas
+    h = _en_un_rato(settings, ahora)
+    return sorted(set(horas) | {h}) if h else horas
+
+
+def _clips_reintento_tick(conn, settings: Settings, ahora=None, seleccion=None) -> None:
+    """Corre en cada vuelta de la escucha. Si la entrega diaria quedó corta porque Gemini estaba
+    caído y ya es la hora, vuelve a elegir y entregar SOLO los que faltan, con el turno pesado. Si
+    Gemini sigue caído, la misma selección agenda el próximo intento (o, pasado el tope, avisa)."""
+    raw = db.get_valor(conn, CLIPS_REINTENTO)
+    if not raw:
+        return
+    d = json.loads(raw)
+    ahora = ahora or datetime.now(AR)
+    if d["fecha"] != ahora.date().isoformat():   # se pasó el día: quedan para la corrida de mañana
+        return db.borrar_valor(conn, CLIPS_REINTENTO)
+    if ahora.strftime("%H:%M") < d["hora"] or db.hay_trabajo_pesado(conn, VENCIMIENTO_PESADO_S):
+        return
+    turno = "clips:reintento"
+    if not db.tomar_turno(conn, db.RECURSO_PESADO, turno, maximo=1,
+                          vencimiento_s=VENCIMIENTO_PESADO_S):
+        return
+    db.borrar_valor(conn, CLIPS_REINTENTO)   # si sigue faltando, la selección lo vuelve a agendar
+    log.info("clips: reintento de las %s, faltan %d", d["hora"], d["faltan"])
+    try:
+        (seleccion or ejecutar_seleccion)(settings, _gemini(settings), enviar=True, n=d["faltan"])
+    finally:
+        db.soltar_turno(conn, db.RECURSO_PESADO, turno, VENCIMIENTO_PESADO_S)
 
 
 def _efe_sin_propuesta(tg: TelegramClient, chats: list[str], error: str,
@@ -2612,6 +2694,7 @@ def _efe_reintento_tick(conn, tg: TelegramClient, settings: Settings, ahora=None
     finally:
         db.soltar_turno(conn, db.RECURSO_PESADO, turno, VENCIMIENTO_PESADO_S)
     d["intentos"] = d.get("intentos", []) + [hora]
+    d["horas"] = _con_reintento_pasajero(d["horas"], error, settings, ahora)
     if not error:
         db.borrar_valor(conn, EFE_REINTENTO)
         log.info("efeméride: salió en el reintento de las %s", hora)
@@ -2660,6 +2743,7 @@ def efemeride_del_dia(settings: Settings, simular: bool = False) -> None:
         if error:
             print(f"  {error}")
             horas = _efe_horas_que_faltan(cfg.reintentos, datetime.now(AR))
+            horas = _con_reintento_pasajero(horas, error, settings, datetime.now(AR))
             if horas:
                 db.set_valor(conn, EFE_REINTENTO, json.dumps({
                     "fecha": datetime.now(AR).date().isoformat(), "chats": chats, "horas": horas,

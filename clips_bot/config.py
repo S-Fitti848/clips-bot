@@ -226,6 +226,10 @@ class Textos:
     max_hashtags: int = 5
     max_descripcion: int = 800
     reintentos: int = 2
+    # Gemini caído (503 y cía., ya con sus reintentos y el otro modelo): la efeméride y los clips
+    # que faltan de la entrega diaria se reintentan solos en este rato, hasta esta hora (AR).
+    reintento_pasajero_min: int = 60
+    reintento_hasta: str = "22:00"
     # Calidad: puntaje de 1 a 10 (se entiende solo + tiene remate). Abajo del corte el clip no se
     # tira: queda como RELLENO, y solo se usa si la corrida no llega a 3 sin él.
     puntaje_min: int = 5

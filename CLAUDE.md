@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-09-28 | **Versión:** v0.28.3 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 + escucha de Telegram 24/7)
+**Snapshot:** 2026-09-28 | **Versión:** v0.28.4 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 + escucha de Telegram 24/7)
 
 > **SI ESTÁS EMPEZANDO UNA SESIÓN NUEVA, LEÉ §10.** Ahí está qué está hecho, qué quedó a medias,
 > qué falta, y las trampas que ya nos mordieron.
@@ -275,7 +275,8 @@ música que falte, propone la de hoy y manda guion + hoja para aprobar a `efemer
 está vacío, a los mismos destinos de la entrega diaria. Recién con ✅ se arma el video. Si no sale,
 **la escucha de Telegram reintenta sola a las 07:00 y a las 10:00** (`efemerides.reintentos`,
 estado en `bot_estado.efemeride_reintento`, con el turno pesado) y recién después del último
-avisa por qué. También a demanda con `/efemeride` y el CLI `efemeride`.
+avisa por qué. Si la falla es de Gemini caído (`ErrorPasajero`), además suma un intento en una
+hora, cada vez, hasta `textos.reintento_hasta` (22:00). También a demanda con `/efemeride` y el CLI `efemeride`.
 **Wikimedia (desde v0.28.3):** User-Agent con nombre, link al repo y el mail de
 `WIKIMEDIA_CONTACTO` (.env) en todo pedido a Wikipedia, Commons y la música; SOLO miniaturas de
 ancho estándar (1280, o 960 si el original no pasa de 1280; si no hay ninguna, la foto no se usa),
@@ -471,7 +472,7 @@ clips_bot/serie.py       /serie: partes, división en etapas (validada), guiones
                          título numerado, horarios, hoja de miniaturas por etapa
 clips_bot/envivo.py      modo en vivo (§3b): quién está al aire, momentos por creadores distintos,
                          alertas en la DB (no repetir, tope, vencer) y el resumen de tiempos
-tests/                   404 tests sin red ni video
+tests/                   420 tests sin red ni video
 ```
 
 Comandos:
@@ -658,6 +659,22 @@ Problemas abiertos:
 
 ## 9. CHANGELOG
 
+- v0.28.4 (2026-09-28) — **Gemini caído = falla pasajera.** La prueba a mano de la efeméride
+  (16:33) no salió: el principal sin cuota y flash-lite con 503 "high demand" en todos los
+  reintentos (10/20/30/40 s se quemaban en 2 minutos). Ahora (`gemini.py`): un 5xx, un 429 que no
+  es de cuota o un timeout se reintentan 3 veces con 30, 60 y 120 s; después, el otro modelo con
+  las mismas esperas (sin cuota se salta directo al otro). Si todo falla, `GeminiError.pasajero`.
+  Con eso: la efeméride suma un intento en una hora (con las fotos en caché) en vez de avisar; y
+  la entrega diaria de clips, si queda corta porque hay clips sin textos por Gemini caído, manda lo
+  que tiene y agenda los que faltan en una hora (`bot_estado.clips_reintento`,
+  `_clips_reintento_tick` en la escucha: elige SOLO los que faltan). Los dos, hasta
+  `textos.reintento_hasta` (22:00); pasado eso, el aviso de siempre. Un /ya no agenda: contesta
+  ahí. Decidido por Claude: (1) el tope de las 22:00 (una efeméride tiene que salir ese día); (2)
+  después de una falla pasajera completa, el mismo cliente no insiste por 15 min
+  (`PAUSA_CAIDO_S`): con Gemini caído una llamada puede tardar ~19 min, y con 15 clips la corrida
+  diaria tenía la Pi ocupada horas; (3) el 429 de Wikimedia NO cuenta como pasajero (para eso
+  están las 07:00 y 10:00). /narrar y /serie usan el mismo cliente: con Gemini caído tardan más en
+  contestar que antes. 420 tests OK.
 - v0.28.3 (2026-09-28) — **La efeméride de las 05:00 falló con un 429 de upload.wikimedia.org.**
   Causa (del log de la Pi): la foto que dio 429 era un ORIGINAL (un Bundesarchiv), no una
   miniatura: con `iiurlwidth=1280`, si la foto no es más ancha que eso la API devuelve el original.

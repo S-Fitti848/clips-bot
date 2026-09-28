@@ -323,6 +323,11 @@ textos:
   max_hashtags: 5
   max_descripcion: 800
   reintentos: 2              # si la respuesta no valida, se reintenta con los errores (cuida la cuota)
+  # Gemini caído (503 "high demand", timeouts): cada llamada reintenta 3 veces (30, 60 y 120 s) y
+  # después prueba el otro modelo. Si igual falla, la efeméride y los clips que faltan de la entrega
+  # diaria se reintentan solos a los N minutos, hasta esta hora; recién ahí se avisa.
+  reintento_pasajero_min: 60
+  reintento_hasta: "22:00"
 
 # §3 paso 8: selección de los mejores.
 # Cada fuente compite solo dentro de su cupo; los cupos que sobran pasan a la otra fuente.
