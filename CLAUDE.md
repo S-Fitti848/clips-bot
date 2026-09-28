@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-09-27 | **Versión:** v0.26.0 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 + escucha de Telegram 24/7)
+**Snapshot:** 2026-09-27 | **Versión:** v0.26.1 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 + escucha de Telegram 24/7)
 
 > **SI ESTÁS EMPEZANDO UNA SESIÓN NUEVA, LEÉ §10.** Ahí está qué está hecho, qué quedó a medias,
 > qué falta, y las trampas que ya nos mordieron.
@@ -451,7 +451,7 @@ clips_bot/serie.py       /serie: partes, división en etapas (validada), guiones
                          título numerado, horarios, hoja de miniaturas por etapa
 clips_bot/envivo.py      modo en vivo (§3b): quién está al aire, momentos por creadores distintos,
                          alertas en la DB (no repetir, tope, vencer) y el resumen de tiempos
-tests/                   334 tests sin red ni video
+tests/                   337 tests sin red ni video
 ```
 
 Comandos:
@@ -638,6 +638,20 @@ Problemas abiertos:
 
 ## 9. CHANGELOG
 
+- v0.26.1 (2026-09-27) — "La voz de efemérides suena triste y plana". Voz ajustable desde
+  settings (`voz.length_scale`, `noise_scale`, `noise_w_scale`, `semitonos` con rubberband), por
+  defecto igual que siempre; vale para /narrar, /serie y efemérides. Guion de efemérides: frases de
+  ≤ 14 palabras, al menos una pregunta y una exclamación, cierre con gancho (? o !). Música de
+  fondo para Pasó Hoy: `musica/` (audios fuera de git, créditos en `musica/creditos.json`), una
+  pista al azar por video al 12 % con ducking (sidechaincompress) y fundido final; vacía = sin
+  música. OJO: contradice §1 "sin música agregada" (pedido explícito de Santi para este canal).
+  Muestras mandadas por Telegram con el guion de la Rosetta, MEDIDAS en la Pi:
+  0 daniela actual 42,2 s de voz (129 s de síntesis) · A daniela 0,88 + noise_w 1,0 + 1,5 st:
+  40,3 s (140 s): la pausa entre frases no se achica con length_scale · C Gemini TTS
+  (Laomedeia, "entusiasmado"): 60,8 s (21 s) — el mismo guion se pasa de 60 s: habría que
+  escribirlo ~30 % más corto, y gasta cuota · D es_MX-claude-high con los ajustes de A: 50,2 s
+  (27 s: 5× más rápido de sintetizar que daniela). La B (A + música) espera la música. Falta que
+  Santi elija. 337 tests OK.
 - v0.26.0 (2026-09-27) — Pasó Hoy (§3c): `/efemeride [día/mes]` y el CLI `efemeride`, con
   aprobación ✅ / ✏️ / 🔁 foto N. Todavía NO en la corrida diaria. Probado de punta a punta con el
   27/09 real: en la Pi salió "El día que se descifró la piedra de Rosetta", 42,0 s, 12 fotos por
