@@ -136,10 +136,12 @@ class _Resp:
 class _Sesion:
     """Catálogo de Kevin, Openverse vacío y los mp3 de 100 KB."""
     def __init__(self):
-        self.pedidos = []
+        self.pedidos, self.params_ov = [], []
 
     def get(self, url, **k):
         self.pedidos.append(url)
+        if url == mu.OPENVERSE:
+            self.params_ov.append(k.get("params"))
         if url == mu.KEVIN_CATALOGO:
             return _Resp([{"title": f"T{i}", "filename": f"T{i}.mp3", "length": "00:02:00",
                            "instruments": "Piano", "feel": f"{list(mu.TONOS.values())[i % 5][0]}"}
@@ -169,3 +171,22 @@ def test_reclamo_sobre_una_efemeride_veta_el_tema_y_no_excluye_a_nadie(conn, tmp
     assert "queda vetado" in r and mu.vetados(conn) == {"youtube/Happy Tails - X.mp3"}
     assert db.excluidos(conn) == {}
     assert "ya estaba vetado" in m._reclamo(conn, ["efemeride_0927_1822"])
+
+
+def test_youtube_toma_el_tono_del_titulo_y_de_tonos_json(tmp_path):
+    yt = tmp_path / "youtube"
+    yt.mkdir()
+    (yt / "Happy Tails - Blue Deer Studio.mp3").write_bytes(b"x")
+    (yt / "Vibe Check - Blue Deer Studio.mp3").write_bytes(b"x")
+    (yt / "tonos.json").write_text(json.dumps({"Vibe Check - Blue Deer Studio.mp3": "misterioso"}))
+    temas = {t.titulo: t for t in mu.cargar(tmp_path)}
+    assert mu.puntaje(temas["Happy Tails"], "alegre") >= 1
+    assert mu.puntaje(temas["Vibe Check"], "misterioso") >= 1
+    assert mu.elegir(list(temas.values()), "misterioso").titulo == "Vibe Check"
+
+
+def test_openverse_pide_de_a_20(tmp_path):
+    s = _Sesion()
+    mu.llenar(tmp_path, por_fuente=1, session=s, pausa_s=0)
+    assert len(s.params_ov) == 2 * len(mu.TONOS)          # 2 páginas por tono
+    assert all(p["page_size"] == 20 for p in s.params_ov)  # más que 20 da 401 sin cuenta

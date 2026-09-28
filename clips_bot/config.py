@@ -244,11 +244,13 @@ class EfemeridesCfg:
     voz_motor: str = "gemini"
     tts_modelo: str = "gemini-3.8-flash-tts"
     tts_voz: str = "Laomedeia"
-    tts_instruccion: str = (
-        "Leé esto en español rioplatense, como alguien entusiasmado que le cuenta una historia "
-        "increíble a un amigo: con energía, variando el tono, remarcando las preguntas y las "
-        "sorpresas, a ritmo ágil y sin pausas largas.")
-    # Gemini lee más lento que Piper (medido: 115 palabras en 60,8 s). Si se pasa de esto, se
+    # VACÍA a propósito. Probado en la Pi el 2026-09-28 con gemini-3.8-flash-tts: la instrucción
+    # de tono se LEE en voz alta, sea larga ("Leé esto en español rioplatense…": 10 s leídos antes
+    # del guion), en inglés ("Say enthusiastically, …": la tradujo y la leyó) o corta ("Say
+    # cheerfully:"); y como systemInstruction da 400 ("Developer instruction is not enabled for
+    # this model"). El entusiasmo sale de la voz (Laomedeia) y del guion (¿? y ¡!).
+    tts_instruccion: str = ""
+    # Gemini lee a ~2,3 palabras/s (medido sin la instrucción leída). Si se pasa de esto, se
     # acelera con atempo hasta tts_acelerar_max (más que 1,25 ya se nota).
     tts_max_s: float = 45.0
     tts_acelerar_max: float = 1.25

@@ -285,8 +285,11 @@ efemerides:
   musica_volumen: 0.12
   musica_por_fuente: 10      # musica/kevin y musica/openverse se completan solos hasta esto
   # Voz (elegida por Santi el 2026-09-28: la muestra C). Gemini TTS con Laomedeia; si falla o no hay
-  # cuota, Piper daniela ajustada (la muestra A). Gemini lee a 1,9 palabras/s (medido): si el audio
+  # cuota, Piper daniela ajustada (la muestra A). Gemini lee a ~2,3 palabras/s (medido): si el audio
   # pasa de tts_max_s se acelera con atempo, hasta ×1,25.
+  # SIN instrucción de tono: este modelo la LEE en voz alta (probado larga, en inglés y "Say
+  # cheerfully:"), y no acepta systemInstruction. Ver config.EfemeridesCfg.tts_instruccion.
+  tts_instruccion: ""
   voz_motor: gemini
   tts_modelo: gemini-3.8-flash-tts
   tts_voz: Laomedeia

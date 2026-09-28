@@ -388,3 +388,28 @@ def test_sin_cuota_de_gemini_va_piper_ajustado(tmp_path, monkeypatch):
     assert motor.startswith("piper:") and dur == [1.0, 1.0]
     aj = usados[0]
     assert (aj.length_scale, aj.noise_w_scale, aj.semitonos) == (0.88, 1.0, 1.5)
+
+
+def test_si_la_voz_lee_algo_antes_del_guion_se_recorta(tmp_path, monkeypatch):
+    """Gemini TTS leía la instrucción de tono en voz alta (10 s antes del guion, 28/09)."""
+    from clips_bot import narrar
+    from clips_bot.subtitles import Palabra
+
+    cortes = []
+    monkeypatch.setattr(narrar, "run", lambda args: cortes.append(args[args.index("-ss") + 1]))
+    wav = tmp_path / "voz.wav"
+    wav.with_name("voz.recorte.wav").write_bytes(b"x")
+    oidas = [Palabra(0.0, 0.5, "Leé"), Palabra(0.5, 0.7, "esto"), Palabra(10.4, 10.7, "Un"),
+             Palabra(10.7, 10.9, "día"), Palabra(10.9, 11.1, "como"), Palabra(11.1, 11.4, "hoy,")]
+    palabras, corte = narrar.recortar_inicio(wav, oidas, ["Un día como hoy, en 1822, pasó algo."])
+    assert round(corte, 2) == 10.28 and cortes == ["10.280"]
+    assert palabras[0].texto == "Un" and round(palabras[0].inicio, 2) == 0.12
+
+
+def test_si_arranca_bien_no_se_toca(tmp_path, monkeypatch):
+    from clips_bot import narrar
+    from clips_bot.subtitles import Palabra
+
+    monkeypatch.setattr(narrar, "run", lambda args: pytest.fail("no había nada que recortar"))
+    oidas = [Palabra(0.05, 0.3, "Un"), Palabra(0.3, 0.5, "día"), Palabra(0.5, 0.7, "como")]
+    assert narrar.recortar_inicio(tmp_path / "v.wav", oidas, ["Un día como hoy"])[1] == 0.0

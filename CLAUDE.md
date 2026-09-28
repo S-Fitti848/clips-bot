@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-09-27 | **Versión:** v0.27.2 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 + escucha de Telegram 24/7)
+**Snapshot:** 2026-09-27 | **Versión:** v0.27.3 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 + escucha de Telegram 24/7)
 
 > **SI ESTÁS EMPEZANDO UNA SESIÓN NUEVA, LEÉ §10.** Ahí está qué está hecho, qué quedó a medias,
 > qué falta, y las trampas que ya nos mordieron.
@@ -451,7 +451,7 @@ clips_bot/serie.py       /serie: partes, división en etapas (validada), guiones
                          título numerado, horarios, hoja de miniaturas por etapa
 clips_bot/envivo.py      modo en vivo (§3b): quién está al aire, momentos por creadores distintos,
                          alertas en la DB (no repetir, tope, vencer) y el resumen de tiempos
-tests/                   358 tests sin red ni video
+tests/                   362 tests sin red ni video
 ```
 
 Comandos:
@@ -638,6 +638,17 @@ Problemas abiertos:
 
 ## 9. CHANGELOG
 
+- v0.27.3 (2026-09-28) — **Gemini TTS lee en voz alta la instrucción de tono.** Encontrado en la
+  prueba real de la voz nueva (Rosetta con Laomedeia, en la Pi): los primeros 10 s eran "Leé esto
+  en español rioplatense, como alguien entusiasmado…" y el guion arrancaba a los 10,4 s. La
+  muestra C del 27/09 (la que eligió Santi) TAMBIÉN empezaba así. Probado (4 llamadas):
+  instrucción larga → leída; en inglés ("Say enthusiastically…") → traducida y leída; corta
+  ("Say cheerfully:") → leída; como `systemInstruction` → 400 "Developer instruction is not
+  enabled for this model". Decidido por Claude: sin instrucción (`efemerides.tts_instruccion: ""`);
+  el entusiasmo sale de la voz Laomedeia y del guion con ¿? y ¡!. Red de seguridad
+  (`narrar.recortar_inicio`): si la voz dice algo antes de las 3 primeras palabras del guion, se
+  corta ahí. Velocidad real de Gemini sin la instrucción: ~2,3 palabras/s (no 1,9): 85-105
+  palabras son ~37-46 s. La prueba dio 46,6 s tras acelerar ×1,25, video 417 s en la Pi. 362 tests OK.
 - v0.27.2 (2026-09-28) — Música automática para Pequeña Historia (`clips_bot/musica.py`,
   `docs/musica.md`). `musica/` entera fuera de git. `musica/youtube/` (los 10 temas de la
   Biblioteca de YouTube que dejó Santi, copiados a la Pi por scp) tiene prioridad; `musica/kevin/`

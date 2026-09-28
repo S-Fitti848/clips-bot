@@ -97,15 +97,22 @@ def _guardar_indice(carpeta: Path, indice: dict) -> None:
                                              encoding="utf-8")
 
 
-def de_youtube(archivo: Path) -> Tema | None:
+def de_youtube(archivo: Path, tonos: dict | None = None) -> Tema | None:
     """Los de la Biblioteca de YouTube vienen como "Título - Artista.mp3". None si parece tener
-    voces: "Shining (feat. …)" está en la carpeta, y una canción cantada tapa la narración."""
+    voces: "Shining (feat. …)" está en la carpeta, y una canción cantada tapa la narración.
+
+    El mp3 no trae el ánimo (el único tag es "encoder: Google", visto el 2026-09-28): para el tono
+    cuentan las palabras del título ("Happy Tails" → alegre) y, si existe, lo que diga
+    musica/youtube/tonos.json ({"archivo.mp3": "alegre,curioso"}), que se edita a mano."""
     nombre = archivo.stem
     if _VOCES.search(nombre):
         return None
     titulo, _, autor = nombre.partition(" - ")
+    etiquetas = re.findall(r"[a-z]+", titulo.lower())
+    for tono in str((tonos or {}).get(archivo.name) or "").split(","):
+        etiquetas += TONOS.get(tono.strip().lower(), [])[:3]
     return Tema(ruta=f"youtube/{archivo.name}", titulo=titulo.strip(), autor=autor.strip(),
-                licencia="YouTube Audio Library", link="", fuente="youtube")
+                licencia="YouTube Audio Library", link="", fuente="youtube", etiquetas=etiquetas)
 
 
 def cargar(carpeta: Path) -> list[Tema]:
@@ -113,7 +120,12 @@ def cargar(carpeta: Path) -> list[Tema]:
     temas = []
     yt = carpeta / "youtube"
     if yt.exists():
-        temas += [t for t in (de_youtube(p) for p in sorted(yt.iterdir()) if p.suffix.lower() in EXT) if t]
+        try:
+            tonos = json.loads((yt / "tonos.json").read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            tonos = {}
+        temas += [t for t in (de_youtube(p, tonos) for p in sorted(yt.iterdir())
+                              if p.suffix.lower() in EXT) if t]
     for ruta, d in _indice(carpeta).items():
         if (carpeta / ruta).exists():
             temas.append(Tema(**{**d, "ruta": ruta}))
@@ -299,15 +311,21 @@ def llenar(carpeta: Path, por_fuente: int = 10, session: requests.Session | None
         except (requests.RequestException, ValueError) as e:
             avisar(f"música: el catálogo de Kevin MacLeod no anduvo ({e})")
     if faltan["openverse"] > 0:
+        # Sin cuenta, Openverse da hasta 20 por página (con 40 contesta 401): 2 páginas por tono.
         for tono, palabras in TONOS.items():
-            try:
-                r = session.get(OPENVERSE, headers={"User-Agent": UA}, timeout=60, params={
-                    "q": f"{palabras[0]} instrumental", "license": "cc0,by", "category": "music",
-                    "page_size": 40})
-                candidatos["openverse"] += candidatos_openverse(r.json().get("results") or [])
-            except (requests.RequestException, ValueError) as e:
-                avisar(f"música: Openverse no anduvo para {tono} ({e})")
-            time.sleep(pausa_s)
+            for pagina in (1, 2):
+                try:
+                    r = session.get(OPENVERSE, headers={"User-Agent": UA}, timeout=60, params={
+                        "q": f"{palabras[0]} instrumental", "license": "cc0,by",
+                        "category": "music", "page_size": 20, "page": pagina})
+                    if r.status_code != 200:
+                        avisar(f"música: Openverse {r.status_code} para {tono}")
+                        break
+                    candidatos["openverse"] += candidatos_openverse(r.json().get("results") or [])
+                except (requests.RequestException, ValueError) as e:
+                    avisar(f"música: Openverse no anduvo para {tono} ({e})")
+                    break
+                time.sleep(pausa_s)
     for fuente, lista in candidatos.items():
         nuevos = [t for t in lista if t.ruta not in indice]
         for t in _repartir(nuevos, max(faltan[fuente], 0), azar):

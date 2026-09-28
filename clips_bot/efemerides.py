@@ -46,8 +46,9 @@ MIN_ANCHO = 800          # la foto se escala a 1080 de ancho en fit_blur: menos 
 # Rosetta tenía 11 que pasaban las reglas y quedó afuera con 3 que Gemini nunca vio.
 MAX_FOTOS_GUION = 12
 # Largo del guion, según la voz (todo MEDIDO en la Pi el 2026-09-27):
-#   Gemini TTS (la voz elegida el 28/09): 115 palabras en 60,8 s = 1,9 palabras/s. Con la
-#     aceleración de hasta ×1,25 (efemerides.tts_acelerar_max), 45 s entran ~105 palabras.
+#   Gemini TTS (la voz elegida el 28/09): ~2,3 palabras/s (113 palabras en 48,7 s, sin contar
+#     la instrucción que al principio leía en voz alta). 85-105 palabras son ~37-46 s: casi no
+#     hace falta la aceleración de hasta ×1,25 (efemerides.tts_acelerar_max).
 #   Piper (el respaldo): 3,0-3,2 palabras/s con las pausas: 85 palabras son ~28 s, algo corto.
 # El rango sale de la voz principal. Antes fue 105-135 (para Piper) y, antes, 88-115 (estimado).
 PALABRAS_MIN, PALABRAS_MAX = 85, 105
@@ -618,8 +619,8 @@ def texto_aprobacion(e: Evento, g: Guion, fotos: list[Foto], fecha: date) -> str
     for texto, foto in zip(g.frases, g.fotos):
         lineas.append(f"[{foto + 1}] {html.escape(texto)}")
     palabras = len(g.texto.split())
-    # Con la voz de Gemini (1,9 palabras/s medido) acelerada hasta 45 s si hace falta.
-    lineas.append(f"\n{palabras} palabras, ~{min(palabras / 1.9, 45):.0f} s de voz.")
+    # Con la voz de Gemini (~2,3 palabras/s medido), acelerada hasta 45 s si hace falta.
+    lineas.append(f"\n{palabras} palabras, ~{min(palabras / 2.3, 45):.0f} s de voz.")
     lineas.append("\n<b>Créditos</b>\n" + html.escape(creditos(fotos)))
     return "\n".join(lineas)[:4000]
 
@@ -891,8 +892,12 @@ def hacer_video(p: Propuesta, settings, carpeta: Path, avisar=log.info, conn=Non
     avisar(f"voz ({motor}): {fin:.1f} s en {time.time() - t0:.0f} s")
     t0 = time.time()
     # Whisper da los tiempos; el texto de los subtítulos es el del guion aprobado.
-    palabras, inicios = narrar.alinear_a_guion(narrar.palabras_de_voz(wav, settings.subtitulos),
-                                               g.frases, fin)
+    oidas = narrar.palabras_de_voz(wav, settings.subtitulos)
+    oidas, recortado = narrar.recortar_inicio(wav, oidas, g.frases)
+    if recortado:
+        fin = narrar.duracion_wav(wav)
+        avisar(f"la voz dijo {recortado:.1f} s de algo antes del guion: recortado")
+    palabras, inicios = narrar.alinear_a_guion(oidas, g.frases, fin)
     if duraciones is None:   # Gemini: un solo audio, los cortes salen de la alineación
         duraciones = [b - a for a, b in zip(inicios, inicios[1:] + [fin])]
     subs = sub.palabra_por_palabra(palabras, settings.subtitulos)

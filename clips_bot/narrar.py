@@ -298,6 +298,32 @@ def palabras_de_voz(wav: Path, cfg_subs) -> list:
         del modelo
 
 
+def recortar_inicio(wav: Path, palabras: list, frases: list[str],
+                    margen_s: float = 0.12) -> tuple[list, float]:
+    """Si la voz dice algo ANTES del guion (Gemini TTS leyó en voz alta la instrucción de tono,
+    visto el 2026-09-28), se corta el audio hasta donde arranca el guion. Devuelve las palabras
+    corridas al nuevo cero y cuántos segundos se sacaron (0 si arrancaba bien).
+
+    El arranque se reconoce por las 3 primeras palabras del guion seguidas en lo que oyó Whisper."""
+    guion = [_clave(t) for f in frases for t in f.split()][:3]
+    oidas = [_clave(p.texto) for p in palabras]
+    if len(guion) < 3:
+        return palabras, 0.0
+    for i in range(len(oidas) - 2):
+        if oidas[i:i + 3] == guion:
+            corte = max(palabras[i].inicio - margen_s, 0.0)
+            if corte < 0.4:
+                return palabras, 0.0
+            tmp = wav.with_name(wav.stem + ".recorte.wav")
+            run([find_bin("ffmpeg"), "-hide_banner", "-loglevel", "error", "-y", "-ss",
+                 f"{corte:.3f}", "-i", str(wav.resolve()), str(tmp.resolve())])
+            tmp.replace(wav)
+            from .subtitles import Palabra
+
+            return [Palabra(p.inicio - corte, p.fin - corte, p.texto) for p in palabras[i:]], corte
+    return palabras, 0.0
+
+
 def _clave(t: str) -> str:
     sin = "".join(c for c in __import__("unicodedata").normalize("NFKD", t)
                   if not __import__("unicodedata").combining(c))
