@@ -277,7 +277,7 @@ voz:
   noise_w_scale: 0.8
   semitonos: 0.0
 
-# Pasó Hoy (§3c). Música de fondo: una pista al azar de `carpeta_musica` por video, al volumen
+# Pequeña Historia (§3c). Música de fondo: una pista al azar de `carpeta_musica` por video, al volumen
 # indicado, bajando cuando habla la voz. Con la carpeta vacía no hay música.
 efemerides:
   musica: true

@@ -2434,7 +2434,7 @@ def _fecha_efemeride(texto: str | None):
     return date(hoy.year, mes, dia)
 
 
-# ---- /efemeride: Pasó Hoy ---------------------------------------------------------------
+# ---- /efemeride: Pequeña Historia ---------------------------------------------------------------
 # Igual que /narrar y /serie: nada se sintetiza sin ✅. La propuesta (evento, fotos, guion) vive
 # en bot_estado como "efe:<token>"; ✏️ reescribe el guion y 🔁 N cambia una foto sin volver a
 # empezar. Proponer y armar el video toman el turno pesado y van por la cola de siempre.
@@ -2596,7 +2596,7 @@ def _efe_video(conn, tg: TelegramClient, chat_id: str, token: str, settings: Set
         except NarrarError as e:
             return f"No pude armar el video: {html.escape(str(e)[:300])}"
         enviar_clip(tg, chat_id, conn, meta["clip_id"], meta, 1, None,
-                    encabezado="📅 <b>Pasó Hoy</b> — subilo al canal de efemérides")
+                    encabezado="📅 <b>Pequeña Historia</b> — subilo al canal de efemérides")
         db.borrar_valor(conn, f"efe:{token}")
         return None
     finally:
@@ -2713,7 +2713,7 @@ SECCIONES = [
          "pongo las voces. Te llegan todas juntas, con título numerado y horario.",
          "/serie https://youtu.be/... partes 3 cc: https://youtu.be/..."),
     ]),
-    ("📅 Pasó Hoy", [
+    ("📅 Pequeña Historia", [
         ("/efemeride [día/mes]",
          "busco qué pasó en la fecha (default hoy) en Wikipedia, elijo el hecho más interesante para "
          "el canal, junto fotos libres de su artículo y escribo un guion SOLO con lo que dice el "
@@ -3240,7 +3240,7 @@ def main(argv: list[str] | None = None) -> int:
     pe.add_argument("--min-creadores", type=int, help="umbral de creadores distintos (default: settings)")
     pe.set_defaults(func=cmd_envivo)
 
-    pf = sub.add_parser("efemeride", help="efemérides de Pasó Hoy sin Telegram: propone y, con "
+    pf = sub.add_parser("efemeride", help="efemérides de Pequeña Historia sin Telegram: propone y, con "
                                           "--aprobar, arma el video")
     pf.add_argument("--fecha", help="27/09 (día/mes); default hoy")
     pf.add_argument("--aprobar", action="store_true", help="armar el video (voz, fotos, subtítulos)")

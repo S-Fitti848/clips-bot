@@ -234,7 +234,7 @@ class Textos:
 
 @dataclass(frozen=True)
 class EfemeridesCfg:
-    """Pasó Hoy (§3c). La música sale de `carpeta_musica`, una al azar por video; vacía = sin música."""
+    """Pequeña Historia (§3c). La música sale de `carpeta_musica`, una al azar por video; vacía = sin música."""
     musica: bool = True
     carpeta_musica: str = "musica"
     musica_volumen: float = 0.12

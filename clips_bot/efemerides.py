@@ -1,4 +1,4 @@
-"""Efemérides para el canal "Pasó Hoy": un Short por día con un hecho de la fecha.
+"""Efemérides para el canal "Pequeña Historia": un Short por día con un hecho de la fecha.
 
 1. Tema: Wikipedia "On this day" (es y en). Gemini elige los 3 más interesantes para un público
    joven, con fecha exacta y sin temas sensibles; antes, un filtro de palabras saca lo obvio.
@@ -35,7 +35,7 @@ from .textos import nombres_propios
 log = logging.getLogger(__name__)
 
 # Wikimedia pide un User-Agent que diga qué es el bot. Sin mail a propósito.
-UA = "PasoHoyBot/0.26 (bot personal de efemérides; python-requests)"
+UA = "PequenaHistoriaBot/0.26 (bot personal de efemérides; python-requests)"
 FEED = "https://{lang}.wikipedia.org/api/rest_v1/feed/onthisday/events/{mm:02d}/{dd:02d}"
 API = "https://{lang}.wikipedia.org/w/api.php"
 
@@ -231,7 +231,7 @@ def motivo_evento(e: Evento, hoy: date) -> str | None:
     return None
 
 
-SISTEMA_ELEGIR = """Elegís efemérides para un canal de videos cortos, "Pasó Hoy", para un público
+SISTEMA_ELEGIR = """Elegís efemérides para un canal de videos cortos, "Pequeña Historia", para un público
 joven (15 a 30 años) de habla hispana. Te paso los hechos que pasaron en la fecha de hoy.
 
 Ordená los más interesantes, del mejor al peor: los que generan "¿en serio pasó eso?", los de
@@ -375,7 +375,7 @@ def creditos(fotos: list[Foto]) -> str:
 
 # ---- 3. guion ------------------------------------------------------------------------
 
-SISTEMA_GUION = """Escribís la voz en off de un video vertical de 35 a 45 segundos para "Pasó Hoy",
+SISTEMA_GUION = """Escribís la voz en off de un video vertical de 35 a 45 segundos para "Pequeña Historia",
 un canal de efemérides para público joven, en español rioplatense (vos, no tú).
 
 REGLA DE ORO: usás SOLO lo que dice el texto del artículo que te paso. Nada de tu memoria: ni un
@@ -604,7 +604,7 @@ def hoja_de_fotos(fotos: list[Foto], salida: Path, columnas: int = 2, ancho: int
 
 def texto_aprobacion(e: Evento, g: Guion, fotos: list[Foto], fecha: date) -> str:
     """El guion frase por frase con su foto, y los créditos que van a ir en la descripción."""
-    lineas = [f"📅 <b>Pasó Hoy · {fecha.day} de {MESES[fecha.month - 1]}</b> — {e.anio}",
+    lineas = [f"📅 <b>Pequeña Historia · {fecha.day} de {MESES[fecha.month - 1]}</b> — {e.anio}",
               f"<i>{html.escape(e.texto[:200])}</i>",
               f"\n<b>Título:</b> {html.escape(g.titulo)}", "\n<b>Guion</b> (foto → frase):"]
     for texto, foto in zip(g.frases, g.fotos):
@@ -896,7 +896,7 @@ def hacer_video(p: Propuesta, settings, carpeta: Path, avisar=log.info) -> dict:
     cred_musica = credito_musica(pista) if pista else ""
     if cred_musica:
         cred += "\n" + cred_musica
-    return {"clip_id": clip_id, "streamer": "Pasó Hoy", "salida": str(salida),
+    return {"clip_id": clip_id, "streamer": "Pequeña Historia", "salida": str(salida),
             "subtitulos_quemados": True, "duracion_s": round(sum(duraciones), 1),
             "textos": {"titulo": g.titulo, "descripcion": f"{g.descripcion}\n\n{cred}",
                        "hashtags": g.hashtags, "credito": cred},

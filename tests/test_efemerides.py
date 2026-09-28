@@ -1,4 +1,4 @@
-"""Pasó Hoy: filtros de eventos y fotos, validación del guion contra el artículo, y el flujo.
+"""Pequeña Historia: filtros de eventos y fotos, validación del guion contra el artículo, y el flujo.
 
 Sin red: Wikipedia y Gemini son fakes. Los casos salen de la prueba real del 2026-09-27.
 """
@@ -157,7 +157,7 @@ def _guion_ok(**cambios):
                     {"texto": "Desde ese día la forma de buscar cosas en la web cambió para siempre.", "foto": 1},
                     {"texto": "¿Te imaginás cómo buscarías cualquier cosa sin este buscador?", "foto": 2}],
          "fotos_descartadas": [5], "titulo": "El día que arrancó Google",
-         "descripcion": "Así empezó el buscador.", "hashtags": ["#Shorts", "#Google", "#PasoHoy"]}
+         "descripcion": "Así empezó el buscador.", "hashtags": ["#Shorts", "#Google", "#PequeñaHistoria"]}
     d.update(cambios)
     return d
 

@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-09-27 | **Versión:** v0.26.1 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 + escucha de Telegram 24/7)
+**Snapshot:** 2026-09-27 | **Versión:** v0.27.0 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 + escucha de Telegram 24/7)
 
 > **SI ESTÁS EMPEZANDO UNA SESIÓN NUEVA, LEÉ §10.** Ahí está qué está hecho, qué quedó a medias,
 > qué falta, y las trampas que ya nos mordieron.
@@ -265,7 +265,7 @@ dura más de 60 s (`muy largo`). Entre el primer clip y el tercer creador pasan 
 114 s). O sea: con 3 el tope por hora era lo que mandaba casi siempre, y eran ~27 procesados pesados
 por día en la Pi. Por eso se pasó al umbral relativo (punto 3).
 
-### 3c. Efemérides para el canal "Pasó Hoy" (`/efemeride [día/mes]`, `clips_bot/efemerides.py`)
+### 3c. Efemérides para el canal "Pequeña Historia" (`/efemeride [día/mes]`, `clips_bot/efemerides.py`)
 Pedido 2026-09-27. Un Short por día con un hecho de la fecha. **Todavía NO va en la corrida de las
 05:00**: Santi pidió verlo andar antes. Hoy es `/efemeride` a demanda y el CLI `efemeride`.
 1. Wikipedia "On this day" en es y en (REST `feed/onthisday/events`). Primer filtro sin Gemini
@@ -445,7 +445,7 @@ clips_bot/narrar.py      modo /narrar: guion con Gemini viendo frames, TTS con P
 clips_bot/__main__.py    CLI + todo el bot de Telegram (comandos, menús, cola, turnos)
 deploy/sudoers-clips-bot permite a santi reiniciar SOLO las unidades del clips-bot sin contraseña
 voces/                   modelos de Piper (NO están en git: ~110 MB, se bajan en la Pi)
-clips_bot/efemerides.py  Pasó Hoy (§3c): Wikipedia/Commons, filtros de eventos y fotos, guion
+clips_bot/efemerides.py  Pequeña Historia (§3c): Wikipedia/Commons, filtros de eventos y fotos, guion
                          validado contra el artículo, hoja de aprobación y el video con zoom
 clips_bot/serie.py       /serie: partes, división en etapas (validada), guiones encadenados,
                          título numerado, horarios, hoja de miniaturas por etapa
@@ -501,7 +501,7 @@ Comandos:
 - `telegram-chat-id` — lista los chats de getUpdates y los ids de usuario (TELEGRAM_ALLOWED_USERS).
   - `/envivo on|off` — modo en vivo (§3b); `/envivo` solo muestra el estado, la última vuelta y
     las medianas de cada tramo de tiempo en las últimas 24 h.
-- `efemeride [--fecha 27/09] [--aprobar] [--propuesta <json>]` — Pasó Hoy sin Telegram (§3c):
+- `efemeride [--fecha 27/09] [--aprobar] [--propuesta <json>]` — Pequeña Historia sin Telegram (§3c):
   propone y deja `hoja.jpg`, `aprobacion.txt` y `propuesta.json` en `output/efemerides/<mmdd>/`;
   con `--aprobar` arma el video (necesita Piper: en la Pi).
 - `envivo [--ventana-min N] [--min-creadores N]` — una pasada del modo en vivo sin procesar ni
@@ -638,11 +638,14 @@ Problemas abiertos:
 
 ## 9. CHANGELOG
 
+- v0.27.0 (2026-09-28) — El canal de efemérides pasa a llamarse **"Pequeña Historia"** (antes
+  "Pasó Hoy") en todos lados: ayuda, mensajes, prompts, títulos, User-Agent y este archivo
+  (también las entradas viejas del changelog, para que se pueda buscar por un solo nombre).
 - v0.26.1 (2026-09-27) — "La voz de efemérides suena triste y plana". Voz ajustable desde
   settings (`voz.length_scale`, `noise_scale`, `noise_w_scale`, `semitonos` con rubberband), por
   defecto igual que siempre; vale para /narrar, /serie y efemérides. Guion de efemérides: frases de
   ≤ 14 palabras, al menos una pregunta y una exclamación, cierre con gancho (? o !). Música de
-  fondo para Pasó Hoy: `musica/` (audios fuera de git, créditos en `musica/creditos.json`), una
+  fondo para Pequeña Historia: `musica/` (audios fuera de git, créditos en `musica/creditos.json`), una
   pista al azar por video al 12 % con ducking (sidechaincompress) y fundido final; vacía = sin
   música. OJO: contradice §1 "sin música agregada" (pedido explícito de Santi para este canal).
   Muestras mandadas por Telegram con el guion de la Rosetta, MEDIDAS en la Pi:
@@ -652,7 +655,7 @@ Problemas abiertos:
   escribirlo ~30 % más corto, y gasta cuota · D es_MX-claude-high con los ajustes de A: 50,2 s
   (27 s: 5× más rápido de sintetizar que daniela). La B (A + música) espera la música. Falta que
   Santi elija. 337 tests OK.
-- v0.26.0 (2026-09-27) — Pasó Hoy (§3c): `/efemeride [día/mes]` y el CLI `efemeride`, con
+- v0.26.0 (2026-09-27) — Pequeña Historia (§3c): `/efemeride [día/mes]` y el CLI `efemeride`, con
   aprobación ✅ / ✏️ / 🔁 foto N. Todavía NO en la corrida diaria. Probado de punta a punta con el
   27/09 real: en la Pi salió "El día que se descifró la piedra de Rosetta", 42,0 s, 12 fotos por
   frase, año 2 s, subtítulos por palabra (voz 102 s, subtítulos 125 s, video 382 s: ~10 min en
