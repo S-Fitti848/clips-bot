@@ -322,6 +322,13 @@ def autor_de(em: dict) -> str:
     `Attribution` ("Carlos Delgado") o en `Credit` ("Captmondo (Own work)")."""
     for k in ("Artist", "Attribution", "Credit"):
         v = sin_html((em.get(k) or {}).get("value", ""))
+        # Nota de traslado ("Transferido desde de.wikipedia a Commons por X. Original uploader was
+        # Bautsch at de.wikipedia"): el autor es quien lo subió originalmente, no quien lo movió.
+        m = re.search(r"original uploader was\s+([^\s.,]+(?:\s+[^\s.,]+)?)\s+at\b", v, re.I)
+        if m:
+            return m.group(1)
+        if re.match(r"(transferido|transferred)\b", v, re.I):
+            continue
         v = re.sub(r"\s*\(\s*(own work|trabajo propio)\s*\)\s*", "", v, flags=re.I).strip(" ,;")
         if v and not re.fullmatch(r"own work|trabajo propio|unknown( author)?|desconocido", v, re.I):
             return v

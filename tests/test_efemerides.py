@@ -90,6 +90,10 @@ def test_el_autor_se_busca_en_attribution_y_credit():
     assert ef.autor_de({"Credit": {"value": "Captmondo ( Own work )"}}) == "Captmondo"
     assert ef.autor_de({"Credit": {"value": "Captmondo ( Trabajo propio )"}}) == "Captmondo"
     assert ef.autor_de({"Credit": {"value": "Own work"}}) == ""
+    # la nota de traslado de la foto de Figeac (27/09): el autor es el que la subió
+    assert ef.autor_de({"Credit": {"value": "Transferido desde de.wikipedia a Commons por "
+                                            "Thierry46 . . Original uploader was Bautsch at "
+                                            "de.wikipedia"}}) == "Bautsch"
 
 
 def test_cc_by_sin_autor_no_se_usa():
