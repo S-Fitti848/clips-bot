@@ -31,11 +31,11 @@ from urllib.parse import quote
 
 import requests
 
+from .config import user_agent
 from .media import find_bin, run
 
 log = logging.getLogger(__name__)
 
-UA = "PequenaHistoriaBot/0.27 (bot personal de efemerides; python-requests)"
 KEVIN_CATALOGO = "https://incompetech.com/music/royalty-free/pieces.json"
 KEVIN_MP3 = "https://incompetech.com/music/royalty-free/mp3-royaltyfree/{archivo}"
 OPENVERSE = "https://api.openverse.org/v1/audio/"
@@ -309,7 +309,7 @@ def llenar(carpeta: Path, por_fuente: int = 10, session: requests.Session | None
     candidatos: dict[str, list[Tema]] = {"kevin": [], "openverse": []}
     if faltan["kevin"] > 0:
         try:
-            r = session.get(KEVIN_CATALOGO, headers={"User-Agent": UA}, timeout=60)
+            r = session.get(KEVIN_CATALOGO, headers={"User-Agent": user_agent()}, timeout=60)
             candidatos["kevin"] = candidatos_kevin(r.json())
         except (requests.RequestException, ValueError) as e:
             avisar(f"música: el catálogo de Kevin MacLeod no anduvo ({e})")
@@ -318,7 +318,7 @@ def llenar(carpeta: Path, por_fuente: int = 10, session: requests.Session | None
         for tono, palabras in TONOS.items():
             for pagina in (1, 2):
                 try:
-                    r = session.get(OPENVERSE, headers={"User-Agent": UA}, timeout=60, params={
+                    r = session.get(OPENVERSE, headers={"User-Agent": user_agent()}, timeout=60, params={
                         "q": f"{palabras[0]} instrumental", "license": "cc0,by",
                         "category": "music", "page_size": 20, "page": pagina})
                     if r.status_code != 200:
@@ -337,7 +337,7 @@ def llenar(carpeta: Path, por_fuente: int = 10, session: requests.Session | None
             destino = carpeta / t.ruta
             try:
                 destino.parent.mkdir(parents=True, exist_ok=True)
-                r = session.get(url, headers={"User-Agent": UA}, timeout=120)
+                r = session.get(url, headers={"User-Agent": user_agent()}, timeout=120)
                 if r.status_code != 200 or len(r.content) > MAX_MB * 1024 * 1024 or len(r.content) < 50_000:
                     avisar(f"música: {t.titulo} no se pudo bajar ({r.status_code}, {len(r.content)} bytes)")
                     continue

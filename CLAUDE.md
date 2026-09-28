@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-09-28 | **Versión:** v0.28.2 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 + escucha de Telegram 24/7)
+**Snapshot:** 2026-09-28 | **Versión:** v0.28.3 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 + escucha de Telegram 24/7)
 
 > **SI ESTÁS EMPEZANDO UNA SESIÓN NUEVA, LEÉ §10.** Ahí está qué está hecho, qué quedó a medias,
 > qué falta, y las trampas que ya nos mordieron.
@@ -273,7 +273,14 @@ Pedido 2026-09-27. Un Short por día con un hecho de la fecha. **Desde v0.27.4 v
 las 05:00** (`efemeride_del_dia`, después de los clips y con el mismo turno pesado): completa la
 música que falte, propone la de hoy y manda guion + hoja para aprobar a `efemerides.chat` o, si
 está vacío, a los mismos destinos de la entrega diaria. Recién con ✅ se arma el video. Si no sale,
+**la escucha de Telegram reintenta sola a las 07:00 y a las 10:00** (`efemerides.reintentos`,
+estado en `bot_estado.efemeride_reintento`, con el turno pesado) y recién después del último
 avisa por qué. También a demanda con `/efemeride` y el CLI `efemeride`.
+**Wikimedia (desde v0.28.3):** User-Agent con nombre, link al repo y el mail de
+`WIKIMEDIA_CONTACTO` (.env) en todo pedido a Wikipedia, Commons y la música; SOLO miniaturas de
+ancho estándar (1280, o 960 si el original no pasa de 1280; si no hay ninguna, la foto no se usa),
+2 s entre descargas, Retry-After respetado (tope 120 s), caché en `data/cache_wiki/` (consultas
+3 días, todo se borra a los 30), y una foto que no baja se saltea (3 × 429 seguidos cortan).
 1. Wikipedia "On this day" en es y en (REST `feed/onthisday/events`). Primer filtro sin Gemini
    (`motivo_evento`): palabras sensibles (muertes, atentados, accidentes, desastres…), guerra desde
    1945, "durante siglos". Medido el 27/09: 108 hechos → 84 candidatos.
@@ -415,7 +422,8 @@ config/streamers.yaml    la lista "de autor". Las altas y bajas por Telegram NO 
                          subtitulos_propios, detectar_marcador, palabras_programa, layout_forzado
                          + sección evento_dedsafio
 .env                     TWITCH_*, GEMINI_API_KEY, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID,
-                         TELEGRAM_ALLOWED_USERS (ids que pueden mandar comandos; vacío = ninguno)
+                         TELEGRAM_ALLOWED_USERS (ids que pueden mandar comandos; vacío = ninguno),
+                         WIKIMEDIA_CONTACTO (mail del User-Agent de Wikimedia)
 clips_bot/config.py      carga YAML + .env; Streamer.permitido = cita o experimento
 clips_bot/twitch.py      Helix: token, /users, /search/channels, /clips (paginado o página con
                          cursor), /games, /videos (título del stream)
@@ -463,7 +471,7 @@ clips_bot/serie.py       /serie: partes, división en etapas (validada), guiones
                          título numerado, horarios, hoja de miniaturas por etapa
 clips_bot/envivo.py      modo en vivo (§3b): quién está al aire, momentos por creadores distintos,
                          alertas en la DB (no repetir, tope, vencer) y el resumen de tiempos
-tests/                   391 tests sin red ni video
+tests/                   404 tests sin red ni video
 ```
 
 Comandos:
@@ -650,6 +658,16 @@ Problemas abiertos:
 
 ## 9. CHANGELOG
 
+- v0.28.3 (2026-09-28) — **La efeméride de las 05:00 falló con un 429 de upload.wikimedia.org.**
+  Causa (del log de la Pi): la foto que dio 429 era un ORIGINAL (un Bundesarchiv), no una
+  miniatura: con `iiurlwidth=1280`, si la foto no es más ancha que eso la API devuelve el original.
+  Arreglos: (1) User-Agent según la política de Wikimedia (`config.user_agent()`: nombre/versión,
+  link al repo y `WIKIMEDIA_CONTACTO` del .env) en efemérides y música; (2) solo miniaturas
+  (1280 → 960 → la foto no se usa, descarte `sin miniatura`), bajadas solo de las que pasaron
+  licencia y epígrafe, 2 s entre descargas, Retry-After hasta 120 s; (3) caché en
+  `data/cache_wiki/`; (4) `bajar_fotos`: la foto que falla se saltea y la siguiente ocupa su lugar
+  (también en 🔁 con la reserva), pero 3 × 429 seguidos cortan; (5) reintentos a las 07:00 y 10:00
+  desde la escucha (`_efe_reintento_tick`), y recién después del último, el aviso. 404 tests OK.
 - v0.28.2 (2026-09-28) — Costo de Gemini (docs/costo-gemini.md): ~30 llamadas de texto por día
   (medido en la Pi: 11-15 clips/día con textos, más lo nuevo) + 1 de voz; pagando el principal,
   ≈ US$4/mes hasta dic. 2026 y ≈ US$8/mes desde 2027 (precios oficiales del 28/09; doble margen
@@ -997,9 +1015,10 @@ Problemas abiertos:
 
 ### Pendiente, en orden
 
-1. **Mirar la primera efeméride automática** (05:00 del 2026-09-28): que llegue la propuesta al
-   grupo, que ✅ arme el video con la voz de Gemini (¿arranca limpio, sin leer nada antes?) y con
-   música, y que la música no tape la voz.
+1. **Mirar la primera efeméride automática.** La de las 05:00 del 2026-09-28 falló (429 de
+   Wikimedia, arreglado en v0.28.3 y corrida a mano ese día). Falta ver: que ✅ arme el video con
+   la voz de Gemini (¿arranca limpio, sin leer nada antes?) y con música, y que no tape la voz; y
+   que un reintento de las 07:00/10:00 ande solo cuando pase de verdad.
 2. **Modo en vivo:** ahora vigila solo Argentinos (8 canales). Las 4,7 alertas/día simuladas eran
    con los 63: van a ser menos. Mirar `/envivo` en unos días.
 3. **Probar `/narrar` y `/serie` con un video real de proceso** (pasos, etapas, aviso de música,

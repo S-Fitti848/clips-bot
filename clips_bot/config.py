@@ -238,6 +238,9 @@ class EfemeridesCfg:
     diaria: bool = True               # proponer la efeméride en la corrida de las 05:00
     chat: str = ""                    # a quién mandar la propuesta diaria (ids con coma); vacío = /destinos
     hora_publicacion: str = "12:00"    # AR: a qué hora se publica sola (con la subida prendida)
+    # Si la de las 05:00 no sale, la escucha de Telegram reintenta a estas horas (AR) y recién
+    # después del último avisa que no hay propuesta.
+    reintentos: tuple = ("07:00", "10:00")
     musica: bool = True
     carpeta_musica: str = "musica"
     musica_volumen: float = 0.12
@@ -450,6 +453,21 @@ def env(nombre: str, requerido: bool = True) -> str:
     if requerido and not valor:
         raise ConfigError(f"Falta {nombre} en .env (ver .env.example)")
     return valor
+
+
+REPO_URL = "https://github.com/S-Fitti848/clips-bot"
+
+
+def user_agent() -> str:
+    """El User-Agent de todo lo que va a Wikipedia, Commons (upload.wikimedia.org) y a las fuentes
+    de música. Formato de la política de Wikimedia: `nombre/versión (contacto) librería/versión`.
+    El mail sale de WIKIMEDIA_CONTACTO en .env (no va al repo); sin él queda solo el link.
+    Todo en ASCII: Openverse devuelve 403 si el User-Agent tiene una tilde (visto 2026-09-28)."""
+    import requests
+
+    mail = env("WIKIMEDIA_CONTACTO", requerido=False)
+    contacto = "; ".join(x for x in (REPO_URL, mail) if x)
+    return f"PequenaHistoriaBot/0.28 ({contacto}) python-requests/{requests.__version__}"
 
 
 def load_twitch_creds() -> TwitchCreds:

@@ -1927,6 +1927,8 @@ def escuchar_telegram(settings: Settings, timeout_poll: int = 50) -> int:
             # El modo en vivo va ANTES que la cola: un momento en vivo pierde valor por minuto.
             _seguro(tg, str(db.envivo_chat(conn) or chat_ultimo or ""), "el modo en vivo",
                     _envivo_tick, conn, tg, settings, reloj_envivo)
+            _seguro(tg, str(chat_ultimo or ""), "el reintento de la efeméride",
+                    _efe_reintento_tick, conn, tg, settings)
             _seguro(tg, str(chat_ultimo or ""), "la cola", _drenar_cola, conn, tg, cola, settings)
             guardado = db.get_valor(conn, "telegram_offset")
             pendientes = db.alertas(conn, estados=("pendiente",)) if db.envivo_chat(conn) else []
@@ -2557,6 +2559,71 @@ def _efe_proponer(conn, tg: TelegramClient, chats: list[str], dia, settings: Set
     return None
 
 
+EFE_REINTENTO = "efemeride_reintento"   # bot_estado: la propuesta de hoy que falló y espera turno
+
+
+def _efe_horas_que_faltan(horas, ahora: datetime) -> list[str]:
+    """Las horas de reintento ("7:00" → "07:00") que todavía no pasaron hoy, en orden."""
+    out = []
+    for h in horas:
+        hh, _, mm = str(h).strip().partition(":")
+        hora = f"{int(hh):02d}:{int(mm or 0):02d}"
+        if hora > ahora.strftime("%H:%M"):
+            out.append(hora)
+    return sorted(out)
+
+
+def _efe_sin_propuesta(tg: TelegramClient, chats: list[str], error: str,
+                       intentos: list[str] | None = None) -> None:
+    probe = f" (probé a las {', '.join(intentos)})" if intentos and len(intentos) > 1 else ""
+    for chat in chats:
+        tg.send_message(chat, f"📅 <b>Pequeña Historia</b>: hoy no hay propuesta{probe}. {error}\n"
+                              "Podés probar a mano con <code>/efemeride</code>.")
+
+
+def _efe_reintento_tick(conn, tg: TelegramClient, settings: Settings, ahora=None) -> None:
+    """Corre en cada vuelta de la escucha. Si la propuesta de las 05:00 falló y ya es la hora del
+    próximo reintento, la vuelve a pedir con el turno pesado (si está ocupado, espera a la vuelta
+    siguiente). Después del último intento fallido, avisa."""
+    raw = db.get_valor(conn, EFE_REINTENTO)
+    if not raw:
+        return
+    d = json.loads(raw)
+    ahora = ahora or datetime.now(AR)
+    if d["fecha"] != ahora.date().isoformat():   # se pasó el día (la escucha estuvo caída)
+        db.borrar_valor(conn, EFE_REINTENTO)
+        return _efe_sin_propuesta(tg, d["chats"], d["error"], d.get("intentos"))
+    if not d["horas"] or ahora.strftime("%H:%M") < d["horas"][0]:
+        return
+    if db.hay_trabajo_pesado(conn, VENCIMIENTO_PESADO_S):
+        return
+    gemini = _gemini(settings)
+    turno = "efemeride:reintento"
+    if gemini is None or not db.tomar_turno(conn, db.RECURSO_PESADO, turno, maximo=1,
+                                            vencimiento_s=VENCIMIENTO_PESADO_S):
+        return
+    hora = d["horas"].pop(0)
+    log.info("efeméride: reintento de las %s", hora)
+    try:
+        error = _efe_proponer(conn, tg, d["chats"], ahora.date(), settings, gemini)
+    except Exception as e:     # que un error no deje el reintento en loop: cuenta como intento
+        log.exception("el reintento de la efeméride falló")
+        error = f"No salió la efeméride: {html.escape(str(e)[:400])}"
+    finally:
+        db.soltar_turno(conn, db.RECURSO_PESADO, turno, VENCIMIENTO_PESADO_S)
+    d["intentos"] = d.get("intentos", []) + [hora]
+    if not error:
+        db.borrar_valor(conn, EFE_REINTENTO)
+        log.info("efeméride: salió en el reintento de las %s", hora)
+    elif d["horas"]:
+        db.set_valor(conn, EFE_REINTENTO, json.dumps({**d, "error": error}, ensure_ascii=False))
+        log.info("efeméride: el reintento de las %s tampoco salió (%s); próximo a las %s",
+                 hora, error, d["horas"][0])
+    else:
+        db.borrar_valor(conn, EFE_REINTENTO)
+        _efe_sin_propuesta(tg, d["chats"], error, d["intentos"])
+
+
 def efemeride_del_dia(settings: Settings, simular: bool = False) -> None:
     """La parte de Pequeña Historia de la corrida de las 05:00: completar la música que falte y
     proponer la efeméride de hoy para aprobar. Nunca tumba la corrida de clips: todo error se avisa.
@@ -2592,9 +2659,14 @@ def efemeride_del_dia(settings: Settings, simular: bool = False) -> None:
             error = _efe_proponer(conn, tg, chats, datetime.now(AR).date(), settings, gemini)
         if error:
             print(f"  {error}")
-            for chat in chats:
-                tg.send_message(chat, f"📅 <b>Pequeña Historia</b>: hoy no hay propuesta. {error}\n"
-                                      "Podés probar a mano con <code>/efemeride</code>.")
+            horas = _efe_horas_que_faltan(cfg.reintentos, datetime.now(AR))
+            if horas:
+                db.set_valor(conn, EFE_REINTENTO, json.dumps({
+                    "fecha": datetime.now(AR).date().isoformat(), "chats": chats, "horas": horas,
+                    "error": error, "intentos": ["05:00"]}, ensure_ascii=False))
+                print(f"  la escucha de Telegram reintenta a las {', '.join(horas)}")
+            else:
+                _efe_sin_propuesta(tg, chats, error)
         else:
             print(f"  propuesta mandada a {', '.join(chats)}")
     except Exception as e:

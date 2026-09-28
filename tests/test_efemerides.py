@@ -465,7 +465,7 @@ def test_con_chat_configurado_va_ahi(diaria):
 def test_si_no_sale_avisa_por_que(diaria, monkeypatch):
     enviados, cfg = diaria
     monkeypatch.setattr(m, "_efe_proponer", lambda *a: "No salió la efeméride: ninguno tuvo 4 fotos")
-    m.efemeride_del_dia(cfg())
+    m.efemeride_del_dia(cfg(reintentos=()))      # sin reintentos: avisa ya
     chat, texto = enviados["mensajes"][-1]
     assert chat == "-100" and "hoy no hay propuesta" in texto and "4 fotos" in texto
 
@@ -488,3 +488,216 @@ def test_si_la_musica_falla_la_efemeride_sale_igual(diaria, monkeypatch):
     monkeypatch.setattr(musica, "llenar", roto)
     m.efemeride_del_dia(cfg())
     assert enviados["propuestas"] == [["-100"]]
+
+
+# ---- Wikimedia: User-Agent, miniaturas, caché, 429 (lo del 2026-09-28) -----------------------
+
+class Resp:
+    def __init__(self, status=200, contenido=b"jpg", headers=None, datos=None):
+        self.status_code, self.content, self.headers = status, contenido, headers or {}
+        self.text, self._datos = contenido.decode(errors="ignore"), datos
+
+    def json(self):
+        return self._datos
+
+
+class Sesion:
+    """requests.Session falsa: devuelve las respuestas en orden y anota qué se pidió."""
+
+    def __init__(self, *respuestas):
+        self.respuestas, self.pedidos = list(respuestas), []
+
+    def get(self, url, params=None, timeout=None, headers=None):
+        self.pedidos.append((url, params, headers))
+        return self.respuestas.pop(0)
+
+
+THUMB = "https://upload.wikimedia.org/wikipedia/commons/thumb/c/c1/A.jpg/1280px-A.jpg"
+ORIGINAL = "https://upload.wikimedia.org/wikipedia/commons/c/c1/A.jpg"
+
+
+def _wiki(sesion, tmp_path, esperas=None):
+    return ef.Wiki(session=sesion, sleep=(esperas.append if esperas is not None else lambda s: None),
+                   cache=tmp_path / "cache")
+
+
+def test_user_agent_con_contacto_segun_la_politica_de_wikimedia(monkeypatch):
+    from clips_bot.config import user_agent
+
+    monkeypatch.setenv("WIKIMEDIA_CONTACTO", "bot@ejemplo.com")
+    ua = user_agent()
+    assert ua.startswith("PequenaHistoriaBot/") and "bot@ejemplo.com" in ua
+    assert "github.com/S-Fitti848/clips-bot" in ua and "python-requests/" in ua
+    assert ua.isascii()      # Openverse da 403 con tildes
+
+
+def test_todos_los_pedidos_llevan_el_user_agent(tmp_path):
+    s = Sesion(Resp(datos={"events": []}), Resp())
+    w = _wiki(s, tmp_path)
+    w.eventos("es", HOY)
+    w.bajar(THUMB, tmp_path / "f.jpg")
+    assert all(h["User-Agent"] == w.ua for _, _, h in s.pedidos)
+
+
+def test_429_respeta_retry_after_y_despues_baja(tmp_path):
+    esperas = []
+    s = Sesion(Resp(429, b"Too many", {"Retry-After": "37"}), Resp(contenido=b"foto"))
+    _wiki(s, tmp_path, esperas).bajar(THUMB, tmp_path / "f.jpg")
+    assert 37 in esperas and (tmp_path / "f.jpg").read_bytes() == b"foto"
+    assert ef.Wiki.PAUSA_FOTOS_S in esperas          # pausa entre descargas
+
+
+def test_solo_baja_miniaturas(tmp_path):
+    s = Sesion()
+    with pytest.raises(ef.WikiError, match="miniatura"):
+        _wiki(s, tmp_path).bajar(ORIGINAL, tmp_path / "f.jpg")
+    assert s.pedidos == []
+
+
+def test_la_cache_no_repite_pedidos(tmp_path):
+    s = Sesion(Resp(datos={"events": [{"year": 1928, "text": "penicilina", "pages": []}]}),
+               Resp(contenido=b"foto"))
+    w = _wiki(s, tmp_path)
+    assert w.eventos("es", HOY) == w.eventos("es", HOY)
+    w.bajar(THUMB, tmp_path / "a.jpg")
+    w.bajar(THUMB, tmp_path / "b.jpg")               # otra propuesta, la misma foto
+    assert len(s.pedidos) == 2 and (tmp_path / "b.jpg").read_bytes() == b"foto"
+    # otro proceso (otra corrida) también la encuentra
+    assert _wiki(Sesion(), tmp_path).eventos("es", HOY)[0].anio == 1928
+
+
+class WikiFotos:
+    """archivos/info falsos: la miniatura existe solo si el original es más ancho que lo pedido."""
+
+    def __init__(self, anchos):
+        self.anchos, self.pedidos = anchos, []
+
+    def archivos(self, lang, titulo):
+        return list(self.anchos)
+
+    def info(self, lang, archivos, ancho=1280):
+        self.pedidos.append((archivos, ancho))
+        out = []
+        for a in archivos:
+            i = _info(archivo=a, ancho=self.anchos[a])
+            i["thumburl"] = (f"https://upload.wikimedia.org/x/thumb/{a}/{ancho}px-{a}"
+                             if self.anchos[a] > ancho else f"https://upload.wikimedia.org/x/{a}")
+            out.append(i)
+        return out
+
+
+def test_si_la_api_da_el_original_pide_la_miniatura_de_960_y_si_no_hay_la_saltea():
+    w = WikiFotos({"File:grande.jpg": 3000, "File:media.jpg": 1100, "File:justa.jpg": 900})
+    fotos, desc = ef.fotos_del_evento(w, ef.Evento("es", 1928, "x", ["Penicilina"]))
+    assert [f.archivo for f in fotos] == ["File:grande.jpg", "File:media.jpg"]
+    assert all(ef.es_miniatura(f.url) for f in fotos) and "960px" in fotos[1].url
+    assert desc == {"sin miniatura": 1}
+    assert w.pedidos[1] == (["File:media.jpg"], 960)     # solo las que pueden tener una de 960
+
+
+class WikiBajar:
+    def __init__(self, fallan=(), status=429):
+        self.fallan, self.status = set(fallan), status
+
+    def bajar(self, url, destino):
+        if url in self.fallan:
+            raise ef.WikiError(f"{self.status} x", self.status)
+        return destino
+
+
+def _fotos(n):
+    return [ef.a_foto({**_info(archivo=f"File:{i}.jpg"), "thumburl": f"https://u/thumb/{i}"}, "X")
+            for i in range(n)]
+
+
+def test_una_foto_que_falla_se_saltea_y_sigue_con_las_otras(tmp_path):
+    fotos = _fotos(8)
+    bajadas, reserva = ef.bajar_fotos(WikiBajar({"https://u/thumb/1"}), fotos, tmp_path, "1928", 5)
+    assert [f.archivo for f in bajadas] == ["File:0.jpg", "File:2.jpg", "File:3.jpg", "File:4.jpg",
+                                            "File:5.jpg"]
+    assert [f.archivo for f in reserva] == ["File:6.jpg", "File:7.jpg"]
+
+
+def test_tres_429_seguidos_cortan_en_vez_de_insistir(tmp_path):
+    w = WikiBajar({f"https://u/thumb/{i}" for i in (1, 2, 3)})
+    with pytest.raises(ef.WikiError) as e:
+        ef.bajar_fotos(w, _fotos(8), tmp_path, "1928", 12)
+    assert e.value.status == 429
+
+
+def test_cambiar_foto_saltea_la_reserva_que_no_baja(tmp_path):
+    p = _propuesta(n_fotos=5, reserva=0)
+    p.reserva = [f.a_dict() for f in _fotos(2)]
+    nueva = ef.cambiar_foto(p, 1, WikiBajar({"https://u/thumb/0"}), tmp_path)
+    assert nueva.archivo == "File:1.jpg" and p.reserva == []
+
+
+# ---- reintentos de las 07:00 y 10:00 --------------------------------------------------------
+
+def test_horas_que_faltan():
+    from datetime import datetime
+
+    assert m._efe_horas_que_faltan(["10:00", "7:00"], datetime(2026, 9, 28, 5, 29)) == ["07:00", "10:00"]
+    assert m._efe_horas_que_faltan(["07:00", "10:00"], datetime(2026, 9, 28, 8, 0)) == ["10:00"]
+    assert m._efe_horas_que_faltan(["07:00", "10:00"], datetime(2026, 9, 28, 11, 0)) == []
+
+
+def _a_las(h, mi=0):
+    from datetime import datetime
+
+    hoy = datetime.now(m.AR).date()
+    return datetime(hoy.year, hoy.month, hoy.day, h, mi, tzinfo=m.AR)
+
+
+def test_si_falla_a_las_5_no_avisa_y_reintenta_a_las_7_y_a_las_10(diaria, monkeypatch):
+    enviados, cfg = diaria
+    resultados = ["No salió la efeméride: 429", "No salió la efeméride: 429 otra vez",
+                  "No salió la efeméride: 429 de nuevo"]
+    llamadas = []
+
+    def proponer(conn, tg, chats, dia, s, g):
+        llamadas.append((chats, dia))
+        return resultados.pop(0)
+
+    monkeypatch.setattr(m, "_efe_proponer", proponer)
+    monkeypatch.setattr(m, "_efe_horas_que_faltan", lambda horas, ahora: ["07:00", "10:00"])
+    m.efemeride_del_dia(cfg())
+    assert enviados["mensajes"] == [] and len(llamadas) == 1        # a las 05:00 no avisa
+
+    conn = db.connect(m.DB_PATH)
+    tg = m.TelegramClient("x")
+    m._efe_reintento_tick(conn, tg, cfg(), ahora=_a_las(6, 59))
+    assert len(llamadas) == 1                                       # todavía no es la hora
+    m._efe_reintento_tick(conn, tg, cfg(), ahora=_a_las(7, 0))
+    m._efe_reintento_tick(conn, tg, cfg(), ahora=_a_las(7, 1))
+    assert len(llamadas) == 2 and enviados["mensajes"] == []        # uno solo a las 7
+    m._efe_reintento_tick(conn, tg, cfg(), ahora=_a_las(10, 0))
+    assert len(llamadas) == 3 and llamadas[-1] == (["-100"], _a_las(10).date())
+    chat, texto = enviados["mensajes"][-1]
+    assert chat == "-100" and "hoy no hay propuesta" in texto and "05:00, 07:00, 10:00" in texto
+    assert db.get_valor(conn, m.EFE_REINTENTO) is None
+    m._efe_reintento_tick(conn, tg, cfg(), ahora=_a_las(11, 0))
+    assert len(llamadas) == 3                                       # no queda nada pendiente
+
+
+def test_si_sale_en_el_reintento_no_avisa_nada(diaria, monkeypatch):
+    enviados, cfg = diaria
+    resultados = ["No salió la efeméride: 429", None]
+    monkeypatch.setattr(m, "_efe_proponer", lambda *a: resultados.pop(0))
+    monkeypatch.setattr(m, "_efe_horas_que_faltan", lambda horas, ahora: ["07:00", "10:00"])
+    m.efemeride_del_dia(cfg())
+    conn = db.connect(m.DB_PATH)
+    m._efe_reintento_tick(conn, m.TelegramClient("x"), cfg(), ahora=_a_las(7, 0))
+    assert enviados["mensajes"] == [] and db.get_valor(conn, m.EFE_REINTENTO) is None
+
+
+def test_el_reintento_espera_si_hay_algo_pesado_andando(diaria, monkeypatch):
+    enviados, cfg = diaria
+    llamadas = []
+    monkeypatch.setattr(m, "_efe_proponer", lambda *a: llamadas.append(1) or "No salió")
+    monkeypatch.setattr(m, "_efe_horas_que_faltan", lambda horas, ahora: ["07:00"])
+    m.efemeride_del_dia(cfg())
+    conn = db.connect(m.DB_PATH)
+    db.tomar_turno(conn, db.RECURSO_PESADO, "diario", maximo=1, vencimiento_s=3600)
+    m._efe_reintento_tick(conn, m.TelegramClient("x"), cfg(), ahora=_a_las(7, 0))
+    assert len(llamadas) == 1 and db.get_valor(conn, m.EFE_REINTENTO)   # sigue pendiente

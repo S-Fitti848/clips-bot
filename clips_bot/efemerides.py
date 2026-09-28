@@ -16,10 +16,12 @@ Todo lo que es red pasa por `Wiki`, que en los tests se reemplaza.
 
 from __future__ import annotations
 
+import hashlib
 import html
 import json
 import logging
 import re
+import shutil
 import time
 import unicodedata
 from dataclasses import asdict, dataclass, field
@@ -28,14 +30,13 @@ from pathlib import Path
 
 import requests
 
+from .config import DATA_DIR, user_agent
 from .media import find_bin, run
 from .narrar import NarrarError
 from .textos import nombres_propios
 
 log = logging.getLogger(__name__)
 
-# Wikimedia pide un User-Agent que diga qué es el bot. Sin mail a propósito.
-UA = "PequenaHistoriaBot/0.26 (bot personal de efemerides; python-requests)"
 FEED = "https://{lang}.wikipedia.org/api/rest_v1/feed/onthisday/events/{mm:02d}/{dd:02d}"
 API = "https://{lang}.wikipedia.org/w/api.php"
 
@@ -85,7 +86,9 @@ _MIMES = ("image/jpeg", "image/png", "image/tiff", "image/webp")
 
 
 class WikiError(RuntimeError):
-    pass
+    def __init__(self, mensaje: str, status: int = 0):
+        super().__init__(mensaje)
+        self.status = status     # 429 = Wikimedia nos está limitando
 
 
 def _norm(t: str) -> str:
@@ -133,40 +136,89 @@ class Foto:
         return cls(**d)
 
 
+CACHE_DIR = DATA_DIR / "cache_wiki"
+CACHE_API_S = 3 * 86400       # consultas (hechos, textos, imageinfo): cambian poco en 3 días
+CACHE_BORRAR_S = 30 * 86400   # nada vive más de 30 días (las fotos: ~4 MB por día)
+# Las miniaturas que se piden. Tienen que ser anchos ESTÁNDAR de Wikimedia: los otros se generan
+# a pedido y son lo primero que upload.wikimedia.org limita. Si la foto original no es más ancha
+# que la miniatura, la API devuelve el ORIGINAL (así se bajó el que dio 429 el 2026-09-28, un
+# Bundesarchiv de menos de 1280 px): ahí se prueba la de 960, y si tampoco, la foto no se usa.
+MINIATURAS = (1280, 960)
+
+
+def es_miniatura(url: str) -> bool:
+    return "/thumb/" in url
+
+
 class Wiki:
     def __init__(self, session: requests.Session | None = None, timeout: float = 30,
-                 sleep=time.sleep):
+                 sleep=time.sleep, cache: Path | None = CACHE_DIR):
         self.session = session or requests.Session()
         self.timeout = timeout
         self._sleep = sleep
+        self.cache = cache
+        self.ua = user_agent()
+        if cache:
+            self._limpiar_cache()
 
-    PAUSA_S = 0.5   # entre llamadas: el 2026-09-27, con varias corridas seguidas, la API dio 429
+    PAUSA_S = 0.5         # entre consultas: el 2026-09-27, con varias corridas seguidas, dio 429
+    PAUSA_FOTOS_S = 2.0   # entre descargas de upload.wikimedia.org, que limita mucho más
+    ESPERA_MAX_S = 120    # tope al Retry-After, para no colgar la escucha
+
+    def _limpiar_cache(self) -> None:
+        limite = time.time() - CACHE_BORRAR_S
+        for f in self.cache.glob("*/*"):
+            try:
+                if f.stat().st_mtime < limite:
+                    f.unlink()
+            except OSError:
+                pass
+
+    def _en_cache(self, tipo: str, clave: str, ext: str) -> Path | None:
+        if not self.cache:
+            return None
+        return self.cache / tipo / (hashlib.sha1(clave.encode()).hexdigest() + ext)
 
     def _pedir(self, url: str, params: dict | None = None, timeout: float | None = None):
         """GET con pausa entre llamadas y reintentos. Lo usan las consultas Y las descargas de
         fotos: upload.wikimedia.org también devuelve 429 (pasó bajando la foto del lanzamiento
-        de la sonda Dawn, el 2026-09-27)."""
+        de la sonda Dawn, el 2026-09-27, y un Bundesarchiv el 2026-09-28)."""
+        foto = "upload.wikimedia.org" in url
+        status = 0
         for intento in range(4):
-            self._sleep(self.PAUSA_S)
+            self._sleep(self.PAUSA_FOTOS_S if foto else self.PAUSA_S)
             try:
                 r = self.session.get(url, params=params, timeout=timeout or self.timeout,
-                                     headers={"User-Agent": UA})
+                                     headers={"User-Agent": self.ua})
             except requests.RequestException as e:
                 error, espera = str(e), 3 * (intento + 1)
             else:
                 if r.status_code == 200:
                     return r
+                status = r.status_code
                 error = f"{r.status_code} {r.text[:150]}"
                 if r.status_code < 500 and r.status_code != 429:
                     break
-                # 429: la API dice cuánto esperar. Se respeta (con tope, para no colgar la escucha).
-                pedido = r.headers.get("Retry-After", "")
-                espera = min(int(pedido), 60) if pedido.isdigit() else 10 * (intento + 1)
-            self._sleep(espera)
-        raise WikiError(f"Wikipedia {url[:120]}: {error}")
+                # 429: Wikimedia dice cuánto esperar. Se respeta, con tope.
+                pedido = r.headers.get("Retry-After", "").strip()
+                espera = (min(int(pedido), self.ESPERA_MAX_S) if pedido.isdigit()
+                          else (15 if foto else 10) * (intento + 1))
+            if intento < 3:
+                self._sleep(espera)
+        raise WikiError(f"Wikipedia {url[:120]}: {error}", status)
 
     def _get(self, url: str, params: dict | None = None) -> dict:
-        return self._pedir(url, params).json()
+        ruta = self._en_cache("api", url + json.dumps(params or {}, sort_keys=True), ".json")
+        if ruta and ruta.exists() and time.time() - ruta.stat().st_mtime < CACHE_API_S:
+            try:
+                return json.loads(ruta.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                pass
+        d = self._pedir(url, params).json()
+        if ruta:
+            ruta.parent.mkdir(parents=True, exist_ok=True)
+            ruta.write_text(json.dumps(d, ensure_ascii=False), encoding="utf-8")
+        return d
 
     def eventos(self, lang: str, dia: date) -> list[Evento]:
         d = self._get(FEED.format(lang=lang, mm=dia.month, dd=dia.day))
@@ -197,15 +249,14 @@ class Wiki:
                                               "imlimit": 50, "redirects": 1, "titles": titulo})
         return [i["title"] for p in d["query"]["pages"].values() for i in p.get("images") or []]
 
-    def info(self, lang: str, archivos: list[str]) -> list[dict]:
-        """imageinfo con licencia, autor y epígrafe. Sirve para archivos locales y de Commons."""
+    def info(self, lang: str, archivos: list[str], ancho: int = MINIATURAS[0]) -> list[dict]:
+        """imageinfo con licencia, autor, epígrafe y la URL de la miniatura de `ancho` px (o la del
+        original, si no es más ancho). Sirve para archivos locales y de Commons."""
         out = []
         for i in range(0, len(archivos), 50):
             d = self._get(API.format(lang=lang), {
                 "action": "query", "format": "json", "prop": "imageinfo",
-                # 1280 es uno de los anchos estándar de las miniaturas de Wikimedia (1600 no lo es,
-                # y para fotos más chicas devolvía el original: más pesado, y más 429).
-                "iiprop": "url|size|mime|extmetadata", "iiurlwidth": 1280,
+                "iiprop": "url|size|mime|extmetadata", "iiurlwidth": ancho,
                 "iiextmetadatalanguage": "es", "titles": "|".join(archivos[i:i + 50])})
             for p in (d.get("query") or {}).get("pages", {}).values():
                 if p.get("imageinfo"):
@@ -213,8 +264,19 @@ class Wiki:
         return out
 
     def bajar(self, url: str, destino: Path) -> Path:
+        """Solo miniaturas (ver MINIATURAS), y cada una una sola vez: queda en la caché."""
+        if not es_miniatura(url):
+            raise WikiError(f"no es una miniatura, no la bajo: {url[:120]}")
         destino.parent.mkdir(parents=True, exist_ok=True)
-        destino.write_bytes(self._pedir(url, timeout=60).content)
+        ruta = self._en_cache("fotos", url, Path(url).suffix[:5] or ".jpg")
+        if ruta and ruta.exists() and ruta.stat().st_size > 0:
+            shutil.copyfile(ruta, destino)
+            return destino
+        datos = self._pedir(url, timeout=60).content
+        destino.write_bytes(datos)
+        if ruta:
+            ruta.parent.mkdir(parents=True, exist_ok=True)
+            ruta.write_bytes(datos)
         return destino
 
 
@@ -366,7 +428,44 @@ def fotos_del_evento(wiki: Wiki, e: Evento) -> tuple[list[Foto], dict]:
                 descartes[m.split(" (")[0]] = descartes.get(m.split(" (")[0], 0) + 1
             else:
                 fotos.append(a_foto(info, titulo))
+    # Solo miniaturas: a las que la API dio el original, se les pide la siguiente más chica.
+    for ancho in MINIATURAS[1:]:
+        faltan = [f.archivo for f in fotos if not es_miniatura(f.url) and f.ancho > ancho]
+        if faltan:
+            urls = {i["archivo"]: i.get("thumburl") or "" for i in wiki.info(e.lang, faltan, ancho)}
+            for f in fotos:
+                if f.archivo in urls and es_miniatura(urls[f.archivo]):
+                    f.url = urls[f.archivo]
+    sin = [f for f in fotos if not es_miniatura(f.url)]
+    if sin:
+        descartes["sin miniatura"] = descartes.get("sin miniatura", 0) + len(sin)
+        fotos = [f for f in fotos if es_miniatura(f.url)]
     return fotos, descartes
+
+
+def bajar_fotos(wiki: Wiki, fotos: list[Foto], carpeta: Path, prefijo: str, cuantas: int,
+                avisar=log.info) -> tuple[list[Foto], list[Foto]]:
+    """Baja hasta `cuantas` fotos, en orden. La que falla se saltea y se sigue con la próxima
+    (antes, una sola foto con 429 tiraba la efeméride entera, el 2026-09-28). Devuelve las bajadas
+    y las que no se llegaron a probar (la reserva). Tres 429 seguidos = upload.wikimedia.org nos
+    está limitando: se corta ahí, porque insistir solo alarga el castigo."""
+    bajadas: list[Foto] = []
+    seguidos = 0
+    for n, f in enumerate(fotos):
+        if len(bajadas) >= cuantas:
+            return bajadas, fotos[n:]
+        try:
+            f.ruta = str(wiki.bajar(f.url, carpeta / f"foto_{prefijo}_{n:02d}.jpg"))
+        except WikiError as err:
+            avisar(f"  foto salteada ({f.archivo[:60]}): {str(err)[:120]}")
+            seguidos = seguidos + 1 if err.status == 429 else 0
+            if seguidos >= 3:
+                raise WikiError("upload.wikimedia.org nos está limitando (429 en 3 fotos "
+                                "seguidas)", 429) from err
+            continue
+        seguidos = 0
+        bajadas.append(f)
+    return bajadas, []
 
 
 def creditos(fotos: list[Foto]) -> str:
@@ -749,9 +848,10 @@ def proponer(wiki: Wiki, cliente, dia: date, carpeta: Path, avisar=log.info,
         avisar(f"{e.anio} {e.texto[:60]}: {len(fotos)} fotos pasan las reglas {desc}")
         if len(fotos) < MIN_FOTOS:
             continue
-        for n, f in enumerate(fotos[:MAX_FOTOS_GUION]):
-            f.ruta = str(wiki.bajar(f.url, carpeta / f"foto_{e.anio}_{n:02d}.jpg"))
-        usadas = fotos[:MAX_FOTOS_GUION]
+        usadas, reserva = bajar_fotos(wiki, fotos, carpeta, str(e.anio), MAX_FOTOS_GUION, avisar)
+        if len(usadas) < MIN_FOTOS:
+            avisar(f"  se bajaron {len(usadas)} de {len(fotos)}: no llega a {MIN_FOTOS}, paso al siguiente")
+            continue
         fuente = wiki.texto(e.lang, e.paginas[0])
         if e.lang == "en":            # el guion va en castellano: se valida contra los dos
             es = wiki.en_espanol(e.paginas[0])
@@ -772,7 +872,7 @@ def proponer(wiki: Wiki, cliente, dia: date, carpeta: Path, avisar=log.info,
         if sirven < MIN_FOTOS:
             continue
         return Propuesta(fecha=dia.isoformat(), evento=e.a_dict(), fotos=[f.a_dict() for f in usadas],
-                         reserva=[f.a_dict() for f in fotos[MAX_FOTOS_GUION:]], guion=g.a_dict(),
+                         reserva=[f.a_dict() for f in reserva], guion=g.a_dict(),
                          fuente=fuente[:20000], descartes=descartes)
     raise NarrarError(f"Ninguno de los {len(elegidos)} hechos elegidos tuvo {MIN_FOTOS} fotos "
                       f"libres que sirvan ({guiones} guiones intentados; descartes: {descartes}).")
@@ -803,13 +903,19 @@ def cambiar_foto(p: Propuesta, n: int, wiki: Wiki, carpeta: Path) -> Foto | None
     libres = [k for k in range(len(p.fotos)) if k not in g.fotos and k not in g.descartadas and k != i]
     if libres:
         nueva = libres[0]
-    elif p.reserva:
-        foto = Foto.de_dict(p.reserva.pop(0))
-        foto.ruta = str(wiki.bajar(foto.url, carpeta / f"foto_reserva_{len(p.fotos):02d}.jpg"))
-        p.fotos.append(foto.a_dict())
-        nueva = len(p.fotos) - 1
     else:
-        return None
+        while p.reserva:              # la que no baja se saltea, como en la propuesta
+            foto = Foto.de_dict(p.reserva.pop(0))
+            try:
+                foto.ruta = str(wiki.bajar(foto.url, carpeta / f"foto_reserva_{len(p.fotos):02d}.jpg"))
+            except WikiError as err:
+                log.warning("foto de reserva salteada (%s): %s", foto.archivo, err)
+                continue
+            p.fotos.append(foto.a_dict())
+            nueva = len(p.fotos) - 1
+            break
+        else:
+            return None
     g.fotos = [nueva if f == i else f for f in g.fotos]
     g.descartadas = sorted(set(g.descartadas) | {i})
     p.guion = g.a_dict()

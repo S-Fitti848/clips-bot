@@ -285,6 +285,9 @@ efemerides:
   # diaria (/destinos); para mandarla a otro lado, poné el id (o varios, con coma).
   diaria: true
   chat: ""
+  # Si no sale a las 05:00 (el 2026-09-28: 429 de upload.wikimedia.org), la escucha de Telegram
+  # reintenta sola a estas horas (AR). Recién si falla la última avisa que hoy no hay propuesta.
+  reintentos: ["07:00", "10:00"]
   # Con youtube_upload_enabled: el ✅ la programa en el canal Pequeña Historia para ESE día a esta
   # hora (AR); si ya pasó, sale ese mismo día en 30 min ("un día como hoy" no puede salir mañana).
   hora_publicacion: "12:00"
