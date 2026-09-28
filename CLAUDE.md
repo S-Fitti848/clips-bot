@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-09-27 | **Versión:** v0.28.2 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 + escucha de Telegram 24/7)
+**Snapshot:** 2026-09-28 | **Versión:** v0.28.2 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 + escucha de Telegram 24/7)
 
 > **SI ESTÁS EMPEZANDO UNA SESIÓN NUEVA, LEÉ §10.** Ahí está qué está hecho, qué quedó a medias,
 > qué falta, y las trampas que ya nos mordieron.
@@ -950,22 +950,24 @@ Problemas abiertos:
 
 ## 10. DÓNDE ESTAMOS (leer primero en una sesión nueva)
 
-**Snapshot del 2026-09-27.** El bot corre solo en la Raspberry: timer a las 05:00 AR y la escucha
-de Telegram 24/7. Los comandos se atienden en el momento.
+**Snapshot del 2026-09-28 (madrugada).** El bot corre solo en la Raspberry: timer a las 05:00 AR
+(clips + la propuesta de Pequeña Historia) y la escucha de Telegram 24/7 (comandos y modo en vivo).
 
-### Estado real de la Pi (verificado el 2026-09-27)
+### Estado real de la Pi (verificado el 2026-09-28 ~00:00)
 
 | | |
 |---|---|
-| commit | ver `git log -1` en la Pi (v0.26.0 desplegado 2026-09-27; escucha reiniciada) |
-| `clips-bot.timer` | activo, próxima 05:00 AR |
-| `clips-bot-telegram` | activo |
+| commit | el último de `main` (v0.28.2, `4293b2a`); 391 tests OK en la Pi; escucha reiniciada |
+| `clips-bot.timer` | activo, próxima 05:00 AR (clips y después la efeméride) |
+| `clips-bot-telegram` | activo; modo en vivo PRENDIDO por Santi en el grupo el 27/09 |
+| carpetas | Argentinos (en vivo sí, diarios sí), Dedsafío y Catálogo (en vivo no, diarios sí): el modo en vivo vigila 8 de 63 |
+| música de Pequeña Historia | 29 temas en `musica/` (9 de la Biblioteca de YouTube de Santi, 10 Kevin MacLeod, 10 Openverse), 157 MB, fuera de git |
+| subida a YouTube | APAGADA (`youtube_upload_enabled: false`); sin credenciales todavía |
 | sudoers | instalado (`/etc/sudoers.d/clips-bot`) |
-| destinos de la entrega diaria | el grupo **Rots clips** (`-5453399767`) |
-| chats conocidos | Rots clips (grupo), Santiago Fittipaldi y Tommy Bildo (privados, los dos alcanzables) |
+| destinos de la entrega diaria (y de la propuesta de efeméride) | el grupo **Rots clips** (`-5453399767`) |
+| chats conocidos | Rots clips (grupo), Santiago Fittipaldi (`8668060171`) y Tommy Bildo (privados) |
 | `cantidad_diaria` | 3 |
 | prueba del multi-POV | desde 2026-09-25 02:03, **vence 2026-10-09**, no apagado |
-| votos hasta ahora | puntaje 6 → 1 👍 · puntaje 8 → 1 👎 |
 
 ### Hecho y andando en producción
 
@@ -973,43 +975,44 @@ de Telegram 24/7. Los comandos se atienden en el momento.
   datos en pantalla (OCR), tono sensible, calidad con puntaje, duración, idioma, música por audio.
 - Layout `split` / `fullcam` / `fit_blur` con chequeo post-render, y `layout_forzado` por streamer.
 - Entrega por Telegram con 👍/👎 por persona, relleno marcado y aviso de "0 clips hoy".
-- Comandos: `/ya`, `/buscar`, `/streamers`, `/agregar`, `/quitar`, `/cantidad`, `/reclamo`,
-  `/destinos`, `/aca`, `/ayuda`, `/editar`, `/narrar`.
+- Comandos: `/ya`, `/buscar`, `/streamers` (carpetas con interruptores), `/agregar` (pregunta la
+  carpeta), `/quitar`, `/cantidad`, `/reclamo`, `/destinos`, `/aca`, `/ayuda`, `/editar`,
+  `/narrar`, `/serie`, `/efemeride`, `/envivo`, `/subidas`.
+- Modo en vivo con umbral relativo (§3b), solo sobre carpetas con 🔴 En vivo.
+- Pequeña Historia (§3c): propuesta diaria a las 05:00 con aprobación ✅/✏️/🔁, voz de Gemini TTS
+  (Laomedeia) con respaldo de Piper, música con ducking elegida por tono, créditos automáticos.
 - Turno de trabajo pesado + cola: nunca hay dos clips procesándose a la vez, y un comando que
   explota avisa sin tumbar el servicio.
 - Deploy: systemd, logrotate, alerta por Telegram con `OnFailure`, sudoers acotado.
 
 ### A medias (el código está, la prueba real no)
 
-- **`/editar` y `/narrar` NUNCA se corrieron con un video de verdad.** Tienen tests unitarios y el
-  camino está completo, pero nadie mandó todavía un video al bot. **Es lo primero que hay que
-  probar**: `/editar` con un link corto y `/narrar` con un video de 15-20 s, mirando el guion, la
-  voz y que los subtítulos caigan sincronizados.
-- **Piper nunca sintetizó dentro del flujo real.** Se probó suelto en la Pi (ver §8), no desde
-  `/narrar`. La voz `es_AR-daniela-high` tarda **2,13× el tiempo real**: un guion de 60 s son ~2 min
-  de síntesis, encima del render.
+- **La efeméride automática de las 05:00** nunca corrió sola todavía (la primera es la del 28/09).
+- **La voz de Gemini con el recorte de lo leído antes del guion**: el recorte está probado con
+  tests; la voz sin instrucción se probó en la Pi con una frase, no con un video entero.
+- **La subida a YouTube**: nunca habló con YouTube (no hay credenciales). Tests con sesión falsa.
+- **`/narrar` y `/serie` con videos reales de proceso** (hasta ahora, sintéticos y Gemini falso).
 - **El multi-POV está a prueba hasta el 2026-10-09** y no se armó ninguno desde que se prendió con
   la verificación de "mismo hecho". Todavía no sabemos si la verificación funciona en producción.
 
 ### Pendiente, en orden
 
-1. **Modo en vivo: deploy.** Programado, con tests y con el umbral relativo calibrado (v0.24.1),
-   NO desplegado ni probado con Telegram. En la Pi: `git pull`, reiniciar `clips-bot-telegram`,
-   `/envivo on` en el grupo. Después de unos días, comparar las alertas reales con las 4,7/día
-   simuladas (`/envivo` las cuenta) y mirar los tramos de tiempo.
-2. **Probar `/narrar` y `/serie` con un video real de proceso** (el resumen de v0.24.0, el aviso de
-   música de v0.24.2 y `/serie` de v0.25.0 solo se probaron con videos sintéticos y con Gemini
-   falso). Mirar: los pasos y las etapas que elige, si las partes se entienden solas, si el aviso de
-   música acierta (con y sin música), que `sin audio` deje solo la voz, y cuánto tarda una serie de
-   3 en la Pi (estimado: ~9 min las partes + ~12 min las voces).
-3. **Mirar la primera efeméride automática** (corrida de las 05:00 del 2026-09-28 en adelante):
-   que llegue la propuesta, que ✅ arme el video con la voz de Gemini y música, y que la música no
-   tape la voz. **Modo recortar**: pedido el 2026-09-24 y nunca especificado: preguntar qué es.
-4. **Revisión del corte de calidad (lo del "9 de 10").** El corte está en `textos.puntaje_min: 5`,
+1. **Mirar la primera efeméride automática** (05:00 del 2026-09-28): que llegue la propuesta al
+   grupo, que ✅ arme el video con la voz de Gemini (¿arranca limpio, sin leer nada antes?) y con
+   música, y que la música no tape la voz.
+2. **Modo en vivo:** ahora vigila solo Argentinos (8 canales). Las 4,7 alertas/día simuladas eran
+   con los 63: van a ser menos. Mirar `/envivo` en unos días.
+3. **Probar `/narrar` y `/serie` con un video real de proceso** (pasos, etapas, aviso de música,
+   `sin audio`, tiempos en la Pi).
+4. **Auditoría de YouTube** (docs/auditoria-youtube.md): proyecto, credencial, conectar los dos
+   canales, formulario. Recién con la aprobación, `youtube_upload_enabled: true`.
+5. **Decidir si se paga Gemini** (≈ US$4/mes hasta dic. 2026; docs/costo-gemini.md).
+6. **Modo recortar**: pedido el 2026-09-24 y nunca especificado: preguntar qué es.
+7. **Revisión del corte de calidad (lo del "9 de 10").** El corte está en `textos.puntaje_min: 5`,
    puesto a mano. El trato es elegirlo con datos: el puntaje desde el cual Santi vota más 👍 que 👎
    (`db.votos_por_puntaje`). Arrancó el 2026-09-24, así que a partir del **2026-10-08** hay que
    mirarlo. Con 2 votos todavía no alcanza para nada.
-5. **Listas de streamers por persona.** Pedido y después postergado explícitamente por Santi el
+8. **Listas de streamers por persona.** Pedido y después postergado explícitamente por Santi el
    2026-09-27 ("las listas por persona no las hagas por ahora"). El diseño pensado: una corrida de
    candidatos compartida, selección POR destino, y procesado deduplicado; el grupo usa la unión.
 
