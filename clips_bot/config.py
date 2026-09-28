@@ -235,6 +235,8 @@ class Textos:
 @dataclass(frozen=True)
 class EfemeridesCfg:
     """Pequeña Historia (§3c). La música sale de `carpeta_musica`, una al azar por video; vacía = sin música."""
+    diaria: bool = True               # proponer la efeméride en la corrida de las 05:00
+    chat: str = ""                    # a quién mandar la propuesta diaria (ids con coma); vacío = /destinos
     musica: bool = True
     carpeta_musica: str = "musica"
     musica_volumen: float = 0.12

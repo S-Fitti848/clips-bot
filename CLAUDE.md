@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-09-27 | **Versión:** v0.27.3 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 + escucha de Telegram 24/7)
+**Snapshot:** 2026-09-27 | **Versión:** v0.27.4 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 + escucha de Telegram 24/7)
 
 > **SI ESTÁS EMPEZANDO UNA SESIÓN NUEVA, LEÉ §10.** Ahí está qué está hecho, qué quedó a medias,
 > qué falta, y las trampas que ya nos mordieron.
@@ -266,8 +266,11 @@ dura más de 60 s (`muy largo`). Entre el primer clip y el tercer creador pasan 
 por día en la Pi. Por eso se pasó al umbral relativo (punto 3).
 
 ### 3c. Efemérides para el canal "Pequeña Historia" (`/efemeride [día/mes]`, `clips_bot/efemerides.py`)
-Pedido 2026-09-27. Un Short por día con un hecho de la fecha. **Todavía NO va en la corrida de las
-05:00**: Santi pidió verlo andar antes. Hoy es `/efemeride` a demanda y el CLI `efemeride`.
+Pedido 2026-09-27. Un Short por día con un hecho de la fecha. **Desde v0.27.4 va en la corrida de
+las 05:00** (`efemeride_del_dia`, después de los clips y con el mismo turno pesado): completa la
+música que falte, propone la de hoy y manda guion + hoja para aprobar a `efemerides.chat` o, si
+está vacío, a los mismos destinos de la entrega diaria. Recién con ✅ se arma el video. Si no sale,
+avisa por qué. También a demanda con `/efemeride` y el CLI `efemeride`.
 1. Wikipedia "On this day" en es y en (REST `feed/onthisday/events`). Primer filtro sin Gemini
    (`motivo_evento`): palabras sensibles (muertes, atentados, accidentes, desastres…), guerra desde
    1945, "durante siglos". Medido el 27/09: 108 hechos → 84 candidatos.
@@ -451,7 +454,7 @@ clips_bot/serie.py       /serie: partes, división en etapas (validada), guiones
                          título numerado, horarios, hoja de miniaturas por etapa
 clips_bot/envivo.py      modo en vivo (§3b): quién está al aire, momentos por creadores distintos,
                          alertas en la DB (no repetir, tope, vencer) y el resumen de tiempos
-tests/                   362 tests sin red ni video
+tests/                   367 tests sin red ni video
 ```
 
 Comandos:
@@ -638,6 +641,12 @@ Problemas abiertos:
 
 ## 9. CHANGELOG
 
+- v0.27.4 (2026-09-28) — Pequeña Historia en la corrida de las 05:00: `efemeride_del_dia` completa
+  la música, propone la de hoy y manda la aprobación; con ✅ se arma. Decidido por Claude: va a los
+  destinos de la entrega diaria (hoy el grupo Rots clips) salvo que se ponga `efemerides.chat`
+  (para el privado de Santi: "8668060171"); si falla, avisa y la corrida de clips no se entera;
+  con `--simular` no propone. También: la mezcla de música pasó a mono (en estéreo la voz perdía
+  3 dB: -17,7 → -20,6; ahora -17,6). 367 tests OK.
 - v0.27.3 (2026-09-28) — **Gemini TTS lee en voz alta la instrucción de tono.** Encontrado en la
   prueba real de la voz nueva (Rosetta con Laomedeia, en la Pi): los primeros 10 s eran "Leé esto
   en español rioplatense, como alguien entusiasmado…" y el guion arrancaba a los 10,4 s. La
@@ -949,9 +958,9 @@ de Telegram 24/7. Los comandos se atienden en el momento.
    falso). Mirar: los pasos y las etapas que elige, si las partes se entienden solas, si el aviso de
    música acierta (con y sin música), que `sin audio` deje solo la voz, y cuánto tarda una serie de
    3 en la Pi (estimado: ~9 min las partes + ~12 min las voces).
-3. **Efemérides en la corrida diaria.** `/efemeride` está (§3c); falta sumarlo a las 05:00, que
-   Santi pidió recién después de ver el resultado. **Modo recortar**: pedido el 2026-09-24 y nunca
-   especificado: preguntar qué es.
+3. **Mirar la primera efeméride automática** (corrida de las 05:00 del 2026-09-28 en adelante):
+   que llegue la propuesta, que ✅ arme el video con la voz de Gemini y música, y que la música no
+   tape la voz. **Modo recortar**: pedido el 2026-09-24 y nunca especificado: preguntar qué es.
 4. **Revisión del corte de calidad (lo del "9 de 10").** El corte está en `textos.puntaje_min: 5`,
    puesto a mano. El trato es elegirlo con datos: el puntaje desde el cual Santi vota más 👍 que 👎
    (`db.votos_por_puntaje`). Arrancó el 2026-09-24, así que a partir del **2026-10-08** hay que

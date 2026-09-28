@@ -413,3 +413,78 @@ def test_si_arranca_bien_no_se_toca(tmp_path, monkeypatch):
     monkeypatch.setattr(narrar, "run", lambda args: pytest.fail("no había nada que recortar"))
     oidas = [Palabra(0.05, 0.3, "Un"), Palabra(0.3, 0.5, "día"), Palabra(0.5, 0.7, "como")]
     assert narrar.recortar_inicio(tmp_path / "v.wav", oidas, ["Un día como hoy"])[1] == 0.0
+
+
+# ---- la corrida de las 05:00 -----------------------------------------------------------------
+
+@pytest.fixture
+def diaria(monkeypatch, tmp_path):
+    """efemeride_del_dia con todo lo externo reemplazado. Devuelve lo que se mandó y a quién."""
+    from dataclasses import replace
+
+    from clips_bot import musica
+    from clips_bot.config import load_settings
+
+    dbp = tmp_path / "t.db"
+    monkeypatch.setattr(m, "DB_PATH", dbp)
+    c = db.connect(dbp)
+    db.ver_chat(c, "-100", "group", "Rots clips")
+    db.marcar_destino(c, "-100", True)
+    c.close()
+    enviados = {"propuestas": [], "mensajes": []}
+
+    class TG:
+        def __init__(self, token):
+            pass
+
+        def send_message(self, chat, texto, teclado=None):
+            enviados["mensajes"].append((chat, texto))
+
+    monkeypatch.setattr(m, "TelegramClient", TG)
+    monkeypatch.setattr(m, "env", lambda *a, **k: "x")
+    monkeypatch.setattr(m, "_gemini", lambda s: object())
+    monkeypatch.setattr(musica, "llenar", lambda *a, **k: 0)
+    monkeypatch.setattr(m, "_efe_proponer",
+                        lambda conn, tg, chats, dia, s, g: enviados["propuestas"].append(chats))
+    s = load_settings()
+    return enviados, lambda **cambios: replace(s, efemerides=replace(s.efemerides, **cambios))
+
+
+def test_la_corrida_diaria_propone_a_los_destinos(diaria):
+    enviados, cfg = diaria
+    m.efemeride_del_dia(cfg())
+    assert enviados["propuestas"] == [["-100"]]
+
+
+def test_con_chat_configurado_va_ahi(diaria):
+    enviados, cfg = diaria
+    m.efemeride_del_dia(cfg(chat="8668060171, 123"))
+    assert enviados["propuestas"] == [["8668060171", "123"]]
+
+
+def test_si_no_sale_avisa_por_que(diaria, monkeypatch):
+    enviados, cfg = diaria
+    monkeypatch.setattr(m, "_efe_proponer", lambda *a: "No salió la efeméride: ninguno tuvo 4 fotos")
+    m.efemeride_del_dia(cfg())
+    chat, texto = enviados["mensajes"][-1]
+    assert chat == "-100" and "hoy no hay propuesta" in texto and "4 fotos" in texto
+
+
+def test_simular_y_apagada_no_mandan_nada(diaria):
+    enviados, cfg = diaria
+    m.efemeride_del_dia(cfg(), simular=True)
+    m.efemeride_del_dia(cfg(diaria=False))
+    assert enviados == {"propuestas": [], "mensajes": []}
+
+
+def test_si_la_musica_falla_la_efemeride_sale_igual(diaria, monkeypatch):
+    from clips_bot import musica
+
+    enviados, cfg = diaria
+
+    def roto(*a, **k):
+        raise RuntimeError("sin red")
+
+    monkeypatch.setattr(musica, "llenar", roto)
+    m.efemeride_del_dia(cfg())
+    assert enviados["propuestas"] == [["-100"]]

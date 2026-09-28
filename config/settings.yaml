@@ -280,6 +280,11 @@ voz:
 # Pequeña Historia (§3c). Música de fondo: una pista al azar de `carpeta_musica` por video, al volumen
 # indicado, bajando cuando habla la voz. Con la carpeta vacía no hay música.
 efemerides:
+  # Corrida de las 05:00: propone la efeméride de hoy y manda el guion con la hoja de fotos para
+  # aprobar. Recién con ✅ se arma el video. `chat` vacío = los mismos destinos de la entrega
+  # diaria (/destinos); para mandarla a otro lado, poné el id (o varios, con coma).
+  diaria: true
+  chat: ""
   musica: true
   carpeta_musica: musica
   musica_volumen: 0.12

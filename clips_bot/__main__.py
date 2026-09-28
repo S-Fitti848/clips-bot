@@ -471,7 +471,10 @@ def cmd_diario(args: argparse.Namespace) -> int:
     finally:
         conn.close()
     try:
-        return _diario(args, settings)
+        codigo = _diario(args, settings)
+        # Pequeña Historia va después de los clips y con el mismo turno: los dos procesan pesado.
+        efemeride_del_dia(settings, simular=args.simular)
+        return codigo
     finally:
         conn = db.connect(DB_PATH)
         try:
@@ -2489,18 +2492,78 @@ def _efemeride(conn, tg: TelegramClient, chat_id: str, args: list, settings: Set
                           vencimiento_s=VENCIMIENTO_PESADO_S):
         return OCUPADO
     try:
-        token = secrets.token_hex(3)
-        carpeta = OUTPUT_DIR / "efemerides" / f"{dia:%m%d}_{token}"
         tg.send_message(chat_id, f"Buscando qué pasó un {dia.day} de {ef.MESES[dia.month - 1]}…")
-        try:
-            p = ef.proponer(ef.Wiki(), gemini, dia, carpeta, avisar=log.info)
-        except (NarrarError, ef.WikiError, GeminiError) as e:
-            return f"No salió la efeméride: {html.escape(str(e)[:400])}"
-        _efe_mostrar(conn, tg, chat_id, token, {"propuesta": p.__dict__, "carpeta": str(carpeta),
-                                                "chat_id": chat_id})
-        return None
+        return _efe_proponer(conn, tg, [chat_id], dia, settings, gemini)
     finally:
         db.soltar_turno(conn, db.RECURSO_PESADO, turno, VENCIMIENTO_PESADO_S)
+
+
+def _efe_proponer(conn, tg: TelegramClient, chats: list[str], dia, settings: Settings,
+                  gemini) -> str | None:
+    """Propone y manda la aprobación a `chats`. NO toma el turno pesado: lo toma quien llama
+    (/efemeride, o la corrida de las 05:00, que ya lo tiene). Devuelve el error, o None."""
+    import secrets
+
+    from . import efemerides as ef
+    from .config import OUTPUT_DIR
+
+    token = secrets.token_hex(3)
+    carpeta = OUTPUT_DIR / "efemerides" / f"{dia:%m%d}_{token}"
+    try:
+        p = ef.proponer(ef.Wiki(), gemini, dia, carpeta, avisar=log.info)
+    except (NarrarError, ef.WikiError, GeminiError) as e:
+        return f"No salió la efeméride: {html.escape(str(e)[:400])}"
+    estado = {"propuesta": p.__dict__, "carpeta": str(carpeta), "chat_id": chats[0]}
+    for chat in chats:
+        _efe_mostrar(conn, tg, chat, token, estado)   # el mismo token: se aprueba desde cualquiera
+    return None
+
+
+def efemeride_del_dia(settings: Settings, simular: bool = False) -> None:
+    """La parte de Pequeña Historia de la corrida de las 05:00: completar la música que falte y
+    proponer la efeméride de hoy para aprobar. Nunca tumba la corrida de clips: todo error se avisa.
+    Corre con el turno pesado ya tomado por `diario`."""
+    from . import musica
+    from .config import ROOT
+
+    cfg = settings.efemerides
+    if not cfg.diaria:
+        print("\n=== Pequeña Historia: apagada en la corrida diaria (efemerides.diaria: false)")
+        return
+    print("\n=== Pequeña Historia")
+    if simular:
+        print("  (simulación: no se propone nada)")
+        return
+    try:
+        n = musica.llenar(ROOT / cfg.carpeta_musica, cfg.musica_por_fuente, avisar=print)
+        print(f"  música: {n} temas nuevos")
+    except Exception as e:   # la biblioteca es un extra: que no frene la efeméride
+        log.exception("no pude completar la música")
+        print(f"  música: no pude completarla ({e})")
+    conn = db.connect(DB_PATH)
+    try:
+        chats = [c.strip() for c in cfg.chat.split(",") if c.strip()] or db.destinos(conn)
+        if not chats:
+            print("  no hay a quién mandarle la propuesta (ni efemerides.chat ni /destinos)")
+            return
+        tg = TelegramClient(env("TELEGRAM_BOT_TOKEN"))
+        gemini = _gemini(settings)
+        if gemini is None:
+            error = "sin GEMINI_API_KEY"
+        else:
+            error = _efe_proponer(conn, tg, chats, datetime.now(AR).date(), settings, gemini)
+        if error:
+            print(f"  {error}")
+            for chat in chats:
+                tg.send_message(chat, f"📅 <b>Pequeña Historia</b>: hoy no hay propuesta. {error}\n"
+                                      "Podés probar a mano con <code>/efemeride</code>.")
+        else:
+            print(f"  propuesta mandada a {', '.join(chats)}")
+    except Exception as e:
+        log.exception("la efeméride del día falló")
+        print(f"  la efeméride del día falló: {e}")
+    finally:
+        conn.close()
 
 
 def _efe_callback(conn, tg: TelegramClient, cb: dict, settings: Settings, cola: list) -> None:
