@@ -174,6 +174,14 @@ CREATE TABLE IF NOT EXISTS votos (
     PRIMARY KEY (clip_id, user_id)
 );
 
+CREATE TABLE IF NOT EXISTS carpetas (
+    nombre   TEXT PRIMARY KEY,           -- el `grupo` de los streamers: argentinos, evento, catalogo…
+    etiqueta TEXT NOT NULL DEFAULT '',   -- cómo se muestra: "Argentinos", "Dedsafío"
+    en_vivo  INTEGER NOT NULL DEFAULT 0, -- ¿el modo en vivo vigila a los de esta carpeta?
+    diarios  INTEGER NOT NULL DEFAULT 1, -- ¿entran en la corrida de las 05:00 (y /ya)?
+    creada   TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 CREATE TABLE IF NOT EXISTS bot_estado (
     clave  TEXT PRIMARY KEY,
     valor  TEXT
@@ -602,4 +610,73 @@ def marcar_si_nuevo(conn: sqlite3.Connection, clip_id: str, broadcaster: str, es
     """Como registrar_clip, pero sin pisar un clip que ya estaba (ej. uno entregado)."""
     conn.execute("INSERT OR IGNORE INTO clips (clip_id, broadcaster, url, estado, motivo) "
                  "VALUES (?, ?, ?, ?, ?)", (clip_id, broadcaster, url, estado, motivo))
+    conn.commit()
+
+
+# ---- carpetas de streamers ------------------------------------------------------
+# Una carpeta es un `grupo` de streamers.yaml (argentinos, evento, catalogo) o una creada por
+# Telegram. Cada una tiene dos interruptores, en la DB y no en el YAML porque se tocan desde el
+# teléfono: en_vivo (¿la vigila el modo en vivo?) y diarios (¿entra en la corrida de las 05:00?).
+# Pedido 2026-09-28: Argentinos con en vivo; Dedsafío y Catálogo sin; diarios como estaban (todos).
+
+CARPETAS_DEFAULT = {
+    "argentinos": ("Argentinos", 1, 1),
+    "evento": ("Dedsafío", 0, 1),
+    "catalogo": ("Catálogo", 0, 1),
+}
+
+
+def _fila_carpeta(f) -> dict:
+    return {"nombre": f[0], "etiqueta": f[1], "en_vivo": bool(f[2]), "diarios": bool(f[3])}
+
+
+def carpetas(conn: sqlite3.Connection) -> dict[str, dict]:
+    """Todas, con las de siempre creadas la primera vez (con sus valores de fábrica)."""
+    for nombre, (etiqueta, en_vivo, diarios) in CARPETAS_DEFAULT.items():
+        conn.execute("INSERT OR IGNORE INTO carpetas (nombre, etiqueta, en_vivo, diarios) "
+                     "VALUES (?, ?, ?, ?)", (nombre, etiqueta, en_vivo, diarios))
+    conn.commit()
+    filas = conn.execute("SELECT nombre, etiqueta, en_vivo, diarios FROM carpetas ORDER BY creada, nombre")
+    return {f[0]: _fila_carpeta(f) for f in filas}
+
+
+def carpeta(conn: sqlite3.Connection, nombre: str) -> dict:
+    """La carpeta de ese grupo. Si es un grupo del YAML que todavía no estaba (ej. kick_reciente),
+    se crea sin en vivo y con diarios, que es como se comportaba antes de las carpetas."""
+    todas = carpetas(conn)
+    if nombre not in todas:
+        conn.execute("INSERT OR IGNORE INTO carpetas (nombre, etiqueta) VALUES (?, ?)",
+                     (nombre, nombre.replace("_", " ").capitalize()))
+        conn.commit()
+        return carpetas(conn)[nombre]
+    return todas[nombre]
+
+
+def crear_carpeta(conn: sqlite3.Connection, etiqueta: str) -> str:
+    """Una carpeta nueva desde Telegram. Devuelve su nombre interno (sin tildes ni espacios)."""
+    import re
+    import unicodedata
+
+    etiqueta = etiqueta.strip()[:40]
+    base = "".join(c for c in unicodedata.normalize("NFKD", etiqueta) if not unicodedata.combining(c))
+    base = re.sub(r"[^a-z0-9]+", "_", base.lower()).strip("_")[:24] or "carpeta"
+    nombre, n = base, 2
+    existentes = carpetas(conn)
+    while nombre in existentes:
+        nombre, n = f"{base}_{n}", n + 1
+    conn.execute("INSERT INTO carpetas (nombre, etiqueta) VALUES (?, ?)", (nombre, etiqueta))
+    conn.commit()
+    return nombre
+
+
+def set_interruptor(conn: sqlite3.Connection, nombre: str, campo: str, valor: bool) -> None:
+    if campo not in ("en_vivo", "diarios"):
+        raise ValueError(campo)
+    carpeta(conn, nombre)
+    conn.execute(f"UPDATE carpetas SET {campo} = ? WHERE nombre = ?", (1 if valor else 0, nombre))
+    conn.commit()
+
+
+def borrar_carpeta(conn: sqlite3.Connection, nombre: str) -> None:
+    conn.execute("DELETE FROM carpetas WHERE nombre = ?", (nombre,))
     conn.commit()

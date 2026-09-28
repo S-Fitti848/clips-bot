@@ -15,12 +15,16 @@ import sqlite3
 from .config import PLATAFORMAS, Streamer
 
 ALTA, BAJA = "alta", "baja"
+# MOVER: un streamer del YAML cambiado de carpeta por Telegram. Distinto de ALTA a propósito:
+# /quitar sobre un ALTA solo borra la anotación (el streamer desaparece), pero sobre uno del
+# YAML movido, borrar la anotación lo devolvería a su carpeta en vez de sacarlo.
+MOVER = "mover"
 
 
 def guardar(conn: sqlite3.Connection, login: str, accion: str, quien: str,
             plataforma: str = "twitch", grupo: str = "argentinos") -> None:
     """Anota un alta o una baja. La última acción sobre un login es la que vale."""
-    if accion not in (ALTA, BAJA):
+    if accion not in (ALTA, BAJA, MOVER):
         raise ValueError(f"accion {accion!r}")
     if plataforma not in PLATAFORMAS:
         raise ValueError(f"plataforma {plataforma!r}")
@@ -55,8 +59,17 @@ def combinar(del_yaml: list[Streamer], conn: sqlite3.Connection) -> list[Streame
     Los agregados por Telegram entran con `permiso.experimento`, que es la política vigente (§1):
     nadie se suma sin permiso citado o sin marcar que es un experimento.
     """
+    from dataclasses import replace
+
     extra = anotados(conn)
-    out = [s for s in del_yaml if extra.get(s.login, {}).get("accion") != BAJA]
+    out = []
+    for s in del_yaml:
+        d = extra.get(s.login)
+        if d and d["accion"] == BAJA:
+            continue
+        if d and d["accion"] in (MOVER, ALTA):   # movido de carpeta por Telegram
+            s = replace(s, grupo=d["grupo"])
+        out.append(s)
     por_login = {s.login for s in out}
     for login, d in sorted(extra.items()):
         if d["accion"] != ALTA or login in por_login:
@@ -64,6 +77,25 @@ def combinar(del_yaml: list[Streamer], conn: sqlite3.Connection) -> list[Streame
         out.append(Streamer(login=login, plataforma=d["plataforma"], fuentes=("reciente",),
                             grupo=d["grupo"], experimento=True))
     return out
+
+
+def carpeta_de(s: Streamer) -> str:
+    """La carpeta (= grupo efectivo) de un streamer, la misma que usa /streamers."""
+    return s.grupo or s.grupo_de("reciente")
+
+
+def mover(conn: sqlite3.Connection, s: Streamer, carpeta: str, quien: str) -> None:
+    """Lo pasa a otra carpeta. Uno agregado por Telegram sigue siendo un alta, con otro grupo."""
+    anotado = anotados(conn).get(s.login)
+    accion = ALTA if anotado and anotado["accion"] == ALTA else MOVER
+    guardar(conn, s.login, accion, quien, plataforma=s.plataforma, grupo=carpeta)
+
+
+def filtrar(streamers: list[Streamer], conn: sqlite3.Connection, interruptor: str) -> list[Streamer]:
+    """Los de las carpetas con ese interruptor prendido ("en_vivo" o "diarios")."""
+    from . import db
+
+    return [s for s in streamers if db.carpeta(conn, carpeta_de(s))[interruptor]]
 
 
 def por_grupo(streamers: list[Streamer]) -> dict[str, list[Streamer]]:

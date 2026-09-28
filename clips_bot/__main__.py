@@ -485,9 +485,15 @@ def cmd_diario(args: argparse.Namespace) -> int:
 
 def _diario(args: argparse.Namespace, settings: Settings, atender: bool = True,
             destinos: list[str] | None = None, cuantos: int | None = None) -> int:
+    from . import registro
     from .process import procesar
 
-    streamers = _streamers()
+    # Solo las carpetas con "📅 Diarios" prendido.
+    conn_c = db.connect(DB_PATH)
+    try:
+        streamers = registro.filtrar(_streamers(conn_c), conn_c, "diarios")
+    finally:
+        conn_c.close()
     gemini = _gemini(settings)
 
     # Desde /ya no se atiende Telegram: el modo escucha ya está leyendo los updates y una segunda
@@ -523,7 +529,10 @@ def _diario(args: argparse.Namespace, settings: Settings, atender: bool = True,
         if grupo == "evento" and multipov_hecho:
             print("\n(el cupo del evento se lo lleva el multi-POV de hoy)")
             continue
-        objetivo = max(settings.seleccion.mezcla.get(grupo, 0), 1 if grupo == "catalogo" else 0)
+        # Las carpetas que no están en la mezcla (las creadas por Telegram) compiten por el cupo
+        # del catálogo, como el catálogo: al menos uno procesado para poder competir.
+        objetivo = max(settings.seleccion.mezcla.get(grupo, 0),
+                       1 if grupo == "catalogo" or grupo not in settings.seleccion.mezcla else 0)
         fuente = clips[0].fuente
         ok = 0
         for c in clips:
@@ -1995,6 +2004,12 @@ def escuchar_telegram(settings: Settings, timeout_poll: int = 50) -> int:
             for t in textos_sueltos(updates):
                 if t["user_id"] not in permitidos:
                     continue
+                espera_carpeta = db.get_valor(conn, f"{ESPERA_CARPETA}:{t['user_id']}")
+                if espera_carpeta:
+                    db.borrar_valor(conn, f"{ESPERA_CARPETA}:{t['user_id']}")
+                    _seguro(tg, t["chat_id"], "crear la carpeta", _carpeta_nueva, conn, tg, t,
+                            json.loads(espera_carpeta))
+                    continue
                 espera_efe = db.get_valor(conn, f"{ESPERA_EFE}:{t['user_id']}")
                 if espera_efe:
                     db.borrar_valor(conn, f"{ESPERA_EFE}:{t['user_id']}")
@@ -2269,11 +2284,14 @@ def _envivo_tick(conn, tg: TelegramClient, settings: Settings, reloj: dict,
 
 
 def _envivo_detectar(conn, settings: Settings, chat: str, plataformas: list[str]) -> list[dict]:
-    from . import envivo
+    from . import envivo, registro
 
     streamers = _streamers(conn)
+    # Solo las carpetas con "🔴 En vivo" prendido (hoy: Argentinos). Los filtros de siempre
+    # (registrar) siguen viendo a todos.
+    vigilados = registro.filtrar(streamers, conn, "en_vivo")
     vuelta = envivo.detectar(
-        streamers, settings.envivo, db.excluidos(conn),
+        vigilados, settings.envivo, db.excluidos(conn),
         twitch=_twitch() if "twitch" in plataformas else None,
         kick=KickClient(pausa_s=settings.kick.pausa_s) if "kick" in plataformas else None)
     for f in vuelta.fallos:
@@ -2362,7 +2380,7 @@ def _envivo(conn, chat_id: str, args: list[str], settings: Settings) -> str:
         db.prender_envivo(conn, chat_id)
         movido = " (antes iban a otro chat)" if actual and actual != str(chat_id) else ""
         return (f"🔴 <b>Modo en vivo prendido.</b> Las alertas llegan acá{movido}.\n"
-                f"Miro quién está al aire (Twitch cada {cfg.intervalo_twitch_s // 60} min, Kick cada "
+                f"Miro quién de las carpetas con 🔴 En vivo está al aire (Twitch cada {cfg.intervalo_twitch_s // 60} min, Kick cada "
                 f"{cfg.intervalo_kick_s // 60}) y si un momento junta mucha más gente clipeando "
                 f"que lo normal en ESE canal (al menos <b>{cfg.min_creadores} personas "
                 f"distintas</b>), proceso el mejor clip al toque con todos los filtros y te lo "
@@ -2400,7 +2418,10 @@ def cmd_envivo(args: argparse.Namespace) -> int:
         cfg = _replace(cfg, min_creadores=args.min_creadores)
     conn = db.connect(DB_PATH)
     try:
-        streamers, excluidos, vistos = _streamers(conn), db.excluidos(conn), db.ids_vistos(conn)
+        from . import registro
+
+        streamers = registro.filtrar(_streamers(conn), conn, "en_vivo")
+        excluidos, vistos = db.excluidos(conn), db.ids_vistos(conn)
     finally:
         conn.close()
     v = envivo.detectar(streamers, cfg, excluidos, twitch=_twitch(),
@@ -2747,8 +2768,11 @@ def cmd_efemeride(args: argparse.Namespace) -> int:
 SECCIONES = [
     ("🎮 Clips de streamers", [
         ("/streamers",
-         "la lista por grupo, con botones para navegar y buscar sin escribir nada. Los excluidos "
-         "salen con 🚫 y no se pueden tocar.",
+         "la lista por carpeta (Argentinos, Dedsafío, Catálogo y las que crees), con botones para "
+         "navegar y buscar sin escribir nada. Adentro de cada carpeta: <b>🔴 En vivo</b> (si el "
+         "modo en vivo la vigila) y <b>📅 Diarios</b> (si entra a las 05:00). En cada streamer, "
+         "<b>📦 Mover a otra carpeta</b>; una carpeta vacía se puede borrar. Los excluidos salen "
+         "con 🚫 y no se pueden tocar.",
          "/streamers"),
         ("/buscar &lt;streamer[,streamer]&gt; [palabras] [días]",
          f"busco en sus clips de los últimos días (default 7, tope 90) los que tengan esas "
@@ -2761,15 +2785,16 @@ SECCIONES = [
          "y te la entrego en este chat. Con <code>x2</code> pedís esa cantidad.",
          "/ya x2"),
         ("/envivo on|off",
-         "modo en vivo: miro quién de la lista está al aire y, si un momento junta mucha más gente "
+         "modo en vivo: miro quién de las carpetas con 🔴 En vivo (ver /streamers) está al aire y, si un momento junta mucha más gente "
          "clipeando que lo normal en ese canal (mínimo 4 personas), proceso el mejor clip al toque "
          "(con todos los filtros) y te lo mando acá con 🔥 SUBIR YA. Unas 3-6 por día. <code>/envivo</code> solo muestra cómo viene y "
          "cuánto tarda cada parte.",
          "/envivo on"),
-        ("/agregar &lt;streamer&gt; [grupo]",
+        ("/agregar &lt;streamer&gt; [carpeta]",
          "lo busco en Kick y en Twitch, te muestro qué encontré (seguidores y clips de la "
-         "semana) y lo sumo si me decís que sí. Entra con permiso de experimento.",
-         "/agregar coscu argentinos"),
+         "semana) y, si me decís que sí, te pregunto en qué carpeta va, con botones y "
+         "<b>➕ Carpeta nueva</b>. Entra con permiso de experimento.",
+         "/agregar coscu"),
         ("/quitar &lt;streamer&gt;",
          "lo saca de las corridas. Queda anotado en la DB, no se toca streamers.yaml.",
          "/quitar coscu"),
@@ -2884,12 +2909,30 @@ def _streamers(conn=None) -> list:
         c.close()
 
 
+ESPERA_CARPETA = "esperando_carpeta"   # bot_estado: <user_id> -> {"tipo": alta|mover, ...}
+
+
+def _carpetas_vista(conn) -> tuple[dict, dict]:
+    """({carpeta: [streamers]}, {carpeta: config}) en el orden del menú: las que tienen streamers
+    (de más a menos) y al final las vacías, que tienen que verse para poder borrarlas."""
+    from . import registro
+
+    grupos = registro.por_grupo(_streamers(conn))
+    cfg = {g: db.carpeta(conn, g) for g in grupos}
+    for nombre, c in db.carpetas(conn).items():
+        if nombre not in grupos:
+            grupos[nombre] = []
+            cfg[nombre] = c
+    return grupos, cfg
+
+
 def _texto_grupos(grupos: dict) -> str:
     total = sum(len(l) for l in grupos.values())
-    return f"<b>Streamers</b> ({total}). Elegí un grupo:"
+    return f"<b>Streamers</b> ({total}). Elegí una carpeta:"
 
 
-def _texto_grupo(grupo: str, streamers: list, pagina: int, excluidos: dict) -> str:
+def _texto_grupo(grupo: str, streamers: list, pagina: int, excluidos: dict,
+                 carpeta: dict | None = None) -> str:
     from .menu import POR_PAGINA, etiqueta_grupo
 
     paginas = max(1, -(-len(streamers) // POR_PAGINA))
@@ -2898,40 +2941,47 @@ def _texto_grupo(grupo: str, streamers: list, pagina: int, excluidos: dict) -> s
     for s in streamers:
         plataformas[s.plataforma] = plataformas.get(s.plataforma, 0) + 1
     detalle = ", ".join(f"{n} en {p}" for p, n in sorted(plataformas.items()))
-    linea = f"{etiqueta_grupo(grupo, len(streamers))} — {detalle}"
+    linea = etiqueta_grupo(grupo, len(streamers), (carpeta or {}).get("etiqueta", ""))
+    if detalle:
+        linea += f" — {detalle}"
     if n_excl:
         linea += f" · 🚫 {n_excl} excluido{'s' if n_excl > 1 else ''}"
+    if carpeta is not None:
+        linea += ("\n🔴 En vivo: " + ("sí, la vigila el modo en vivo" if carpeta["en_vivo"] else "no")
+                  + " · 📅 Diarios: " + ("sí, entra a las 05:00" if carpeta["diarios"] else "no"))
+    if not streamers:
+        return f"{linea}\nEstá vacía."
     return f"{linea}\nPágina {pagina + 1} de {paginas}. Elegí un streamer:"
 
 
 def _texto_streamer(s, excluidos: dict) -> str:
     estado = f"\n🚫 EXCLUIDO: {html.escape(excluidos[s.login])}" if s.login in excluidos else ""
     permiso = "experimento" if s.experimento else ("cita" if s.permitido else "SIN PERMISO")
-    return (f"<b>{html.escape(s.login)}</b> · {s.plataforma} · grupo {s.grupo or '—'} · {permiso}"
+    return (f"<b>{html.escape(s.login)}</b> · {s.plataforma} · carpeta {s.grupo or '—'} · {permiso}"
             f"{estado}\n\n¿Qué busco?")
 
 
 def _menu_streamers(conn, tg: TelegramClient, chat_id: str, message_id: int | None = None) -> None:
-    from . import registro
     from .menu import teclado_grupos
 
-    grupos = registro.por_grupo(_streamers(conn))
+    grupos, cfg = _carpetas_vista(conn)
+    teclado = teclado_grupos(grupos, {g: c["etiqueta"] for g, c in cfg.items()})
     if message_id:
-        tg.edit_message(chat_id, message_id, _texto_grupos(grupos), teclado_grupos(grupos))
+        tg.edit_message(chat_id, message_id, _texto_grupos(grupos), teclado)
     else:
-        tg.send_message(chat_id, _texto_grupos(grupos), teclado=teclado_grupos(grupos))
+        tg.send_message(chat_id, _texto_grupos(grupos), teclado=teclado)
 
 
 def _menu_callback(conn, tg: TelegramClient, cb: dict, settings: Settings, cola: list) -> None:
     """Un toque en el menú de /streamers. Siempre edita el mismo mensaje."""
     from . import registro
-    from .menu import parse_callback, teclado_streamer, teclado_streamers
+    from .menu import parse_callback, teclado_mover, teclado_streamer, teclado_streamers
 
     d = parse_callback(cb["data"])
     if not d or d["menu"] != "st":
         return
     chat, msg = cb["chat_id"], cb["message_id"]
-    grupos = registro.por_grupo(_streamers(conn))
+    grupos, cfg = _carpetas_vista(conn)
     nombres = list(grupos)
     excluidos = db.excluidos(conn)
 
@@ -2948,11 +2998,27 @@ def _menu_callback(conn, tg: TelegramClient, cb: dict, settings: Settings, cola:
     grupo = nombres[gi]
     lista = grupos[grupo]
 
+    if d["accion"] in ("v", "d"):   # los dos interruptores de la carpeta
+        campo = "en_vivo" if d["accion"] == "v" else "diarios"
+        nuevo = not cfg[grupo][campo]
+        db.set_interruptor(conn, grupo, campo, nuevo)
+        cfg[grupo] = db.carpeta(conn, grupo)
+        tg.answer_callback(cb["callback_id"], ("🔴 En vivo" if campo == "en_vivo" else "📅 Diarios")
+                           + (": sí" if nuevo else ": no"))
+        return tg.edit_message(chat, msg, _texto_grupo(grupo, lista, 0, excluidos, cfg[grupo]),
+                               teclado_streamers(gi, lista, 0, excluidos, cfg[grupo]))
+    if d["accion"] == "del":
+        if lista:
+            return tg.answer_callback(cb["callback_id"], "Solo se borra una carpeta vacía.")
+        db.borrar_carpeta(conn, grupo)
+        tg.answer_callback(cb["callback_id"], "Carpeta borrada.")
+        return _menu_streamers(conn, tg, chat, msg)
+
     if d["accion"] == "g":
         pagina = int(d["args"][1]) if len(d["args"]) > 1 else 0
         tg.answer_callback(cb["callback_id"])
-        return tg.edit_message(chat, msg, _texto_grupo(grupo, lista, pagina, excluidos),
-                               teclado_streamers(gi, lista, pagina, excluidos))
+        return tg.edit_message(chat, msg, _texto_grupo(grupo, lista, pagina, excluidos, cfg[grupo]),
+                               teclado_streamers(gi, lista, pagina, excluidos, cfg[grupo]))
 
     si = int(d["args"][1]) if len(d["args"]) > 1 else 0
     if si >= len(lista):
@@ -2966,6 +3032,27 @@ def _menu_callback(conn, tg: TelegramClient, cb: dict, settings: Settings, cola:
         tg.answer_callback(cb["callback_id"])
         return tg.edit_message(chat, msg, _texto_streamer(s, excluidos),
                                teclado_streamer(gi, si, pagina))
+    carpetas_menu = [(n, cfg[n]["etiqueta"] or n) for n in nombres]
+    if d["accion"] == "m":
+        tg.answer_callback(cb["callback_id"])
+        return tg.edit_message(chat, msg, f"¿A qué carpeta paso a <b>{html.escape(s.login)}</b>?",
+                               teclado_mover(gi, si, carpetas_menu))
+    if d["accion"] == "mv":
+        ci = int(d["args"][2]) if len(d["args"]) > 2 else -1
+        if not 0 <= ci < len(nombres):
+            return tg.answer_callback(cb["callback_id"], "Esa carpeta ya no está.")
+        registro.mover(conn, s, nombres[ci], cb["user_id"])
+        tg.answer_callback(cb["callback_id"], "Movido.")
+        tg.edit_message(chat, msg, f"📦 <b>{html.escape(s.login)}</b> pasó a "
+                                   f"<b>{html.escape(carpetas_menu[ci][1])}</b>.",
+                        {"inline_keyboard": []})
+        return _menu_streamers(conn, tg, chat)
+    if d["accion"] == "mn":
+        db.set_valor(conn, f"{ESPERA_CARPETA}:{cb['user_id']}",
+                     json.dumps({"tipo": "mover", "login": s.login}))
+        tg.answer_callback(cb["callback_id"])
+        return tg.edit_message(chat, msg, f"Escribime el nombre de la carpeta nueva para "
+                                          f"<b>{html.escape(s.login)}</b>.", {"inline_keyboard": []})
     if d["accion"] == "w":
         db.set_valor(conn, f"{ESPERA_PALABRA}:{cb['user_id']}", s.login)
         tg.answer_callback(cb["callback_id"])
@@ -3018,22 +3105,86 @@ def _alta_callback(conn, tg: TelegramClient, cb: dict, settings: Settings) -> No
         pendiente = {**pendiente, "elegido": elegido, "opciones": []}
         db.set_valor(conn, f"alta:{token}", _json.dumps(pendiente))
         tg.answer_callback(cb["callback_id"])
+        destino = f" a la carpeta <b>{html.escape(pendiente['grupo'])}</b>" if pendiente.get("grupo") else ""
         return tg.edit_message(
             cb["chat_id"], cb["message_id"],
-            f"¿Agrego a <b>{html.escape(elegido['login'])}</b> ({elegido['plataforma']}) "
-            f"al grupo <b>{pendiente['grupo']}</b>?", teclado_confirmar(token))
+            f"¿Agrego a <b>{html.escape(elegido['login'])}</b> ({elegido['plataforma']}){destino}?",
+            teclado_confirmar(token))
 
     elegido = pendiente.get("elegido")
     if not elegido:
         return tg.answer_callback(cb["callback_id"], "Elegí uno de la lista primero.")
-    registro.guardar(conn, elegido["login"], registro.ALTA, cb["user_id"],
-                     plataforma=elegido["plataforma"], grupo=pendiente["grupo"])
-    db.borrar_valor(conn, f"alta:{token}")
+
+    if d["accion"] == "cn":   # carpeta nueva: el nombre llega como texto
+        db.set_valor(conn, f"{ESPERA_CARPETA}:{cb['user_id']}",
+                     _json.dumps({"tipo": "alta", "token": token}))
+        tg.answer_callback(cb["callback_id"])
+        return tg.edit_message(cb["chat_id"], cb["message_id"],
+                               f"Escribime el nombre de la carpeta nueva para "
+                               f"<b>{html.escape(elegido['login'])}</b>.", {"inline_keyboard": []})
+    if d["accion"] == "c":
+        _, cfg = _carpetas_vista(conn)
+        nombres = list(cfg)
+        ci = int(d["crudos"][1]) if len(d["crudos"]) > 1 and d["crudos"][1].isdigit() else -1
+        if not 0 <= ci < len(nombres):
+            return tg.answer_callback(cb["callback_id"], "Esa carpeta ya no está.")
+        pendiente["grupo"] = nombres[ci]
+    if not pendiente.get("grupo"):   # ✅ sin carpeta todavía: se pregunta
+        from .menu import teclado_carpetas_alta
+
+        _, cfg = _carpetas_vista(conn)
+        tg.answer_callback(cb["callback_id"])
+        return tg.edit_message(cb["chat_id"], cb["message_id"],
+                               f"¿En qué carpeta va <b>{html.escape(elegido['login'])}</b>?",
+                               teclado_carpetas_alta(token, [(n, c["etiqueta"] or n)
+                                                             for n, c in cfg.items()]))
     tg.answer_callback(cb["callback_id"], "Agregado.")
     tg.edit_message(cb["chat_id"], cb["message_id"],
-                    f"✅ <b>{html.escape(elegido['login'])}</b> agregado al grupo "
-                    f"<b>{pendiente['grupo']}</b> ({elegido['plataforma']}, permiso experimento)."
-                    f"\nEntra en la próxima corrida.", {"inline_keyboard": []})
+                    _confirmar_alta(conn, token, pendiente, cb["user_id"]), {"inline_keyboard": []})
+
+
+def _confirmar_alta(conn, token: str, pendiente: dict, user_id: str) -> str:
+    """Guarda el alta en la carpeta elegida y devuelve el mensaje para mostrar."""
+    from . import registro
+
+    elegido = pendiente["elegido"]
+    registro.guardar(conn, elegido["login"], registro.ALTA, user_id,
+                     plataforma=elegido["plataforma"], grupo=pendiente["grupo"])
+    db.borrar_valor(conn, f"alta:{token}")
+    c = db.carpeta(conn, pendiente["grupo"])
+    avisos = []
+    if not c["diarios"]:
+        avisos.append("esa carpeta tiene 📅 Diarios apagado")
+    return (f"✅ <b>{html.escape(elegido['login'])}</b> agregado a la carpeta "
+            f"<b>{html.escape(c['etiqueta'] or c['nombre'])}</b> ({elegido['plataforma']}, permiso "
+            f"experimento).\nEntra en la próxima corrida"
+            + (f" ({'; '.join(avisos)})." if avisos else "."))
+
+
+def _carpeta_nueva(conn, tg: TelegramClient, t: dict, espera: dict) -> None:
+    """La respuesta a "➕ Carpeta nueva": se crea con ese nombre y se termina lo que estaba en curso
+    (un alta o un cambio de carpeta)."""
+    import json as _json
+
+    from . import registro
+
+    nombre = db.crear_carpeta(conn, t["texto"])
+    etiqueta = db.carpeta(conn, nombre)["etiqueta"]
+    if espera.get("tipo") == "alta":
+        crudo = db.get_valor(conn, f"alta:{espera.get('token')}")
+        if not crudo:
+            return tg.send_message(t["chat_id"], f"Creé la carpeta <b>{html.escape(etiqueta)}</b>, "
+                                                 "pero el alta ya venció. Mandá /agregar de nuevo.")
+        pendiente = {**_json.loads(crudo), "grupo": nombre}
+        return tg.send_message(t["chat_id"], _confirmar_alta(conn, espera["token"], pendiente,
+                                                             t["user_id"]))
+    s = next((x for x in _streamers(conn) if x.login == espera.get("login")), None)
+    if s is None:
+        return tg.send_message(t["chat_id"], f"Creé la carpeta <b>{html.escape(etiqueta)}</b>, pero "
+                                             "ese streamer ya no está en la lista.")
+    registro.mover(conn, s, nombre, t["user_id"])
+    tg.send_message(t["chat_id"], f"📦 Creé la carpeta <b>{html.escape(etiqueta)}</b> (sin en vivo, "
+                                  f"con diarios) y pasé ahí a <b>{html.escape(s.login)}</b>.")
 
 
 def _agregar(conn, tg: TelegramClient, chat_id: str, args: list, user_id: str) -> str | None:
@@ -3048,7 +3199,8 @@ def _agregar(conn, tg: TelegramClient, chat_id: str, args: list, user_id: str) -
         return ("Uso: <code>/agregar &lt;streamer&gt; [grupo]</code>"
                 f"\nEj: <code>/agregar coscu argentinos</code>")
     login = args[0].strip().lower().lstrip("@")
-    grupo = (args[1] if len(args) > 1 else "argentinos").strip().lower()
+    # Sin carpeta en el comando, se pregunta con botones después del ✅ (pedido 2026-09-28).
+    grupo = args[1].strip().lower() if len(args) > 1 else None
     actuales = {s.login for s in _streamers(conn)}
     if login in actuales:
         return f"<code>{html.escape(login)}</code> ya está en la lista."
@@ -3070,8 +3222,9 @@ def _agregar(conn, tg: TelegramClient, chat_id: str, args: list, user_id: str) -
     base = {"grupo": grupo, "pedido": login}
     if r.elegido:
         db.set_valor(conn, f"alta:{token}", _json.dumps({**base, "elegido": vars(r.elegido)}))
-        tg.send_message(chat_id, f"Encontré: {r.elegido.resumen()}\n\n¿Lo agrego al grupo "
-                                 f"<b>{html.escape(grupo)}</b>?", teclado=teclado_confirmar(token))
+        destino = f" a la carpeta <b>{html.escape(grupo)}</b>" if grupo else ""
+        tg.send_message(chat_id, f"Encontré: {r.elegido.resumen()}\n\n¿Lo agrego{destino}?",
+                        teclado=teclado_confirmar(token))
         return None
     db.set_valor(conn, f"alta:{token}",
                  _json.dumps({**base, "elegido": None, "opciones": [vars(o) for o in r.opciones]}))

@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-09-27 | **Versión:** v0.27.4 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 + escucha de Telegram 24/7)
+**Snapshot:** 2026-09-27 | **Versión:** v0.28.0 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 + escucha de Telegram 24/7)
 
 > **SI ESTÁS EMPEZANDO UNA SESIÓN NUEVA, LEÉ §10.** Ahí está qué está hecho, qué quedó a medias,
 > qué falta, y las trampas que ya nos mordieron.
@@ -440,7 +440,8 @@ clips_bot/process.py     orquesta 3–7 por clip, tiempos por etapa, registra es
 clips_bot/db.py          SQLite data/clips.db: clips, posts, catalogo_cursor, streamer_estado
                          (exclusiones), votos (👍/👎 con el puntaje), streamers_extra (altas y
                          bajas por Telegram), bot_estado (offset, turnos, estado de los menús)
-clips_bot/registro.py    altas/bajas en la DB + `combinar` con el YAML + `resolver` un alta
+clips_bot/registro.py    altas/bajas/mover en la DB + `combinar` con el YAML + `resolver` un alta +
+                         `filtrar` por los interruptores de las carpetas (en_vivo, diarios)
 clips_bot/menu.py        teclados de /streamers y /agregar (callback_data de 64 bytes como tope)
 clips_bot/narrar.py      modo /narrar: guion con Gemini viendo frames, TTS con Piper, mezcla y
                          subtítulos sacados de LA VOZ (no del audio original). Videos de más de
@@ -454,7 +455,7 @@ clips_bot/serie.py       /serie: partes, división en etapas (validada), guiones
                          título numerado, horarios, hoja de miniaturas por etapa
 clips_bot/envivo.py      modo en vivo (§3b): quién está al aire, momentos por creadores distintos,
                          alertas en la DB (no repetir, tope, vencer) y el resumen de tiempos
-tests/                   367 tests sin red ni video
+tests/                   379 tests sin red ni video
 ```
 
 Comandos:
@@ -641,6 +642,18 @@ Problemas abiertos:
 
 ## 9. CHANGELOG
 
+- v0.28.0 (2026-09-28) — **Carpetas de streamers.** Cada `grupo` es una carpeta (tabla
+  `carpetas`) con dos interruptores: `en_vivo` (el modo en vivo SOLO vigila esas carpetas) y
+  `diarios` (la corrida de las 05:00 y /ya solo usan esas). De fábrica: Argentinos en vivo sí;
+  Dedsafío y Catálogo en vivo no; diarios todas. En /streamers, adentro de una carpeta: "🔴 En
+  vivo: sí/no" y "📅 Diarios: sí/no"; en cada streamer "📦 Mover a otra carpeta" (con "➕ Carpeta
+  nueva"); una carpeta vacía muestra "🗑 Borrar carpeta". /agregar sin carpeta pregunta con
+  botones (con "➕ Carpeta nueva") después del ✅. Mover un streamer del YAML es una acción nueva
+  (`registro.MOVER`), no un ALTA: con ALTA, /quitar solo borraba la anotación y el streamer volvía
+  a su carpeta. Decidido por Claude: una carpeta que no está en `seleccion.mezcla` (las creadas por
+  Telegram) compite por el cupo del catálogo (fallback) y se le procesa al menos un clip; sin eso
+  nunca entraba en la entrega diaria. Las carpetas nuevas arrancan sin en vivo y con diarios.
+  379 tests OK.
 - v0.27.4 (2026-09-28) — Pequeña Historia en la corrida de las 05:00: `efemeride_del_dia` completa
   la música, propone la de hoy y manda la aprobación; con ✅ se arma. Decidido por Claude: va a los
   destinos de la entrega diaria (hoy el grupo Rots clips) salvo que se ponga `efemerides.chat`

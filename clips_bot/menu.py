@@ -23,22 +23,38 @@ def _cb(*partes) -> str:
     return dato
 
 
-def etiqueta_grupo(grupo: str, n: int) -> str:
-    return f"{ICONOS.get(grupo, '📦')} {NOMBRES.get(grupo, grupo.capitalize())} ({n})"
+def etiqueta_grupo(grupo: str, n: int, etiqueta: str = "") -> str:
+    nombre = etiqueta or NOMBRES.get(grupo, grupo.replace("_", " ").capitalize())
+    return f"{ICONOS.get(grupo, '📦')} {nombre} ({n})"
 
 
-def teclado_grupos(grupos: dict[str, list]) -> dict:
-    """Primer nivel: un botón por grupo, uno por fila."""
-    filas = [[{"text": etiqueta_grupo(g, len(l)), "callback_data": _cb("st", "g", i, 0)}]
+def teclado_grupos(grupos: dict[str, list], etiquetas: dict[str, str] | None = None) -> dict:
+    """Primer nivel: un botón por carpeta, uno por fila."""
+    etiquetas = etiquetas or {}
+    filas = [[{"text": etiqueta_grupo(g, len(l), etiquetas.get(g, "")),
+               "callback_data": _cb("st", "g", i, 0)}]
              for i, (g, l) in enumerate(grupos.items())]
     return {"inline_keyboard": filas}
 
 
-def teclado_streamers(gi: int, streamers: list, pagina: int, excluidos: dict) -> dict:
-    """Segundo nivel: los streamers del grupo, de a 2 por fila y 12 por página."""
+def _si_no(v: bool) -> str:
+    return "sí" if v else "no"
+
+
+def teclado_streamers(gi: int, streamers: list, pagina: int, excluidos: dict,
+                      carpeta: dict | None = None) -> dict:
+    """Segundo nivel: los streamers de la carpeta, de a 2 por fila y 12 por página, y arriba los
+    dos interruptores de la carpeta. Si está vacía, el botón para borrarla."""
     desde = pagina * POR_PAGINA
     visibles = streamers[desde:desde + POR_PAGINA]
     filas, fila = [], []
+    if carpeta is not None:
+        filas.append([
+            {"text": f"🔴 En vivo: {_si_no(carpeta['en_vivo'])}", "callback_data": _cb("st", "v", gi)},
+            {"text": f"📅 Diarios: {_si_no(carpeta['diarios'])}", "callback_data": _cb("st", "d", gi)},
+        ])
+        if not streamers:
+            filas.append([{"text": "🗑 Borrar carpeta", "callback_data": _cb("st", "del", gi)}])
     for k, s in enumerate(visibles):
         i = desde + k
         if s.login in excluidos:
@@ -69,8 +85,28 @@ def teclado_streamer(gi: int, si: int, pagina: int) -> dict:
         [{"text": "Últimos 7 días", "callback_data": _cb("st", "b", gi, si, 7)},
          {"text": "Últimos 30 días", "callback_data": _cb("st", "b", gi, si, 30)}],
         [{"text": "🔎 Con palabra…", "callback_data": _cb("st", "w", gi, si)}],
+        [{"text": "📦 Mover a otra carpeta", "callback_data": _cb("st", "m", gi, si)}],
         [{"text": "⬅️ Volver", "callback_data": _cb("st", "g", gi, pagina)}],
     ]}
+
+
+def teclado_mover(gi: int, si: int, carpetas: list[tuple[str, str]]) -> dict:
+    """A qué carpeta lo paso. `carpetas`: [(nombre, etiqueta)] en el orden del menú; la actual
+    (gi) no aparece."""
+    filas = [[{"text": f"{ICONOS.get(n, '📦')} {e}", "callback_data": _cb("st", "mv", gi, si, ci)}]
+             for ci, (n, e) in enumerate(carpetas) if ci != gi]
+    filas.append([{"text": "➕ Carpeta nueva", "callback_data": _cb("st", "mn", gi, si)}])
+    filas.append([{"text": "⬅️ Volver", "callback_data": _cb("st", "s", gi, si)}])
+    return {"inline_keyboard": filas}
+
+
+def teclado_carpetas_alta(token: str, carpetas: list[tuple[str, str]]) -> dict:
+    """/agregar: en qué carpeta va. Un botón por carpeta y "➕ Carpeta nueva"."""
+    filas = [[{"text": f"{ICONOS.get(n, '📦')} {e}", "callback_data": _cb("add", "c", token, ci)}]
+             for ci, (n, e) in enumerate(carpetas)]
+    filas.append([{"text": "➕ Carpeta nueva", "callback_data": _cb("add", "cn", token)}])
+    filas.append([{"text": "❌ No agregar", "callback_data": _cb("add", "n", token)}])
+    return {"inline_keyboard": filas}
 
 
 def teclado_confirmar(token: str) -> dict:

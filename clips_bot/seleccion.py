@@ -105,7 +105,12 @@ def seleccionar(opciones: list[Opcion], cfg: Seleccion, ahora: datetime,
     scores = {o.clip_id: score(o, ahora, cfg) for o in opciones}
     grupos = list(cfg.mezcla) + ([GRUPO_FALLBACK] if GRUPO_FALLBACK not in cfg.mezcla else [])
     orden_grupos = [g for g in grupos if g != GRUPO_FALLBACK] + [GRUPO_FALLBACK]
-    disponibles = {g: [o for o in opciones if o.grupo_o_fuente() == g] for g in orden_grupos}
+    # Un grupo que no está en la mezcla (una carpeta creada por Telegram) compite en el fallback.
+    def grupo_de(o: Opcion) -> str:
+        g = o.grupo_o_fuente()
+        return g if g in orden_grupos else GRUPO_FALLBACK
+
+    disponibles = {g: [o for o in opciones if grupo_de(o) == g] for g in orden_grupos}
     cupos = {g: cfg.mezcla.get(g, 0) for g in orden_grupos}
     por_streamer: dict[str, int] = {}
     elegidos: dict[str, list[Opcion]] = {g: [] for g in orden_grupos}
