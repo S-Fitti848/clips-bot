@@ -238,6 +238,7 @@ class EfemeridesCfg:
     musica: bool = True
     carpeta_musica: str = "musica"
     musica_volumen: float = 0.12
+    musica_por_fuente: int = 10      # temas que se bajan solos de Kevin MacLeod y de Openverse
     # Voz (decisión 2026-09-28: la muestra C). gemini = Gemini TTS; si falla o no hay cuota, Piper
     # con los ajustes piper_* (la muestra A). piper = directo Piper.
     voz_motor: str = "gemini"

@@ -321,34 +321,6 @@ def test_fecha(texto, esperado):
     assert (d.month, d.day) == esperado
 
 
-# ---- música de fondo -------------------------------------------------------------------
-
-def test_sin_musica_en_la_carpeta_no_hay_musica(tmp_path):
-    assert ef.elegir_musica(tmp_path / "no_existe") is None
-    (tmp_path / "README.md").write_text("x")
-    assert ef.elegir_musica(tmp_path) is None
-
-
-def test_elige_una_pista_al_azar_y_su_credito(tmp_path):
-    import random
-
-    for n in ("a.mp3", "b.ogg", "c.m4a"):
-        (tmp_path / n).write_bytes(b"x")
-    (tmp_path / "creditos.json").write_text(json.dumps({"b.ogg": "Tema – Autor – CC BY 4.0 – link"}),
-                                            encoding="utf-8")
-    elegidas = {ef.elegir_musica(tmp_path, random.Random(s)).name for s in range(30)}
-    assert elegidas == {"a.mp3", "b.ogg", "c.m4a"}
-    assert ef.credito_musica(tmp_path / "b.ogg") == "Música: Tema – Autor – CC BY 4.0 – link"
-    assert ef.credito_musica(tmp_path / "a.mp3") == ""
-
-
-def test_la_musica_baja_cuando_habla_y_se_apaga_al_final():
-    f = ef.filtro_musica(0.12, 42.0)
-    assert "volume=0.12" in f and "afade=t=out:st=40.50:d=1.5" in f
-    assert "[mus][disparo]sidechaincompress" in f      # la voz dispara el ducking
-    assert "amix=inputs=2:duration=first" in f         # dura lo que la voz
-
-
 # ---- la voz: Gemini TTS con respaldo de Piper, y la alineación al guion --------------------
 
 def test_alinear_usa_el_texto_del_guion_y_los_tiempos_de_whisper():

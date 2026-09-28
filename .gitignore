@@ -32,7 +32,6 @@ venv/
 # Config local de Claude Code (permisos de esta máquina)
 .claude/settings.local.json
 
-# Música de fondo (musica/README.md): los audios no van al repo
-musica/*
-!musica/README.md
-!musica/creditos.json
+# Música de fondo de Pequeña Historia (docs/musica.md): NADA de musica/ va al repo. Los temas de
+# la Biblioteca de YouTube los pone Santi; el resto lo baja `python -m clips_bot musica --llenar`.
+musica/

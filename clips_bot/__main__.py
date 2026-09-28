@@ -2593,7 +2593,7 @@ def _efe_video(conn, tg: TelegramClient, chat_id: str, token: str, settings: Set
         tg.send_message(chat_id, "Poniendo la voz y armando el video. En la Pi son unos 3 minutos.")
         try:
             meta = ef.hacer_video(ef.Propuesta(**estado["propuesta"]), settings,
-                                  Path(estado["carpeta"]), avisar=log.info)
+                                  Path(estado["carpeta"]), avisar=log.info, conn=conn)
         except NarrarError as e:
             return f"No pude armar el video: {html.escape(str(e)[:300])}"
         enviar_clip(tg, chat_id, conn, meta["clip_id"], meta, 1, None,
@@ -2602,6 +2602,32 @@ def _efe_video(conn, tg: TelegramClient, chat_id: str, token: str, settings: Set
         return None
     finally:
         db.soltar_turno(conn, db.RECURSO_PESADO, turno, VENCIMIENTO_PESADO_S)
+
+
+def cmd_musica(args: argparse.Namespace) -> int:
+    """La biblioteca de música de Pequeña Historia: `--llenar` baja lo que falte; si no, la lista."""
+    from . import musica
+    from .config import ROOT
+
+    settings = load_settings()
+    carpeta = ROOT / settings.efemerides.carpeta_musica
+    carpeta.mkdir(parents=True, exist_ok=True)
+    if args.llenar:
+        n = musica.llenar(carpeta, args.por_fuente or settings.efemerides.musica_por_fuente,
+                          avisar=print)
+        print(f"Bajados: {n}")
+    conn = db.connect(DB_PATH)
+    try:
+        recientes, vetados = musica.recientes(conn), musica.vetados(conn)
+    finally:
+        conn.close()
+    temas = musica.cargar(carpeta)
+    print(f"\n{len(temas)} temas usables en {carpeta} (vetados: {len(vetados)}):")
+    for t in sorted(temas, key=lambda t: (t.fuente != "youtube", t.fuente, t.ruta)):
+        marca = " [VETADO]" if t.ruta in vetados else (" [reciente]" if t.ruta in recientes[-5:] else "")
+        tonos = ",".join(k for k in musica.TONOS if musica.puntaje(t, k) > 0) or "-"
+        print(f"  {t.fuente:<9} {t.licencia:<22} {tonos:<30} {t.ruta}{marca}")
+    return 0
 
 
 def cmd_efemeride(args: argparse.Namespace) -> int:
@@ -2643,7 +2669,7 @@ def cmd_efemeride(args: argparse.Namespace) -> int:
         print(f"Hay algo pesado andando ({db.hay_trabajo_pesado(conn)}): probá después.", file=sys.stderr)
         return 3
     try:
-        meta = ef.hacer_video(p, settings, carpeta, avisar=print)
+        meta = ef.hacer_video(p, settings, carpeta, avisar=print, conn=conn)
     finally:
         db.soltar_turno(conn, db.RECURSO_PESADO, token, VENCIMIENTO_PESADO_S)
         conn.close()
@@ -3103,6 +3129,23 @@ def _reclamo(conn, args: list[str]) -> str:
     if not args:
         return "Uso: <code>/reclamo &lt;id del clip&gt;</code> (el id va en cada mensaje de entrega)."
     clip_id = args[0]
+    # Un video con música (Pequeña Historia): el reclamo casi seguro es por el tema de fondo, así
+    # que ese tema no se vuelve a usar. No hay streamer que excluir.
+    from . import musica
+    from .process import READY_DIR
+
+    ruta_meta = READY_DIR / f"{clip_id}.json"
+    meta = json.loads(ruta_meta.read_text(encoding="utf-8")) if ruta_meta.exists() else {}
+    tema = (meta.get("efemeride") or {}).get("musica")
+    if meta.get("efemeride"):
+        if not tema:
+            return (f"Anoté el reclamo sobre <code>{html.escape(clip_id)}</code>. Ese video no tenía "
+                    "música: el reclamo tiene que ser por las fotos o el texto. Revisalo en Studio.")
+        nuevo = musica.vetar(conn, tema)
+        return (f"Anotado. El tema <b>{html.escape(tema)}</b> "
+                + ("queda vetado: no se vuelve a usar." if nuevo else "ya estaba vetado.")
+                + "\nAcordate de sacar el video de YouTube (o la música, desde Studio) si el reclamo "
+                  "bloquea el contenido.")
     fila = db.clip_de(conn, clip_id)
     if not fila:
         return f"No tengo el clip <code>{clip_id}</code> en la base. ¿Copiaste bien el id?"
@@ -3240,6 +3283,12 @@ def main(argv: list[str] | None = None) -> int:
     pe.add_argument("--ventana-min", type=int, help="mirar los clips de los últimos N min (default: settings)")
     pe.add_argument("--min-creadores", type=int, help="umbral de creadores distintos (default: settings)")
     pe.set_defaults(func=cmd_envivo)
+
+    pmu = sub.add_parser("musica", help="biblioteca de música de Pequeña Historia: listar o llenar")
+    pmu.add_argument("--llenar", action="store_true",
+                     help="bajar de Kevin MacLeod y de Openverse lo que falte para el objetivo")
+    pmu.add_argument("--por-fuente", type=int, help="objetivo por fuente (default: settings)")
+    pmu.set_defaults(func=cmd_musica)
 
     pf = sub.add_parser("efemeride", help="efemérides de Pequeña Historia sin Telegram: propone y, con "
                                           "--aprobar, arma el video")

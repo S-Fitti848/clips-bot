@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-09-27 | **Versión:** v0.27.1 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 + escucha de Telegram 24/7)
+**Snapshot:** 2026-09-27 | **Versión:** v0.27.2 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 + escucha de Telegram 24/7)
 
 > **SI ESTÁS EMPEZANDO UNA SESIÓN NUEVA, LEÉ §10.** Ahí está qué está hecho, qué quedó a medias,
 > qué falta, y las trampas que ya nos mordieron.
@@ -451,7 +451,7 @@ clips_bot/serie.py       /serie: partes, división en etapas (validada), guiones
                          título numerado, horarios, hoja de miniaturas por etapa
 clips_bot/envivo.py      modo en vivo (§3b): quién está al aire, momentos por creadores distintos,
                          alertas en la DB (no repetir, tope, vencer) y el resumen de tiempos
-tests/                   341 tests sin red ni video
+tests/                   358 tests sin red ni video
 ```
 
 Comandos:
@@ -638,6 +638,19 @@ Problemas abiertos:
 
 ## 9. CHANGELOG
 
+- v0.27.2 (2026-09-28) — Música automática para Pequeña Historia (`clips_bot/musica.py`,
+  `docs/musica.md`). `musica/` entera fuera de git. `musica/youtube/` (los 10 temas de la
+  Biblioteca de YouTube que dejó Santi, copiados a la Pi por scp) tiene prioridad; `musica/kevin/`
+  (Kevin MacLeod, CC BY 4.0: catálogo `pieces.json`, 839 de 1443 pasan) y `musica/openverse/`
+  (solo CC0 y CC BY) se llenan solos hasta 10 por fuente (`python -m clips_bot musica --llenar`),
+  con autor, licencia y link en `musica/biblioteca.json`. Filtros: 1-4 min, ≤ 15 MB, sin voces.
+  Por video: tono del guion (Gemini lo da en la misma llamada: alegre/epico/misterioso/curioso/
+  emotivo) contra las etiquetas del tema, sin repetir en 5 videos, sin los vetados. /reclamo sobre
+  un video de efemérides veta su tema (no excluye a nadie). Decidido por Claude: afuera también
+  CC BY-SA (el share-alike podría alcanzar al video entero); de youtube/ se saltea lo que dice
+  "feat." (canciones con voz: "Shining (feat. …)"); en Openverse "sin voces" = etiqueta o título
+  "instrumental" y ninguna etiqueta de voz. Encontrado: Openverse devuelve 403 (Cloudflare) si el
+  User-Agent tiene una tilde ("efemérides"); los UA quedaron en ASCII. 358 tests OK.
 - v0.27.1 (2026-09-28) — Voz de Pequeña Historia: Gemini TTS (Laomedeia, la muestra C) con la
   instrucción de sonar entusiasmado; si falla o no hay cuota, Piper daniela ajustada (0,88 /
   noise 0,8 / noise_w 1,0 / +1,5 st, la muestra A). Todo en `efemerides.*` de settings. Como

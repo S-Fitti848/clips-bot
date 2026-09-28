@@ -35,11 +35,12 @@ from .textos import nombres_propios
 log = logging.getLogger(__name__)
 
 # Wikimedia pide un User-Agent que diga qué es el bot. Sin mail a propósito.
-UA = "PequenaHistoriaBot/0.26 (bot personal de efemérides; python-requests)"
+UA = "PequenaHistoriaBot/0.26 (bot personal de efemerides; python-requests)"
 FEED = "https://{lang}.wikipedia.org/api/rest_v1/feed/onthisday/events/{mm:02d}/{dd:02d}"
 API = "https://{lang}.wikipedia.org/w/api.php"
 
 MIN_FOTOS = 4
+TONOS_GUION = ("alegre", "epico", "misterioso", "curioso", "emotivo")   # = musica.TONOS
 MIN_ANCHO = 800          # la foto se escala a 1080 de ancho en fit_blur: menos que esto se nota
 # Las que ve Gemini; el resto queda de reserva para "🔁 cambiar foto N". Eran 8: la Piedra de
 # Rosetta tenía 11 que pasaban las reglas y quedó afuera con 3 que Gemini nunca vio.
@@ -404,6 +405,8 @@ nombre, ni un número, ni una fecha que no esté ahí. Si el artículo no lo dic
   heridos. No uses esas en ninguna frase.
 - `titulo`: hasta 55 caracteres, con gancho, sin clickbait falso. `descripcion`: 1 a 3 frases
   sobre el hecho, sin hashtags ni links. `hashtags`: 3 a 5, incluido #Shorts.
+- `tono`: el clima de la historia, para elegir la música de fondo: alegre, epico, misterioso,
+  curioso o emotivo.
 Respondé solo con el JSON pedido."""
 
 SCHEMA_GUION = {
@@ -417,6 +420,7 @@ SCHEMA_GUION = {
         "titulo": {"type": "STRING"},
         "descripcion": {"type": "STRING"},
         "hashtags": {"type": "ARRAY", "items": {"type": "STRING"}},
+        "tono": {"type": "STRING", "enum": ["alegre", "epico", "misterioso", "curioso", "emotivo"]},
     },
     "required": ["frases", "fotos_descartadas", "titulo", "descripcion", "hashtags"],
 }
@@ -478,6 +482,7 @@ class Guion:
     titulo: str
     descripcion: str
     hashtags: list[str]
+    tono: str = ""                    # para la música: alegre, epico, misterioso, curioso, emotivo
 
     @property
     def texto(self) -> str:
@@ -553,7 +558,8 @@ def escribir_guion(cliente, e: Evento, fuente: str, fotos: list[Foto], imagenes:
                          descartadas=sorted({x - 1 for x in d["fotos_descartadas"]
                                              if isinstance(x, int) and 1 <= x <= len(fotos)}),
                          titulo=d["titulo"].strip(), descripcion=d["descripcion"].strip(),
-                         hashtags=list(d["hashtags"]))
+                         hashtags=list(d["hashtags"]),
+                         tono=d.get("tono") if d.get("tono") in TONOS_GUION else "")
     raise NarrarError("El guion no pasó la validación: " + "; ".join(errores))
 
 
@@ -771,59 +777,7 @@ def proponer(wiki: Wiki, cliente, dia: date, carpeta: Path, avisar=log.info,
                       f"libres que sirvan ({guiones} guiones intentados; descartes: {descartes}).")
 
 
-# ---- música de fondo ------------------------------------------------------------------------
-# Pedido 2026-09-27: música animada y libre de derechos al 12 %, que baje cuando habla la voz.
-# OJO: va contra la decisión de §1 ("sin música agregada: cualquier música es riesgo de Content
-# ID"). Por eso solo música con licencia verificada en musica/creditos.json, y con la carpeta vacía
-# no hay música (el video sale como antes).
-
-EXT_MUSICA = (".mp3", ".ogg", ".m4a", ".wav", ".flac", ".opus")
-
-
-def pistas(carpeta: Path) -> list[Path]:
-    return sorted(p for p in carpeta.glob("*") if p.suffix.lower() in EXT_MUSICA) if carpeta.exists() else []
-
-
-def elegir_musica(carpeta: Path, azar=None) -> Path | None:
-    """Una al azar por video. None si la carpeta está vacía o no existe."""
-    import random
-
-    todas = pistas(carpeta)
-    return (azar or random).choice(todas) if todas else None
-
-
-def credito_musica(pista: Path) -> str:
-    """"Música: …" desde musica/creditos.json ({archivo: crédito}). Vacío si la licencia no lo pide."""
-    ruta = pista.parent / "creditos.json"
-    try:
-        creditos = json.loads(ruta.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return ""
-    c = str(creditos.get(pista.name) or "").strip()
-    return f"Música: {c}" if c else ""
-
-
-def filtro_musica(volumen: float, duracion: float, fundido_s: float = 1.5) -> str:
-    """Voz ([0:a]) + música ([1:a], en loop) al `volumen`, con ducking: la música baja cuando
-    suena la voz (sidechaincompress con la voz como disparador) y se va apagando al final."""
-    return (f"[1:a]aresample=48000,aformat=channel_layouts=stereo,volume={volumen},"
-            f"afade=t=out:st={max(duracion - fundido_s, 0):.2f}:d={fundido_s}[mus];"
-            f"[0:a]aresample=48000,aformat=channel_layouts=stereo,asplit=2[voz][disparo];"
-            f"[mus][disparo]sidechaincompress=threshold=0.02:ratio=8:attack=20:release=400[bajo];"
-            f"[voz][bajo]amix=inputs=2:duration=first:dropout_transition=0:normalize=0[a]")
-
-
-def mezclar_musica(voz: Path, pista: Path, salida: Path, volumen: float = 0.12) -> Path:
-    """La voz con la música de fondo, en un solo archivo de audio (dura lo que la voz)."""
-    from . import narrar
-
-    dur = narrar.duracion_wav(voz)
-    salida.parent.mkdir(parents=True, exist_ok=True)
-    run([find_bin("ffmpeg"), "-hide_banner", "-loglevel", "error", "-y", "-i", str(voz.resolve()),
-         "-stream_loop", "-1", "-i", str(pista.resolve()), "-filter_complex",
-         filtro_musica(volumen, dur), "-map", "[a]", "-t", f"{dur:.2f}", "-c:a", "pcm_s16le",
-         str(salida.resolve())])
-    return salida
+# La música de fondo vive en musica.py (biblioteca, elección por tono, mezcla con ducking).
 
 
 def usadas_en_orden(p: Propuesta) -> list[Foto]:
@@ -922,10 +876,13 @@ def voz_efemeride(frases: list[str], settings, carpeta: Path, avisar=log.info,
     return wav, duraciones, f"piper:{modelo.stem}"
 
 
-def hacer_video(p: Propuesta, settings, carpeta: Path, avisar=log.info) -> dict:
+def hacer_video(p: Propuesta, settings, carpeta: Path, avisar=log.info, conn=None) -> dict:
     """Propuesta aprobada → mp4 + meta listo para `enviar_clip`. Esto es lo que gasta la Pi:
-    Piper, Whisper sobre la voz y un encode por foto."""
-    from . import narrar, subtitles as sub
+    Piper, Whisper sobre la voz y un encode por foto.
+
+    `conn`: la DB, para elegir la música sin repetir los últimos temas ni usar los vetados por
+    /reclamo, y anotar cuál se usó. Sin DB se elige igual, sin esas dos reglas."""
+    from . import musica, narrar, subtitles as sub
 
     g, e = Guion.de_dict(p.guion), Evento(**p.evento)
     t0 = time.time()
@@ -946,10 +903,15 @@ def hacer_video(p: Propuesta, settings, carpeta: Path, avisar=log.info) -> dict:
     from .config import ROOT
 
     cfg_ef = settings.efemerides
-    pista = elegir_musica(ROOT / cfg_ef.carpeta_musica) if cfg_ef.musica else None
-    audio = mezclar_musica(wav, pista, carpeta / "voz_musica.wav", cfg_ef.musica_volumen) \
-        if pista else wav
-    avisar(f"música: {pista.name if pista else 'ninguna'}")
+    carpeta_musica = ROOT / cfg_ef.carpeta_musica
+    tema = musica.elegir(musica.cargar(carpeta_musica), g.tono,
+                         musica.recientes(conn) if conn else [],
+                         musica.vetados(conn) if conn else set()) if cfg_ef.musica else None
+    audio = musica.mezclar(wav, carpeta_musica / tema.ruta, carpeta / "voz_musica.wav",
+                           cfg_ef.musica_volumen) if tema else wav
+    if tema and conn:
+        musica.anotar_uso(conn, tema.ruta)
+    avisar(f"música: {tema.ruta if tema else 'ninguna'} (tono {g.tono or '?'})")
     tramos = [(Path(p.fotos[i]["ruta"]), d) for i, d in zip(g.fotos, duraciones)]
     t0 = time.time()
     dia = date.fromisoformat(p.fecha)
@@ -957,16 +919,15 @@ def hacer_video(p: Propuesta, settings, carpeta: Path, avisar=log.info) -> dict:
     salida = armar_video(tramos, audio, carpeta, carpeta / f"{clip_id}.mp4", settings.render)
     avisar(f"video: {time.time() - t0:.0f} s")
     cred = creditos(usadas_en_orden(p))
-    cred_musica = credito_musica(pista) if pista else ""
-    if cred_musica:
-        cred += "\n" + cred_musica
+    if tema:
+        cred += f"\nMúsica: {tema.credito()}"
     return {"clip_id": clip_id, "streamer": "Pequeña Historia", "salida": str(salida),
             "subtitulos_quemados": True, "duracion_s": round(sum(duraciones), 1),
             "textos": {"titulo": g.titulo, "descripcion": f"{g.descripcion}\n\n{cred}",
                        "hashtags": g.hashtags, "credito": cred},
             "efemeride": {"fecha": p.fecha, "anio": e.anio, "evento": e.texto,
                           "articulo": e.paginas[0], "lang": e.lang, "guion": g.frases,
-                          "musica": pista.name if pista else None, "voz": motor}}
+                          "musica": tema.ruta if tema else None, "tono": g.tono, "voz": motor}}
 
 
 def _jpeg_chico(ruta: Path, ancho: int = 512) -> bytes:

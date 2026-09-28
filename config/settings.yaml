@@ -283,6 +283,7 @@ efemerides:
   musica: true
   carpeta_musica: musica
   musica_volumen: 0.12
+  musica_por_fuente: 10      # musica/kevin y musica/openverse se completan solos hasta esto
   # Voz (elegida por Santi el 2026-09-28: la muestra C). Gemini TTS con Laomedeia; si falla o no hay
   # cuota, Piper daniela ajustada (la muestra A). Gemini lee a 1,9 palabras/s (medido): si el audio
   # pasa de tts_max_s se acelera con atempo, hasta ×1,25.
