@@ -16,7 +16,7 @@ from pathlib import Path
 
 from .config import Render
 from .layout import Layout
-from .media import find_bin, run
+from .media import cola_audio, find_bin, probe, run
 
 SUBS_ARCHIVO = "subs.ass"
 
@@ -54,12 +54,18 @@ def renderizar(entrada: Path, salida: Path, layout: Layout, render: Render, dir_
     """dir_subs: carpeta que contiene subs.ass (ffmpeg corre ahí para no pelear con el escapado
     de rutas de Windows dentro del filtro). None = sin subtítulos."""
     salida.parent.mkdir(parents=True, exist_ok=True)
+    grafo, audio = filtro(layout, render, dir_subs is not None), []
+    info = probe(entrada)
+    if info.tiene_audio:   # audio limpio (media.cola_audio): fundidos y termina con el video
+        dur = min(info.duracion, render.duracion_max_s) if info.duracion else render.duracion_max_s
+        grafo += f";[0:a]{cola_audio(dur)}[a]"
+        audio = ["-map", "[a]"]
     args = [
         find_bin("ffmpeg"), "-hide_banner", "-loglevel", "error", "-y",
         "-i", str(entrada.resolve()),
         "-t", str(render.duracion_max_s),
-        "-filter_complex", filtro(layout, render, dir_subs is not None),
-        "-map", "[v]", "-map", "0:a?",
+        "-filter_complex", grafo,
+        "-map", "[v]", *audio,
         "-c:v", "libx264", "-preset", render.x264_preset, "-crf", str(render.crf), "-pix_fmt", "yuv420p",
         "-maxrate", f"{render.maxrate_kbps}k", "-bufsize", f"{2 * render.maxrate_kbps}k",
         "-c:a", "aac", "-b:a", "160k", "-ar", "48000",

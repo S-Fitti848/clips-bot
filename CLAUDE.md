@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-09-28 | **Versión:** v0.29.0 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 + escucha de Telegram 24/7)
+**Snapshot:** 2026-09-28 | **Versión:** v0.30.0 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 + escucha de Telegram 24/7)
 
 > **SI ESTÁS EMPEZANDO UNA SESIÓN NUEVA, LEÉ §10.** Ahí está qué está hecho, qué quedó a medias,
 > qué falta, y las trampas que ya nos mordieron.
@@ -47,6 +47,24 @@ servicio systemd separado: `clips-bot`).
   catálogo de fallback, máximo 1 clip por streamer (relleno incluido), multi-POV APAGADO (era
   para el Dedsafío), y el score pesa los 👍/👎 de Santi por streamer (después, las vistas de
   YouTube, cuando exista §4b).
+- **REGLAS FIJAS PARA TODOS LOS VIDEOS (decisión permanente de Santi, 2026-09-28).** Valen para
+  efemérides, /narrar, /serie, /editar y los clips donde aplique. Están UNA vez en el código
+  compartido y `tests/test_reglas_fijas.py` falla si alguna se rompe. No se tocan sin que Santi
+  lo pida.
+  1. **Fotos que muestran lo que se dice** (`clips_bot/ilustrar.py`; hoy lo usa Pequeña Historia,
+     el único video narrado con fotos): por cada frase Gemini anota qué mostrar ("petri dish
+     bacteria"); el bot busca en el artículo y en Commons por palabras y por categoría, con los
+     filtros de siempre; Gemini elige la mejor para cada frase en UNA llamada. Mínimo 6 fotos
+     distintas por video, ninguna más de 6 s seguidos, sin repetir salvo que no haya otra. En la
+     hoja de aprobación, cada foto con su frase al lado.
+  2. **Guiones que se entienden** (`clips_bot/reglas.py`, `REGLAS_CLARIDAD`, dentro del prompt
+     de efemérides, /narrar y /serie): el cómo y el porqué, paso a paso, para un chico de 15
+     años, sin dar nada técnico por sabido. Menos datos si hace falta, pero que se entienda.
+  3. **Audio limpio** (`clips_bot/media.py`): fade in 0,1 s y fade out 0,5 s en la mezcla final,
+     el audio termina exacto con el video (nada de `-shortest`), crossfade corto (0,04 s) donde
+     se pegan tramos, y después del render un chequeo que avisa si hay un pico arriba de −3 dB en
+     el último segundo o si audio y video no terminan juntos (en `enviar_clip`, el aviso sale en
+     el mensaje de Telegram).
 - **Videos largos: NO por ahora (decisión de Santi, 2026-09-28).** No quiere videos largos con voz
   de IA. Si más adelante se hacen, van con SU voz grabada, no con Gemini TTS ni Piper.
 - **Sin música agregada en los clips.** Cualquier música es riesgo de Content ID. Si el clip trae
@@ -308,26 +326,35 @@ ancho estándar (1280, o 960 si el original no pasa de 1280; si no hay ninguna, 
    fair use ni GFDL sola), formato de foto (sin svg/gif), ≥ 800 px de ancho, y sin mapas, banderas,
    escudos, firmas, diagramas, logos ni imágenes duras (cadáveres, heridos: el artículo del Pacto del
    Eje traía un carro con muertos). Se piden miniaturas de 1280 px (ancho estándar de Wikimedia;
-   con 1600 devolvía originales y upload.wikimedia.org daba 429). En la MISMA llamada del guion
-   Gemini ve hasta 12 fotos y descarta lo que las reglas no ven (gráficos, retratos de alguien que
-   no protagoniza el hecho, otro tema). Menos de 4 → el siguiente del ranking. Tope de 2 eventos con
-   guion por día: peor caso 7 llamadas a Gemini.
-4. Guion: solo con el texto del artículo (si es en inglés, se suma el equivalente en castellano para
-   validar). Validación (`validar_guion` / `no_respaldados`): arranca con "Un día como hoy, en
-   <año>,", cierra con pregunta, 105-135 palabras (35-45 s con Piper MEDIDO a 3,1 palabras/s), 4+
-   fotos distintas y ninguna descartada, y todo nombre propio, cifra, número con letras ("mil
-   millones") y mes tiene que estar en el artículo. El primer guion real dijo "más de mil millones
-   de búsquedas diarias" (de la memoria de Gemini): de ahí el chequeo de números con letras.
-5. Aprobación por Telegram: hoja con las fotos del guion numeradas y su epígrafe (PIL, por las
-   tildes), el guion frase por frase con su foto, y los créditos. ✅ Aprobar · ✏️ Cambiar guion ·
-   🔁 foto N (usa primero una que Gemini ya vio y no descartó; después la reserva). Sin ✅ no se
-   sintetiza nada.
-6. Video (`hacer_video`): Piper frase por frase (`narrar.sintetizar_frases`, así cada foto dura lo
-   que su frase), fit_blur con zoom suave hasta 110 % sobre la foto agrandada 4× (zoompan redondea a
-   píxel entero y a tamaño normal tiembla), hacia la cara más grande o al centro, el año grande los
-   primeros 2 s, subtítulos palabra por palabra. Créditos de cada foto (autor, licencia, link a
-   Commons) al final de la descripción, en el orden en que aparecen.
-CLI: `python -m clips_bot efemeride [--fecha 27/09] [--aprobar] [--propuesta <json>]`.
+   con 1600 devolvía originales y upload.wikimedia.org daba 429). Las mismas reglas valen para las
+   del artículo y para las que se buscan en Commons (`filtrar_infos`).
+4. Guion (llamada 1, SIN fotos): solo con el texto del artículo (si es en inglés, se suma el
+   equivalente en castellano para validar), con las reglas de claridad (§1) y, por cada frase,
+   `mostrar` (qué se tendría que ver, en inglés, 2 a 5 palabras) y la `idea_clave`. Validación
+   (`validar_guion` / `no_respaldados`): arranca con "Un día como hoy, en <año>,", cierra con
+   gancho, 85-105 palabras, `mostrar` en cada frase, y todo nombre propio, cifra, número con
+   letras ("mil millones") y mes tiene que estar en el artículo. El primer guion real dijo "más de
+   mil millones de búsquedas diarias" (de la memoria de Gemini): de ahí el chequeo de números.
+4b. Fotos de cada frase (regla fija, `ilustrar.py` + `fotos_para_guion`): candidatas = hasta 8 del
+   artículo + hasta 4 de Commons por frase (`Wiki.buscar_commons`: buscador con
+   `filetype:bitmap` + la categoría que mejor coincide), todas bajadas (miniaturas, caché) y, en
+   la llamada 2, Gemini ve el pool entero (tope 40) y ordena hasta 3 por frase, y descarta lo que
+   no sirve. `asignar` elige sin repetir, `completar_distintas` llega a 6, `tramos` parte lo que
+   pasa de 6 s. Si no se llega a 6 fotos distintas → el siguiente del ranking. Tope de 2 eventos
+   intentados por día: peor caso 1 + 2 × 2 = 5 llamadas a Gemini (más la voz).
+5. Aprobación por Telegram: hoja con UNA FILA POR FRASE (`hoja_de_guion`: su foto, o sus dos si se
+   parte, numerada, y la frase al lado; PIL, por las tildes), el guion con "[3→7] frase", la idea
+   que tiene que quedar clara y los créditos. ✅ Aprobar · ✏️ Cambiar guion (reescribe y vuelve a
+   buscar las fotos; el pool y lo descartado se conservan) · 🔁 foto N (la siguiente de la lista
+   de esa frase; después, otra del pool). Sin ✅ no se sintetiza nada.
+6. Video (`hacer_video`): la voz (Gemini TTS, respaldo Piper); con sus tiempos REALES se arma el
+   plan de tramos (ninguna foto más de 6 s), fit_blur con zoom suave hasta 110 % sobre la foto
+   agrandada 4× (zoompan redondea a píxel entero y a tamaño normal tiembla), hacia la cara más
+   grande o al centro, el año grande los primeros 2 s, subtítulos palabra por palabra, audio con
+   las reglas de §1. Créditos de cada foto (autor, licencia, link a Commons) al final de la
+   descripción, en el orden en que aparecen.
+CLI: `python -m clips_bot efemeride [--fecha 27/09] [--hecho penicilina] [--aprobar] [--propuesta <json>]`
+(`--hecho`: solo los hechos que contienen esa palabra, para rehacer uno a mano).
 
 ### 4b. Módulo de métricas (feedback loop)
 Job cada 6 h: para cada post de los últimos 30 días, pedir vistas/likes/comentarios/shares
@@ -449,7 +476,8 @@ clips_bot/kick.py        API interna de Kick: clips por canal (sort=view&time=we
 clips_bot/candidates.py  pasos 1–2 de las 3 fuentes: filtros, es_costream, agrupar_momentos,
                          agrupar_evento/consolidar_evento, cursor del catálogo
 clips_bot/download.py    paso 3: yt-dlp (Twitch y Kick) → output/raw/
-clips_bot/media.py       ffmpeg/ffprobe: ubicar binario, probe, fracción de silencio, miniatura
+clips_bot/media.py       ffmpeg/ffprobe: ubicar binario, probe, fracción de silencio, miniatura, y la
+                         regla fija 3 (§1): `cola_audio`, `audio_con_crossfade`, `chequear_audio`
 clips_bot/deportes.py    marcador de transmisión deportiva: esquina quieta + mucho borde (heurística)
 clips_bot/pantalla.py    paso 4b: OCR (tesseract) → mails, teléfonos, tarjetas, pago, dirección
 clips_bot/subtitles.py   paso 6: faster-whisper → subtítulos ≤ 2 líneas → SRT + ASS
@@ -486,9 +514,12 @@ clips_bot/efemerides.py  Pequeña Historia (§3c): Wikipedia/Commons, filtros de
                          validado contra el artículo, hoja de aprobación y el video con zoom
 clips_bot/serie.py       /serie: partes, división en etapas (validada), guiones encadenados,
                          título numerado, horarios, hoja de miniaturas por etapa
+clips_bot/ilustrar.py    regla fija 1 (§1): una foto por frase sin repetir, mínimo 6 distintas,
+                         ningún tramo de más de 6 s (`asignar`, `tramos`, `errores_plan`)
+clips_bot/reglas.py      regla fija 2 (§1): REGLAS_CLARIDAD, dentro de todos los prompts de guion
 clips_bot/envivo.py      modo en vivo (§3b): quién está al aire, momentos por creadores distintos,
                          alertas en la DB (no repetir, tope, vencer) y el resumen de tiempos
-tests/                   431 tests sin red ni video
+tests/                   459 tests sin red ni video (test_reglas_fijas.py: las 3 reglas de §1)
 ```
 
 Comandos:
@@ -677,6 +708,23 @@ Problemas abiertos:
 
 ## 9. CHANGELOG
 
+- v0.30.0 (2026-09-28) — **Tres reglas fijas para todos los videos** (§1, decisión permanente de
+  Santi), cada una una sola vez en el código compartido y con `tests/test_reglas_fijas.py`:
+  (1) fotos que muestran lo que se dice (`ilustrar.py`; en efemérides: guion con `mostrar` por
+  frase → búsqueda en el artículo y en Commons por palabras y categoría → Gemini elige por frase en
+  una llamada; mínimo 6 distintas, máximo 6 s seguidos, sin repetir salvo que no haya otra; hoja
+  con cada foto al lado de su frase); (2) guiones que se entienden (`reglas.REGLAS_CLARIDAD` en los
+  prompts de efemérides, /narrar y /serie; efemérides pide además `idea_clave`); (3) audio limpio
+  (`media.cola_audio` en renderizar, narrar.mezclar, armar_resumen, multi-POV y efemérides: fade
+  in 0,1 s, fade out 0,5 s, largo exacto del video sin `-shortest`; crossfade de 0,04 s en las
+  uniones sin correr la sincronía; `chequear_audio` en `enviar_clip` avisa picos > −3 dB en el
+  último segundo o audio y video desparejos). Probado con ffmpeg real: resumen de 3 tramos y
+  mezcla con voz, audio = video al milisegundo; un final a −0,2 dB dispara el aviso. Encontrado
+  probando la búsqueda real: Commons sirve miniaturas desde `thumb.wikimedia.org`, que no tenía la
+  pausa de 2 s entre descargas (solo `upload.`); ahora la tienen las dos. Decidido por Claude: el
+  crossfade se hace estirando cada tramo d/2 hacia la unión (un acrossfade común acorta el audio
+  y lo desfasa del video); efemérides pasa a 2 llamadas por evento (guion + fotos: +1 por día);
+  `--hecho` en el CLI para rehacer un hecho puntual. 459 tests OK.
 - v0.29.0 (2026-09-28) — **Mezcla diaria revisada con lo que rinde** (pedido de Santi: Davoo,
   Auron, Coscu, Coker y Spreen rinden; Minecraft y el Dedsafío no). Carpeta Dedsafío sin diarios
   ni en vivo (en la Pi ya estaba así, tocado por Telegram; ahora también de fábrica). Carpeta

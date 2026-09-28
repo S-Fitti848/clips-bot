@@ -146,47 +146,50 @@ def test_no_respaldados(guion, faltan):
 
 
 def _guion_ok(**cambios):
-    d = {"frases": [{"texto": "Un día como hoy, en 1998, Google estrenó su buscador en Internet.", "foto": 1},
-                    {"texto": "Larry Page y Sergey Brin lo empezaron como un proyecto universitario.", "foto": 2},
-                    {"texto": "Lo arrancaron en la Universidad de Stanford, con muy poco.", "foto": 3},
-                    {"texto": "¡Tenían un armario lleno de servidores y dos routers HP!", "foto": 4},
-                    {"texto": "Al principio el buscador no se llamaba Google, se llamaba BackRub.", "foto": 1},
-                    {"texto": "Con el tiempo superó a AltaVista, el más popular de la época.", "foto": 2},
-                    {"texto": "Y el 27 de septiembre de 1998 el buscador salió a Internet para todos.", "foto": 4},
-                    {"texto": "Desde ese día la forma de buscar cosas en la web cambió para siempre.", "foto": 1},
-                    {"texto": "¿Te imaginás cómo buscarías cualquier cosa sin este buscador?", "foto": 2}],
-         "fotos_descartadas": [5], "titulo": "El día que arrancó Google",
+    d = {"frases": [{"texto": "Un día como hoy, en 1998, Google estrenó su buscador en Internet.", "mostrar": "Google search 1998"},
+                    {"texto": "Larry Page y Sergey Brin lo empezaron como un proyecto universitario.", "mostrar": "Larry Page Sergey Brin"},
+                    {"texto": "Lo arrancaron en la Universidad de Stanford, con muy poco.", "mostrar": "Stanford University"},
+                    {"texto": "¡Tenían un armario lleno de servidores y dos routers HP!", "mostrar": "Google first server rack"},
+                    {"texto": "Al principio el buscador no se llamaba Google, se llamaba BackRub.", "mostrar": "BackRub logo"},
+                    {"texto": "Con el tiempo superó a AltaVista, el más popular de la época.", "mostrar": "AltaVista search"},
+                    {"texto": "Y el 27 de septiembre de 1998 el buscador salió a Internet para todos.", "mostrar": "Google garage"},
+                    {"texto": "Desde ese día la forma de buscar cosas en la web cambió para siempre.", "mostrar": "web search computer"},
+                    {"texto": "¿Te imaginás cómo buscarías cualquier cosa sin este buscador?", "mostrar": "library card catalog"}],
+         "idea_clave": "Un buscador ordena la web para que encuentres lo que buscás.",
+         "titulo": "El día que arrancó Google",
          "descripcion": "Así empezó el buscador.", "hashtags": ["#Shorts", "#Google", "#PequeñaHistoria"]}
     d.update(cambios)
     return d
 
 
 def test_un_guion_bien_armado_pasa():
-    assert ef.validar_guion(_guion_ok(), 1998, 5, ARTICULO) == []
+    assert ef.validar_guion(_guion_ok(), 1998, ARTICULO) == []
 
 
 def test_el_gancho_la_pregunta_y_las_fotos():
     sin_gancho = _guion_ok()
     sin_gancho["frases"][0]["texto"] = "En 1998 Google estrenó su buscador en Internet para todo el mundo."
-    assert any("Un día como hoy" in e for e in ef.validar_guion(sin_gancho, 1998, 5, ARTICULO))
+    assert any("Un día como hoy" in e for e in ef.validar_guion(sin_gancho, 1998, ARTICULO))
     sin_pregunta = _guion_ok()
     sin_pregunta["frases"][-1]["texto"] = "Y así fue como empezó todo, en un armario."
-    assert any("gancho" in e for e in ef.validar_guion(sin_pregunta, 1998, 5, ARTICULO))
+    assert any("gancho" in e for e in ef.validar_guion(sin_pregunta, 1998, ARTICULO))
     sin_exclamacion = _guion_ok()
     sin_exclamacion["frases"][3]["texto"] = "Tenían un armario lleno de servidores y dos routers HP."
-    assert any("exclamación" in e for e in ef.validar_guion(sin_exclamacion, 1998, 5, ARTICULO))
+    assert any("exclamación" in e for e in ef.validar_guion(sin_exclamacion, 1998, ARTICULO))
     cierre_exclamado = _guion_ok()
     cierre_exclamado["frases"][-1]["texto"] = "¡Y todo empezó en un armario de Stanford!"
     cierre_exclamado["frases"][4]["texto"] = "¿Sabés cómo se llamaba al principio el buscador? BackRub."
-    assert ef.validar_guion(cierre_exclamado, 1998, 5, ARTICULO) == []   # también es gancho
+    assert ef.validar_guion(cierre_exclamado, 1998, ARTICULO) == []   # también es gancho
     larga = _guion_ok()
     larga["frases"][2]["texto"] = ("Lo arrancaron en la Universidad de Stanford con muy poco y sin "
                                    "saber todavía que iba a cambiar la forma de buscar en la web.")
-    assert any("demasiado largas" in e for e in ef.validar_guion(larga, 1998, 5, ARTICULO))
-    con_descartada = _guion_ok(fotos_descartadas=[1])
-    assert any("descartaste" in e for e in ef.validar_guion(con_descartada, 1998, 5, ARTICULO))
+    assert any("demasiado largas" in e for e in ef.validar_guion(larga, 1998, ARTICULO))
+    sin_mostrar = _guion_ok()
+    sin_mostrar["frases"][2]["mostrar"] = ""
+    assert any("mostrar" in e for e in ef.validar_guion(sin_mostrar, 1998, ARTICULO))
+    assert any("idea_clave" in e for e in ef.validar_guion(_guion_ok(idea_clave=""), 1998, ARTICULO))
     corto = _guion_ok(frases=_guion_ok()["frases"][:3] + [_guion_ok()["frases"][-1]])
-    assert any("palabras" in e for e in ef.validar_guion(corto, 1998, 5, ARTICULO))
+    assert any("palabras" in e for e in ef.validar_guion(corto, 1998, ARTICULO))
 
 
 def test_escribir_guion_reintenta_con_los_errores():
@@ -194,10 +197,9 @@ def test_escribir_guion_reintenta_con_los_errores():
     malo["frases"][4]["texto"] = "Hoy procesan más de mil millones de búsquedas diarias en el mundo."
     g = FakeGemini(malo, _guion_ok())
     e = ef.Evento("es", 1998, "arranca Google", ["Google"])
-    fotos = [ef.a_foto(_info(), "Google") for _ in range(5)]
-    guion = ef.escribir_guion(g, e, ARTICULO, fotos, [b"x"] * 5)
-    assert "mil millones" in g.prompts[1] and g.imagenes[0] == 5
-    assert guion.fotos[:4] == [0, 1, 2, 3] and guion.descartadas == [4]
+    guion = ef.escribir_guion(g, e, ARTICULO)
+    assert "mil millones" in g.prompts[1] and g.imagenes == [0, 0]   # el guion va sin fotos
+    assert guion.mostrar[2] == "Stanford University" and guion.idea_clave and guion.fotos == []
 
 
 # ---- cambiar una foto -----------------------------------------------------------------------
@@ -279,7 +281,7 @@ def conn(tmp_path):
 
 
 def test_la_aprobacion_trae_un_boton_por_foto_del_guion(conn, monkeypatch, tmp_path):
-    monkeypatch.setattr(ef, "hoja_de_fotos", lambda fotos, salida, numeros=None: salida)
+    monkeypatch.setattr(ef, "hoja_de_guion", lambda fotos, filas, salida: salida)
     tg = FakeTG()
     m._efe_mostrar(conn, tg, "1", "0a1b2c", {"propuesta": _propuesta().__dict__,
                                             "carpeta": str(tmp_path), "chat_id": "1"})
@@ -303,7 +305,7 @@ def test_aprobar_con_algo_pesado_andando_va_a_la_cola(conn, tmp_path):
 def test_sin_aprobar_no_se_sintetiza(conn, monkeypatch, tmp_path):
     """✏️ y 🔁 nunca llegan a la voz."""
     monkeypatch.setattr(ef, "hacer_video", lambda *a, **k: pytest.fail("no se aprobó"))
-    monkeypatch.setattr(ef, "hoja_de_fotos", lambda fotos, salida, numeros=None: salida)
+    monkeypatch.setattr(ef, "hoja_de_guion", lambda fotos, filas, salida: salida)
     monkeypatch.setattr(ef, "Wiki", FakeWiki)
     db.set_valor(conn, "efe:0a1b2c", json.dumps({"propuesta": _propuesta().__dict__,
                                                  "carpeta": str(tmp_path), "chat_id": "1"}))

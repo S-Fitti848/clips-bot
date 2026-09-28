@@ -20,7 +20,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .config import Render, Subtitulos
-from .media import find_bin, run
+from .media import audio_con_crossfade, cola_audio, find_bin, run
 from .subtitles import _escapar_ass, _t_ass
 
 log = logging.getLogger(__name__)
@@ -324,11 +324,16 @@ def filtro_concat(angulos: list[Angulo], render: Render, con_carteles: bool) -> 
         partes.append(
             f"[{i}:v]trim={a.inicio:.2f}:{a.fin:.2f},setpts=PTS-STARTPTS,"
             f"scale={render.ancho}:{render.alto}:flags=lanczos,setsar=1,fps={render.fps}[v{i}];"
-            f"[{i}:a]atrim={a.inicio:.2f}:{a.fin:.2f},asetpts=PTS-STARTPTS[a{i}];"
         )
-    entradas = "".join(f"[v{i}][a{i}]" for i in range(len(angulos)))
-    salida = "[vcat][aout]" if not con_carteles else "[vcat][aout];[vcat]ass=carteles.ass[vout]"
-    return "".join(partes) + f"{entradas}concat=n={len(angulos)}:v=1:a=1{salida}"
+    entradas = "".join(f"[v{i}]" for i in range(len(angulos)))
+    # Audio limpio (media): crossfade corto entre ángulos (la ventana es interior al clip, así que
+    # hay de dónde sacar los d/2 de más) y la cola con los fundidos y el largo exacto.
+    audio = audio_con_crossfade([(f"[{i}:a]", a.inicio, a.fin, a.fin + 1.0)
+                                 for i, a in enumerate(angulos)], "[acat]")
+    total = sum(a.duracion for a in angulos)
+    salida = "[vcat]" if not con_carteles else "[vcat];[vcat]ass=carteles.ass[vout]"
+    return ("".join(partes) + f"{entradas}concat=n={len(angulos)}:v=1:a=0{salida};"
+            f"{audio};[acat]{cola_audio(total)}[aout]")
 
 
 def armar(angulos: list[Angulo], salida: Path, work: Path, render: Render, cfg_subs: Subtitulos) -> Path:

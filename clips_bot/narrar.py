@@ -24,7 +24,8 @@ import wave
 from dataclasses import dataclass
 from pathlib import Path
 
-from .media import find_bin, run
+from .media import audio_con_crossfade, cola_audio, find_bin, run
+from .reglas import REGLAS_CLARIDAD
 
 log = logging.getLogger(__name__)
 
@@ -48,7 +49,7 @@ Reglas del guion:
   escucha o no se lean claramente en pantalla.
 - Hablado, no escrito: frases cortas, como se lo contarías a un amigo.
 - Sin emojis, sin hashtags, sin "suscribite".
-
+""" + REGLAS_CLARIDAD + """
 Si te paso el audio, decí también si tiene música: "ninguna", "de_fondo" (música sin letra o que
 no reconocés) o "cancion" (una canción con letra, o un tema que reconocés). Si reconocés cuál es,
 ponela en `cancion` ("Artista – Tema"); si no, dejalo vacío. No adivines el nombre.
@@ -241,22 +242,33 @@ def mezclar(video: Path, voz: Path, salida: Path, volumen_original: float = 0.15
     """
     salida.parent.mkdir(parents=True, exist_ok=True)
     tiene_audio = _tiene_audio(video) and not sin_original
+    # La cola (media.cola_audio) deja el audio del largo EXACTO del video, con los fundidos. Antes
+    # era `-shortest` + apad: sin apad, -shortest cortaba el VIDEO al largo de la voz (medido: un
+    # video de 40 s con una voz de 30 salía de 30 s); con la cola ni hace falta -shortest.
+    cola = cola_audio(_duracion_video(video))
     if tiene_audio:
         filtro = (f"[0:a]volume={volumen_original}[fondo];"
                   f"[1:a]aresample=48000[voz];"
-                  f"[fondo][voz]amix=inputs=2:duration=first:dropout_transition=0:normalize=0[a]")
-        mapeo = ["-map", "0:v", "-map", "[a]"]
+                  f"[fondo][voz]amix=inputs=2:duration=first:dropout_transition=0:normalize=0,"
+                  f"{cola}[a]")
     else:
-        # apad: la voz se rellena con silencio hasta el final. Sin eso, `-shortest` cortaba el
-        # VIDEO al largo de la voz (medido: un video de 40 s con una voz de 30 salía de 30 s).
-        filtro = "[1:a]aresample=48000,apad[a]"
-        mapeo = ["-map", "0:v", "-map", "[a]"]
+        filtro = f"[1:a]aresample=48000,{cola}[a]"
+    mapeo = ["-map", "0:v", "-map", "[a]"]
     run([find_bin("ffmpeg"), "-hide_banner", "-loglevel", "error", "-y",
          "-i", str(video.resolve()), "-i", str(voz.resolve()),
          "-filter_complex", filtro, *mapeo,
-         "-c:v", "copy", "-c:a", "aac", "-b:a", "160k", "-shortest",
+         "-c:v", "copy", "-c:a", "aac", "-b:a", "160k",
          str(salida.resolve())])
     return salida
+
+
+def _duracion_video(video: Path) -> float:
+    from .media import probe
+
+    try:
+        return probe(video).duracion
+    except Exception:
+        return 0.0
 
 
 def _tiene_audio(video: Path) -> bool:
@@ -589,11 +601,11 @@ def armar_resumen(video: Path, tramos: list[tuple[float, float]], salida: Path) 
     for i, (a, b) in enumerate(tramos):
         partes.append(f"[0:v]trim=start={a}:end={b},setpts=PTS-STARTPTS[v{i}]")
         entradas += f"[v{i}]"
-        if audio:
-            partes.append(f"[0:a]atrim=start={a}:end={b},asetpts=PTS-STARTPTS[a{i}]")
-            entradas += f"[a{i}]"
-    partes.append(f"{entradas}concat=n={len(tramos)}:v=1:a={1 if audio else 0}"
-                  + ("[v][a]" if audio else "[v]"))
+    partes.append(f"{entradas}concat=n={len(tramos)}:v=1:a=0[v]")
+    if audio:   # el audio se pega con crossfade corto en cada unión (media.audio_con_crossfade)
+        largo = _duracion_video(video) or max(b for _, b in tramos)
+        partes.append(audio_con_crossfade([("[0:a]", a, b, largo) for a, b in tramos], "[ac]"))
+        partes.append(f"[ac]{cola_audio(sum(b - a for a, b in tramos))}[a]")
     mapeo = ["-map", "[v]"] + (["-map", "[a]", "-c:a", "aac", "-b:a", "160k"] if audio else [])
     run([find_bin("ffmpeg"), "-hide_banner", "-loglevel", "error", "-y", "-i", str(video.resolve()),
          "-filter_complex", ";".join(partes), *mapeo,

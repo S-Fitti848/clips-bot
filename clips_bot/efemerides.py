@@ -31,8 +31,10 @@ from pathlib import Path
 import requests
 
 from .config import DATA_DIR, user_agent
-from .media import find_bin, run
+from .media import chequear_audio, cola_audio, find_bin, run
+from . import ilustrar
 from .narrar import NarrarError
+from .reglas import REGLAS_CLARIDAD
 from .textos import nombres_propios
 
 log = logging.getLogger(__name__)
@@ -40,12 +42,10 @@ log = logging.getLogger(__name__)
 FEED = "https://{lang}.wikipedia.org/api/rest_v1/feed/onthisday/events/{mm:02d}/{dd:02d}"
 API = "https://{lang}.wikipedia.org/w/api.php"
 
-MIN_FOTOS = 4
 TONOS_GUION = ("alegre", "epico", "misterioso", "curioso", "emotivo")   # = musica.TONOS
 MIN_ANCHO = 800          # la foto se escala a 1080 de ancho en fit_blur: menos que esto se nota
-# Las que ve Gemini; el resto queda de reserva para "🔁 cambiar foto N". Eran 8: la Piedra de
-# Rosetta tenía 11 que pasaban las reglas y quedó afuera con 3 que Gemini nunca vio.
-MAX_FOTOS_GUION = 12
+# Cuántas fotos y cuánto tiempo cada una: reglas fijas en ilustrar.py (mínimo 6 distintas, ninguna
+# más de 6 s seguidos). Cuántas se buscan y cuántas ve Gemini: FOTOS_*_MAX y POOL_MAX, más abajo.
 # Largo del guion, según la voz (todo MEDIDO en la Pi el 2026-09-27):
 #   Gemini TTS (la voz elegida el 28/09): ~2,3 palabras/s (113 palabras en 48,7 s, sin contar
 #     la instrucción que al principio leía en voz alta). 85-105 palabras son ~37-46 s: casi no
@@ -146,8 +146,16 @@ CACHE_BORRAR_S = 30 * 86400   # nada vive más de 30 días (las fotos: ~4 MB por
 MINIATURAS = (1280, 960)
 
 
+COMMONS_API = "https://commons.wikimedia.org/w/api.php"
+
+
 def es_miniatura(url: str) -> bool:
     return "/thumb/" in url
+
+
+def _api(lang: str) -> str:
+    """lang "commons" = la API de Commons; si no, la de esa Wikipedia."""
+    return COMMONS_API if lang == "commons" else API.format(lang=lang)
 
 
 class Wiki:
@@ -183,7 +191,9 @@ class Wiki:
         """GET con pausa entre llamadas y reintentos. Lo usan las consultas Y las descargas de
         fotos: upload.wikimedia.org también devuelve 429 (pasó bajando la foto del lanzamiento
         de la sonda Dawn, el 2026-09-27, y un Bundesarchiv el 2026-09-28)."""
-        foto = "upload.wikimedia.org" in url
+        # Las miniaturas vienen de upload.wikimedia.org o de thumb.wikimedia.org (las de Commons,
+        # visto el 2026-09-28): a las dos, la pausa larga.
+        foto = "upload.wikimedia.org" in url or es_miniatura(url)
         status = 0
         for intento in range(4):
             self._sleep(self.PAUSA_FOTOS_S if foto else self.PAUSA_S)
@@ -254,13 +264,38 @@ class Wiki:
         original, si no es más ancho). Sirve para archivos locales y de Commons."""
         out = []
         for i in range(0, len(archivos), 50):
-            d = self._get(API.format(lang=lang), {
+            d = self._get(_api(lang), {
                 "action": "query", "format": "json", "prop": "imageinfo",
                 "iiprop": "url|size|mime|extmetadata", "iiurlwidth": ancho,
                 "iiextmetadatalanguage": "es", "titles": "|".join(archivos[i:i + 50])})
             for p in (d.get("query") or {}).get("pages", {}).values():
                 if p.get("imageinfo"):
                     out.append({"archivo": p["title"], **p["imageinfo"][0]})
+        return out
+
+    def buscar_commons(self, terminos: str, cuantas: int = 6) -> list[dict]:
+        """Fotos de Commons para `terminos` ("Penicillium mold"), con su imageinfo: primero las que
+        encuentra el buscador (solo mapas de bits), después las de la categoría que mejor coincide.
+        Los filtros de licencia y de contenido los aplica quien llama (`filtrar_infos`)."""
+        imageinfo = {"prop": "imageinfo", "iiprop": "url|size|mime|extmetadata",
+                     "iiurlwidth": MINIATURAS[0], "iiextmetadatalanguage": "es"}
+        d = self._get(COMMONS_API, {"action": "query", "format": "json", "generator": "search",
+                                    "gsrsearch": f"{terminos} filetype:bitmap", "gsrnamespace": 6,
+                                    "gsrlimit": cuantas, **imageinfo})
+        paginas = sorted((d.get("query") or {}).get("pages", {}).values(),
+                         key=lambda p: p.get("index", 0))
+        cat = self._get(COMMONS_API, {"action": "query", "format": "json", "list": "search",
+                                      "srsearch": terminos, "srnamespace": 14, "srlimit": 1})
+        for c in (cat.get("query") or {}).get("search", [])[:1]:
+            d = self._get(COMMONS_API, {"action": "query", "format": "json",
+                                        "generator": "categorymembers", "gcmtitle": c["title"],
+                                        "gcmtype": "file", "gcmlimit": cuantas, **imageinfo})
+            paginas += list((d.get("query") or {}).get("pages", {}).values())
+        out, vistos = [], set()
+        for p in paginas:
+            if p.get("imageinfo") and p["title"] not in vistos:
+                vistos.add(p["title"])
+                out.append({"archivo": p["title"], **p["imageinfo"][0]})
         return out
 
     def bajar(self, url: str, destino: Path) -> Path:
@@ -415,24 +450,22 @@ def a_foto(info: dict, articulo: str) -> Foto:
                 epigrafe=epigrafe[:160], pagina=info.get("descriptionurl") or "", articulo=articulo)
 
 
-def fotos_del_evento(wiki: Wiki, e: Evento) -> tuple[list[Foto], dict]:
-    """Las fotos del artículo del evento (`e.paginas[0]`) que pasan las reglas, en su orden, y por
-    qué quedaron afuera las otras."""
-    fotos, descartes, vistos = [], {}, set()
-    for titulo in e.paginas[:1]:
-        archivos = [a for a in wiki.archivos(e.lang, titulo) if a not in vistos]
-        vistos.update(archivos)
-        for info in wiki.info(e.lang, archivos):
-            m = motivo_foto(info)
-            if m:
-                descartes[m.split(" (")[0]] = descartes.get(m.split(" (")[0], 0) + 1
-            else:
-                fotos.append(a_foto(info, titulo))
+def filtrar_infos(wiki: Wiki, lang: str, infos: list[dict], articulo: str) -> tuple[list[Foto], dict]:
+    """Las que pasan las reglas fijas (licencia, formato, tamaño, sin mapas ni imágenes duras) y
+    tienen miniatura, en su orden, y por qué quedaron afuera las otras. Vale igual para las fotos
+    del artículo y para las que se buscan en Commons."""
+    fotos, descartes = [], {}
+    for info in infos:
+        m = motivo_foto(info)
+        if m:
+            descartes[m.split(" (")[0]] = descartes.get(m.split(" (")[0], 0) + 1
+        else:
+            fotos.append(a_foto(info, articulo))
     # Solo miniaturas: a las que la API dio el original, se les pide la siguiente más chica.
     for ancho in MINIATURAS[1:]:
         faltan = [f.archivo for f in fotos if not es_miniatura(f.url) and f.ancho > ancho]
         if faltan:
-            urls = {i["archivo"]: i.get("thumburl") or "" for i in wiki.info(e.lang, faltan, ancho)}
+            urls = {i["archivo"]: i.get("thumburl") or "" for i in wiki.info(lang, faltan, ancho)}
             for f in fotos:
                 if f.archivo in urls and es_miniatura(urls[f.archivo]):
                     f.url = urls[f.archivo]
@@ -441,6 +474,14 @@ def fotos_del_evento(wiki: Wiki, e: Evento) -> tuple[list[Foto], dict]:
         descartes["sin miniatura"] = descartes.get("sin miniatura", 0) + len(sin)
         fotos = [f for f in fotos if es_miniatura(f.url)]
     return fotos, descartes
+
+
+def fotos_del_evento(wiki: Wiki, e: Evento) -> tuple[list[Foto], dict]:
+    """Las fotos del artículo del evento (`e.paginas[0]`) que pasan las reglas, en su orden, y por
+    qué quedaron afuera las otras."""
+    titulo = e.paginas[0]
+    archivos = list(dict.fromkeys(wiki.archivos(e.lang, titulo)))
+    return filtrar_infos(wiki, e.lang, wiki.info(e.lang, archivos), titulo)
 
 
 def bajar_fotos(wiki: Wiki, fotos: list[Foto], carpeta: Path, prefijo: str, cuantas: int,
@@ -497,12 +538,13 @@ nombre, ni un número, ni una fecha que no esté ahí. Si el artículo no lo dic
 - Números: solo los que están en el artículo, escritos igual. Nada de "hoy tiene millones de…"
   si el artículo no lo dice con esas palabras.
 - Sin emojis, sin hashtags, sin "suscribite".
-- Cada frase lleva `foto`: el número de la foto que se ve mientras se dice. Usá al menos 4 fotos
-  distintas y la que mejor acompañe cada frase.
-- `fotos_descartadas`: MIRÁ las fotos y descartá las que no sirven para contar el hecho: mapas,
-  gráficos, diagramas, banderas, escudos, firmas, logos, retratos de una persona que NO
-  protagoniza este hecho, fotos de otro tema, y cualquier imagen violenta o con muertos o
-  heridos. No uses esas en ninguna frase.
+""" + REGLAS_CLARIDAD + """
+- Cada frase lleva `mostrar`: qué tendría que verse en pantalla mientras se dice, como búsqueda
+  para Wikimedia Commons, EN INGLÉS y concreta, de 2 a 5 palabras ("petri dish bacteria",
+  "Penicillium mold", "Alexander Fleming laboratory"). Lo que se VE, no la idea: nada de
+  "discovery" ni "importance". Variá: frases distintas, cosas distintas para mostrar.
+- `idea_clave`: en una frase, lo que un chico de 15 años tiene que haber entendido al final (qué
+  pasó y por qué importa). El guion tiene que explicarlo.
 - `titulo`: hasta 55 caracteres, con gancho, sin clickbait falso. `descripcion`: 1 a 3 frases
   sobre el hecho, sin hashtags ni links. `hashtags`: 3 a 5, incluido #Shorts.
 - `tono`: el clima de la historia, para elegir la música de fondo: alegre, epico, misterioso,
@@ -514,15 +556,15 @@ SCHEMA_GUION = {
     "properties": {
         "frases": {"type": "ARRAY", "items": {
             "type": "OBJECT",
-            "properties": {"texto": {"type": "STRING"}, "foto": {"type": "INTEGER"}},
-            "required": ["texto", "foto"]}},
-        "fotos_descartadas": {"type": "ARRAY", "items": {"type": "INTEGER"}},
+            "properties": {"texto": {"type": "STRING"}, "mostrar": {"type": "STRING"}},
+            "required": ["texto", "mostrar"]}},
+        "idea_clave": {"type": "STRING"},
         "titulo": {"type": "STRING"},
         "descripcion": {"type": "STRING"},
         "hashtags": {"type": "ARRAY", "items": {"type": "STRING"}},
         "tono": {"type": "STRING", "enum": ["alegre", "epico", "misterioso", "curioso", "emotivo"]},
     },
-    "required": ["frases", "fotos_descartadas", "titulo", "descripcion", "hashtags"],
+    "required": ["frases", "idea_clave", "titulo", "descripcion", "hashtags"],
 }
 
 
@@ -577,16 +619,25 @@ def no_respaldados(guion: str, fuente: str) -> list[str]:
 @dataclass
 class Guion:
     frases: list[str]
-    fotos: list[int]                  # índice (desde 0) de la foto de cada frase
-    descartadas: list[int]            # índices desde 0 que Gemini vio y no sirven
+    fotos: list[int]                  # índice (desde 0, en Propuesta.fotos) de la foto de cada frase
+    descartadas: list[int]            # índices desde 0 que Gemini vio y no sirven (o sacados con 🔁)
     titulo: str
     descripcion: str
     hashtags: list[str]
     tono: str = ""                    # para la música: alegre, epico, misterioso, curioso, emotivo
+    mostrar: list[str] = field(default_factory=list)       # qué mostrar en cada frase (búsqueda)
+    ranking: list[list[int]] = field(default_factory=list)  # las que sirven para cada frase, en orden
+    idea_clave: str = ""              # lo que tiene que quedar entendido (regla de claridad)
 
     @property
     def texto(self) -> str:
         return " ".join(self.frases)
+
+    def rankings(self) -> list[list[int]]:
+        """El de cada frase; las propuestas de antes del 2026-09-28 no lo tienen: su foto sola."""
+        if len(self.ranking) == len(self.frases):
+            return [list(r) for r in self.ranking]
+        return [[f] for f in self.fotos]
 
     def a_dict(self) -> dict:
         return asdict(self)
@@ -596,12 +647,11 @@ class Guion:
         return cls(**d)
 
 
-def validar_guion(d: dict, anio: int, n_fotos: int, fuente: str) -> list[str]:
+def validar_guion(d: dict, anio: int, fuente: str) -> list[str]:
     if not isinstance(d, dict) or not isinstance(d.get("frases"), list) or not d["frases"]:
         return ["faltan las frases"]
     frases = [str((f or {}).get("texto") or "").strip() for f in d["frases"]]
-    fotos = [(f or {}).get("foto") for f in d["frases"]]
-    descartadas = {x for x in d.get("fotos_descartadas") or [] if isinstance(x, int)}
+    mostrar = [str((f or {}).get("mostrar") or "").strip() for f in d["frases"]]
     texto = " ".join(frases)
     errores = []
     n = len(re.findall(r"\S+", texto))
@@ -618,12 +668,11 @@ def validar_guion(d: dict, anio: int, n_fotos: int, fuente: str) -> list[str]:
     largas = [i + 1 for i, f in enumerate(frases) if len(f.split()) > 16]
     if largas:
         errores.append(f"frases demasiado largas (más de 14 palabras): {largas}; partilas")
-    if any(not isinstance(f, int) or not 1 <= f <= n_fotos for f in fotos):
-        errores.append(f"cada frase lleva una foto del 1 al {n_fotos}")
-    elif set(fotos) & descartadas:
-        errores.append(f"usaste fotos que descartaste: {sorted(set(fotos) & descartadas)}")
-    elif len(set(fotos)) < min(MIN_FOTOS, n_fotos - len(descartadas)):
-        errores.append(f"usá al menos {MIN_FOTOS} fotos distintas")
+    sin_mostrar = [i + 1 for i, m in enumerate(mostrar) if not 1 <= len(m.split()) <= 6]
+    if sin_mostrar:
+        errores.append(f"frases sin `mostrar` (2 a 5 palabras en inglés): {sin_mostrar}")
+    if not str(d.get("idea_clave") or "").strip():
+        errores.append("falta `idea_clave`: qué tiene que entender un chico de 15 años al final")
     faltan = no_respaldados(texto, fuente)
     if faltan:
         errores.append("esto NO está en el artículo, sacalo o cambialo por lo que dice el artículo: "
@@ -638,29 +687,165 @@ def validar_guion(d: dict, anio: int, n_fotos: int, fuente: str) -> list[str]:
     return errores
 
 
-def escribir_guion(cliente, e: Evento, fuente: str, fotos: list[Foto], imagenes: list[bytes],
-                   correccion: str = "", anterior: str = "", reintentos: int = 2) -> Guion:
-    """Gemini con el artículo y las fotos. Reintenta con los errores de la validación."""
-    lista = "\n".join(f"foto {i}: {f.epigrafe}" for i, f in enumerate(fotos, 1))
+def escribir_guion(cliente, e: Evento, fuente: str, correccion: str = "", anterior: str = "",
+                   reintentos: int = 2) -> Guion:
+    """Gemini con el artículo, SIN fotos: el guion y qué mostrar en cada frase. Las fotos se buscan
+    después para cada frase (`fotos_para_guion`). Reintenta con los errores de la validación."""
     prompt = (f"Hecho ({e.anio}): {e.texto}\n\nTEXTO DEL ARTÍCULO (lo único que podés usar):\n"
-              f"{fuente[:12000]}\n\nFOTOS (la imagen k es la foto k):\n{lista}")
+              f"{fuente[:12000]}")
     if correccion:
         prompt += f"\n\nEl guion anterior no sirvió:\n{anterior}\nLo que hay que cambiar: {correccion}"
     errores: list[str] = []
     for _ in range(reintentos + 1):
         extra = f"\n\nTu respuesta anterior tenía estos errores: {'; '.join(errores)}" if errores else ""
-        d = json.loads(cliente.json(SISTEMA_GUION, prompt + extra, SCHEMA_GUION, temperatura=0.5,
-                                    imagenes=imagenes))
-        errores = validar_guion(d, e.anio, len(fotos), fuente + "\n" + e.texto + f" {e.anio}")
+        d = json.loads(cliente.json(SISTEMA_GUION, prompt + extra, SCHEMA_GUION, temperatura=0.5))
+        errores = validar_guion(d, e.anio, fuente + "\n" + e.texto + f" {e.anio}")
         if not errores:
-            return Guion(frases=[f["texto"].strip() for f in d["frases"]],
-                         fotos=[f["foto"] - 1 for f in d["frases"]],
-                         descartadas=sorted({x - 1 for x in d["fotos_descartadas"]
-                                             if isinstance(x, int) and 1 <= x <= len(fotos)}),
-                         titulo=d["titulo"].strip(), descripcion=d["descripcion"].strip(),
-                         hashtags=list(d["hashtags"]),
-                         tono=d.get("tono") if d.get("tono") in TONOS_GUION else "")
+            return Guion(frases=[f["texto"].strip() for f in d["frases"]], fotos=[],
+                         descartadas=[], titulo=d["titulo"].strip(),
+                         descripcion=d["descripcion"].strip(), hashtags=list(d["hashtags"]),
+                         tono=d.get("tono") if d.get("tono") in TONOS_GUION else "",
+                         mostrar=[f["mostrar"].strip() for f in d["frases"]],
+                         idea_clave=str(d["idea_clave"]).strip())
     raise NarrarError("El guion no pasó la validación: " + "; ".join(errores))
+
+
+# ---- 3b. las fotos de cada frase (regla fija: ilustrar.py) ------------------------------------
+
+SISTEMA_FOTOS = """Elegís las fotos de un video corto narrado. Te paso las frases del guion, qué
+conviene mostrar en cada una, y fotos numeradas (la imagen k es la foto k).
+
+Para CADA frase, ordená de mejor a peor hasta 3 fotos, SOLO de las candidatas de esa frase, que
+muestren lo que dice la frase. Si ninguna lo muestra, dejá la lista vacía: es mejor vacía que una
+foto que no tiene nada que ver. Buscá variedad: si otra foto sirve igual, no pongas primera la
+misma foto en frases distintas.
+
+`descartadas`: MIRÁ las fotos y descartá las que no sirven para nada: mapas, gráficos, diagramas,
+banderas, escudos, firmas, logos, capturas de pantalla, retratos de alguien que NO protagoniza el
+hecho, fotos de otro tema, y cualquier imagen violenta o con muertos o heridos. Nunca las pongas en
+ninguna frase.
+Respondé solo con el JSON pedido."""
+
+SCHEMA_FOTOS = {
+    "type": "OBJECT",
+    "properties": {
+        "frases": {"type": "ARRAY", "items": {
+            "type": "OBJECT",
+            "properties": {"fotos": {"type": "ARRAY", "items": {"type": "INTEGER"}}},
+            "required": ["fotos"]}},
+        "descartadas": {"type": "ARRAY", "items": {"type": "INTEGER"}},
+    },
+    "required": ["frases", "descartadas"],
+}
+
+FOTOS_ARTICULO_MAX = 8     # del artículo del hecho: son candidatas para todas las frases
+FOTOS_BUSQUEDA_MAX = 4     # de Commons, por frase
+POOL_MAX = 40              # las que ve Gemini en la llamada (cada una ~250 tokens)
+
+
+def rankings_de(d: dict, candidatas: list[list[int]]) -> tuple[list[list[int]], set[int]]:
+    """La respuesta de Gemini → (ranking de cada frase, desde 0; descartadas). Lo que no es una
+    candidata de esa frase o está descartado se ignora (flash-lite a veces se sale de la lista)."""
+    if not isinstance(d, dict) or not isinstance(d.get("frases"), list) \
+            or len(d["frases"]) != len(candidatas):
+        raise ValueError(f"tienen que ser exactamente {len(candidatas)} frases")
+    descartadas = {x - 1 for x in d.get("descartadas") or [] if isinstance(x, int)}
+    rankings = []
+    for f, cands in zip(d["frases"], candidatas):
+        ok = [x - 1 for x in (f or {}).get("fotos") or [] if isinstance(x, int)]
+        ok = [x for x in dict.fromkeys(ok) if x in cands and x not in descartadas]
+        rankings.append(ok[:ilustrar.RANKING_MAX])
+    return rankings, descartadas
+
+
+def elegir_fotos(cliente, g: Guion, pool: list[Foto], candidatas: list[list[int]],
+                 reintentos: int = 1) -> tuple[list[list[int]], set[int]]:
+    """UNA llamada: Gemini ve todas las fotos y ordena las que sirven para cada frase."""
+    lineas = []
+    for i, (frase, cands) in enumerate(zip(g.frases, candidatas), 1):
+        mostrar = g.mostrar[i - 1] if i - 1 < len(g.mostrar) else ""
+        lineas.append(f"frase {i}: {frase}\n  mostrar: {mostrar}\n  candidatas: "
+                      + ", ".join(str(c + 1) for c in cands))
+    epigrafes = "\n".join(f"foto {k}: {f.epigrafe[:120]}" for k, f in enumerate(pool, 1))
+    prompt = "FRASES:\n" + "\n".join(lineas) + "\n\nFOTOS:\n" + epigrafes
+    imagenes = [_jpeg_chico(Path(f.ruta), 384) for f in pool]
+    error = ""
+    for _ in range(reintentos + 1):
+        extra = f"\n\nTu respuesta anterior no servía: {error}" if error else ""
+        d = json.loads(cliente.json(SISTEMA_FOTOS, prompt + extra, SCHEMA_FOTOS, temperatura=0.2,
+                                    imagenes=imagenes))
+        try:
+            return rankings_de(d, candidatas)
+        except ValueError as e:
+            error = str(e)
+    raise NarrarError(f"Gemini no eligió bien las fotos: {error}")
+
+
+def fotos_para_guion(wiki: Wiki, cliente, e: Evento, g: Guion, fotos_articulo: list[Foto],
+                     carpeta: Path, avisar=log.info, pool: list[Foto] | None = None,
+                     descartadas: set[int] | None = None) -> tuple[list[Foto], Guion]:
+    """Busca candidatas para cada frase (las del artículo + Commons con su `mostrar`), las baja,
+    Gemini elige, y arma la foto de cada frase con las reglas de `ilustrar`. Devuelve el pool (las
+    fotos que se bajaron, en su numeración) y el guion con `fotos`, `ranking` y `descartadas`.
+
+    `pool`: el de una propuesta anterior (✏️), para que los números no cambien. NarrarError si no
+    se llega a ilustrar.MIN_FOTOS_DISTINTAS."""
+    pool = list(pool or [])
+    por_archivo = {f.archivo: i for i, f in enumerate(pool)}
+    descartadas = set(descartadas or ())
+
+    def sumar(fotos: list[Foto], cuantas: int) -> list[int]:
+        nuevas = [f for f in fotos if f.archivo not in por_archivo][:cuantas]
+        espacio = POOL_MAX - len(pool)
+        # El nombre lleva la posición en el pool: con ✏️ el pool crece y nada pisa lo anterior.
+        bajadas, _ = bajar_fotos(wiki, nuevas, carpeta, f"{e.anio}_p{len(pool):02d}",
+                                 max(espacio, 0), avisar)
+        for f in bajadas:
+            por_archivo[f.archivo] = len(pool)
+            pool.append(f)
+        return [por_archivo[f.archivo] for f in fotos if f.archivo in por_archivo][:cuantas]
+
+    del_hecho = [i for i in sumar(fotos_articulo, FOTOS_ARTICULO_MAX) if i not in descartadas]
+    candidatas, descartes = [], {}
+    for mostrar in g.mostrar:
+        halladas, desc = filtrar_infos(wiki, "commons", wiki.buscar_commons(mostrar),
+                                       f"Commons: {mostrar}")
+        for k, v in desc.items():
+            descartes[k] = descartes.get(k, 0) + v
+        propias = [i for i in sumar(halladas, FOTOS_BUSQUEDA_MAX) if i not in descartadas]
+        candidatas.append(list(dict.fromkeys(propias + del_hecho)))
+    avisar(f"  fotos: {len(pool)} bajadas ({len(del_hecho)} del artículo); descartes {descartes}")
+    rankings, vistas_malas = elegir_fotos(cliente, g, pool, candidatas)
+    descartadas |= vistas_malas
+    g.ranking, g.descartadas = rankings, sorted(descartadas)
+    reserva = de_reserva(g, len(pool))
+    g.fotos = ilustrar.completar_distintas(ilustrar.asignar(rankings, reserva), rankings, reserva)
+    errores = ilustrar.errores_plan(plan_estimado(g, len(pool)))
+    if errores:
+        raise NarrarError("las fotos no alcanzan: " + "; ".join(errores))
+    return pool, g
+
+
+# Gemini TTS lee a ~2,3 palabras/s (medido el 2026-09-28): con eso se estima cuánto dura cada frase
+# para la hoja de aprobación. El video usa los tiempos reales de la voz.
+PALABRAS_POR_S_VOZ = 2.3
+
+
+def de_reserva(g: Guion, n_pool: int) -> list[int]:
+    """Las fotos para cuando una frase se queda sin las suyas: primero las que Gemini puso para
+    alguna frase, después el resto del pool; nunca las descartadas."""
+    malas = set(g.descartadas)
+    rankeadas = [x for r in g.rankings() for x in r]
+    return [i for i in dict.fromkeys(rankeadas + list(range(n_pool))) if i not in malas]
+
+
+def duraciones_estimadas(g: Guion) -> list[float]:
+    return [max(1.0, len(f.split()) / PALABRAS_POR_S_VOZ) for f in g.frases]
+
+
+def plan_estimado(g: Guion, n_pool: int) -> list[tuple[int, int, float]]:
+    """(frase, foto, segundos) con la duración estimada de cada frase: lo que muestra la hoja."""
+    return ilustrar.tramos(g.fotos, duraciones_estimadas(g), g.rankings(), de_reserva(g, n_pool))
 
 
 # ---- 4. la hoja para aprobar -----------------------------------------------------------
@@ -677,49 +862,71 @@ def _fuente_ttf(tamano: int):
     return ImageFont.load_default(tamano)
 
 
-def hoja_de_fotos(fotos: list[Foto], salida: Path, columnas: int = 2, ancho: int = 420,
-                  numeros: list[int] | None = None) -> Path:
-    """Las fotos numeradas con su epígrafe abajo (con tildes: por eso PIL y no cv2.putText).
-    `numeros`: los de la propuesta (los del guion: "[6]" es la foto 6), si no son 1, 2, 3…"""
+def filas_de_hoja(plan: list[tuple[int, int, float]], frases: list[str]) -> list[tuple[list[int], str]]:
+    """Una fila por frase: las fotos que se ven mientras se dice (1, o 2 si se parte por los 6 s)
+    y la frase. Es lo que dibuja la hoja: cada foto con su frase al lado."""
+    filas: list[tuple[list[int], str]] = []
+    for i, frase in enumerate(frases):
+        fotos = list(dict.fromkeys(f for j, f, _ in plan if j == i))
+        filas.append((fotos, frase))
+    return filas
+
+
+def hoja_de_guion(fotos: list[Foto], filas: list[tuple[list[int], str]], salida: Path,
+                  ancho: int = 1000, miniatura: int = 220) -> Path:
+    """La hoja para aprobar: por cada frase, su foto (o sus dos fotos) numerada a la izquierda y la
+    frase al lado (con tildes: por eso PIL y no cv2.putText)."""
     import textwrap
 
     from PIL import Image, ImageDraw
 
-    chica, grande = _fuente_ttf(17), _fuente_ttf(34)
-    tiles = []
-    for n, f in zip(numeros or range(1, len(fotos) + 1), fotos):
-        img = Image.open(f.ruta).convert("RGB")
-        img = img.resize((ancho, max(1, int(img.height * ancho / img.width))))
-        img = img.crop((0, 0, ancho, min(img.height, int(ancho * 0.75))))
-        lineas = textwrap.wrap(f.epigrafe, 44)[:3]
-        tile = Image.new("RGB", (ancho, img.height + 16 + 22 * len(lineas)), (20, 20, 20))
-        tile.paste(img, (0, 0))
-        d = ImageDraw.Draw(tile)
-        d.rectangle((0, 0, 52 if n < 10 else 72, 46), fill=(0, 0, 0))
-        d.text((10, 4), str(n), font=grande, fill=(255, 255, 255))
-        for i, l in enumerate(lineas):
-            d.text((8, img.height + 8 + 22 * i), l, font=chica, fill=(230, 230, 230))
-        tiles.append(tile)
-    alto_fila = max(t.height for t in tiles)
-    filas = (len(tiles) + columnas - 1) // columnas
-    hoja = Image.new("RGB", (columnas * (ancho + 6), filas * (alto_fila + 6)), (0, 0, 0))
-    for i, t in enumerate(tiles):
-        hoja.paste(t, ((i % columnas) * (ancho + 6), (i // columnas) * (alto_fila + 6)))
+    chica, grande = _fuente_ttf(26), _fuente_ttf(30)
+    alto_mini = int(miniatura * 0.75)
+    renglones = []
+    for nums, frase in filas:
+        x_texto = 12 + len(nums) * (miniatura + 8) + 8
+        lineas = textwrap.wrap(frase, max(20, int((ancho - x_texto) / 14)))
+        alto = max(alto_mini, 30 * len(lineas)) + 16
+        fila = Image.new("RGB", (ancho, alto), (20, 20, 20))
+        d = ImageDraw.Draw(fila)
+        for k, n in enumerate(nums):
+            img = Image.open(fotos[n].ruta).convert("RGB")
+            img = img.resize((miniatura, max(1, int(img.height * miniatura / img.width))))
+            img = img.crop((0, 0, miniatura, min(img.height, alto_mini)))
+            x = 12 + k * (miniatura + 8)
+            fila.paste(img, (x, 8))
+            d.rectangle((x, 8, x + (44 if n + 1 < 10 else 62), 48), fill=(0, 0, 0))
+            d.text((x + 8, 10), str(n + 1), font=grande, fill=(255, 255, 255))
+        for j, l in enumerate(lineas):
+            d.text((x_texto, 10 + 30 * j), l, font=chica, fill=(235, 235, 235))
+        renglones.append(fila)
+    hoja = Image.new("RGB", (ancho, sum(r.height + 4 for r in renglones)), (0, 0, 0))
+    y = 0
+    for r in renglones:
+        hoja.paste(r, (0, y))
+        y += r.height + 4
     salida.parent.mkdir(parents=True, exist_ok=True)
     hoja.save(salida, quality=85)
     return salida
 
 
-def texto_aprobacion(e: Evento, g: Guion, fotos: list[Foto], fecha: date) -> str:
-    """El guion frase por frase con su foto, y los créditos que van a ir en la descripción."""
+def texto_aprobacion(e: Evento, g: Guion, fotos: list[Foto], fecha: date,
+                     plan: list[tuple[int, int, float]] | None = None) -> str:
+    """El guion frase por frase con su foto (o sus fotos, si se parte), la idea que tiene que
+    quedar clara, y los créditos que van a ir en la descripción."""
     lineas = [f"📅 <b>Pequeña Historia · {fecha.day} de {MESES[fecha.month - 1]}</b> — {e.anio}",
               f"<i>{html.escape(e.texto[:200])}</i>",
-              f"\n<b>Título:</b> {html.escape(g.titulo)}", "\n<b>Guion</b> (foto → frase):"]
-    for texto, foto in zip(g.frases, g.fotos):
-        lineas.append(f"[{foto + 1}] {html.escape(texto)}")
+              f"\n<b>Título:</b> {html.escape(g.titulo)}"]
+    if g.idea_clave:
+        lineas.append(f"<b>Tiene que quedar claro:</b> {html.escape(g.idea_clave)}")
+    lineas.append("\n<b>Guion</b> (foto → frase):")
+    filas = filas_de_hoja(plan, g.frases) if plan else [([f], t) for f, t in zip(g.fotos, g.frases)]
+    for nums, texto in filas:
+        lineas.append(f"[{'→'.join(str(n + 1) for n in nums)}] {html.escape(texto)}")
     palabras = len(g.texto.split())
     # Con la voz de Gemini (~2,3 palabras/s medido), acelerada hasta 45 s si hace falta.
-    lineas.append(f"\n{palabras} palabras, ~{min(palabras / 2.3, 45):.0f} s de voz.")
+    lineas.append(f"\n{palabras} palabras, ~{min(palabras / PALABRAS_POR_S_VOZ, 45):.0f} s de voz, "
+                  f"{len({n for nums, _ in filas for n in nums})} fotos distintas.")
     lineas.append("\n<b>Créditos</b>\n" + html.escape(creditos(fotos)))
     return "\n".join(lineas)[:4000]
 
@@ -788,13 +995,17 @@ def armar_video(tramos: list[tuple[Path, float]], voz: Path, dir_subs: Path, sal
     lista = dir_subs / "tramos.txt"
     lista.write_text("".join(f"file '{p.name}'\n" for p in partes), encoding="utf-8")
     salida.parent.mkdir(parents=True, exist_ok=True)
+    # Audio limpio (media.cola_audio): del largo exacto del video, con los fundidos. La voz es un
+    # solo audio continuo, así que acá no hay uniones de audio que cruzar.
+    total = sum(max(1, int(round(d * fps))) for _, d in tramos) / fps
     run([find_bin("ffmpeg"), "-hide_banner", "-loglevel", "error", "-y",
          "-f", "concat", "-safe", "0", "-i", "tramos.txt", "-i", str(voz.resolve()),
-         "-filter_complex", "[0:v]ass=subs.ass[v]", "-map", "[v]", "-map", "1:a",
+         "-filter_complex", f"[0:v]ass=subs.ass[v];[1:a]aresample=48000,{cola_audio(total)}[a]",
+         "-map", "[v]", "-map", "[a]",
          "-c:v", "libx264", "-preset", render.x264_preset, "-crf", str(render.crf),
          "-pix_fmt", "yuv420p", "-maxrate", f"{render.maxrate_kbps}k",
          "-bufsize", f"{2 * render.maxrate_kbps}k", "-c:a", "aac", "-b:a", "160k", "-ar", "48000",
-         "-shortest", "-movflags", "+faststart", str(salida.resolve())], cwd=dir_subs)
+         "-movflags", "+faststart", str(salida.resolve())], cwd=dir_subs)
     return salida
 
 
@@ -812,25 +1023,29 @@ class Propuesta:
 
 
 def proponer(wiki: Wiki, cliente, dia: date, carpeta: Path, avisar=log.info,
-             correccion: str = "", saltear: int = 0) -> Propuesta:
-    """Elige el evento, junta las fotos, escribe el guion. Si un evento no da 4 fotos que sirvan
-    (por reglas o porque Gemini las descartó al verlas), pasa al siguiente del ranking.
+             correccion: str = "", saltear: int = 0, hecho: str = "") -> Propuesta:
+    """Elige el evento, escribe el guion (con qué mostrar en cada frase), busca y elige las fotos
+    de cada frase. Si un evento no llega a ilustrar.MIN_FOTOS_DISTINTAS fotos distintas que
+    sirvan, pasa al siguiente del ranking.
 
     El ranking es de ELEGIDOS y no de 3: el 2026-09-27 los 3 primeros (Google, el ovni de Vorónezh,
-    E=mc²) no llegaban a 4 fotos (Google tenía 8 por reglas y Gemini, con razón, descartó 5: un
-    edificio de la UE, una protesta, una captura de YouTube...). Con 3 ese día no había video. Los
-    que no llegan por reglas no gastan cuota; los guiones sí, por eso el tope de MAX_GUIONES."""
+    E=mc²) no llegaban a 4 fotos del artículo. Desde el 2026-09-28 las fotos salen también de
+    Commons, frase por frase, así que eso pasa menos; cada evento que se intenta son 2 llamadas
+    (guion y fotos), por eso el tope de MAX_GUIONES.
+
+    `hecho`: solo los eventos cuyo texto lo contiene ("penicilina"): para rehacer uno a mano."""
     todos = wiki.eventos("es", dia) + wiki.eventos("en", dia)
     candidatos, motivos = [], {}
     for e in todos:
         m = motivo_evento(e, date.today())
         if m:
             motivos[m] = motivos.get(m, 0) + 1
-        else:
+        elif not hecho or _norm(hecho) in _norm(e.texto):
             candidatos.append(e)
     avisar(f"{len(todos)} hechos del {dia:%d/%m}; {len(candidatos)} pasan el primer filtro {motivos}")
     if not candidatos:
-        raise NarrarError("Ningún hecho de hoy pasa el filtro de temas sensibles.")
+        raise NarrarError("Ningún hecho de hoy pasa el filtro de temas sensibles"
+                          + (f" (con «{hecho}»)" if hecho else "") + ".")
     elegidos = elegir(cliente, candidatos)
     avisar("Gemini eligió: " + " | ".join(f"{candidatos[i].anio} {candidatos[i].texto[:50]} [{a}]"
                                           for i, a in elegidos))
@@ -845,66 +1060,100 @@ def proponer(wiki: Wiki, cliente, dia: date, carpeta: Path, avisar=log.info,
         fotos, desc = fotos_del_evento(wiki, e)
         for k, v in desc.items():
             descartes[k] = descartes.get(k, 0) + v
-        avisar(f"{e.anio} {e.texto[:60]}: {len(fotos)} fotos pasan las reglas {desc}")
-        if len(fotos) < MIN_FOTOS:
-            continue
-        usadas, reserva = bajar_fotos(wiki, fotos, carpeta, str(e.anio), MAX_FOTOS_GUION, avisar)
-        if len(usadas) < MIN_FOTOS:
-            avisar(f"  se bajaron {len(usadas)} de {len(fotos)}: no llega a {MIN_FOTOS}, paso al siguiente")
-            continue
-        fuente = wiki.texto(e.lang, e.paginas[0])
-        if e.lang == "en":            # el guion va en castellano: se valida contra los dos
-            es = wiki.en_espanol(e.paginas[0])
-            if es:
-                fuente += "\n" + wiki.texto("es", es)
-        imagenes = [_jpeg_chico(Path(f.ruta)) for f in usadas]
+        avisar(f"{e.anio} {e.texto[:60]}: {len(fotos)} fotos del artículo pasan las reglas {desc}")
+        fuente = texto_fuente(wiki, e)
         guiones += 1
         try:
-            g = escribir_guion(cliente, e, fuente, usadas, imagenes, correccion)
+            g = escribir_guion(cliente, e, fuente, correccion)
+            pool, g = fotos_para_guion(wiki, cliente, e, g, fotos, carpeta, avisar)
         except NarrarError as err:
-            avisar(f"  el guion no salió: {err}")
+            avisar(f"  no salió: {err}")
             continue
-        sirven = len(usadas) - len(g.descartadas)
-        if sirven < MIN_FOTOS:
-            avisar(f"  Gemini descartó {len(g.descartadas)} al verlas: quedan {sirven}, paso al siguiente")
-        for i in g.descartadas:        # para poder juzgar si el descarte visual es razonable
-            avisar(f"    descartada {i + 1}: {usadas[i].epigrafe[:90]}")
-        if sirven < MIN_FOTOS:
-            continue
-        return Propuesta(fecha=dia.isoformat(), evento=e.a_dict(), fotos=[f.a_dict() for f in usadas],
-                         reserva=[f.a_dict() for f in reserva], guion=g.a_dict(),
-                         fuente=fuente[:20000], descartes=descartes)
-    raise NarrarError(f"Ninguno de los {len(elegidos)} hechos elegidos tuvo {MIN_FOTOS} fotos "
-                      f"libres que sirvan ({guiones} guiones intentados; descartes: {descartes}).")
+        for k in g.descartadas:        # para poder juzgar si el descarte visual es razonable
+            avisar(f"    descartada {k + 1}: {pool[k].epigrafe[:90]}")
+        return Propuesta(fecha=dia.isoformat(), evento=e.a_dict(), fotos=[f.a_dict() for f in pool],
+                         reserva=[], guion=g.a_dict(), fuente=fuente[:20000], descartes=descartes)
+    raise NarrarError(f"Ninguno de los {len(elegidos)} hechos elegidos llegó a "
+                      f"{ilustrar.MIN_FOTOS_DISTINTAS} fotos distintas que muestren lo que se dice "
+                      f"({guiones} intentados; descartes: {descartes}).")
+
+
+def texto_fuente(wiki: Wiki, e: Evento) -> str:
+    """El texto del artículo del hecho; si es en inglés, más el equivalente en castellano (el
+    guion va en castellano y se valida contra los dos)."""
+    fuente = wiki.texto(e.lang, e.paginas[0])
+    if e.lang == "en":
+        es = wiki.en_espanol(e.paginas[0])
+        if es:
+            fuente += "\n" + wiki.texto("es", es)
+    return fuente
+
+
+def rehacer_guion(p: Propuesta, wiki: Wiki, cliente, carpeta: Path, correccion: str,
+                  avisar=log.info) -> Propuesta:
+    """✏️: el guion de nuevo con la corrección, y las fotos de sus frases otra vez. El pool de antes
+    se conserva (los números no cambian) y lo ya descartado sigue descartado."""
+    e = Evento(**p.evento)
+    anterior = Guion.de_dict(p.guion)
+    g = escribir_guion(cliente, e, p.fuente, correccion=correccion, anterior=anterior.texto)
+    fotos, _ = fotos_del_evento(wiki, e)
+    pool, g = fotos_para_guion(wiki, cliente, e, g, fotos, carpeta, avisar,
+                               pool=[Foto.de_dict(f) for f in p.fotos],
+                               descartadas=set(anterior.descartadas))
+    return Propuesta(fecha=p.fecha, evento=p.evento, fotos=[f.a_dict() for f in pool],
+                     reserva=p.reserva, guion=g.a_dict(), fuente=p.fuente, descartes=p.descartes)
 
 
 # La música de fondo vive en musica.py (biblioteca, elección por tono, mezcla con ducking).
 
 
-def usadas_en_orden(p: Propuesta) -> list[Foto]:
+def plan_de(p: Propuesta, duraciones: list[float] | None = None) -> list[tuple[int, int, float]]:
+    """(frase, foto, segundos) de la propuesta: con las duraciones reales de la voz, o estimadas."""
+    g = Guion.de_dict(p.guion)
+    if duraciones is None:
+        return plan_estimado(g, len(p.fotos))
+    return ilustrar.tramos(g.fotos, duraciones, g.rankings(), de_reserva(g, len(p.fotos)))
+
+
+def usadas_en_orden(p: Propuesta, plan: list[tuple[int, int, float]] | None = None) -> list[Foto]:
     """Las fotos que aparecen en el video, en el orden en que aparecen (para los créditos)."""
-    orden = list(dict.fromkeys(p.guion["fotos"]))
+    orden = list(dict.fromkeys(f for _, f, _ in (plan or plan_de(p))))
     return [Foto.de_dict(p.fotos[i]) for i in orden]
 
 
 def numeros_usados(p: Propuesta) -> list[int]:
-    """Los números (desde 1) de las fotos del guion, ordenados: los de la hoja y los botones 🔁."""
-    return sorted({i + 1 for i in p.guion["fotos"]})
+    """Los números (desde 1) de las fotos que se ven, ordenados: los de la hoja y los botones 🔁."""
+    return sorted({f + 1 for _, f, _ in plan_de(p)})
 
 
 def cambiar_foto(p: Propuesta, n: int, wiki: Wiki, carpeta: Path) -> Foto | None:
-    """"🔁 cambiar foto N": la N pasa a descartada y en su lugar va la siguiente que sirva.
-
-    Primero las que Gemini ya vio y no descartó (y no están en el guion); si no hay, las de reserva,
-    que pasaron las reglas pero Gemini no vio. Las frases que usaban la N pasan a la nueva.
-    None si no queda ninguna: el evento no tiene más fotos libres."""
+    """"🔁 cambiar foto N": la N pasa a descartada y cada frase que la usaba pasa a la siguiente
+    de SU lista que no se esté viendo; si no queda ninguna de su lista, una del resto del pool
+    (Gemini ya las vio y no las descartó); si tampoco, una de la reserva vieja (propuestas de antes
+    del 2026-09-28). None si no hay con qué reemplazarla: no cambia nada."""
     g = Guion.de_dict(p.guion)
     i = n - 1
-    libres = [k for k in range(len(p.fotos)) if k not in g.fotos and k not in g.descartadas and k != i]
-    if libres:
-        nueva = libres[0]
-    else:
-        while p.reserva:              # la que no baja se saltea, como en la propuesta
+    antes = plan_de(p)
+    g.descartadas = sorted(set(g.descartadas) | {i})
+    rankings = [[x for x in r if x != i] for r in g.rankings()]
+    if i not in g.fotos:
+        # Solo se veía como segunda foto de una frase partida: con descartarla, el reparto de
+        # tramos elige otra. Se devuelve la que queda en su lugar.
+        g.ranking = rankings
+        p.guion = g.a_dict()
+        despues = plan_de(p)
+        lugar = next((k for k, (_, f, _) in enumerate(antes) if f == i), None)
+        if lugar is None or lugar >= len(despues) or despues[lugar][1] == i:
+            return None
+        return Foto.de_dict(p.fotos[despues[lugar][1]])
+    nuevas = list(g.fotos)
+    primera = None
+    for j, f in enumerate(g.fotos):
+        if f != i:
+            continue
+        en_uso = set(nuevas)
+        opciones = [x for x in rankings[j] + de_reserva(g, len(p.fotos)) if x not in en_uso]
+        while not opciones and p.reserva:   # la que no baja se saltea, como en la propuesta
             foto = Foto.de_dict(p.reserva.pop(0))
             try:
                 foto.ruta = str(wiki.bajar(foto.url, carpeta / f"foto_reserva_{len(p.fotos):02d}.jpg"))
@@ -912,14 +1161,16 @@ def cambiar_foto(p: Propuesta, n: int, wiki: Wiki, carpeta: Path) -> Foto | None
                 log.warning("foto de reserva salteada (%s): %s", foto.archivo, err)
                 continue
             p.fotos.append(foto.a_dict())
-            nueva = len(p.fotos) - 1
-            break
-        else:
+            opciones = [len(p.fotos) - 1]
+        if not opciones:
             return None
-    g.fotos = [nueva if f == i else f for f in g.fotos]
-    g.descartadas = sorted(set(g.descartadas) | {i})
+        nuevas[j] = opciones[0]
+        primera = primera if primera is not None else opciones[0]
+    if primera is None:
+        return None
+    g.fotos, g.ranking = nuevas, rankings
     p.guion = g.a_dict()
-    return Foto.de_dict(p.fotos[nueva])
+    return Foto.de_dict(p.fotos[primera])
 
 
 def _escribir_wav(pcm: bytes, sr: int, salida: Path) -> Path:
@@ -1023,13 +1274,20 @@ def hacer_video(p: Propuesta, settings, carpeta: Path, avisar=log.info, conn=Non
     if tema and conn:
         musica.anotar_uso(conn, tema.ruta)
     avisar(f"música: {tema.ruta if tema else 'ninguna'} (tono {g.tono or '?'})")
-    tramos = [(Path(p.fotos[i]["ruta"]), d) for i, d in zip(g.fotos, duraciones)]
+    # Regla fija (ilustrar.py): con los tiempos REALES de la voz, ninguna foto más de 6 s seguidos.
+    plan = plan_de(p, duraciones)
+    for problema in ilustrar.errores_plan(plan):
+        avisar(f"⚠️ fotos: {problema}")
+    tramos = [(Path(p.fotos[f]["ruta"]), s) for _, f, s in plan]
     t0 = time.time()
     dia = date.fromisoformat(p.fecha)
     clip_id = f"efemeride_{dia:%m%d}_{e.anio}"
     salida = armar_video(tramos, audio, carpeta, carpeta / f"{clip_id}.mp4", settings.render)
-    avisar(f"video: {time.time() - t0:.0f} s")
-    cred = creditos(usadas_en_orden(p))
+    avisar(f"video: {time.time() - t0:.0f} s, {len(tramos)} tramos, "
+           f"{len({f for _, f, _ in plan})} fotos distintas")
+    for problema in chequear_audio(salida):
+        avisar(f"⚠️ audio: {problema}")
+    cred = creditos(usadas_en_orden(p, plan))
     if tema:
         cred += f"\nMúsica: {tema.credito()}"
     return {"clip_id": clip_id, "streamer": "Pequeña Historia", "salida": str(salida),

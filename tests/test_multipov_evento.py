@@ -205,8 +205,10 @@ def test_filtro_concat_corta_cada_angulo_y_pega():
     angulos = [ang("a", "uno", 10, 2, 10), ang("b", "dos", 20, 0, 8)]
     f = filtro_concat(angulos, Render(), con_carteles=True)
     assert "trim=2.00:10.00" in f and "trim=0.00:8.00" in f
-    assert "concat=n=2:v=1:a=1" in f
-    assert f.endswith("[vcat]ass=carteles.ass[vout]")  # los carteles van al final, sobre el concat
+    assert "concat=n=2:v=1:a=0" in f                     # el audio va aparte, con crossfade
+    assert "[vcat];[vcat]ass=carteles.ass[vout]" in f    # los carteles van sobre el concat
+    assert "acrossfade=d=0.04" in f and "afade=t=out:st=15.500:d=0.5" in f
+    assert f.endswith("[aout]")
     assert "hstack" not in f and "overlay" not in f  # nada de pantalla dividida
 
 

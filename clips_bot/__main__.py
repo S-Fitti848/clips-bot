@@ -37,7 +37,7 @@ from .config import DB_PATH, ConfigError, Settings, env, load_settings, load_str
 from .download import DescargaError
 from .gemini import GeminiClient, GeminiError
 from .kick import KickClient
-from .media import MediaError, miniatura, probe
+from .media import MediaError, chequear_audio, miniatura, probe
 from .narrar import NarrarError
 from .seleccion import score_reciente
 from .telegram import TelegramClient, TelegramError
@@ -439,6 +439,11 @@ def enviar_clip(tg: TelegramClient, chat_id, conn, clip_id: str, meta: dict, num
     if meta.get("relleno"):
         cuerpo = (f"⚠️ <b>RELLENO (puntaje {meta.get('puntaje', 0)} de 10)</b> — no llegó al corte "
                   f"de calidad; entró porque faltaban clips. Mirá si vale la pena.\n\n" + cuerpo)
+    # Regla fija de audio (media.chequear_audio): todo video pasa por acá antes de llegar.
+    avisos = chequear_audio(video)
+    if avisos:
+        cuerpo = ("⚠️ <b>Audio</b>: " + "; ".join(html.escape(a) for a in avisos)
+                  + ". Escuchá el final antes de subir.\n\n" + cuerpo)
     caption = f"#{numero} · {meta['streamer']} · {meta['textos']['titulo']}{marca}"
     if encabezado:
         plano = html.unescape(re.sub(r"<[^>]+>", "", encabezado))  # el caption va sin HTML
@@ -2561,17 +2566,20 @@ def _efe_mostrar(conn, tg: TelegramClient, chat_id: str, token: str, estado: dic
 
     p = ef.Propuesta(**estado["propuesta"])
     carpeta = Path(estado["carpeta"])
-    nums = ef.numeros_usados(p)
-    hoja = ef.hoja_de_fotos([ef.Foto.de_dict(p.fotos[n - 1]) for n in nums],
-                            carpeta / f"hoja_{token}.jpg", numeros=nums)
+    g = ef.Guion.de_dict(p.guion)
+    plan = ef.plan_de(p)
+    nums = sorted({f + 1 for _, f, _ in plan})
+    # La hoja: cada foto con su frase al lado (regla fija de ilustrar.py).
+    hoja = ef.hoja_de_guion([ef.Foto.de_dict(f) for f in p.fotos], ef.filas_de_hoja(plan, g.frases),
+                            carpeta / f"hoja_{token}.jpg")
     db.set_valor(conn, f"efe:{token}", json.dumps(estado, ensure_ascii=False))
-    tg.send_photo(chat_id, hoja, "Las fotos del guion, con su número")
+    tg.send_photo(chat_id, hoja, "Cada frase con la foto que se ve mientras se dice")
     filas = [[{"text": "✅ Aprobar", "callback_data": f"efe:ok:{token}"},
               {"text": "✏️ Cambiar guion", "callback_data": f"efe:gno:{token}"}]]
     botones = [{"text": f"🔁 foto {n}", "callback_data": f"efe:f:{token}:{n}"} for n in nums]
     filas += [botones[i:i + 4] for i in range(0, len(botones), 4)]
-    texto = ef.texto_aprobacion(ef.Evento(**p.evento), ef.Guion.de_dict(p.guion),
-                                ef.usadas_en_orden(p), date.fromisoformat(p.fecha))
+    texto = ef.texto_aprobacion(ef.Evento(**p.evento), g, ef.usadas_en_orden(p, plan),
+                                date.fromisoformat(p.fecha), plan)
     tg.send_message(chat_id, texto, teclado={"inline_keyboard": filas})
 
 
@@ -2820,7 +2828,8 @@ def _efe_callback(conn, tg: TelegramClient, cb: dict, settings: Settings, cola: 
 
 
 def _efe_corregir(conn, tg: TelegramClient, t: dict, token: str, settings: Settings) -> None:
-    """La respuesta a ✏️: el guion de nuevo, con las mismas fotos y el mismo artículo."""
+    """La respuesta a ✏️: el guion de nuevo con el mismo artículo, y las fotos de sus frases otra
+    vez (las frases cambian, así que lo que hay que mostrar también). Lo descartado sigue afuera."""
     from . import efemerides as ef
 
     estado = _efe_estado(conn, token)
@@ -2828,23 +2837,13 @@ def _efe_corregir(conn, tg: TelegramClient, t: dict, token: str, settings: Setti
     if not estado or gemini is None:
         return tg.send_message(t["chat_id"], "Esa efeméride venció. Mandá /efemeride de nuevo.")
     p = ef.Propuesta(**estado["propuesta"])
-    fotos = [ef.Foto.de_dict(f) for f in p.fotos]
-    anterior = ef.Guion.de_dict(p.guion)
-    tg.send_message(t["chat_id"], "Lo reescribo…")
+    tg.send_message(t["chat_id"], "Lo reescribo y busco las fotos de nuevo…")
     try:
-        g = ef.escribir_guion(gemini, ef.Evento(**p.evento), p.fuente, fotos,
-                              [ef._jpeg_chico(Path(f.ruta)) for f in fotos],
-                              correccion=t["texto"], anterior=anterior.texto)
-    except (NarrarError, GeminiError) as e:
+        p = ef.rehacer_guion(p, ef.Wiki(), gemini, Path(estado["carpeta"]), t["texto"])
+    except (NarrarError, GeminiError, ef.WikiError) as e:
         db.set_valor(conn, f"{ESPERA_EFE}:{t['user_id']}", token)   # que pueda probar otra vez
         return tg.send_message(t["chat_id"], f"No salió: {html.escape(str(e)[:300])}\n"
                                              "Decime otra cosa para cambiar, o aprobá el anterior.")
-    # Lo que ya se había descartado (a mano con 🔁 o al verlas) sigue descartado.
-    g.descartadas = sorted(set(g.descartadas) | set(anterior.descartadas))
-    if set(g.fotos) & set(g.descartadas):
-        return tg.send_message(t["chat_id"], "El guion nuevo usa una foto que ya habías sacado. "
-                                             "Probá ✏️ de nuevo o aprobá el anterior.")
-    p.guion = g.a_dict()
     _efe_mostrar(conn, tg, t["chat_id"], token, {**estado, "propuesta": p.__dict__})
 
 
@@ -2925,14 +2924,14 @@ def cmd_efemeride(args: argparse.Namespace) -> int:
         if gemini is None:
             print("Falta GEMINI_API_KEY", file=sys.stderr)
             return 2
-        p = ef.proponer(ef.Wiki(), gemini, dia, carpeta, avisar=print)
+        p = ef.proponer(ef.Wiki(), gemini, dia, carpeta, avisar=print, hecho=args.hecho or "")
         (carpeta / "propuesta.json").write_text(json.dumps(p.__dict__, ensure_ascii=False, indent=2),
                                                encoding="utf-8")
-        nums = ef.numeros_usados(p)
-        ef.hoja_de_fotos([ef.Foto.de_dict(p.fotos[n - 1]) for n in nums], carpeta / "hoja.jpg",
-                         numeros=nums)
         g = ef.Guion.de_dict(p.guion)
-        texto = ef.texto_aprobacion(ef.Evento(**p.evento), g, ef.usadas_en_orden(p), dia)
+        plan = ef.plan_de(p)
+        ef.hoja_de_guion([ef.Foto.de_dict(f) for f in p.fotos], ef.filas_de_hoja(plan, g.frases),
+                         carpeta / "hoja.jpg")
+        texto = ef.texto_aprobacion(ef.Evento(**p.evento), g, ef.usadas_en_orden(p, plan), dia, plan)
         (carpeta / "aprobacion.txt").write_text(html.unescape(re.sub(r"<[^>]+>", "", texto)),
                                                 encoding="utf-8")
         print("\n" + html.unescape(re.sub(r"<[^>]+>", "", texto)))
@@ -3817,6 +3816,7 @@ def main(argv: list[str] | None = None) -> int:
     pf.add_argument("--fecha", help="27/09 (día/mes); default hoy")
     pf.add_argument("--aprobar", action="store_true", help="armar el video (voz, fotos, subtítulos)")
     pf.add_argument("--propuesta", help="propuesta.json ya guardada: arma el video sin gastar Gemini")
+    pf.add_argument("--hecho", help="solo los hechos que contienen esto (ej. penicilina): para rehacer uno")
     pf.set_defaults(func=cmd_efemeride)
 
     pb = sub.add_parser("benchmark", help="cuánto tarda un clip completo en esta máquina")

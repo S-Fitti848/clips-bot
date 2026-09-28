@@ -26,6 +26,7 @@ from pathlib import Path
 
 from .narrar import (ESCENAS_MAX, ESCENAS_MIN, PALABRAS_POR_SEGUNDO, PASOS_MAX, PASOS_MIN,
                      NarrarError, Paso)
+from .reglas import REGLAS_CLARIDAD
 
 PARTES_DEFAULT, PARTES_MIN, PARTES_MAX = 3, 2, 5
 ORIGINAL_MIN_POR_PARTE_S = 45    # menos que esto no da 8 momentos de 4-5 s sin repetir
@@ -245,7 +246,7 @@ Te paso, por cada parte, frames en orden y lo que se ve en cada momento. Para CA
 - Contá SOLO lo que se ve. Si no estás seguro de qué es algo, decilo de forma general.
 - Nada de nombres propios que no se lean claramente en pantalla.
 - Hablado, no escrito: frases cortas. Sin emojis, sin hashtags, sin "suscribite".
-
+""" + REGLAS_CLARIDAD + """
 `titulo_serie`: un título corto para toda la serie (hasta 45 caracteres, sin "parte").
 Si te paso el audio, decí también si tiene música ("ninguna", "de_fondo" o "cancion", y cuál en
 `cancion` si la reconocés; no adivines).
