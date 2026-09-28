@@ -2793,7 +2793,8 @@ def cmd_efemeride(args: argparse.Namespace) -> int:
 CATEGORIA = {"rots": "20", "pequena_historia": "27"}   # 20 = Gaming, 27 = Education
 
 
-def _programar_subida(conn, settings: Settings, meta: dict, canal: str, hora: str) -> str:
+def _programar_subida(conn, settings: Settings, meta: dict, canal: str, hora: str,
+                      ahora: datetime | None = None) -> str:
     """Sube y programa. Devuelve el mensaje para Telegram ("" si la subida está apagada o ya estaba)."""
     from . import youtube
 
@@ -2804,13 +2805,17 @@ def _programar_subida(conn, settings: Settings, meta: dict, canal: str, hora: st
         return ""
     ocupados = {s["publish_at"] for s in db.subidas(conn, ("programada",)) if s["canal"] == canal}
     try:
-        cuando = youtube.proximo_horario(hora, ocupados=ocupados,
+        hoy = (ahora or datetime.now(timezone.utc)).astimezone(AR)
+        cuando = youtube.proximo_horario(hora, ahora=hoy, ocupados=ocupados,
                                          horarios=list(settings.publicacion.horarios)
                                          if canal == "rots" else None)
-        hoy = datetime.now(AR)
         if canal == "pequena_historia" and cuando.date() != hoy.date():
-            # "Un día como hoy" publicado mañana está mal: si ya pasó la hora, sale hoy en 30 min.
-            cuando = (hoy + timedelta(minutes=30)).replace(second=0, microsecond=0)
+            # "Un día como hoy" publicado mañana está mal: si ya pasó la hora, sale hoy en 30 min,
+            # y nunca después de las 23:55 (a las 23:32 "en 30 min" caía al día siguiente: lo
+            # encontró el test corriendo en la Pi a esa hora). Mínimo 5 min para que YouTube lo tome.
+            limite = hoy.replace(hour=23, minute=55, second=0, microsecond=0)
+            cuando = max(min(hoy + timedelta(minutes=30), limite), hoy + timedelta(minutes=5))
+            cuando = cuando.replace(second=0, microsecond=0)
         t = meta["textos"]
         video_id = youtube.Cliente(canal).subir(Path(meta["salida"]), t["titulo"], t["descripcion"],
                                                 t.get("hashtags") or [], cuando,

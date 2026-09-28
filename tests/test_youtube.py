@@ -141,13 +141,19 @@ def test_prendida_programa_una_sola_vez(conn, prendida):
     assert ClienteFalso.subidos[0][3] == "20"
 
 
-def test_la_efemeride_sale_el_mismo_dia(conn, prendida, monkeypatch):
-    """Si ya pasó la hora de publicación, sale hoy en 30 min: "un día como hoy" no puede ser mañana."""
-    m._programar_subida(conn, prendida, {**META, "clip_id": "efemeride_0928_1822"},
-                        "pequena_historia", "00:00")
+@pytest.mark.parametrize("hora_aprobacion,esperado", [
+    ((9, 0), (12, 0)),        # antes de las 12: a las 12
+    ((15, 10), (15, 40)),     # pasadas las 12: en 30 min, el mismo día
+    ((23, 32), (23, 55)),     # tarde: nunca después de las 23:55 (antes caía a las 00:02 de mañana)
+])
+def test_la_efemeride_sale_el_mismo_dia(conn, prendida, hora_aprobacion, esperado):
+    """"Un día como hoy" no puede salir mañana. Encontrado corriendo el test en la Pi a las 23:32."""
+    ahora = datetime(2026, 9, 28, *hora_aprobacion, tzinfo=AR)
+    m._programar_subida(conn, prendida, {**META, "clip_id": f"efe_{hora_aprobacion}"},
+                        "pequena_historia", "12:00", ahora=ahora)
     canal, _, cuando, cat = ClienteFalso.subidos[-1]
     assert canal == "pequena_historia" and cat == "27"
-    assert cuando.date() == datetime.now(AR).date()
+    assert cuando.date() == ahora.date() and (cuando.hour, cuando.minute) == esperado
 
 
 def test_subidas_lista_y_cancela(conn, prendida):

@@ -460,7 +460,7 @@ clips_bot/serie.py       /serie: partes, división en etapas (validada), guiones
                          título numerado, horarios, hoja de miniaturas por etapa
 clips_bot/envivo.py      modo en vivo (§3b): quién está al aire, momentos por creadores distintos,
                          alertas en la DB (no repetir, tope, vencer) y el resumen de tiempos
-tests/                   389 tests sin red ni video
+tests/                   391 tests sin red ni video
 ```
 
 Comandos:
@@ -654,7 +654,9 @@ Problemas abiertos:
   de git), upload reanudable en privado con `publishAt`, cancelar = privado sin fecha. Dos canales
   de la misma cuenta: Rots (clips, categoría 20) y Pequeña Historia (efemérides, 27). Al aprobar se
   programa sola: ✅ de una efeméride → ese mismo día a `efemerides.hora_publicacion` (12:00) o en
-  30 min si ya pasó (decidido por Claude: "un día como hoy" no puede salir mañana); 👍 de un clip
+  30 min si ya pasó, nunca después de las 23:55 (decidido por Claude: "un día como hoy" no puede
+  salir mañana; el test lo encontró corriendo en la Pi a las 23:32, cuando "30 min" daba
+  00:02 del día siguiente); 👍 de un clip
   de streamer → su horario sugerido o el siguiente libre (decidido por Claude: el 👍 es la
   "aprobación" de un clip; los videos propios de /editar, /narrar y /serie no se suben solos,
   porque no tienen canal fijo). `/subidas` lista y cancela; tabla `subidas`. Guía para no
@@ -663,7 +665,7 @@ Problemas abiertos:
   `videos.insert` cuesta 1 unidad de un balde aparte de 100 por día (antes 1600 de 10.000; §1
   corregido); la restricción a privado de los proyectos sin auditar sigue. OJO: con la app de OAuth
   en modo *Prueba*, Google vence el permiso cada 7 días: hay que pasarla a *En producción*. NO
-  probado contra YouTube (sin credenciales): tests con sesión falsa. 389 tests OK.
+  probado contra YouTube (sin credenciales): tests con sesión falsa. 391 tests OK.
 - v0.28.0 (2026-09-28) — **Carpetas de streamers.** Cada `grupo` es una carpeta (tabla
   `carpetas`) con dos interruptores: `en_vivo` (el modo en vivo SOLO vigila esas carpetas) y
   `diarios` (la corrida de las 05:00 y /ya solo usan esas). De fábrica: Argentinos en vivo sí;
