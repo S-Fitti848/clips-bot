@@ -201,10 +201,13 @@ def vetar(conn, ruta: str) -> bool:
 
 def filtro(volumen: float, duracion: float, fundido_s: float = 1.5) -> str:
     """Voz ([0:a]) + música ([1:a], en loop) al `volumen`, con ducking: la música baja cuando
-    suena la voz (sidechaincompress con la voz como disparador) y se va apagando al final."""
-    return (f"[1:a]aresample=48000,aformat=channel_layouts=stereo,volume={volumen},"
+    suena la voz (sidechaincompress con la voz como disparador) y se va apagando al final.
+
+    En mono: la voz es mono, y pasarla a estéreo le bajaba 3 dB (medido en la Pi: -17,7 dB sola,
+    -20,6 dB en la mezcla estéreo)."""
+    return (f"[1:a]aresample=48000,aformat=channel_layouts=mono,volume={volumen},"
             f"afade=t=out:st={max(duracion - fundido_s, 0):.2f}:d={fundido_s}[mus];"
-            f"[0:a]aresample=48000,aformat=channel_layouts=stereo,asplit=2[voz][disparo];"
+            f"[0:a]aresample=48000,aformat=channel_layouts=mono,asplit=2[voz][disparo];"
             f"[mus][disparo]sidechaincompress=threshold=0.02:ratio=8:attack=20:release=400[bajo];"
             f"[voz][bajo]amix=inputs=2:duration=first:dropout_transition=0:normalize=0[a]")
 
