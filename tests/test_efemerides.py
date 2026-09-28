@@ -152,7 +152,6 @@ def _guion_ok(**cambios):
                     {"texto": "¡Tenían un armario lleno de servidores y dos routers HP!", "foto": 4},
                     {"texto": "Al principio el buscador no se llamaba Google, se llamaba BackRub.", "foto": 1},
                     {"texto": "Con el tiempo superó a AltaVista, el más popular de la época.", "foto": 2},
-                    {"texto": "Todo eso empezó con un proyecto de dos estudiantes y un armario.", "foto": 3},
                     {"texto": "Y el 27 de septiembre de 1998 el buscador salió a Internet para todos.", "foto": 4},
                     {"texto": "Desde ese día la forma de buscar cosas en la web cambió para siempre.", "foto": 1},
                     {"texto": "¿Te imaginás cómo buscarías cualquier cosa sin este buscador?", "foto": 2}],
@@ -348,3 +347,72 @@ def test_la_musica_baja_cuando_habla_y_se_apaga_al_final():
     assert "volume=0.12" in f and "afade=t=out:st=40.50:d=1.5" in f
     assert "[mus][disparo]sidechaincompress" in f      # la voz dispara el ducking
     assert "amix=inputs=2:duration=first" in f         # dura lo que la voz
+
+
+# ---- la voz: Gemini TTS con respaldo de Piper, y la alineación al guion --------------------
+
+def test_alinear_usa_el_texto_del_guion_y_los_tiempos_de_whisper():
+    from clips_bot.narrar import alinear_a_guion
+    from clips_bot.subtitles import Palabra
+
+    frases = ["Un día como hoy, Jean-François hizo un anuncio.", "¡Lo logró!"]
+    whisper = [Palabra(0.1, 0.3, "Un"), Palabra(0.3, 0.5, "día"), Palabra(0.5, 0.7, "como"),
+               Palabra(0.7, 0.9, "hoy,"), Palabra(1.0, 1.3, "Jean"), Palabra(1.3, 1.7, "-François"),
+               Palabra(1.7, 2.0, "hizo"), Palabra(2.0, 2.1, "un"), Palabra(2.1, 2.6, "anuncia."),
+               Palabra(3.0, 3.2, "Lo"), Palabra(3.2, 3.6, "logró.")]
+    palabras, inicios = alinear_a_guion(whisper, frases, 4.0)
+    assert [p.texto for p in palabras] == ["Un", "día", "como", "hoy,", "Jean-François", "hizo", "un",
+                                           "anuncio.", "¡Lo", "logró!"]
+    assert inicios == [0.0, 3.0]
+
+
+def test_alinear_sin_nada_de_whisper_reparte_parejo():
+    from clips_bot.narrar import alinear_a_guion
+
+    palabras, inicios = alinear_a_guion([], ["uno dos", "tres cuatro"], 4.0)
+    assert [round(p.inicio, 2) for p in palabras] == [0.0, 1.0, 2.0, 3.0] and inicios == [0.0, 2.0]
+
+
+def _cfg_voz(tmp_path, motor="gemini"):
+    from dataclasses import replace
+
+    from clips_bot.config import load_settings
+
+    s = load_settings()
+    return replace(s, efemerides=replace(s.efemerides, voz_motor=motor))
+
+
+def test_voz_con_gemini_no_devuelve_duraciones_y_acelera_si_se_pasa(tmp_path, monkeypatch):
+    monkeypatch.setenv("GEMINI_API_KEY", "x")
+    acelerados = []
+    monkeypatch.setattr(ef, "acelerar", lambda wav, f: acelerados.append(round(f, 3)) or wav)
+    pcm = b"\x00\x00" * 24000 * 50                     # 50 s a 24 kHz
+    wav, dur, motor = ef.voz_efemeride(["hola"], _cfg_voz(tmp_path), tmp_path,
+                                       tts=lambda *a, **k: (pcm, 24000))
+    assert dur is None and motor == "gemini:Laomedeia" and acelerados == [round(50 / 45, 3)]
+
+
+def test_sin_cuota_de_gemini_va_piper_ajustado(tmp_path, monkeypatch):
+    from clips_bot import narrar
+    from clips_bot.gemini import GeminiError
+
+    monkeypatch.setenv("GEMINI_API_KEY", "x")
+    usados = []
+
+    def piper(frases, modelo, salida, pausa_s=0.3, ajustes=None):
+        usados.append(ajustes)
+        return salida, [1.0] * len(frases)
+
+    def sin_cuota(*a, **k):
+        raise GeminiError("429 quota")
+
+    monkeypatch.setattr(narrar, "sintetizar_frases", piper)
+    s = _cfg_voz(tmp_path)
+    from dataclasses import replace
+    modelo = tmp_path / "v.onnx"
+    modelo.write_bytes(b"")
+    s = replace(s, voz=replace(s.voz, modelo=str(modelo)))
+    wav, dur, motor = ef.voz_efemeride(["a", "b"], s, tmp_path, tts=sin_cuota)
+    assert motor.startswith("piper:") and dur == [1.0, 1.0]
+    aj = usados[0]
+    assert (aj.length_scale, aj.noise_w_scale, aj.semitonos) == (0.88, 1.0, 1.5)

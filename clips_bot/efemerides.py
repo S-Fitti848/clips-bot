@@ -44,10 +44,12 @@ MIN_ANCHO = 800          # la foto se escala a 1080 de ancho en fit_blur: menos 
 # Las que ve Gemini; el resto queda de reserva para "🔁 cambiar foto N". Eran 8: la Piedra de
 # Rosetta tenía 11 que pasaban las reglas y quedó afuera con 3 que Gemini nunca vio.
 MAX_FOTOS_GUION = 12
-# 35-45 s con la voz de Piper, MEDIDA: 3,0-3,2 palabras por segundo con las pausas entre frases
-# (narrar.PALABRAS_POR_SEGUNDO). El rango anterior, 88-115, salía de estimar 2,5 y daba 29-37 s:
-# en la Pi rechazó un guion de 117 palabras que eran ~38 s.
-PALABRAS_MIN, PALABRAS_MAX = 105, 135
+# Largo del guion, según la voz (todo MEDIDO en la Pi el 2026-09-27):
+#   Gemini TTS (la voz elegida el 28/09): 115 palabras en 60,8 s = 1,9 palabras/s. Con la
+#     aceleración de hasta ×1,25 (efemerides.tts_acelerar_max), 45 s entran ~105 palabras.
+#   Piper (el respaldo): 3,0-3,2 palabras/s con las pausas: 85 palabras son ~28 s, algo corto.
+# El rango sale de la voz principal. Antes fue 105-135 (para Piper) y, antes, 88-115 (estimado).
+PALABRAS_MIN, PALABRAS_MAX = 85, 105
 
 MESES = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre",
          "octubre", "noviembre", "diciembre"]
@@ -388,8 +390,8 @@ nombre, ni un número, ni una fecha que no esté ahí. Si el artículo no lo dic
   en el medio del guion, para que no suene plano.
 - Cierre con gancho: la última frase es una pregunta al público o una exclamación que deje algo
   picando (termina con "?" o "!"). Nada de cierres tipo "y así fue".
-- Entre 110 y 130 palabras en total (contalas: menos de 105 queda corto y más de 135 se pasa de
-  45 segundos), en 10 a 16 frases, habladas, no escritas. Si el artículo da para poco,
+- Entre 88 y 102 palabras en total (contalas: menos de 85 queda corto y más de 105 se pasa de
+  45 segundos), en 9 a 14 frases, habladas, no escritas. Si el artículo da para poco,
   contá más detalle de lo que SÍ dice.
 - Números: solo los que están en el artículo, escritos igual. Nada de "hoy tiene millones de…"
   si el artículo no lo dice con esas palabras.
@@ -610,9 +612,8 @@ def texto_aprobacion(e: Evento, g: Guion, fotos: list[Foto], fecha: date) -> str
     for texto, foto in zip(g.frases, g.fotos):
         lineas.append(f"[{foto + 1}] {html.escape(texto)}")
     palabras = len(g.texto.split())
-    from .narrar import PALABRAS_POR_SEGUNDO
-
-    lineas.append(f"\n{palabras} palabras, ~{palabras / PALABRAS_POR_SEGUNDO:.0f} s de voz.")
+    # Con la voz de Gemini (1,9 palabras/s medido) acelerada hasta 45 s si hace falta.
+    lineas.append(f"\n{palabras} palabras, ~{min(palabras / 1.9, 45):.0f} s de voz.")
     lineas.append("\n<b>Créditos</b>\n" + html.escape(creditos(fotos)))
     return "\n".join(lineas)[:4000]
 
@@ -860,21 +861,84 @@ def cambiar_foto(p: Propuesta, n: int, wiki: Wiki, carpeta: Path) -> Foto | None
     return Foto.de_dict(p.fotos[nueva])
 
 
+def _escribir_wav(pcm: bytes, sr: int, salida: Path) -> Path:
+    import wave
+
+    salida.parent.mkdir(parents=True, exist_ok=True)
+    with wave.open(str(salida), "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(sr)
+        w.writeframes(pcm)
+    return salida
+
+
+def acelerar(wav: Path, factor: float) -> Path:
+    """atempo: más rápido sin cambiar el tono. En el mismo archivo."""
+    tmp = wav.with_name(wav.stem + ".rapido.wav")
+    run([find_bin("ffmpeg"), "-hide_banner", "-loglevel", "error", "-y", "-i", str(wav.resolve()),
+         "-af", f"atempo={factor:.4f}", str(tmp.resolve())])
+    tmp.replace(wav)
+    return wav
+
+
+def voz_efemeride(frases: list[str], settings, carpeta: Path, avisar=log.info,
+                  tts=None) -> tuple[Path, list[float] | None, str]:
+    """La voz del guion: (wav, duración de cada frase o None, motor que se usó).
+
+    Gemini TTS da un solo audio para todo el guion, así que no sabe dónde empieza cada frase:
+    devuelve None y los cortes salen de alinear Whisper contra el guion. Piper sintetiza frase por
+    frase y ahí la duración de cada una se sabe exacta."""
+    from dataclasses import replace
+
+    from . import narrar
+    from .config import env
+    from .gemini import GeminiError, hablar
+
+    cfg = settings.efemerides
+    if cfg.voz_motor == "gemini":
+        key = env("GEMINI_API_KEY", requerido=False)
+        try:
+            if not key:
+                raise GeminiError("sin GEMINI_API_KEY")
+            pcm, sr = (tts or hablar)(key, " ".join(frases), instruccion=cfg.tts_instruccion,
+                                      voz=cfg.tts_voz, modelo=cfg.tts_modelo)
+            wav = _escribir_wav(pcm, sr, carpeta / "voz.wav")
+            dur = len(pcm) / 2 / sr
+            if dur > cfg.tts_max_s:
+                factor = min(dur / cfg.tts_max_s, cfg.tts_acelerar_max)
+                acelerar(wav, factor)
+                avisar(f"voz Gemini de {dur:.1f} s: acelerada ×{factor:.2f}")
+            return wav, None, f"gemini:{cfg.tts_voz}"
+        except GeminiError as e:
+            avisar(f"Gemini TTS no anduvo ({str(e)[:120]}): sigo con Piper")
+    ajustes = replace(settings.voz, length_scale=cfg.piper_length_scale,
+                      noise_scale=cfg.piper_noise_scale, noise_w_scale=cfg.piper_noise_w_scale,
+                      semitonos=cfg.piper_semitonos)
+    modelo = Path(settings.voz.modelo)
+    if not modelo.exists():
+        raise NarrarError(f"Falta la voz en {modelo}")
+    wav, duraciones = narrar.sintetizar_frases(frases, modelo, carpeta / "voz.wav", ajustes=ajustes)
+    return wav, duraciones, f"piper:{modelo.stem}"
+
+
 def hacer_video(p: Propuesta, settings, carpeta: Path, avisar=log.info) -> dict:
     """Propuesta aprobada → mp4 + meta listo para `enviar_clip`. Esto es lo que gasta la Pi:
     Piper, Whisper sobre la voz y un encode por foto."""
     from . import narrar, subtitles as sub
 
     g, e = Guion.de_dict(p.guion), Evento(**p.evento)
-    modelo = Path(settings.voz.modelo)
-    if not modelo.exists():
-        raise NarrarError(f"Falta la voz en {modelo}")
     t0 = time.time()
-    wav, duraciones = narrar.sintetizar_frases(g.frases, modelo, carpeta / "voz.wav",
-                                                 ajustes=settings.voz)
-    avisar(f"voz: {sum(duraciones):.1f} s en {time.time() - t0:.0f} s")
+    wav, duraciones, motor = voz_efemeride(g.frases, settings, carpeta, avisar)
+    fin = narrar.duracion_wav(wav)
+    avisar(f"voz ({motor}): {fin:.1f} s en {time.time() - t0:.0f} s")
     t0 = time.time()
-    subs = narrar.subtitular_voz(wav, settings.subtitulos, palabra_por_palabra=True)
+    # Whisper da los tiempos; el texto de los subtítulos es el del guion aprobado.
+    palabras, inicios = narrar.alinear_a_guion(narrar.palabras_de_voz(wav, settings.subtitulos),
+                                               g.frases, fin)
+    if duraciones is None:   # Gemini: un solo audio, los cortes salen de la alineación
+        duraciones = [b - a for a, b in zip(inicios, inicios[1:] + [fin])]
+    subs = sub.palabra_por_palabra(palabras, settings.subtitulos)
     sub.escribir_ass(subs, carpeta / "subs.ass", settings.subtitulos, settings.render,
                      cartel=str(e.anio), cartel_s=2.0, cartel_grande=True)
     avisar(f"subtítulos: {len(subs)} palabras en {time.time() - t0:.0f} s")
@@ -902,7 +966,7 @@ def hacer_video(p: Propuesta, settings, carpeta: Path, avisar=log.info) -> dict:
                        "hashtags": g.hashtags, "credito": cred},
             "efemeride": {"fecha": p.fecha, "anio": e.anio, "evento": e.texto,
                           "articulo": e.paginas[0], "lang": e.lang, "guion": g.frases,
-                          "musica": pista.name if pista else None}}
+                          "musica": pista.name if pista else None, "voz": motor}}
 
 
 def _jpeg_chico(ruta: Path, ancho: int = 512) -> bytes:

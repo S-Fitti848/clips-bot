@@ -279,14 +279,77 @@ def subtitular_voz(wav: Path, cfg_subs, texto_guion: str = "",
     """
     from . import subtitles as sub
 
-    modelo = sub.cargar_modelo(cfg_subs)
-    try:
-        palabras = sub.transcribir(modelo, wav, cfg_subs, duracion_wav(wav))
-    finally:
-        del modelo
+    palabras = palabras_de_voz(wav, cfg_subs)
+    if texto_guion.strip():
+        palabras, _ = alinear_a_guion(palabras, [texto_guion], duracion_wav(wav))
     if palabra_por_palabra:
         return sub.palabra_por_palabra(palabras, cfg_subs)
     return sub.armar_subtitulos(palabras, cfg_subs)
+
+
+def palabras_de_voz(wav: Path, cfg_subs) -> list:
+    """Whisper sobre la voz sintetizada: los tiempos reales de cada palabra."""
+    from . import subtitles as sub
+
+    modelo = sub.cargar_modelo(cfg_subs)
+    try:
+        return sub.transcribir(modelo, wav, cfg_subs, duracion_wav(wav))
+    finally:
+        del modelo
+
+
+def _clave(t: str) -> str:
+    sin = "".join(c for c in __import__("unicodedata").normalize("NFKD", t)
+                  if not __import__("unicodedata").combining(c))
+    return re.sub(r"[^a-z0-9]", "", sin.lower())
+
+
+def alinear_a_guion(palabras: list, frases: list[str], fin_audio: float) -> tuple[list, list[float]]:
+    """Los tiempos de Whisper con el TEXTO del guion, y cuándo arranca cada frase.
+
+    Whisper escucha la voz y a veces escribe otra cosa: "propia" por "propio", "Jean" y
+    "-François" en dos (visto el 2026-09-27). El guion es lo que se aprobó, así que los subtítulos
+    llevan sus palabras y de Whisper se toman solo los tiempos: se emparejan las dos secuencias
+    (difflib) y lo que no empareja se reparte entre los vecinos que sí.
+
+    Devuelve (palabras del guion con su tiempo, inicio de cada frase en segundos). Lo segundo es lo
+    que permite cambiar de foto por frase cuando la voz viene en un solo audio (Gemini TTS)."""
+    import difflib
+
+    from .subtitles import Palabra
+
+    tokens = [(i, t) for i, f in enumerate(frases) for t in f.split()]
+    if not tokens:
+        return [], [0.0] * len(frases)
+    a, b = [_clave(t) for _, t in tokens], [_clave(p.texto) for p in palabras]
+    tiempos: list = [None] * len(tokens)
+    for blk in difflib.SequenceMatcher(None, a, b, autojunk=False).get_matching_blocks():
+        for k in range(blk.size):
+            p = palabras[blk.b + k]
+            tiempos[blk.a + k] = (p.inicio, p.fin)
+    # Lo que no emparejó: se reparte parejo entre el último tiempo conocido y el siguiente.
+    i = 0
+    while i < len(tokens):
+        if tiempos[i] is not None:
+            i += 1
+            continue
+        j = i
+        while j < len(tokens) and tiempos[j] is None:
+            j += 1
+        desde = tiempos[i - 1][1] if i > 0 else 0.0
+        hasta = tiempos[j][0] if j < len(tokens) else fin_audio
+        paso = max(hasta - desde, 0.0) / (j - i)
+        for k in range(i, j):
+            tiempos[k] = (desde + paso * (k - i), desde + paso * (k - i + 1))
+        i = j
+    alineadas = [Palabra(ini, max(fin, ini + 0.05), tok) for (_, tok), (ini, fin) in zip(tokens, tiempos)]
+    inicios, visto = [0.0] * len(frases), set()
+    for (f, _), (ini, _) in zip(tokens, tiempos):
+        if f not in visto:
+            inicios[f] = ini
+            visto.add(f)
+    inicios[0] = 0.0
+    return alineadas, inicios
 
 
 def aviso_largo(guion: Guion, duracion: float) -> str:

@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-09-27 | **Versión:** v0.27.0 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 + escucha de Telegram 24/7)
+**Snapshot:** 2026-09-27 | **Versión:** v0.27.1 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 + escucha de Telegram 24/7)
 
 > **SI ESTÁS EMPEZANDO UNA SESIÓN NUEVA, LEÉ §10.** Ahí está qué está hecho, qué quedó a medias,
 > qué falta, y las trampas que ya nos mordieron.
@@ -451,7 +451,7 @@ clips_bot/serie.py       /serie: partes, división en etapas (validada), guiones
                          título numerado, horarios, hoja de miniaturas por etapa
 clips_bot/envivo.py      modo en vivo (§3b): quién está al aire, momentos por creadores distintos,
                          alertas en la DB (no repetir, tope, vencer) y el resumen de tiempos
-tests/                   337 tests sin red ni video
+tests/                   341 tests sin red ni video
 ```
 
 Comandos:
@@ -638,6 +638,17 @@ Problemas abiertos:
 
 ## 9. CHANGELOG
 
+- v0.27.1 (2026-09-28) — Voz de Pequeña Historia: Gemini TTS (Laomedeia, la muestra C) con la
+  instrucción de sonar entusiasmado; si falla o no hay cuota, Piper daniela ajustada (0,88 /
+  noise 0,8 / noise_w 1,0 / +1,5 st, la muestra A). Todo en `efemerides.*` de settings. Como
+  Gemini da UN audio para todo el guion, los cortes de foto por frase salen de alinear Whisper
+  contra el guion (`narrar.alinear_a_guion`, difflib); si pasa de 45 s se acelera con atempo hasta
+  ×1,25. La alineación también arregla lo pendiente de los subtítulos: ahora llevan el TEXTO del
+  guion y de Whisper solo los tiempos, en efemérides, /serie y /narrar ("Jean-François" entero,
+  "propio" y no "propia"). Guion de 85-105 palabras (Gemini a 1,9 palabras/s MEDIDO: 45 s con la
+  aceleración; con el respaldo de Piper queda en ~28-33 s). Decidido por Claude: el rango (sale
+  de la voz principal) y subir también noise_scale (el pedido decía "más variación de
+  entonación", que en Piper es sobre todo noise_scale). 341 tests OK.
 - v0.27.0 (2026-09-28) — El canal de efemérides pasa a llamarse **"Pequeña Historia"** (antes
   "Pasó Hoy") en todos lados: ayuda, mensajes, prompts, títulos, User-Agent y este archivo
   (también las entradas viejas del changelog, para que se pueda buscar por un solo nombre).

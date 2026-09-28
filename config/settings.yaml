@@ -283,6 +283,18 @@ efemerides:
   musica: true
   carpeta_musica: musica
   musica_volumen: 0.12
+  # Voz (elegida por Santi el 2026-09-28: la muestra C). Gemini TTS con Laomedeia; si falla o no hay
+  # cuota, Piper daniela ajustada (la muestra A). Gemini lee a 1,9 palabras/s (medido): si el audio
+  # pasa de tts_max_s se acelera con atempo, hasta ×1,25.
+  voz_motor: gemini
+  tts_modelo: gemini-3.8-flash-tts
+  tts_voz: Laomedeia
+  tts_max_s: 45
+  tts_acelerar_max: 1.25
+  piper_length_scale: 0.88
+  piper_noise_scale: 0.8      # más variación de entonación que la de fábrica (0,667)
+  piper_noise_w_scale: 1.0    # más variación de ritmo (0,8)
+  piper_semitonos: 1.5
 
 # §3 paso 7: textos con Gemini.
 textos:

@@ -238,6 +238,23 @@ class EfemeridesCfg:
     musica: bool = True
     carpeta_musica: str = "musica"
     musica_volumen: float = 0.12
+    # Voz (decisión 2026-09-28: la muestra C). gemini = Gemini TTS; si falla o no hay cuota, Piper
+    # con los ajustes piper_* (la muestra A). piper = directo Piper.
+    voz_motor: str = "gemini"
+    tts_modelo: str = "gemini-3.8-flash-tts"
+    tts_voz: str = "Laomedeia"
+    tts_instruccion: str = (
+        "Leé esto en español rioplatense, como alguien entusiasmado que le cuenta una historia "
+        "increíble a un amigo: con energía, variando el tono, remarcando las preguntas y las "
+        "sorpresas, a ritmo ágil y sin pausas largas.")
+    # Gemini lee más lento que Piper (medido: 115 palabras en 60,8 s). Si se pasa de esto, se
+    # acelera con atempo hasta tts_acelerar_max (más que 1,25 ya se nota).
+    tts_max_s: float = 45.0
+    tts_acelerar_max: float = 1.25
+    piper_length_scale: float = 0.88
+    piper_noise_scale: float = 0.8
+    piper_noise_w_scale: float = 1.0
+    piper_semitonos: float = 1.5
 
 
 @dataclass(frozen=True)
