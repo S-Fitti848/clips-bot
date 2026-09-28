@@ -276,7 +276,7 @@ def ejecutar_seleccion(settings: Settings, gemini: GeminiClient | None, enviar: 
     Un comando como /ya pasa el chat desde donde lo pidieron, que es donde hay que contestar.
     """
     from .process import READY_DIR, guardar_meta
-    from .seleccion import desempate_gemini, score, seleccionar
+    from .seleccion import desempate_gemini, factores_votos, score, seleccionar
     from .telegram import mensaje_textos, resolver_chat_id
 
     cfg = settings.seleccion
@@ -298,8 +298,13 @@ def ejecutar_seleccion(settings: Settings, gemini: GeminiClient | None, enviar: 
     conn_c = db.connect(DB_PATH)
     try:
         cupo = n or db.cantidad_diaria(conn_c)
+        factores = factores_votos(db.votos_por_streamer(conn_c, cfg.votos_de), cfg)
     finally:
         conn_c.close()
+    movidos = {s: f for s, f in factores.items() if abs(f - 1) >= 0.005}
+    if movidos:
+        print("Peso por votos: " + ", ".join(f"{s} ×{f:.2f}" for s, f in
+                                             sorted(movidos.items(), key=lambda kv: -kv[1])))
 
     def reintentar_mas_tarde(faltan: int) -> bool:
         """La entrega diaria quedó corta porque Gemini está caído: en vez de avisar, se agenda un
@@ -329,14 +334,24 @@ def ejecutar_seleccion(settings: Settings, gemini: GeminiClient | None, enviar: 
     buenos = [o for o in opciones if not o.meta.get("relleno")]
     relleno = sorted((o for o in opciones if o.meta.get("relleno")),
                      key=lambda o: o.meta.get("puntaje", 0), reverse=True)
-    elegidos = seleccionar(buenos, cfg, ahora, desempate_gemini(gemini) if gemini else None)
+    elegidos = seleccionar(buenos, cfg, ahora, desempate_gemini(gemini) if gemini else None,
+                           factores)
     if len(elegidos) < cupo and relleno:
         # Solo puede salir de acá lo que falló ÚNICAMENTE por calidad: lo que se descarta por tono,
         # copyright, datos en pantalla o cualquier filtro de seguridad nunca llega a `opciones`.
         faltan = cupo - len(elegidos)
         print(f"\nFaltan {faltan} para llegar a {cupo}: completo con relleno "
               f"(los mejores de {len(relleno)} que no llegaron al corte de calidad)")
-        elegidos += relleno[:faltan]
+        por_streamer: dict[str, int] = {}
+        for o in elegidos:
+            por_streamer[o.streamer] = por_streamer.get(o.streamer, 0) + 1
+        for o in relleno:     # el tope por streamer vale también para el relleno
+            if faltan <= 0:
+                break
+            if por_streamer.get(o.streamer, 0) < cfg.max_por_streamer:
+                elegidos.append(o)
+                por_streamer[o.streamer] = por_streamer.get(o.streamer, 0) + 1
+                faltan -= 1
     if n:
         elegidos = elegidos[:n]
 
@@ -353,7 +368,7 @@ def ejecutar_seleccion(settings: Settings, gemini: GeminiClient | None, enviar: 
     for i, o in enumerate(elegidos, 1):
         edad = f"{(ahora - o.creado).total_seconds() / 3600 / 24:.1f} d" if o.creado else "?"
         horario = horarios[i - 1] if i <= len(horarios) else "?"
-        print(f"\n{i}. [{o.grupo_o_fuente()}] score {score(o, ahora, cfg):,.2f}  {o.vistas:,} vistas  "
+        print(f"\n{i}. [{o.grupo_o_fuente()}] score {score(o, ahora, cfg, factores):,.2f}  {o.vistas:,} vistas  "
               f"x{o.clips_mismo_momento} dup  {edad}  {o.streamer}  ({horario} AR)")
         t = o.meta["textos"]
         print(f"   Título:      {t['titulo']}")

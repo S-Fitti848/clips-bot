@@ -31,9 +31,10 @@ def lista(monkeypatch):
 def test_valores_de_fabrica(conn):
     c = db.carpetas(conn)
     assert (c["argentinos"]["en_vivo"], c["argentinos"]["diarios"]) == (True, True)
-    assert (c["evento"]["en_vivo"], c["evento"]["diarios"]) == (False, True)
+    assert (c["famosos"]["en_vivo"], c["famosos"]["diarios"]) == (True, True)
+    assert (c["evento"]["en_vivo"], c["evento"]["diarios"]) == (False, False)   # desde el 2026-09-28
     assert (c["catalogo"]["en_vivo"], c["catalogo"]["diarios"]) == (False, True)
-    assert c["evento"]["etiqueta"] == "Dedsafío"
+    assert c["evento"]["etiqueta"] == "Dedsafío" and c["famosos"]["etiqueta"] == "Famosos"
 
 
 def test_el_modo_en_vivo_solo_vigila_carpetas_con_en_vivo(conn):
@@ -43,7 +44,9 @@ def test_el_modo_en_vivo_solo_vigila_carpetas_con_en_vivo(conn):
 
 
 def test_la_corrida_diaria_saltea_carpetas_sin_diarios(conn):
+    assert [s.login for s in registro.filtrar(YAML, conn, "diarios")] == ["spreen", "vegetta777"]
     db.set_interruptor(conn, "catalogo", "diarios", False)
+    db.set_interruptor(conn, "evento", "diarios", True)
     assert [s.login for s in registro.filtrar(YAML, conn, "diarios")] == ["spreen", "rivers_gg"]
 
 
@@ -110,8 +113,8 @@ def test_tocar_los_interruptores_desde_el_menu(conn, lista):
     m._menu_callback(conn, tg, _cb(f"st:v:{gi}"), None, [])
     assert db.carpeta(conn, "evento")["en_vivo"] and tg.respuestas[-1] == "🔴 En vivo: sí"
     m._menu_callback(conn, tg, _cb(f"st:d:{gi}"), None, [])
-    assert not db.carpeta(conn, "evento")["diarios"]
-    assert "📅 Diarios: no" in tg.editados[-1][0]
+    assert db.carpeta(conn, "evento")["diarios"]          # de fábrica está apagado
+    assert "📅 Diarios: sí" in tg.editados[-1][0]
 
 
 def test_mover_desde_el_menu(conn, lista):

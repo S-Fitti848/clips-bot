@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-09-28 | **Versión:** v0.28.4 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 + escucha de Telegram 24/7)
+**Snapshot:** 2026-09-28 | **Versión:** v0.29.0 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 + escucha de Telegram 24/7)
 
 > **SI ESTÁS EMPEZANDO UNA SESIÓN NUEVA, LEÉ §10.** Ahí está qué está hecho, qué quedó a medias,
 > qué falta, y las trampas que ya nos mordieron.
@@ -41,6 +41,14 @@ servicio systemd separado: `clips-bot`).
   Telegram; cuando exista el módulo de métricas (§4b) se llama igual desde ahí.
 - **Sin IA generativa de video.** Gemini se usa solo para texto: título, descripción, hashtags,
   `depende_de_fecha`, y elegir entre candidatos cuando hay empate.
+- **Mezcla diaria de Rots (2026-09-28, con datos de lo subido):** lo que rinde es Davoo, Auron,
+  Coscu, Coker y Spreen; Minecraft y el Dedsafío no los mira nadie. Entonces: la carpeta Dedsafío
+  sin diarios ni en vivo, sin cupo del evento, cupos `argentinos: 2` + `famosos: 1` (Auron) y el
+  catálogo de fallback, máximo 1 clip por streamer (relleno incluido), multi-POV APAGADO (era
+  para el Dedsafío), y el score pesa los 👍/👎 de Santi por streamer (después, las vistas de
+  YouTube, cuando exista §4b).
+- **Videos largos: NO por ahora (decisión de Santi, 2026-09-28).** No quiere videos largos con voz
+  de IA. Si más adelante se hacen, van con SU voz grabada, no con Gemini TTS ni Piper.
 - **Sin música agregada en los clips.** Cualquier música es riesgo de Content ID. Si el clip trae
   música de fondo del stream, se descarta (detección: ver §4). EXCEPCIÓN pedida por Santi
   (2026-09-27): Pequeña Historia lleva música de fondo con licencia verificada (docs/musica.md).
@@ -171,7 +179,10 @@ y por eso la unidad va con `Nice=10` y prioridad de CPU baja. NO paralelizar.
      los mismos 27 clips, sin imagen y con 4 frames: mediana 5 → 6, y con corte 5 pasaban 14/27 →
      pasan 20/27. Los que más subieron son los visuales (renrize 2→9 con un parkour y un festejo,
      spreen 5→9 con un balde en la cabeza, vegetta777 4→8 cuando le explotan con misiles).
-7b. **Multi-POV (grupo evento). PRENDIDO A PRUEBA desde el 2026-09-24** (`multipov.activo: true`).
+7b. **Multi-POV (grupo evento). APAGADO desde el 2026-09-28** (`multipov.activo: false`, pedido de
+   Santi: era para el Dedsafío, que salió de los diarios; la prueba se cortó antes del 09/10 sin
+   ningún multi-POV armado). Lo que sigue es cómo funcionaba, por si se vuelve a prender.
+   Estuvo PRENDIDO A PRUEBA desde el 2026-09-24.
    Estuvo apagado unas horas: la agrupación de "mismo momento entre streamers" usa la hora de
    CREACIÓN del clip (±2 min), que NO es la hora del hecho, y con 54 canales cualquier ventana de
    2 min junta cosas distintas. Lo que lo destraba es la verificación de "mismo hecho" (más abajo).
@@ -196,10 +207,15 @@ y por eso la unidad va con `Nice=10` y prioridad de CPU baja. NO paralelizar.
    del 2026-09-24: el único que era de verdad el mismo momento (cuatro streamers recitando el mismo
    diálogo del evento) dio 36 %, y los otros cuatro 0, 2, 4 y 5 % — incluido el que se armó y salió
    mal. El umbral cae en el medio de esa separación.
-8. Elegir con cupos por GRUPO (`seleccion.mezcla`, default 1 kick_reciente + 1 evento + 1 catálogo).
+8. Elegir con cupos por GRUPO (`seleccion.mezcla`: hoy 2 argentinos + 1 famosos; el catálogo es el
+   fallback y compite ahí también toda carpeta con diarios que no esté en la mezcla).
    Cada grupo compite solo en su cupo; lo que un grupo no llena pasa al grupo `catalogo`, y si a ese
-   le sobra vuelve a repartirse. Tope 2 por streamer entre todos. Empate en el corte → Gemini
-   (`empate_pct` por fuente: 3 % recientes, porque el score es logarítmico; 10 % catálogo).
+   le sobra vuelve a repartirse. Tope 1 por streamer entre todos, relleno incluido. Empate en el
+   corte → Gemini (`empate_pct` por fuente: 3 % recientes, porque el score es logarítmico; 10 %
+   catálogo). **Peso por votos** (`seleccion.peso_votos`, `votos_de` = Santi): el score se
+   multiplica por 1 + 0,5 × (👍 − 👎) / (👍 + 👎 + 3) de sus votos a clips de ese streamer
+   (`db.votos_por_streamer`, `seleccion.factores_votos`): entre ×0,5 y ×1,5, casi neutro con pocos
+   votos (2 👍 → ×1,2). Ahí mismo va a entrar el factor por vistas de YouTube cuando exista §4b.
 9. YouTube (SOLO con la auditoría aprobada; flag `youtube_upload_enabled`, default false):
    `videos.insert` privado con `publishAt` en el slot correspondiente. Guardar `video_id` en
    `clips.db` (tabla `posts`). Reintento con backoff; si falla 3 veces, alerta y se manda igual.
@@ -472,7 +488,7 @@ clips_bot/serie.py       /serie: partes, división en etapas (validada), guiones
                          título numerado, horarios, hoja de miniaturas por etapa
 clips_bot/envivo.py      modo en vivo (§3b): quién está al aire, momentos por creadores distintos,
                          alertas en la DB (no repetir, tope, vencer) y el resumen de tiempos
-tests/                   420 tests sin red ni video
+tests/                   431 tests sin red ni video
 ```
 
 Comandos:
@@ -554,8 +570,10 @@ Es un audio de gritos sin habla clara donde el decoder entra en loop. Probado `b
 (`subtitulos.timeout_factor` × duración, mínimo `timeout_min_s`): se corta entre segmentos y el clip
 se descarta con motivo `transcripcion_lenta`.
 
-Streamers cargados (2026-09-22). Mezcla diaria: **2 argentinos + 1 evento**, y el catálogo sin cupo
-propio como fallback.
+Streamers cargados (2026-09-22; revisado 2026-09-28). Mezcla diaria: **2 argentinos + 1 famosos**,
+y el catálogo sin cupo propio como fallback. El evento ya no está en los diarios.
+- **famosos** (1, desde 2026-09-28): auronplay (Twitch, 100 clips en 7 d, verificado con
+  `registro.resolver`).
 - **argentinos** (8, todos Kick, resueltos con clips en los últimos 7 días): davooxeneize (100 clips
   en 7 d), spreen (100), lacobraaa (94), coker (97), goncho (67), brunenger (62), mernuel (57),
   coscu (19). Con `detectar_marcador` (hablan de fútbol): davooxeneize, lacobraaa, coker.
@@ -659,6 +677,19 @@ Problemas abiertos:
 
 ## 9. CHANGELOG
 
+- v0.29.0 (2026-09-28) — **Mezcla diaria revisada con lo que rinde** (pedido de Santi: Davoo,
+  Auron, Coscu, Coker y Spreen rinden; Minecraft y el Dedsafío no). Carpeta Dedsafío sin diarios
+  ni en vivo (en la Pi ya estaba así, tocado por Telegram; ahora también de fábrica). Carpeta
+  nueva **Famosos** (diarios y en vivo) con `auronplay` en el YAML (Twitch, 100 clips en 7 d,
+  verificado con `registro.resolver`). Mezcla `argentinos: 2` + `famosos: 1`, sin cupo del
+  evento. Multi-POV APAGADO. Peso por votos: el score se multiplica por
+  1 + 0,5 × (👍 − 👎) / (👍 + 👎 + 3) de los votos de Santi a los clips del streamer (hoy: coker
+  y spreen con 1 👍 cada uno → ×1,125). Arreglado de paso: el relleno no respetaba el tope por
+  streamer (podía salir un segundo clip del mismo). Decisión anotada en §1: nada de videos largos
+  con voz de IA; si se hacen, con la voz grabada de Santi. Decidido por Claude: Auron con cupo
+  propio (en el fallback competía contra las vistas absolutas del catálogo de Vegetta, otra
+  escala, y no entraba nunca); `previa` 3 y `peso` 0,5 para que pocos votos muevan poco.
+  431 tests OK.
 - v0.28.4 (2026-09-28) — **Gemini caído = falla pasajera.** La prueba a mano de la efeméride
   (16:33) no salió: el principal sin cuota y flash-lite con 503 "high demand" en todos los
   reintentos (10/20/30/40 s se quemaban en 2 minutos). Ahora (`gemini.py`): un 5xx, un 429 que no
@@ -995,14 +1026,14 @@ Problemas abiertos:
 | commit | el último de `main` (v0.28.2, `4293b2a`); 391 tests OK en la Pi; escucha reiniciada |
 | `clips-bot.timer` | activo, próxima 05:00 AR (clips y después la efeméride) |
 | `clips-bot-telegram` | activo; modo en vivo PRENDIDO por Santi en el grupo el 27/09 |
-| carpetas | Argentinos (en vivo sí, diarios sí), Dedsafío y Catálogo (en vivo no, diarios sí): el modo en vivo vigila 8 de 63 |
+| carpetas | Argentinos y Famosos (en vivo sí, diarios sí), Catálogo (en vivo no, diarios sí), Dedsafío (en vivo no, diarios no): el modo en vivo vigila 9 de 64 |
 | música de Pequeña Historia | 29 temas en `musica/` (9 de la Biblioteca de YouTube de Santi, 10 Kevin MacLeod, 10 Openverse), 157 MB, fuera de git |
 | subida a YouTube | APAGADA (`youtube_upload_enabled: false`); sin credenciales todavía |
 | sudoers | instalado (`/etc/sudoers.d/clips-bot`) |
 | destinos de la entrega diaria (y de la propuesta de efeméride) | el grupo **Rots clips** (`-5453399767`) |
 | chats conocidos | Rots clips (grupo), Santiago Fittipaldi (`8668060171`) y Tommy Bildo (privados) |
 | `cantidad_diaria` | 3 |
-| prueba del multi-POV | desde 2026-09-25 02:03, **vence 2026-10-09**, no apagado |
+| multi-POV | APAGADO desde el 2026-09-28 (`multipov.activo: false`) |
 
 ### Hecho y andando en producción
 
@@ -1027,8 +1058,8 @@ Problemas abiertos:
   tests; la voz sin instrucción se probó en la Pi con una frase, no con un video entero.
 - **La subida a YouTube**: nunca habló con YouTube (no hay credenciales). Tests con sesión falsa.
 - **`/narrar` y `/serie` con videos reales de proceso** (hasta ahora, sintéticos y Gemini falso).
-- **El multi-POV está a prueba hasta el 2026-10-09** y no se armó ninguno desde que se prendió con
-  la verificación de "mismo hecho". Todavía no sabemos si la verificación funciona en producción.
+- **La mezcla nueva (2 argentinos + 1 Auron, votos) nunca corrió de verdad**: la primera es la
+  del 05:00 del 2026-09-29.
 
 ### Pendiente, en orden
 
@@ -1047,8 +1078,11 @@ Problemas abiertos:
 7. **Revisión del corte de calidad (lo del "9 de 10").** El corte está en `textos.puntaje_min: 5`,
    puesto a mano. El trato es elegirlo con datos: el puntaje desde el cual Santi vota más 👍 que 👎
    (`db.votos_por_puntaje`). Arrancó el 2026-09-24, así que a partir del **2026-10-08** hay que
-   mirarlo. Con 2 votos todavía no alcanza para nada.
-8. **Listas de streamers por persona.** Pedido y después postergado explícitamente por Santi el
+   mirarlo. Con 2 votos todavía no alcanza para nada. Los mismos votos ahora también pesan en la
+   selección por streamer: cuantos más vote Santi, mejor elige.
+8. **Métricas de YouTube (§4b) → vistas en el peso por streamer.** El lugar ya está
+   (`seleccion.factores_votos`); falta leer las métricas.
+9. **Listas de streamers por persona.** Pedido y después postergado explícitamente por Santi el
    2026-09-27 ("las listas por persona no las hagas por ahora"). El diseño pensado: una corrida de
    candidatos compartida, selección POR destino, y procesado deduplicado; el grupo usa la unión.
 

@@ -182,7 +182,8 @@ multipov:
   # VA A PRUEBA: si junta votos_negativos_max 👎 dentro de dias_prueba, el bot lo apaga SOLO y avisa.
   # Ese apagado se guarda en la DB (no acá): lo decide el bot y tiene que poder pasar sin un deploy.
   # Para volver a prenderlo hay que sacarlo a mano (ver db.arrancar_prueba_multipov).
-  activo: true
+  # APAGADO el 2026-09-28 (pedido de Santi): era para el Dedsafío, que salió de los diarios.
+  activo: false
   votos_negativos_max: 2
   dias_prueba: 14
   margen_s: 4.0
@@ -338,12 +339,22 @@ textos:
 seleccion:
   # Cupos por GRUPO (el grupo de cada streamer sale de streamers.yaml; default <plataforma>_<fuente>).
   # Lo que un grupo no llena pasa al grupo "catalogo".
+  # Revisada 2026-09-28: lo que rinde es Davoo, Auron, Coscu, Coker y Spreen; Minecraft y el
+  # Dedsafío no los mira nadie. Sin cupo del evento (y la carpeta Dedsafío, sin diarios).
   mezcla:
     argentinos: 2            # los 8 de Kick (Davoo, Spreen, La Cobra, Coker, Goncho, Brunenger, Mernuel, Coscu)
-    evento: 1                # Dedsafío
-    # "catalogo" (Vegetta) no tiene cupo propio: es el fallback y se queda con lo que los otros no llenen
+    famosos: 1               # Auron
+    # "catalogo" (Vegetta) no tiene cupo propio: es el fallback y se queda con lo que los otros no
+    # llenen. Las carpetas que no están acá (creadas por Telegram) compiten ahí mismo.
   peso_momento: 0.5          # 3 clips del mismo momento → × 2
-  max_por_streamer: 1        # un solo clip por streamer en todo el envío del día
+  max_por_streamer: 1        # un solo clip por streamer en todo el envío del día (relleno incluido)
+  # Peso por votos: el score de cada clip se multiplica por 1 + peso × (👍 − 👎) / (👍 + 👎 + previa),
+  # con los votos de `votos_de` a clips de ese streamer. Va de ×(1 − peso) a ×(1 + peso) y con pocos
+  # votos casi no mueve nada (2 👍 → ×1,2; 10 👍 → ×1,38). Solo los de Santi: es su criterio.
+  # Cuando exista la lectura de métricas de YouTube (§4b), acá se suman también las vistas.
+  peso_votos: 0.5
+  votos_previa: 3
+  votos_de: ["8668060171"]
   # Scores a menos de este % en el corte de una fuente → desempata Gemini. Por fuente, porque el
   # score reciente es logarítmico (3 % ≈ 20 % en vistas) y el de catálogo son vistas directas.
   empate_pct:

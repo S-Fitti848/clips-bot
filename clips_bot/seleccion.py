@@ -59,10 +59,23 @@ def score_reciente(vistas: int, clips_mismo_momento: int, peso_momento: float) -
     return factor_momento(clips_mismo_momento, peso_momento) * (1 + math.log10(1 + max(vistas, 0)))
 
 
-def score(o: Opcion, ahora: datetime, cfg: Seleccion) -> float:
-    if o.fuente == "catalogo":
-        return float(o.vistas)
-    return score_reciente(o.vistas, o.clips_mismo_momento, cfg.peso_momento)
+def factor_votos(a_favor: int, en_contra: int, peso: float, previa: int) -> float:
+    """1 + peso × (👍 − 👎) / (👍 + 👎 + previa). Acotado a [1 − peso, 1 + peso], y la `previa` lo
+    achica con pocos votos: 2 👍 → ×1,2 con peso 0,5; 10 👍 → ×1,38; 10 👎 → ×0,62."""
+    total = a_favor + en_contra + previa
+    return 1 + peso * (a_favor - en_contra) / total if total > 0 else 1.0
+
+
+def factores_votos(votos: dict[str, tuple[int, int]], cfg: Seleccion) -> dict[str, float]:
+    """{streamer: factor} a partir de {streamer: (👍, 👎)}. (§4b: cuando haya métricas de YouTube,
+    acá se suma el factor por vistas.)"""
+    return {s: factor_votos(a, b, cfg.peso_votos, cfg.votos_previa) for s, (a, b) in votos.items()}
+
+
+def score(o: Opcion, ahora: datetime, cfg: Seleccion, factores: dict[str, float] | None = None) -> float:
+    base = (float(o.vistas) if o.fuente == "catalogo"
+            else score_reciente(o.vistas, o.clips_mismo_momento, cfg.peso_momento))
+    return base * (factores or {}).get(o.streamer.lower(), 1.0)
 
 
 Desempate = Callable[[list[Opcion]], list[Opcion]]
@@ -100,9 +113,11 @@ def _llenar(orden: list[Opcion], cupo: int, por_streamer: dict[str, int], tope: 
 
 
 def seleccionar(opciones: list[Opcion], cfg: Seleccion, ahora: datetime,
-                desempatar: Desempate | None = None) -> list[Opcion]:
-    """Elegidos en el orden de los grupos de `mezcla`, con el fallback al final."""
-    scores = {o.clip_id: score(o, ahora, cfg) for o in opciones}
+                desempatar: Desempate | None = None,
+                factores: dict[str, float] | None = None) -> list[Opcion]:
+    """Elegidos en el orden de los grupos de `mezcla`, con el fallback al final. `factores`:
+    {streamer: multiplicador del score} (los votos; ver factores_votos)."""
+    scores = {o.clip_id: score(o, ahora, cfg, factores) for o in opciones}
     grupos = list(cfg.mezcla) + ([GRUPO_FALLBACK] if GRUPO_FALLBACK not in cfg.mezcla else [])
     orden_grupos = [g for g in grupos if g != GRUPO_FALLBACK] + [GRUPO_FALLBACK]
     # Un grupo que no está en la mezcla (una carpeta creada por Telegram) compite en el fallback.

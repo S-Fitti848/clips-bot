@@ -104,6 +104,16 @@ streamers:
     permiso:
       experimento: true
 
+  # Grupo "famosos" (pedido 2026-09-28: de lo subido, Auron está entre lo que más rinde).
+  # Verificado ese día con registro.resolver: Twitch, 100 clips en 7 días (el tope de la consulta);
+  # en Kick no hay un canal suyo con clips.
+  - login: auronplay
+    plataforma: twitch
+    fuentes: [reciente]
+    grupo: famosos
+    permiso:
+      experimento: true
+
 # Dedsafío Nights — participantes resueltos el 2026-09-22 contra Twitch (Get Users + Search) y,
 # si no estaban, contra Kick. El login NO siempre es el nombre de pantalla: acá va el login real.
 # Todos entran como experimento. Además, el grupo "evento" solo toma clips de categoría Minecraft o

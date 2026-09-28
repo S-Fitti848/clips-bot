@@ -295,6 +295,10 @@ class Seleccion:
     peso_momento: float = 0.5
     max_por_streamer: int = 1
     empate_pct: dict = field(default_factory=lambda: {"reciente": 0.03, "catalogo": 0.10})
+    # Peso por votos 👍/👎 de `votos_de` a los clips de cada streamer (ver settings.yaml).
+    peso_votos: float = 0.5
+    votos_previa: int = 3
+    votos_de: tuple = ()
 
     @property
     def n(self) -> int:
@@ -373,7 +377,8 @@ def load_settings(path: Path = CONFIG_DIR / "settings.yaml") -> Settings:
     if set(pct) - set(FUENTES) or not all(0 <= v < 1 for v in pct.values()):
         raise ConfigError(f"seleccion.empate_pct: fuentes válidas {FUENTES} con valores entre 0 y 1, no {pct}")
     seleccion = Seleccion(**{**seleccion.__dict__, "mezcla": mezcla,
-                             "empate_pct": {f: pct.get(f, 0.0) for f in FUENTES}})
+                             "empate_pct": {f: pct.get(f, 0.0) for f in FUENTES},
+                             "votos_de": tuple(str(u) for u in seleccion.votos_de or ())})
     catalogo = _seccion(Catalogo, raw, "catalogo", path)
     if catalogo.antiguedad_min_dias >= catalogo.antiguedad_max_dias:
         raise ConfigError("catalogo.antiguedad_min_dias tiene que ser menor que antiguedad_max_dias")

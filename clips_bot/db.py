@@ -345,6 +345,22 @@ def voto_de(conn: sqlite3.Connection, clip_id: str, user_id: str) -> int | None:
     return fila[0] if fila else None
 
 
+def votos_por_streamer(conn: sqlite3.Connection, user_ids) -> dict[str, tuple[int, int]]:
+    """{streamer: (👍, 👎)} con los votos de esos usuarios. El streamer sale de la tabla clips
+    (`broadcaster` es el login, en Twitch y en Kick); un multi-POV no está ahí y no cuenta."""
+    ids = [str(u) for u in user_ids]
+    if not ids:
+        return {}
+    filas = conn.execute(
+        f"""SELECT c.broadcaster,
+                   SUM(CASE WHEN v.voto > 0 THEN 1 ELSE 0 END),
+                   SUM(CASE WHEN v.voto < 0 THEN 1 ELSE 0 END)
+            FROM votos v JOIN clips c ON c.clip_id = v.clip_id
+            WHERE v.user_id IN ({",".join("?" * len(ids))})
+            GROUP BY c.broadcaster""", ids).fetchall()
+    return {str(s).lower(): (int(a or 0), int(b or 0)) for s, a, b in filas}
+
+
 def votos_por_puntaje(conn: sqlite3.Connection) -> list[tuple[int, int, int]]:
     """[(puntaje, 👍, 👎)] ordenado. Con esto se elige el corte: el puntaje desde el cual gana 👍."""
     filas = conn.execute(
@@ -629,10 +645,13 @@ def marcar_si_nuevo(conn: sqlite3.Connection, clip_id: str, broadcaster: str, es
 # Telegram. Cada una tiene dos interruptores, en la DB y no en el YAML porque se tocan desde el
 # teléfono: en_vivo (¿la vigila el modo en vivo?) y diarios (¿entra en la corrida de las 05:00?).
 # Pedido 2026-09-28: Argentinos con en vivo; Dedsafío y Catálogo sin; diarios como estaban (todos).
+# Revisado el mismo día (los Shorts de Minecraft y del Dedsafío no los mira nadie): Dedsafío sin
+# diarios ni en vivo, y Famosos (Auron) con los dos.
 
 CARPETAS_DEFAULT = {
     "argentinos": ("Argentinos", 1, 1),
-    "evento": ("Dedsafío", 0, 1),
+    "famosos": ("Famosos", 1, 1),
+    "evento": ("Dedsafío", 0, 0),
     "catalogo": ("Catálogo", 0, 1),
 }
 
