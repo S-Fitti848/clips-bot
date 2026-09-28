@@ -149,7 +149,7 @@ def _guion_ok(**cambios):
     d = {"frases": [{"texto": "Un día como hoy, en 1998, Google estrenó su buscador en Internet.", "foto": 1},
                     {"texto": "Larry Page y Sergey Brin lo empezaron como un proyecto universitario.", "foto": 2},
                     {"texto": "Lo arrancaron en la Universidad de Stanford, con muy poco.", "foto": 3},
-                    {"texto": "Tenían un armario lleno de servidores y dos routers HP.", "foto": 4},
+                    {"texto": "¡Tenían un armario lleno de servidores y dos routers HP!", "foto": 4},
                     {"texto": "Al principio el buscador no se llamaba Google, se llamaba BackRub.", "foto": 1},
                     {"texto": "Con el tiempo superó a AltaVista, el más popular de la época.", "foto": 2},
                     {"texto": "Todo eso empezó con un proyecto de dos estudiantes y un armario.", "foto": 3},
@@ -172,7 +172,18 @@ def test_el_gancho_la_pregunta_y_las_fotos():
     assert any("Un día como hoy" in e for e in ef.validar_guion(sin_gancho, 1998, 5, ARTICULO))
     sin_pregunta = _guion_ok()
     sin_pregunta["frases"][-1]["texto"] = "Y así fue como empezó todo, en un armario."
-    assert any("pregunta" in e for e in ef.validar_guion(sin_pregunta, 1998, 5, ARTICULO))
+    assert any("gancho" in e for e in ef.validar_guion(sin_pregunta, 1998, 5, ARTICULO))
+    sin_exclamacion = _guion_ok()
+    sin_exclamacion["frases"][3]["texto"] = "Tenían un armario lleno de servidores y dos routers HP."
+    assert any("exclamación" in e for e in ef.validar_guion(sin_exclamacion, 1998, 5, ARTICULO))
+    cierre_exclamado = _guion_ok()
+    cierre_exclamado["frases"][-1]["texto"] = "¡Y todo empezó en un armario de Stanford!"
+    cierre_exclamado["frases"][4]["texto"] = "¿Sabés cómo se llamaba al principio el buscador? BackRub."
+    assert ef.validar_guion(cierre_exclamado, 1998, 5, ARTICULO) == []   # también es gancho
+    larga = _guion_ok()
+    larga["frases"][2]["texto"] = ("Lo arrancaron en la Universidad de Stanford con muy poco y sin "
+                                   "saber todavía que iba a cambiar la forma de buscar en la web.")
+    assert any("demasiado largas" in e for e in ef.validar_guion(larga, 1998, 5, ARTICULO))
     con_descartada = _guion_ok(fotos_descartadas=[1])
     assert any("descartaste" in e for e in ef.validar_guion(con_descartada, 1998, 5, ARTICULO))
     corto = _guion_ok(frases=_guion_ok()["frases"][:3] + [_guion_ok()["frases"][-1]])
@@ -309,3 +320,31 @@ def test_sin_aprobar_no_se_sintetiza(conn, monkeypatch, tmp_path):
 def test_fecha(texto, esperado):
     d = m._fecha_efemeride(texto)
     assert (d.month, d.day) == esperado
+
+
+# ---- música de fondo -------------------------------------------------------------------
+
+def test_sin_musica_en_la_carpeta_no_hay_musica(tmp_path):
+    assert ef.elegir_musica(tmp_path / "no_existe") is None
+    (tmp_path / "README.md").write_text("x")
+    assert ef.elegir_musica(tmp_path) is None
+
+
+def test_elige_una_pista_al_azar_y_su_credito(tmp_path):
+    import random
+
+    for n in ("a.mp3", "b.ogg", "c.m4a"):
+        (tmp_path / n).write_bytes(b"x")
+    (tmp_path / "creditos.json").write_text(json.dumps({"b.ogg": "Tema – Autor – CC BY 4.0 – link"}),
+                                            encoding="utf-8")
+    elegidas = {ef.elegir_musica(tmp_path, random.Random(s)).name for s in range(30)}
+    assert elegidas == {"a.mp3", "b.ogg", "c.m4a"}
+    assert ef.credito_musica(tmp_path / "b.ogg") == "Música: Tema – Autor – CC BY 4.0 – link"
+    assert ef.credito_musica(tmp_path / "a.mp3") == ""
+
+
+def test_la_musica_baja_cuando_habla_y_se_apaga_al_final():
+    f = ef.filtro_musica(0.12, 42.0)
+    assert "volume=0.12" in f and "afade=t=out:st=40.50:d=1.5" in f
+    assert "[mus][disparo]sidechaincompress" in f      # la voz dispara el ducking
+    assert "amix=inputs=2:duration=first" in f         # dura lo que la voz

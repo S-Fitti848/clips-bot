@@ -269,6 +269,20 @@ voz:
   motor: piper
   modelo: voces/es_AR-daniela-high.onnx
   volumen_original: 0.15
+  # Ajustes de Piper. Los valores de acá son los del modelo (la voz de siempre). La muestra (A) del
+  # 2026-09-27 fue: length_scale 0.88 (más rápido), noise_w_scale 1.0 (más variación de ritmo) y
+  # semitonos 1.5. Se cambian acá cuando Santi elija entre las muestras.
+  length_scale: 1.0
+  noise_scale: 0.667
+  noise_w_scale: 0.8
+  semitonos: 0.0
+
+# Pasó Hoy (§3c). Música de fondo: una pista al azar de `carpeta_musica` por video, al volumen
+# indicado, bajando cuando habla la voz. Con la carpeta vacía no hay música.
+efemerides:
+  musica: true
+  carpeta_musica: musica
+  musica_volumen: 0.12
 
 # §3 paso 7: textos con Gemini.
 textos:

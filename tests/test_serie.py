@@ -261,7 +261,7 @@ def test_las_partes_llegan_juntas_numeradas_y_con_horario(conn, monkeypatch, tmp
     from dataclasses import replace
     cfg = replace(cfg, voz=replace(cfg.voz, modelo=str(voz)))
     mezclas = []
-    monkeypatch.setattr(narrar, "sintetizar", lambda t, mod, salida: salida)
+    monkeypatch.setattr(narrar, "sintetizar", lambda t, mod, salida, ajustes=None: salida)
     monkeypatch.setattr(narrar, "subtitular_voz", lambda w, c, palabra_por_palabra=False:
                         [] if palabra_por_palabra else pytest.fail("tenía que ser palabra por palabra"))
     carteles = []

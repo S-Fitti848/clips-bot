@@ -194,6 +194,14 @@ class Voz:
     motor: str = "piper"
     modelo: str = "voces/es_AR-daniela-high.onnx"
     volumen_original: float = 0.15   # el audio del video queda de fondo, abajo de la voz
+    # Ajustes de Piper (los default son los del .onnx.json de daniela). length_scale < 1 = más
+    # rápido; noise_scale = variación del audio; noise_w_scale = variación de la duración de
+    # los fonemas (el ritmo). `semitonos` sube el tono DESPUÉS de sintetizar (rubberband de ffmpeg:
+    # cambia el tono sin cambiar la velocidad).
+    length_scale: float = 1.0
+    noise_scale: float = 0.667
+    noise_w_scale: float = 0.8
+    semitonos: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -222,6 +230,14 @@ class Textos:
     # tira: queda como RELLENO, y solo se usa si la corrida no llega a 3 sin él.
     puntaje_min: int = 5
     frames_para_puntaje: int = 4   # 0 = puntuar solo con la transcripción
+
+
+@dataclass(frozen=True)
+class EfemeridesCfg:
+    """Pasó Hoy (§3c). La música sale de `carpeta_musica`, una al azar por video; vacía = sin música."""
+    musica: bool = True
+    carpeta_musica: str = "musica"
+    musica_volumen: float = 0.12
 
 
 @dataclass(frozen=True)
@@ -278,6 +294,7 @@ class Settings:
     seleccion: Seleccion = Seleccion()
     publicacion: Publicacion = Publicacion()
     envivo: EnVivo = EnVivo()
+    efemerides: EfemeridesCfg = EfemeridesCfg()
     youtube_upload_enabled: bool = False
 
 
@@ -347,6 +364,7 @@ def load_settings(path: Path = CONFIG_DIR / "settings.yaml") -> Settings:
         seleccion=seleccion,
         publicacion=_seccion(Publicacion, raw, "publicacion", path),
         envivo=_seccion(EnVivo, raw, "envivo", path),
+        efemerides=_seccion(EfemeridesCfg, raw, "efemerides", path),
         youtube_upload_enabled=bool(raw.get("youtube_upload_enabled", False)),
     )
 

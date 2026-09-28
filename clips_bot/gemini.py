@@ -97,6 +97,34 @@ class GeminiClient:
             self._sleep(10 * intento)  # 503 "overloaded" es común; la corrida diaria puede esperar
 
 
+def hablar(api_key: str, texto: str, instruccion: str = "", voz: str = "Puck",
+           modelo: str = "gemini-3.8-flash-tts", session: requests.Session | None = None,
+           timeout: float = 180) -> tuple[bytes, int]:
+    """Gemini TTS: texto → PCM 16 bits mono y su frecuencia de muestreo. GASTA una request de la
+    cuota diaria (por eso /narrar usa Piper; ver la comparación en settings.yaml → voz). La
+    instrucción de tono va en el mismo texto ("Decilo con entusiasmo: …"), así lo pide la API."""
+    import re
+
+    cuerpo = {
+        "contents": [{"parts": [{"text": f"{instruccion}\n\n{texto}" if instruccion else texto}]}],
+        "generationConfig": {
+            "responseModalities": ["AUDIO"],
+            "speechConfig": {"voiceConfig": {"prebuiltVoiceConfig": {"voiceName": voz}}},
+        },
+    }
+    r = (session or requests.Session()).post(
+        URL.format(modelo=modelo), json=cuerpo, timeout=timeout,
+        headers={"x-goog-api-key": api_key, "Content-Type": "application/json"})
+    if r.status_code != 200:
+        raise GeminiError(f"Gemini TTS ({modelo}): {r.status_code} {r.text[:300]}")
+    try:
+        parte = r.json()["candidates"][0]["content"]["parts"][0]["inlineData"]
+    except (KeyError, IndexError, ValueError) as e:
+        raise GeminiError(f"Gemini TTS sin audio: {r.text[:300]}") from e
+    m = re.search(r"rate=(\d+)", parte.get("mimeType", ""))
+    return base64.b64decode(parte["data"]), int(m.group(1)) if m else 24000
+
+
 def _texto(respuesta: dict) -> str:
     try:
         cand = respuesta["candidates"][0]

@@ -382,9 +382,14 @@ REGLA DE ORO: usás SOLO lo que dice el texto del artículo que te paso. Nada de
 nombre, ni un número, ni una fecha que no esté ahí. Si el artículo no lo dice, no lo digas.
 
 - La primera frase arranca EXACTAMENTE con "Un día como hoy, en <año>," y sigue con el gancho.
-- La última frase es una pregunta al público (termina con "?").
+- Tono: como alguien que te cuenta algo que lo sorprendió, con ganas. Nada de tono de manual.
+- Frases CORTAS: ninguna de más de 14 palabras. Mejor dos frases que una larga con comas.
+- Al menos UNA pregunta ("¿Sabés qué hizo después?") y al menos UNA exclamación ("¡Y funcionó!")
+  en el medio del guion, para que no suene plano.
+- Cierre con gancho: la última frase es una pregunta al público o una exclamación que deje algo
+  picando (termina con "?" o "!"). Nada de cierres tipo "y así fue".
 - Entre 110 y 130 palabras en total (contalas: menos de 105 queda corto y más de 135 se pasa de
-  45 segundos), en 9 a 14 frases cortas, habladas, no escritas. Si el artículo da para poco,
+  45 segundos), en 10 a 16 frases, habladas, no escritas. Si el artículo da para poco,
   contá más detalle de lo que SÍ dice.
 - Números: solo los que están en el artículo, escritos igual. Nada de "hoy tiene millones de…"
   si el artículo no lo dice con esas palabras.
@@ -497,8 +502,15 @@ def validar_guion(d: dict, anio: int, n_fotos: int, fuente: str) -> list[str]:
         errores.append(f"el guion tiene {n} palabras: tienen que ser entre {PALABRAS_MIN} y {PALABRAS_MAX}")
     if not _norm(frases[0]).startswith("un dia como hoy") or str(anio) not in frases[0]:
         errores.append(f'la primera frase tiene que arrancar con "Un día como hoy, en {anio},"')
-    if not frases[-1].rstrip().endswith("?"):
-        errores.append("la última frase tiene que ser una pregunta al público")
+    # Pedido 2026-09-27 ("la voz suena triste y plana"): frases cortas, al menos una pregunta y
+    # una exclamación, y cierre con gancho. Piper entona distinto una frase con ¿? o ¡!.
+    if not frases[-1].rstrip().endswith(("?", "!")):
+        errores.append("la última frase tiene que ser un gancho: una pregunta (?) o una exclamación (!)")
+    if "?" not in texto or "!" not in texto:
+        errores.append("tiene que haber al menos una pregunta (¿…?) y una exclamación (¡…!)")
+    largas = [i + 1 for i, f in enumerate(frases) if len(f.split()) > 16]
+    if largas:
+        errores.append(f"frases demasiado largas (más de 14 palabras): {largas}; partilas")
     if any(not isinstance(f, int) or not 1 <= f <= n_fotos for f in fotos):
         errores.append(f"cada frase lleva una foto del 1 al {n_fotos}")
     elif set(fotos) & descartadas:
@@ -758,6 +770,61 @@ def proponer(wiki: Wiki, cliente, dia: date, carpeta: Path, avisar=log.info,
                       f"libres que sirvan ({guiones} guiones intentados; descartes: {descartes}).")
 
 
+# ---- música de fondo ------------------------------------------------------------------------
+# Pedido 2026-09-27: música animada y libre de derechos al 12 %, que baje cuando habla la voz.
+# OJO: va contra la decisión de §1 ("sin música agregada: cualquier música es riesgo de Content
+# ID"). Por eso solo música con licencia verificada en musica/creditos.json, y con la carpeta vacía
+# no hay música (el video sale como antes).
+
+EXT_MUSICA = (".mp3", ".ogg", ".m4a", ".wav", ".flac", ".opus")
+
+
+def pistas(carpeta: Path) -> list[Path]:
+    return sorted(p for p in carpeta.glob("*") if p.suffix.lower() in EXT_MUSICA) if carpeta.exists() else []
+
+
+def elegir_musica(carpeta: Path, azar=None) -> Path | None:
+    """Una al azar por video. None si la carpeta está vacía o no existe."""
+    import random
+
+    todas = pistas(carpeta)
+    return (azar or random).choice(todas) if todas else None
+
+
+def credito_musica(pista: Path) -> str:
+    """"Música: …" desde musica/creditos.json ({archivo: crédito}). Vacío si la licencia no lo pide."""
+    ruta = pista.parent / "creditos.json"
+    try:
+        creditos = json.loads(ruta.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return ""
+    c = str(creditos.get(pista.name) or "").strip()
+    return f"Música: {c}" if c else ""
+
+
+def filtro_musica(volumen: float, duracion: float, fundido_s: float = 1.5) -> str:
+    """Voz ([0:a]) + música ([1:a], en loop) al `volumen`, con ducking: la música baja cuando
+    suena la voz (sidechaincompress con la voz como disparador) y se va apagando al final."""
+    return (f"[1:a]aresample=48000,aformat=channel_layouts=stereo,volume={volumen},"
+            f"afade=t=out:st={max(duracion - fundido_s, 0):.2f}:d={fundido_s}[mus];"
+            f"[0:a]aresample=48000,aformat=channel_layouts=stereo,asplit=2[voz][disparo];"
+            f"[mus][disparo]sidechaincompress=threshold=0.02:ratio=8:attack=20:release=400[bajo];"
+            f"[voz][bajo]amix=inputs=2:duration=first:dropout_transition=0:normalize=0[a]")
+
+
+def mezclar_musica(voz: Path, pista: Path, salida: Path, volumen: float = 0.12) -> Path:
+    """La voz con la música de fondo, en un solo archivo de audio (dura lo que la voz)."""
+    from . import narrar
+
+    dur = narrar.duracion_wav(voz)
+    salida.parent.mkdir(parents=True, exist_ok=True)
+    run([find_bin("ffmpeg"), "-hide_banner", "-loglevel", "error", "-y", "-i", str(voz.resolve()),
+         "-stream_loop", "-1", "-i", str(pista.resolve()), "-filter_complex",
+         filtro_musica(volumen, dur), "-map", "[a]", "-t", f"{dur:.2f}", "-c:a", "pcm_s16le",
+         str(salida.resolve())])
+    return salida
+
+
 def usadas_en_orden(p: Propuesta) -> list[Foto]:
     """Las fotos que aparecen en el video, en el orden en que aparecen (para los créditos)."""
     orden = list(dict.fromkeys(p.guion["fotos"]))
@@ -803,26 +870,39 @@ def hacer_video(p: Propuesta, settings, carpeta: Path, avisar=log.info) -> dict:
     if not modelo.exists():
         raise NarrarError(f"Falta la voz en {modelo}")
     t0 = time.time()
-    wav, duraciones = narrar.sintetizar_frases(g.frases, modelo, carpeta / "voz.wav")
+    wav, duraciones = narrar.sintetizar_frases(g.frases, modelo, carpeta / "voz.wav",
+                                                 ajustes=settings.voz)
     avisar(f"voz: {sum(duraciones):.1f} s en {time.time() - t0:.0f} s")
     t0 = time.time()
     subs = narrar.subtitular_voz(wav, settings.subtitulos, palabra_por_palabra=True)
     sub.escribir_ass(subs, carpeta / "subs.ass", settings.subtitulos, settings.render,
                      cartel=str(e.anio), cartel_s=2.0, cartel_grande=True)
     avisar(f"subtítulos: {len(subs)} palabras en {time.time() - t0:.0f} s")
+    # La música entra DESPUÉS de los subtítulos: Whisper tiene que escuchar la voz sola.
+    from .config import ROOT
+
+    cfg_ef = settings.efemerides
+    pista = elegir_musica(ROOT / cfg_ef.carpeta_musica) if cfg_ef.musica else None
+    audio = mezclar_musica(wav, pista, carpeta / "voz_musica.wav", cfg_ef.musica_volumen) \
+        if pista else wav
+    avisar(f"música: {pista.name if pista else 'ninguna'}")
     tramos = [(Path(p.fotos[i]["ruta"]), d) for i, d in zip(g.fotos, duraciones)]
     t0 = time.time()
     dia = date.fromisoformat(p.fecha)
     clip_id = f"efemeride_{dia:%m%d}_{e.anio}"
-    salida = armar_video(tramos, wav, carpeta, carpeta / f"{clip_id}.mp4", settings.render)
+    salida = armar_video(tramos, audio, carpeta, carpeta / f"{clip_id}.mp4", settings.render)
     avisar(f"video: {time.time() - t0:.0f} s")
     cred = creditos(usadas_en_orden(p))
+    cred_musica = credito_musica(pista) if pista else ""
+    if cred_musica:
+        cred += "\n" + cred_musica
     return {"clip_id": clip_id, "streamer": "Pasó Hoy", "salida": str(salida),
             "subtitulos_quemados": True, "duracion_s": round(sum(duraciones), 1),
             "textos": {"titulo": g.titulo, "descripcion": f"{g.descripcion}\n\n{cred}",
                        "hashtags": g.hashtags, "credito": cred},
             "efemeride": {"fecha": p.fecha, "anio": e.anio, "evento": e.texto,
-                          "articulo": e.paginas[0], "lang": e.lang, "guion": g.frases}}
+                          "articulo": e.paginas[0], "lang": e.lang, "guion": g.frases,
+                          "musica": pista.name if pista else None}}
 
 
 def _jpeg_chico(ruta: Path, ancho: int = 512) -> bytes:

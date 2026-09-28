@@ -112,6 +112,14 @@ class TelegramClient:
                     f.write(trozo)
         return final
 
+    def send_audio(self, chat_id: str, path: Path, titulo: str = "", caption_html: str = "") -> None:
+        """Un audio que se escucha en el reproductor de Telegram (mp3 o m4a)."""
+        _chequear_tamano(path)
+        with path.open("rb") as f:
+            self._llamar("sendAudio", {"chat_id": chat_id, "title": titulo[:60],
+                                       "caption": caption_html[:MAX_CAPTION], "parse_mode": "HTML"},
+                         {"audio": (path.name, f, "audio/mpeg")})
+
     def send_photo(self, chat_id: str, path: Path, caption_html: str = "",
                    teclado: dict | None = None) -> None:
         data = {"chat_id": chat_id, "caption": caption_html[:MAX_CAPTION], "parse_mode": "HTML"}

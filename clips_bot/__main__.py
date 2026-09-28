@@ -1651,7 +1651,7 @@ def _serie_voces(conn, tg: TelegramClient, chat_id: str, token: str, settings: S
         for k, (cid, texto) in enumerate(zip(estado["ids"], estado["guiones"]), 1):
             meta = json.loads((READY_DIR / f"{cid}.json").read_text(encoding="utf-8"))
             work = WORK_DIR / f"{cid}_serie"
-            wav = narrar.sintetizar(texto, modelo, work / "voz.wav")
+            wav = narrar.sintetizar(texto, modelo, work / "voz.wav", ajustes=settings.voz)
             subs = narrar.subtitular_voz(wav, settings.subtitulos, palabra_por_palabra=True)
             _sub.escribir_ass(subs, work / "subs.ass", settings.subtitulos, settings.render,
                               cartel=f"Parte {k}/{n}", cartel_s=serie.CARTEL_S)
@@ -1799,7 +1799,7 @@ def _narrar_voz(conn, tg: TelegramClient, chat_id: str, guardado: dict, settings
                                             "Bajala con el script de deploy.")
         work = WORK_DIR / clip_id
         tg.send_message(chat_id, "Generando la voz…")
-        wav = narrar.sintetizar(texto, modelo, work / "voz.wav")
+        wav = narrar.sintetizar(texto, modelo, work / "voz.wav", ajustes=settings.voz)
 
         # Los subtítulos salen de LA VOZ, no del audio original: son los que hay que leer ahora.
         tg.send_message(chat_id, "Sincronizando los subtítulos con la voz…")

@@ -158,19 +158,42 @@ def aviso_musica(g: Guion) -> str:
     return ""
 
 
-def sintetizar(texto: str, modelo: Path, salida: Path) -> Path:
+def _config_piper(ajustes):
+    """`ajustes` es la sección `voz` de settings (o None = lo que trae el modelo)."""
+    if ajustes is None:
+        return None
+    from piper import SynthesisConfig
+
+    return SynthesisConfig(length_scale=ajustes.length_scale, noise_scale=ajustes.noise_scale,
+                           noise_w_scale=ajustes.noise_w_scale)
+
+
+def subir_tono(wav: Path, semitonos: float) -> Path:
+    """Cambia el tono sin tocar la velocidad (rubberband de ffmpeg), en el mismo archivo. Los
+    tiempos de cada frase no cambian: por eso se puede hacer después de medirlas."""
+    if not semitonos:
+        return wav
+    tmp = wav.with_name(wav.stem + ".tono.wav")
+    run([find_bin("ffmpeg"), "-hide_banner", "-loglevel", "error", "-y", "-i", str(wav.resolve()),
+         "-af", f"rubberband=pitch={2 ** (semitonos / 12):.5f}:formant=preserved",
+         str(tmp.resolve())])
+    tmp.replace(wav)
+    return wav
+
+
+def sintetizar(texto: str, modelo: Path, salida: Path, ajustes=None) -> Path:
     """Piper: texto → wav. Corre local, sin red y sin cuota."""
     from piper import PiperVoice
 
     salida.parent.mkdir(parents=True, exist_ok=True)
     voz = PiperVoice.load(str(modelo))
     with wave.open(str(salida), "wb") as w:
-        voz.synthesize_wav(texto, w)
-    return salida
+        voz.synthesize_wav(texto, w, syn_config=_config_piper(ajustes))
+    return subir_tono(salida, ajustes.semitonos if ajustes else 0)
 
 
 def sintetizar_frases(frases: list[str], modelo: Path, salida: Path,
-                      pausa_s: float = 0.3) -> tuple[Path, list[float]]:
+                      pausa_s: float = 0.3, ajustes=None) -> tuple[Path, list[float]]:
     """Piper frase por frase, pegadas con una pausa: un solo wav y lo que dura cada frase (con su
     pausa). Las efemérides cambian de foto en cada frase, y así los cortes caen justo donde
     termina lo que se dice, sin adivinar tiempos. La voz se carga una sola vez."""
@@ -184,7 +207,7 @@ def sintetizar_frases(frases: list[str], modelo: Path, salida: Path,
     for frase in frases:
         buf = io.BytesIO()
         with wave.open(buf, "wb") as w:
-            voz.synthesize_wav(frase, w)
+            voz.synthesize_wav(frase, w, syn_config=_config_piper(ajustes))
         buf.seek(0)
         with wave.open(buf) as r:
             formato = formato or (r.getnchannels(), r.getsampwidth(), r.getframerate())
@@ -197,6 +220,7 @@ def sintetizar_frases(frases: list[str], modelo: Path, salida: Path,
         w.setsampwidth(formato[1])
         w.setframerate(formato[2])
         w.writeframes(b"".join(partes))
+    subir_tono(salida, ajustes.semitonos if ajustes else 0)
     return salida, duraciones
 
 
