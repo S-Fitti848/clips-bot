@@ -519,7 +519,7 @@ clips_bot/ilustrar.py    regla fija 1 (§1): una foto por frase sin repetir, mí
 clips_bot/reglas.py      regla fija 2 (§1): REGLAS_CLARIDAD, dentro de todos los prompts de guion
 clips_bot/envivo.py      modo en vivo (§3b): quién está al aire, momentos por creadores distintos,
                          alertas en la DB (no repetir, tope, vencer) y el resumen de tiempos
-tests/                   459 tests sin red ni video (test_reglas_fijas.py: las 3 reglas de §1)
+tests/                   462 tests sin red ni video (test_reglas_fijas.py: las 3 reglas de §1)
 ```
 
 Comandos:
@@ -724,7 +724,19 @@ Problemas abiertos:
   pausa de 2 s entre descargas (solo `upload.`); ahora la tienen las dos. Decidido por Claude: el
   crossfade se hace estirando cada tramo d/2 hacia la unión (un acrossfade común acorta el audio
   y lo desfasa del video); efemérides pasa a 2 llamadas por evento (guion + fotos: +1 por día);
-  `--hecho` en el CLI para rehacer un hecho puntual. 459 tests OK.
+  `--hecho` en el CLI para rehacer un hecho puntual.
+  **Lo que encontró la primera prueba real (Fleming en la Pi):** (a) el chequeo de audio avisó que
+  el audio duraba 26,75 s y el video 35,37 s: con la entrada `concat` de los tramos, ffmpeg 7.1
+  cortaba el audio del mismo filtro (con cualquier otra entrada daba exacto). Ahora el audio de la
+  efeméride se termina en un paso aparte (`media.preparar_audio`) y se pega sin filtros. (b) El
+  guion salió claro ("el hongo mataba a las bacterias… por eso servía para curar infecciones"),
+  pero 2 de 8 fotos no tenían nada que ver (una postal de Hamburgo, una máquina de
+  radioisótopos): búsquedas genéricas ("microscope view", "medical research") y flash-lite
+  eligiendo la primera candidata sin mirar. Arreglos: el prompt pide la COSA puntual con
+  ejemplos de qué no; cada frase puede elegir cualquier foto del pool (antes solo las de su
+  búsqueda); Gemini dice qué se ve en la que eligió (`se_ve`); y la reserva solo usa fotos que
+  Gemini puso para alguna frase, nunca resultados que nadie miró (en 🔁 sí, porque la mira Santi).
+  462 tests OK.
 - v0.29.0 (2026-09-28) — **Mezcla diaria revisada con lo que rinde** (pedido de Santi: Davoo,
   Auron, Coscu, Coker y Spreen rinden; Minecraft y el Dedsafío no). Carpeta Dedsafío sin diarios
   ni en vivo (en la Pi ya estaba así, tocado por Telegram; ahora también de fábrica). Carpeta

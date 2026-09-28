@@ -82,6 +82,39 @@ def test_las_miniaturas_de_thumb_wikimedia_tambien_esperan_entre_descargas(tmp_p
     assert esperas == [ef.Wiki.PAUSA_FOTOS_S]
 
 
+def test_la_reserva_nunca_usa_fotos_que_gemini_no_eligio_para_nada():
+    """Prueba del 28/09: la postal de Hamburgo entró por la reserva sin que nadie la eligiera."""
+    g = _guion(3)
+    g.ranking, g.descartadas = [[2], [5], []], [0]
+    assert ef.de_reserva(g, 8) == [2, 5]
+    g.ranking = [[], [], []]
+    assert ef.de_reserva(g, 3) == [1, 2]            # sin nada elegido, lo que queda (sin descartes)
+
+
+def test_cada_frase_puede_elegir_cualquier_foto_empezando_por_las_de_su_busqueda(tmp_path):
+    prompts = []
+
+    class Gem(GeminiFotos):
+        def json(self, sistema, prompt, schema, temperatura=0.7, imagenes=None, audio=None):
+            prompts.append(prompt)
+            return super().json(sistema, prompt, schema, temperatura, imagenes, audio)
+
+    wiki = WikiFalsa()
+    e = ef.Evento("es", 1928, "x", ["Penicilina"])
+    art, _ = ef.fotos_del_evento(wiki, e)
+    pool, _ = ef.fotos_para_guion(wiki, Gem(), e, _guion(), art, tmp_path)
+    frase5 = prompts[0].split("frase 5:")[1].split("frase 6:")[0]
+    cands = frase5.split("candidatas:")[1].split("\n")[0]
+    assert len(cands.split(",")) == len(pool)                     # todo el pool
+    assert "de su búsqueda:" in frase5 and "se_ve" in ef.SCHEMA_FOTOS["properties"]["frases"]["items"]["required"]
+
+
+def test_el_guion_pide_busquedas_concretas():
+    for mal in ("microscope view", "medical research", "historical laboratory"):
+        assert mal in ef.SISTEMA_GUION                              # como ejemplo de lo que NO
+    assert "COSA\n  PUNTUAL" in ef.SISTEMA_GUION or "COSA PUNTUAL" in ef.SISTEMA_GUION
+
+
 def test_el_guion_pide_que_mostrar_en_cada_frase():
     frase = ef.SCHEMA_GUION["properties"]["frases"]["items"]
     assert "mostrar" in frase["required"] and "foto" not in frase["properties"]
@@ -276,13 +309,16 @@ def test_la_efemeride_termina_con_la_cola_del_largo_de_las_fotos(monkeypatch, tm
     from clips_bot.config import Render
 
     comandos = _capturar(monkeypatch, ef)
+    audio = _capturar(monkeypatch, media)
     monkeypatch.setattr(ef, "foco", lambda ruta: (0.5, 0.5))
     fotos = [_jpg(tmp_path / f"{i}.jpg") for i in range(2)]
     ef.armar_video([(fotos[0], 4.0), (fotos[1], 5.5)], tmp_path / "voz.wav", tmp_path,
                    tmp_path / "v.mp4", Render())
+    # el audio se termina en un paso aparte (con la entrada concat, ffmpeg lo cortaba a 26,7 s)
+    assert "aresample=48000,apad,atrim=0:9.500" in audio[0] and "afade=t=out:st=9.000" in audio[0]
     final = comandos[-1]
-    assert "[1:a]aresample=48000,apad,atrim=0:9.500" in final and "afade=t=out:st=9.000" in final
-    assert "-shortest" not in final
+    assert "audio_final.wav" in final and "-map 1:a" in final
+    assert "-shortest" not in final and "[1:a]" not in final
 
 
 def test_la_entrega_avisa_si_el_audio_esta_mal(monkeypatch, tmp_path):

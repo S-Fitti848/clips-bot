@@ -31,7 +31,7 @@ from pathlib import Path
 import requests
 
 from .config import DATA_DIR, user_agent
-from .media import chequear_audio, cola_audio, find_bin, run
+from .media import chequear_audio, find_bin, preparar_audio, run
 from . import ilustrar
 from .narrar import NarrarError
 from .reglas import REGLAS_CLARIDAD
@@ -540,9 +540,12 @@ nombre, ni un número, ni una fecha que no esté ahí. Si el artículo no lo dic
 - Sin emojis, sin hashtags, sin "suscribite".
 """ + REGLAS_CLARIDAD + """
 - Cada frase lleva `mostrar`: qué tendría que verse en pantalla mientras se dice, como búsqueda
-  para Wikimedia Commons, EN INGLÉS y concreta, de 2 a 5 palabras ("petri dish bacteria",
-  "Penicillium mold", "Alexander Fleming laboratory"). Lo que se VE, no la idea: nada de
-  "discovery" ni "importance". Variá: frases distintas, cosas distintas para mostrar.
+  para Wikimedia Commons, EN INGLÉS y concreta, de 2 a 5 palabras. Tiene que nombrar la COSA
+  PUNTUAL de esta historia (la persona, el objeto, el lugar, el organismo), no una categoría
+  general. BIEN: "Penicillium mold", "penicillin petri dish", "Alexander Fleming laboratory",
+  "penicillin vial 1940s". MAL (dan fotos de cualquier cosa): "microscope view",
+  "medical research", "historical laboratory", "discovery", "importance". Si una frase habla
+  de una idea, mostrá la cosa concreta que la ilustra. Variá: frases distintas, cosas distintas.
 - `idea_clave`: en una frase, lo que un chico de 15 años tiene que haber entendido al final (qué
   pasó y por qué importa). El guion tiene que explicarlo.
 - `titulo`: hasta 55 caracteres, con gancho, sin clickbait falso. `descripcion`: 1 a 3 frases
@@ -715,10 +718,13 @@ def escribir_guion(cliente, e: Evento, fuente: str, correccion: str = "", anteri
 SISTEMA_FOTOS = """Elegís las fotos de un video corto narrado. Te paso las frases del guion, qué
 conviene mostrar en cada una, y fotos numeradas (la imagen k es la foto k).
 
-Para CADA frase, ordená de mejor a peor hasta 3 fotos, SOLO de las candidatas de esa frase, que
-muestren lo que dice la frase. Si ninguna lo muestra, dejá la lista vacía: es mejor vacía que una
-foto que no tiene nada que ver. Buscá variedad: si otra foto sirve igual, no pongas primera la
-misma foto en frases distintas.
+Para CADA frase, MIRÁ las imágenes y ordená de mejor a peor hasta 3 fotos que muestren lo que dice
+LA FRASE (no solo la búsqueda). Primero fijate en las de su búsqueda, pero podés elegir cualquier
+foto de la lista. En `se_ve` decí en pocas palabras qué se ve de verdad en la foto que pusiste
+primera: si lo que se ve no tiene que ver con la frase, no la elijas. Si ninguna muestra lo que
+se dice, dejá la lista vacía: es mejor vacía que una foto que no tiene nada que ver (una postal,
+una máquina de otro tema, un edificio cualquiera). Buscá variedad: si otra foto sirve igual, no
+pongas primera la misma foto en frases distintas.
 
 `descartadas`: MIRÁ las fotos y descartá las que no sirven para nada: mapas, gráficos, diagramas,
 banderas, escudos, firmas, logos, capturas de pantalla, retratos de alguien que NO protagoniza el
@@ -731,8 +737,9 @@ SCHEMA_FOTOS = {
     "properties": {
         "frases": {"type": "ARRAY", "items": {
             "type": "OBJECT",
-            "properties": {"fotos": {"type": "ARRAY", "items": {"type": "INTEGER"}}},
-            "required": ["fotos"]}},
+            "properties": {"se_ve": {"type": "STRING"},
+                           "fotos": {"type": "ARRAY", "items": {"type": "INTEGER"}}},
+            "required": ["se_ve", "fotos"]}},
         "descartadas": {"type": "ARRAY", "items": {"type": "INTEGER"}},
     },
     "required": ["frases", "descartadas"],
@@ -759,13 +766,17 @@ def rankings_de(d: dict, candidatas: list[list[int]]) -> tuple[list[list[int]], 
 
 
 def elegir_fotos(cliente, g: Guion, pool: list[Foto], candidatas: list[list[int]],
-                 reintentos: int = 1) -> tuple[list[list[int]], set[int]]:
-    """UNA llamada: Gemini ve todas las fotos y ordena las que sirven para cada frase."""
+                 propias: list[list[int]] | None = None, reintentos: int = 1,
+                 avisar=log.info) -> tuple[list[list[int]], set[int]]:
+    """UNA llamada: Gemini ve todas las fotos y ordena las que sirven para cada frase.
+    `propias`: las que salieron de la búsqueda de esa frase (se le muestran primero)."""
     lineas = []
     for i, (frase, cands) in enumerate(zip(g.frases, candidatas), 1):
         mostrar = g.mostrar[i - 1] if i - 1 < len(g.mostrar) else ""
+        suyas = propias[i - 1] if propias else []
         lineas.append(f"frase {i}: {frase}\n  mostrar: {mostrar}\n  candidatas: "
-                      + ", ".join(str(c + 1) for c in cands))
+                      + ", ".join(str(c + 1) for c in cands)
+                      + (f"\n  de su búsqueda: {', '.join(str(c + 1) for c in suyas)}" if suyas else ""))
     epigrafes = "\n".join(f"foto {k}: {f.epigrafe[:120]}" for k, f in enumerate(pool, 1))
     prompt = "FRASES:\n" + "\n".join(lineas) + "\n\nFOTOS:\n" + epigrafes
     imagenes = [_jpeg_chico(Path(f.ruta), 384) for f in pool]
@@ -775,9 +786,13 @@ def elegir_fotos(cliente, g: Guion, pool: list[Foto], candidatas: list[list[int]
         d = json.loads(cliente.json(SISTEMA_FOTOS, prompt + extra, SCHEMA_FOTOS, temperatura=0.2,
                                     imagenes=imagenes))
         try:
-            return rankings_de(d, candidatas)
+            rankings, malas = rankings_de(d, candidatas)
         except ValueError as e:
             error = str(e)
+            continue
+        for i, (f, rk) in enumerate(zip(d["frases"], rankings), 1):   # para juzgar la elección
+            avisar(f"    frase {i}: {[x + 1 for x in rk]} — se ve: {str((f or {}).get('se_ve'))[:80]}")
+        return rankings, malas
     raise NarrarError(f"Gemini no eligió bien las fotos: {error}")
 
 
@@ -806,16 +821,20 @@ def fotos_para_guion(wiki: Wiki, cliente, e: Evento, g: Guion, fotos_articulo: l
         return [por_archivo[f.archivo] for f in fotos if f.archivo in por_archivo][:cuantas]
 
     del_hecho = [i for i in sumar(fotos_articulo, FOTOS_ARTICULO_MAX) if i not in descartadas]
-    candidatas, descartes = [], {}
+    propias, descartes = [], {}
     for mostrar in g.mostrar:
         halladas, desc = filtrar_infos(wiki, "commons", wiki.buscar_commons(mostrar),
                                        f"Commons: {mostrar}")
         for k, v in desc.items():
             descartes[k] = descartes.get(k, 0) + v
-        propias = [i for i in sumar(halladas, FOTOS_BUSQUEDA_MAX) if i not in descartadas]
-        candidatas.append(list(dict.fromkeys(propias + del_hecho)))
+        propias.append([i for i in sumar(halladas, FOTOS_BUSQUEDA_MAX) if i not in descartadas])
     avisar(f"  fotos: {len(pool)} bajadas ({len(del_hecho)} del artículo); descartes {descartes}")
-    rankings, vistas_malas = elegir_fotos(cliente, g, pool, candidatas)
+    # Cada frase puede elegir CUALQUIER foto del pool, empezando por las de su búsqueda: en la
+    # prueba del 28/09 la frase "el hongo mataba a las bacterias" solo podía elegir entre lo que
+    # trajo su búsqueda (mala) y no las placas de Petri que había traído otra frase.
+    todas = [i for i in range(len(pool)) if i not in descartadas]
+    candidatas = [list(dict.fromkeys(p + del_hecho + todas)) for p in propias]
+    rankings, vistas_malas = elegir_fotos(cliente, g, pool, candidatas, propias, avisar=avisar)
     descartadas |= vistas_malas
     g.ranking, g.descartadas = rankings, sorted(descartadas)
     reserva = de_reserva(g, len(pool))
@@ -832,11 +851,13 @@ PALABRAS_POR_S_VOZ = 2.3
 
 
 def de_reserva(g: Guion, n_pool: int) -> list[int]:
-    """Las fotos para cuando una frase se queda sin las suyas: primero las que Gemini puso para
-    alguna frase, después el resto del pool; nunca las descartadas."""
+    """Las fotos para cuando una frase se queda sin las suyas: SOLO las que Gemini puso para alguna
+    frase (las vio y dijo que muestran algo de la historia), nunca las descartadas. El resto del
+    pool no: son resultados de búsqueda que nadie miró (así se coló una postal de Hamburgo en la
+    prueba del 28/09). Si Gemini no eligió ninguna, lo que quede del pool."""
     malas = set(g.descartadas)
-    rankeadas = [x for r in g.rankings() for x in r]
-    return [i for i in dict.fromkeys(rankeadas + list(range(n_pool))) if i not in malas]
+    rankeadas = [x for x in dict.fromkeys(x for r in g.rankings() for x in r) if x not in malas]
+    return rankeadas or [i for i in range(n_pool) if i not in malas]
 
 
 def duraciones_estimadas(g: Guion) -> list[float]:
@@ -996,12 +1017,14 @@ def armar_video(tramos: list[tuple[Path, float]], voz: Path, dir_subs: Path, sal
     lista.write_text("".join(f"file '{p.name}'\n" for p in partes), encoding="utf-8")
     salida.parent.mkdir(parents=True, exist_ok=True)
     # Audio limpio (media.cola_audio): del largo exacto del video, con los fundidos. La voz es un
-    # solo audio continuo, así que acá no hay uniones de audio que cruzar.
+    # solo audio continuo, así que acá no hay uniones de audio que cruzar. Va en un paso aparte
+    # (media.preparar_audio): con la entrada concat, el mismo filtro dentro de este comando cortaba
+    # el audio a 26,7 s en un video de 35,4 s.
     total = sum(max(1, int(round(d * fps))) for _, d in tramos) / fps
+    audio = preparar_audio(voz, total, dir_subs / "audio_final.wav")
     run([find_bin("ffmpeg"), "-hide_banner", "-loglevel", "error", "-y",
-         "-f", "concat", "-safe", "0", "-i", "tramos.txt", "-i", str(voz.resolve()),
-         "-filter_complex", f"[0:v]ass=subs.ass[v];[1:a]aresample=48000,{cola_audio(total)}[a]",
-         "-map", "[v]", "-map", "[a]",
+         "-f", "concat", "-safe", "0", "-i", "tramos.txt", "-i", str(audio.resolve()),
+         "-filter_complex", "[0:v]ass=subs.ass[v]", "-map", "[v]", "-map", "1:a",
          "-c:v", "libx264", "-preset", render.x264_preset, "-crf", str(render.crf),
          "-pix_fmt", "yuv420p", "-maxrate", f"{render.maxrate_kbps}k",
          "-bufsize", f"{2 * render.maxrate_kbps}k", "-c:a", "aac", "-b:a", "160k", "-ar", "48000",
@@ -1152,7 +1175,11 @@ def cambiar_foto(p: Propuesta, n: int, wiki: Wiki, carpeta: Path) -> Foto | None
         if f != i:
             continue
         en_uso = set(nuevas)
-        opciones = [x for x in rankings[j] + de_reserva(g, len(p.fotos)) if x not in en_uso]
+        # Acá sí vale todo lo que Gemini vio y no descartó: el 🔁 lo pide Santi y la foto nueva la
+        # mira él en la hoja antes de aprobar.
+        vistas = [x for x in range(len(p.fotos)) if x not in set(g.descartadas)]
+        opciones = [x for x in dict.fromkeys(rankings[j] + de_reserva(g, len(p.fotos)) + vistas)
+                    if x not in en_uso]
         while not opciones and p.reserva:   # la que no baja se saltea, como en la propuesta
             foto = Foto.de_dict(p.reserva.pop(0))
             try:

@@ -185,6 +185,18 @@ def audio_con_crossfade(tramos: list[tuple[str, float, float, float]], salida: s
     return ";".join(partes)
 
 
+def preparar_audio(entrada: Path, duracion: float, salida: Path) -> Path:
+    """El audio final ya terminado (cola incluida) en un WAV de `duracion` exacta, en un paso
+    aparte. Hace falta cuando el video entra por el demuxer concat: con esa entrada, ffmpeg 7.1
+    cortó el audio del mismo filtro a 26,7 s en un video de 35,4 s (efeméride de Fleming,
+    2026-09-28); el mismo filtro con cualquier otra entrada daba exacto."""
+    salida.parent.mkdir(parents=True, exist_ok=True)
+    run([find_bin("ffmpeg"), "-hide_banner", "-loglevel", "error", "-y", "-i", str(Path(entrada).resolve()),
+         "-af", f"aresample=48000,{cola_audio(duracion)}", "-c:a", "pcm_s16le",
+         str(salida.resolve())])
+    return salida
+
+
 _MAX_VOL = re.compile(r"max_volume:\s*(-?[\d.]+|-inf) dB")
 
 
