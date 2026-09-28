@@ -189,7 +189,7 @@ def test_el_gancho_la_pregunta_y_las_fotos():
     assert any("mostrar" in e for e in ef.validar_guion(sin_mostrar, 1998, ARTICULO))
     assert any("idea_clave" in e for e in ef.validar_guion(_guion_ok(idea_clave=""), 1998, ARTICULO))
     corto = _guion_ok(frases=_guion_ok()["frases"][:3] + [_guion_ok()["frases"][-1]])
-    assert any("palabras" in e for e in ef.validar_guion(corto, 1998, ARTICULO))
+    assert any("te faltan" in e and "porqué" in e for e in ef.validar_guion(corto, 1998, ARTICULO))
 
 
 def test_escribir_guion_reintenta_con_los_errores():

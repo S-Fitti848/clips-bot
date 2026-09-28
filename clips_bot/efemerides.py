@@ -660,8 +660,15 @@ def validar_guion(d: dict, anio: int, fuente: str) -> list[str]:
     texto = " ".join(frases)
     errores = []
     n = len(re.findall(r"\S+", texto))
-    if not PALABRAS_MIN <= n <= PALABRAS_MAX:
-        errores.append(f"el guion tiene {n} palabras: tienen que ser entre {PALABRAS_MIN} y {PALABRAS_MAX}")
+    # El aviso dice cuánto y qué hacer: con "tienen que ser entre 85 y 105" a secas, flash-lite
+    # devolvió 75, 68 y 68 palabras en la prueba del 28/09, sin moverse.
+    if n < PALABRAS_MIN:
+        errores.append(f"el guion tiene {n} palabras y el mínimo es {PALABRAS_MIN}: te faltan "
+                       f"{PALABRAS_MIN - n + 5} palabras. Agregá 2 o 3 frases cortas que expliquen "
+                       f"mejor el cómo o el porqué, con lo que dice el artículo")
+    elif n > PALABRAS_MAX:
+        errores.append(f"el guion tiene {n} palabras y el máximo es {PALABRAS_MAX}: sacá "
+                       f"{n - PALABRAS_MAX + 5} palabras (datos, no la explicación)")
     if not _norm(frases[0]).startswith("un dia como hoy") or str(anio) not in frases[0]:
         errores.append(f'la primera frase tiene que arrancar con "Un día como hoy, en {anio},"')
     # Pedido 2026-09-27 ("la voz suena triste y plana"): frases cortas, al menos una pregunta y
