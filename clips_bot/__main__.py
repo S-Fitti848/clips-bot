@@ -1953,6 +1953,9 @@ def escuchar_telegram(settings: Settings, timeout_poll: int = 50) -> int:
                 if cb["data"].startswith("pas:"):
                     _seguro(tg, cb["chat_id"], cb["data"], _pasos_callback, conn, tg, cb, settings)
                     continue
+                if cb["data"].startswith("sub:"):
+                    _seguro(tg, cb["chat_id"], cb["data"], _subidas_callback, conn, tg, cb, settings)
+                    continue
                 if cb["data"].startswith("efe:"):
                     _seguro(tg, cb["chat_id"], cb["data"], _efe_callback, conn, tg, cb, settings,
                             cola)
@@ -2096,6 +2099,10 @@ def _despachar(conn, tg: TelegramClient, c: dict, settings: Settings, cola: list
         if respuesta is not FALLO and respuesta:
             tg.send_message(c["chat_id"], respuesta)
         return
+    if c["comando"] == "/subidas":
+        texto, teclado = _subidas_texto(conn, settings)
+        tg.send_message(c["chat_id"], texto, teclado=teclado)
+        return
     if c["comando"] == "/envivo":
         respuesta = _seguro(tg, c["chat_id"], c["comando"], _envivo, conn, c["chat_id"], c["args"],
                             settings)
@@ -2159,6 +2166,16 @@ def _atender_votos(conn, tg: TelegramClient, updates: list[dict], permitidos: se
         tg.answer_callback(v["callback_id"], "👍 anotado" if v["voto"] > 0 else "👎 anotado")
         n += 1
         print(f"  voto {'+1' if v['voto'] > 0 else '-1'} en {v['clip_id'][:28]}")
+        # 👍 a un clip de streamer = aprobado: con la subida prendida, se programa en Rots a su
+        # horario sugerido. Los videos propios (/editar, /narrar, /serie) no: no tienen canal fijo.
+        if v["voto"] > 0 and meta.get("plataforma") in ("twitch", "kick"):
+            ajustes = load_settings()
+            if ajustes.youtube_upload_enabled:
+                hora = ((meta.get("entregado") or {}).get("horario")
+                        or ajustes.publicacion.horarios[0])
+                aviso = _programar_subida(conn, ajustes, meta, "rots", hora)
+                if aviso:
+                    tg.send_message(v["chat_id"], aviso)
         if v["voto"] < 0 and v["clip_id"].startswith(db.PREFIJO_MULTIPOV):
             _revisar_prueba_multipov(conn, tg, v["chat_id"])
     return n
@@ -2683,6 +2700,11 @@ def _efe_video(conn, tg: TelegramClient, chat_id: str, token: str, settings: Set
         enviar_clip(tg, chat_id, conn, meta["clip_id"], meta, 1, None,
                     encabezado="📅 <b>Pequeña Historia</b> — subilo al canal de efemérides")
         db.borrar_valor(conn, f"efe:{token}")
+        # Con la subida prendida, el ✅ ya alcanza: se programa sola (a la hora de publicación).
+        aviso = _programar_subida(conn, settings, meta, "pequena_historia",
+                                  settings.efemerides.hora_publicacion)
+        if aviso:
+            tg.send_message(chat_id, aviso)
         return None
     finally:
         db.soltar_turno(conn, db.RECURSO_PESADO, turno, VENCIMIENTO_PESADO_S)
@@ -2763,6 +2785,103 @@ def cmd_efemeride(args: argparse.Namespace) -> int:
     return 0
 
 
+# ---- subida a YouTube (preparada, apagada hasta la auditoría) ----------------------------------
+# Con `youtube_upload_enabled: false` todo esto no hace nada. Prendido: al aprobar (✅ de una
+# efeméride, 👍 de un clip) se sube en privado con publishAt en su horario, y /subidas lista y
+# cancela lo programado.
+
+CATEGORIA = {"rots": "20", "pequena_historia": "27"}   # 20 = Gaming, 27 = Education
+
+
+def _programar_subida(conn, settings: Settings, meta: dict, canal: str, hora: str) -> str:
+    """Sube y programa. Devuelve el mensaje para Telegram ("" si la subida está apagada o ya estaba)."""
+    from . import youtube
+
+    if not settings.youtube_upload_enabled:
+        return ""
+    clip_id = meta["clip_id"]
+    if db.subidas(conn, ("programada",), clip_id=clip_id):
+        return ""
+    ocupados = {s["publish_at"] for s in db.subidas(conn, ("programada",)) if s["canal"] == canal}
+    try:
+        cuando = youtube.proximo_horario(hora, ocupados=ocupados,
+                                         horarios=list(settings.publicacion.horarios)
+                                         if canal == "rots" else None)
+        hoy = datetime.now(AR)
+        if canal == "pequena_historia" and cuando.date() != hoy.date():
+            # "Un día como hoy" publicado mañana está mal: si ya pasó la hora, sale hoy en 30 min.
+            cuando = (hoy + timedelta(minutes=30)).replace(second=0, microsecond=0)
+        t = meta["textos"]
+        video_id = youtube.Cliente(canal).subir(Path(meta["salida"]), t["titulo"], t["descripcion"],
+                                                t.get("hashtags") or [], cuando,
+                                                CATEGORIA.get(canal, "24"))
+    except youtube.YouTubeError as e:
+        db.crear_subida(conn, clip_id, canal, "error", error=str(e)[:500])
+        return f"⚠️ No pude subirlo a YouTube ({html.escape(youtube.CANALES[canal])}): {html.escape(str(e)[:300])}"
+    iso = cuando.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    db.crear_subida(conn, clip_id, canal, "programada", video_id=video_id, publish_at=iso)
+    return (f"📤 Programado en <b>{html.escape(youtube.CANALES[canal])}</b> para el "
+            f"{cuando:%d/%m a las %H:%M} (AR). Se ve en Studio como privado hasta esa hora. "
+            f"<code>/subidas</code> para cancelarlo.")
+
+
+def _subidas_texto(conn, settings: Settings) -> tuple[str, dict | None]:
+    from . import youtube
+
+    ahora = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    prog = [s for s in db.subidas(conn, ("programada",)) if (s["publish_at"] or "") >= ahora]
+    errores = db.subidas(conn, ("error",))[-3:]
+    partes = []
+    if not settings.youtube_upload_enabled:
+        partes.append("La subida automática está <b>apagada</b> (<code>youtube_upload_enabled: "
+                      "false</code>) hasta que se apruebe la auditoría: docs/auditoria-youtube.md.")
+    if not prog:
+        partes.append("No hay nada programado.")
+    filas = []
+    for s in prog:
+        cuando = datetime.fromisoformat(s["publish_at"].replace("Z", "+00:00")).astimezone(AR)
+        partes.append(f"#{s['id']} · {html.escape(youtube.CANALES.get(s['canal'], s['canal']))} · "
+                      f"{cuando:%d/%m %H:%M} · <code>{html.escape(s['clip_id'])}</code>")
+        filas.append([{"text": f"❌ Cancelar #{s['id']}", "callback_data": f"sub:c:{s['id']}"}])
+    if errores:
+        partes.append("\nÚltimos errores:\n" + "\n".join(
+            f"· {html.escape(e['clip_id'])}: {html.escape((e['error'] or '')[:120])}" for e in errores))
+    return "📤 <b>Subidas a YouTube</b>\n\n" + "\n".join(partes), (
+        {"inline_keyboard": filas} if filas else None)
+
+
+def _subidas_callback(conn, tg: TelegramClient, cb: dict, settings: Settings) -> None:
+    from . import youtube
+    from .menu import parse_callback
+
+    d = parse_callback(cb["data"])
+    if not d or d["menu"] != "sub" or d["accion"] != "c" or not d["crudos"]:
+        return
+    sid = int(d["crudos"][0]) if d["crudos"][0].isdigit() else -1
+    s = next((x for x in db.subidas(conn, ("programada",)) if x["id"] == sid), None)
+    if not s:
+        return tg.answer_callback(cb["callback_id"], "Esa ya no está programada.")
+    try:
+        youtube.Cliente(s["canal"]).cancelar(s["video_id"])
+    except youtube.YouTubeError as e:
+        return tg.answer_callback(cb["callback_id"], f"No pude: {str(e)[:150]}")
+    db.marcar_subida(conn, sid, "cancelada")
+    tg.answer_callback(cb["callback_id"], "Cancelada: queda privado en Studio.")
+    texto, teclado = _subidas_texto(conn, settings)
+    tg.edit_message(cb["chat_id"], cb["message_id"], texto, teclado or {"inline_keyboard": []})
+
+
+def cmd_youtube_auth(args: argparse.Namespace) -> int:
+    """El primer login de un canal. En la compu con navegador; después se copia el token a la Pi."""
+    from . import youtube
+
+    datos = youtube.autorizar(args.canal, puerto=args.puerto)
+    print(f"\nListo: {datos['channel_title']} ({datos['channel_id']}) → "
+          f"{youtube.ruta_token(args.canal)}\nCopialo a la Pi:\n  scp {youtube.ruta_token(args.canal)} "
+          f"santi@192.168.50.12:clips/config/")
+    return 0
+
+
 # Los comandos agrupados por para qué sirven. /ayuda arranca mostrando solo las secciones: con
 # once comandos, la lista entera en un mensaje es una pared de texto que nadie lee.
 SECCIONES = [
@@ -2837,6 +2956,11 @@ SECCIONES = [
          "/efemeride 20/07"),
     ]),
     ("⚙️ Configuración", [
+        ("/subidas",
+         "lo programado para subirse solo a YouTube (Rots y Pequeña Historia), con un botón para "
+         "cancelar cada uno. Hoy la subida automática está apagada hasta la auditoría: al aprobar "
+         "(✅ de una efeméride o 👍 de un clip) se va a programar sola.",
+         "/subidas"),
         ("/destinos",
          "a quiénes les llegan los Shorts de las 05:00, con botones para prender y apagar cada "
          "uno. Lo que pidas por comando se contesta siempre donde lo pediste, esté o no acá.",
@@ -3499,6 +3623,12 @@ def main(argv: list[str] | None = None) -> int:
     pe.add_argument("--ventana-min", type=int, help="mirar los clips de los últimos N min (default: settings)")
     pe.add_argument("--min-creadores", type=int, help="umbral de creadores distintos (default: settings)")
     pe.set_defaults(func=cmd_envivo)
+
+    pyt = sub.add_parser("youtube-auth", help="primer login de un canal de YouTube (en la compu con "
+                                              "navegador); después copiar el token a la Pi")
+    pyt.add_argument("canal", choices=["rots", "pequena_historia"])
+    pyt.add_argument("--puerto", type=int, default=8765)
+    pyt.set_defaults(func=cmd_youtube_auth)
 
     pmu = sub.add_parser("musica", help="biblioteca de música de Pequeña Historia: listar o llenar")
     pmu.add_argument("--llenar", action="store_true",

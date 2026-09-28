@@ -174,6 +174,17 @@ CREATE TABLE IF NOT EXISTS votos (
     PRIMARY KEY (clip_id, user_id)
 );
 
+CREATE TABLE IF NOT EXISTS subidas (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    clip_id    TEXT NOT NULL,
+    canal      TEXT NOT NULL,            -- rots | pequena_historia (youtube.CANALES)
+    video_id   TEXT,
+    publish_at TEXT,                     -- ISO UTC
+    estado     TEXT NOT NULL,            -- programada | cancelada | error
+    error      TEXT,
+    creada     TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 CREATE TABLE IF NOT EXISTS carpetas (
     nombre   TEXT PRIMARY KEY,           -- el `grupo` de los streamers: argentinos, evento, catalogo…
     etiqueta TEXT NOT NULL DEFAULT '',   -- cómo se muestra: "Argentinos", "Dedsafío"
@@ -679,4 +690,35 @@ def set_interruptor(conn: sqlite3.Connection, nombre: str, campo: str, valor: bo
 
 def borrar_carpeta(conn: sqlite3.Connection, nombre: str) -> None:
     conn.execute("DELETE FROM carpetas WHERE nombre = ?", (nombre,))
+    conn.commit()
+
+
+# ---- subidas a YouTube (preparadas; apagadas hasta la auditoría) ----------------------------
+
+def _fila_subida(f) -> dict:
+    return dict(zip(("id", "clip_id", "canal", "video_id", "publish_at", "estado", "error", "creada"), f))
+
+
+def crear_subida(conn: sqlite3.Connection, clip_id: str, canal: str, estado: str,
+                 video_id: str = "", publish_at: str = "", error: str = "") -> int:
+    cur = conn.execute("INSERT INTO subidas (clip_id, canal, video_id, publish_at, estado, error) "
+                       "VALUES (?, ?, ?, ?, ?, ?)", (clip_id, canal, video_id, publish_at, estado, error))
+    conn.commit()
+    return int(cur.lastrowid)
+
+
+def subidas(conn: sqlite3.Connection, estados: tuple[str, ...] | None = None,
+            clip_id: str | None = None) -> list[dict]:
+    sql, args = "SELECT id, clip_id, canal, video_id, publish_at, estado, error, creada FROM subidas WHERE 1=1", []
+    if estados:
+        sql += f" AND estado IN ({', '.join('?' for _ in estados)})"
+        args += list(estados)
+    if clip_id:
+        sql += " AND clip_id = ?"
+        args.append(clip_id)
+    return [_fila_subida(f) for f in conn.execute(sql + " ORDER BY publish_at, id", args)]
+
+
+def marcar_subida(conn: sqlite3.Connection, subida_id: int, estado: str, error: str = "") -> None:
+    conn.execute("UPDATE subidas SET estado = ?, error = ? WHERE id = ?", (estado, error, subida_id))
     conn.commit()

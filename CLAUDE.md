@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-09-27 | **Versión:** v0.28.0 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 + escucha de Telegram 24/7)
+**Snapshot:** 2026-09-27 | **Versión:** v0.28.1 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 + escucha de Telegram 24/7)
 
 > **SI ESTÁS EMPEZANDO UNA SESIÓN NUEVA, LEÉ §10.** Ahí está qué está hecho, qué quedó a medias,
 > qué falta, y las trampas que ya nos mordieron.
@@ -41,9 +41,12 @@ servicio systemd separado: `clips-bot`).
   Telegram; cuando exista el módulo de métricas (§4b) se llama igual desde ahí.
 - **Sin IA generativa de video.** Gemini se usa solo para texto: título, descripción, hashtags,
   `depende_de_fecha`, y elegir entre candidatos cuando hay empate.
-- **Sin música agregada.** Cualquier música es riesgo de Content ID. Si el clip trae música de
-  fondo del stream, se descarta (detección: ver §4).
-- **Volumen: 3 uploads/día** (3 × 1600 = 4800 unidades de las 10.000 diarias de cuota).
+- **Sin música agregada en los clips.** Cualquier música es riesgo de Content ID. Si el clip trae
+  música de fondo del stream, se descarta (detección: ver §4). EXCEPCIÓN pedida por Santi
+  (2026-09-27): Pequeña Historia lleva música de fondo con licencia verificada (docs/musica.md).
+- **Volumen: 3 uploads/día** de clips + 1 de Pequeña Historia. Cuota (doc oficial, revisada
+  2026-09-28): `videos.insert` cuesta 1 unidad de un balde aparte, *Video Uploads*, con 100 por día;
+  ya no son 1600 de las 10.000 unidades generales. La cuota no es un límite para este volumen.
 - **Publicación: TODO MANUAL hasta la auditoría de YouTube (decisión 2026-09-21, revisada).**
   CONFIRMADO: los videos subidos por API desde un proyecto sin auditar quedan bloqueados como
   privados de forma permanente (no se pueden publicar desde Studio ni apelar). Por eso, hasta
@@ -51,8 +54,8 @@ servicio systemd separado: `clips-bot`).
   hashtags y Santi sube a mano a YouTube Shorts, TikTok, Instagram Reels y Facebook Reels
   (~5–7 min/día). Esto también evita la auditoría de TikTok y la revisión de Meta.
   Con la auditoría aprobada se activa YouTube automático: `videos.insert` privado + `publishAt`
-  escalonado (ej. 13:00/18:00/21:30 AR); cuota confirmada 1600/upload → 3 × 1600 = 4800 de las
-  10.000 diarias. TikTok/IG/FB siguen manuales.
+  escalonado (ej. 13:00/18:00/21:30 AR). Preparado desde v0.28.1 (apagado): ver
+  docs/auditoria-youtube.md. TikTok/IG/FB siguen manuales.
 - **Feedback loop obligatorio:** el bot mide cómo rinde cada video y usa eso para elegir mejor
   (ver §4b). Sin métricas el proyecto es ciego.
 - **Valor agregado obligatorio en cada Short**: subtítulos quemados, layout vertical con cámara
@@ -449,13 +452,15 @@ clips_bot/narrar.py      modo /narrar: guion con Gemini viendo frames, TTS con P
 clips_bot/__main__.py    CLI + todo el bot de Telegram (comandos, menús, cola, turnos)
 deploy/sudoers-clips-bot permite a santi reiniciar SOLO las unidades del clips-bot sin contraseña
 voces/                   modelos de Piper (NO están en git: ~110 MB, se bajan en la Pi)
+clips_bot/youtube.py     subida a YouTube (apagada): OAuth, upload reanudable con publishAt, cancelar
+clips_bot/musica.py      biblioteca de música de Pequeña Historia (docs/musica.md)
 clips_bot/efemerides.py  Pequeña Historia (§3c): Wikipedia/Commons, filtros de eventos y fotos, guion
                          validado contra el artículo, hoja de aprobación y el video con zoom
 clips_bot/serie.py       /serie: partes, división en etapas (validada), guiones encadenados,
                          título numerado, horarios, hoja de miniaturas por etapa
 clips_bot/envivo.py      modo en vivo (§3b): quién está al aire, momentos por creadores distintos,
                          alertas en la DB (no repetir, tope, vencer) y el resumen de tiempos
-tests/                   379 tests sin red ni video
+tests/                   389 tests sin red ni video
 ```
 
 Comandos:
@@ -642,6 +647,23 @@ Problemas abiertos:
 
 ## 9. CHANGELOG
 
+- v0.28.1 (2026-09-28) — **Subida automática a YouTube, preparada y APAGADA**
+  (`youtube_upload_enabled: false`). `clips_bot/youtube.py` sin librerías de Google: OAuth de app
+  de escritorio con redirección a 127.0.0.1 (`python -m clips_bot youtube-auth rots|
+  pequena_historia`, en la compu con navegador; tokens en `config/youtube_token_<canal>.json`, fuera
+  de git), upload reanudable en privado con `publishAt`, cancelar = privado sin fecha. Dos canales
+  de la misma cuenta: Rots (clips, categoría 20) y Pequeña Historia (efemérides, 27). Al aprobar se
+  programa sola: ✅ de una efeméride → ese mismo día a `efemerides.hora_publicacion` (12:00) o en
+  30 min si ya pasó (decidido por Claude: "un día como hoy" no puede salir mañana); 👍 de un clip
+  de streamer → su horario sugerido o el siguiente libre (decidido por Claude: el 👍 es la
+  "aprobación" de un clip; los videos propios de /editar, /narrar y /serie no se suben solos,
+  porque no tienen canal fijo). `/subidas` lista y cancela; tabla `subidas`. Guía para no
+  programadores: `docs/auditoria-youtube.md` (proyecto, pantalla de consentimiento, credencial,
+  conectar canales, formulario de auditoría campo por campo). Revisado en la doc oficial:
+  `videos.insert` cuesta 1 unidad de un balde aparte de 100 por día (antes 1600 de 10.000; §1
+  corregido); la restricción a privado de los proyectos sin auditar sigue. OJO: con la app de OAuth
+  en modo *Prueba*, Google vence el permiso cada 7 días: hay que pasarla a *En producción*. NO
+  probado contra YouTube (sin credenciales): tests con sesión falsa. 389 tests OK.
 - v0.28.0 (2026-09-28) — **Carpetas de streamers.** Cada `grupo` es una carpeta (tabla
   `carpetas`) con dos interruptores: `en_vivo` (el modo en vivo SOLO vigila esas carpetas) y
   `diarios` (la corrida de las 05:00 y /ya solo usan esas). De fábrica: Argentinos en vivo sí;

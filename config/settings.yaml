@@ -285,6 +285,9 @@ efemerides:
   # diaria (/destinos); para mandarla a otro lado, poné el id (o varios, con coma).
   diaria: true
   chat: ""
+  # Con youtube_upload_enabled: el ✅ la programa en el canal Pequeña Historia para ESE día a esta
+  # hora (AR); si ya pasó, sale ese mismo día en 30 min ("un día como hoy" no puede salir mañana).
+  hora_publicacion: "12:00"
   musica: true
   carpeta_musica: musica
   musica_volumen: 0.12

@@ -190,7 +190,7 @@ def test_ayuda_por_secciones_con_un_ejemplo_por_comando():
             assert f"<code>{ejemplo}</code>" in texto
             vistos.append(uso.split()[0])
     assert set(vistos) == {"/streamers", "/buscar", "/ya", "/agregar", "/quitar", "/cantidad",
-                           "/reclamo", "/editar", "/narrar", "/destinos", "/aca", "/envivo", "/serie", "/efemeride"}
+                           "/reclamo", "/editar", "/narrar", "/destinos", "/aca", "/envivo", "/serie", "/efemeride", "/subidas"}
     botones = [b for f in m.teclado_ayuda()["inline_keyboard"] for b in f]
     assert [b["callback_data"] for b in botones] == [f"ay:s:{i}" for i in range(len(m.SECCIONES))]
 
