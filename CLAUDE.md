@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-09-27 | **Versión:** v0.28.1 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 + escucha de Telegram 24/7)
+**Snapshot:** 2026-09-27 | **Versión:** v0.28.2 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 + escucha de Telegram 24/7)
 
 > **SI ESTÁS EMPEZANDO UNA SESIÓN NUEVA, LEÉ §10.** Ahí está qué está hecho, qué quedó a medias,
 > qué falta, y las trampas que ya nos mordieron.
@@ -374,8 +374,8 @@ replantear nicho o cerrar.
 - [x] Auditoría de la YouTube Data API: CONFIRMADO que sin auditoría los uploads por API quedan
       bloqueados privados para siempre; `videos.insert` = 1600 unidades (doc oficial).
       Pendiente solo: qué pide el formulario y cuánto tarda la aprobación.
-- [ ] Cuota de Gemini: si el límite que se agotó el 2026-09-22 es diario y de cuánto, o si conviene
-      una key paga.
+- [x] Cuota de Gemini: el free tier es ~20/día y el bot usa ~30; pagar el principal saldría
+      ≈ US$4-8/mes (docs/costo-gemini.md). Decisión de Santi.
 - [ ] Qué devuelve exactamente TikTok Display API para la cuenta propia (vistas/likes por video) y
       qué necesita Meta Graph para leer insights de Reels de una cuenta Creator.
 - [ ] Ruta de monetización realista para clips: AdSense Shorts exige 10 M vistas de Shorts en
@@ -391,7 +391,10 @@ replantear nicho o cerrar.
 - % de Shorts con reclamo de copyright o bloqueados (objetivo: 0; si aparece uno, el streamer
   queda excluido automáticamente).
 - Suscriptores/semana.
-- Costo real: Gemini (~$0), API YouTube ($0), electricidad de la Pi. Debe ser ≈ $0.
+- Costo real: Gemini $0 con el free tier (que se agota casi todos los días: ~30 llamadas/día de
+  las ~20 gratis); pagando el modelo principal, ≈ US$4/mes hasta dic. 2026 y ≈ US$8/mes desde
+  2027 (docs/costo-gemini.md, calculado 2026-09-28; nada pago activado). API YouTube $0,
+  electricidad de la Pi.
 
 ---
 
@@ -647,6 +650,10 @@ Problemas abiertos:
 
 ## 9. CHANGELOG
 
+- v0.28.2 (2026-09-28) — Costo de Gemini (docs/costo-gemini.md): ~30 llamadas de texto por día
+  (medido en la Pi: 11-15 clips/día con textos, más lo nuevo) + 1 de voz; pagando el principal,
+  ≈ US$4/mes hasta dic. 2026 y ≈ US$8/mes desde 2027 (precios oficiales del 28/09; doble margen
+  en el doc). Nada pago activado.
 - v0.28.1 (2026-09-28) — **Subida automática a YouTube, preparada y APAGADA**
   (`youtube_upload_enabled: false`). `clips_bot/youtube.py` sin librerías de Google: OAuth de app
   de escritorio con redirección a 127.0.0.1 (`python -m clips_bot youtube-auth rots|
