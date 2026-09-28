@@ -519,7 +519,7 @@ clips_bot/ilustrar.py    regla fija 1 (§1): una foto por frase sin repetir, mí
 clips_bot/reglas.py      regla fija 2 (§1): REGLAS_CLARIDAD, dentro de todos los prompts de guion
 clips_bot/envivo.py      modo en vivo (§3b): quién está al aire, momentos por creadores distintos,
                          alertas en la DB (no repetir, tope, vencer) y el resumen de tiempos
-tests/                   462 tests sin red ni video (test_reglas_fijas.py: las 3 reglas de §1)
+tests/                   463 tests sin red ni video (test_reglas_fijas.py: las 3 reglas de §1)
 ```
 
 Comandos:

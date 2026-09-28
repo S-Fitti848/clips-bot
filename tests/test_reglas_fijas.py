@@ -241,6 +241,12 @@ def test_la_efemeride_pide_la_idea_clave():
     assert "idea_clave" in ef.SCHEMA_GUION["required"]
 
 
+def test_menos_datos_no_es_un_guion_mas_corto():
+    """Prueba del 28/09: con "menos datos", flash-lite escribió 75 palabras tres veces."""
+    assert "NO es un guion más corto" in ef.SISTEMA_GUION
+    assert ef.SISTEMA_GUION.index(REGLAS_CLARIDAD) < ef.SISTEMA_GUION.index("NO es un guion más corto")
+
+
 # ==== 3. audio limpio ============================================================================
 
 def test_cola_de_audio():

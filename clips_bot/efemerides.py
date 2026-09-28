@@ -539,6 +539,8 @@ nombre, ni un número, ni una fecha que no esté ahí. Si el artículo no lo dic
   si el artículo no lo dice con esas palabras.
 - Sin emojis, sin hashtags, sin "suscribite".
 """ + REGLAS_CLARIDAD + """
+- "Menos datos" NO es un guion más corto: sigue siendo de 88 a 102 palabras. Las palabras que
+  dejás de gastar en fechas y nombres van a explicar el cómo y el porqué.
 - Cada frase lleva `mostrar`: qué tendría que verse en pantalla mientras se dice, como búsqueda
   para Wikimedia Commons, EN INGLÉS y concreta, de 2 a 5 palabras. Tiene que nombrar la COSA
   PUNTUAL de esta historia (la persona, el objeto, el lugar, el organismo), no una categoría
@@ -1074,6 +1076,7 @@ def proponer(wiki: Wiki, cliente, dia: date, carpeta: Path, avisar=log.info,
                                           for i, a in elegidos))
     descartes: dict = {}
     guiones = 0
+    fallas: list[str] = []
     for i, articulo in elegidos[saltear:]:
         if guiones >= MAX_GUIONES:
             break
@@ -1091,14 +1094,15 @@ def proponer(wiki: Wiki, cliente, dia: date, carpeta: Path, avisar=log.info,
             pool, g = fotos_para_guion(wiki, cliente, e, g, fotos, carpeta, avisar)
         except NarrarError as err:
             avisar(f"  no salió: {err}")
+            fallas.append(f"{e.anio}: {err}")
             continue
         for k in g.descartadas:        # para poder juzgar si el descarte visual es razonable
             avisar(f"    descartada {k + 1}: {pool[k].epigrafe[:90]}")
         return Propuesta(fecha=dia.isoformat(), evento=e.a_dict(), fotos=[f.a_dict() for f in pool],
                          reserva=[], guion=g.a_dict(), fuente=fuente[:20000], descartes=descartes)
-    raise NarrarError(f"Ninguno de los {len(elegidos)} hechos elegidos llegó a "
-                      f"{ilustrar.MIN_FOTOS_DISTINTAS} fotos distintas que muestren lo que se dice "
-                      f"({guiones} intentados; descartes: {descartes}).")
+    # Con la causa de cada uno: el 28/09 decía "no llegó a 6 fotos" cuando lo que falló fue el guion.
+    raise NarrarError(f"Ninguno de los {len(elegidos)} hechos elegidos salió ({guiones} intentados). "
+                      + " | ".join(fallas)[:600])
 
 
 def texto_fuente(wiki: Wiki, e: Evento) -> str:
