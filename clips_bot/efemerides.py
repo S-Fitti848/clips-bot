@@ -52,7 +52,10 @@ MIN_ANCHO = 800          # la foto se escala a 1080 de ancho en fit_blur: menos 
 #     hace falta la aceleración de hasta ×1,25 (efemerides.tts_acelerar_max).
 #   Piper (el respaldo): 3,0-3,2 palabras/s con las pausas: 85 palabras son ~28 s, algo corto.
 # El rango sale de la voz principal. Antes fue 105-135 (para Piper) y, antes, 88-115 (estimado).
-PALABRAS_MIN, PALABRAS_MAX = 85, 105
+# Mínimo 70 desde el 2026-09-28 (Santi: "~30 s está bien para un Short"): con 85, la regla de
+# claridad hacía que flash-lite quedara en 68-82 palabras y la efeméride entera fallaba. Se le
+# sigue PIDIENDO 80-100 (el prompt apunta más alto que el mínimo para que no quede justo).
+PALABRAS_MIN, PALABRAS_MAX = 70, 105
 
 MESES = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre",
          "octubre", "noviembre", "diciembre"]
@@ -532,14 +535,14 @@ nombre, ni un número, ni una fecha que no esté ahí. Si el artículo no lo dic
   en el medio del guion, para que no suene plano.
 - Cierre con gancho: la última frase es una pregunta al público o una exclamación que deje algo
   picando (termina con "?" o "!"). Nada de cierres tipo "y así fue".
-- Entre 88 y 102 palabras en total (contalas: menos de 85 queda corto y más de 105 se pasa de
-  45 segundos), en 9 a 14 frases, habladas, no escritas. Si el artículo da para poco,
+- Entre 80 y 100 palabras en total (contalas: menos de 70 queda corto y más de 105 se pasa de
+  45 segundos), en 8 a 14 frases, habladas, no escritas. Si el artículo da para poco,
   contá más detalle de lo que SÍ dice.
 - Números: solo los que están en el artículo, escritos igual. Nada de "hoy tiene millones de…"
   si el artículo no lo dice con esas palabras.
 - Sin emojis, sin hashtags, sin "suscribite".
 """ + REGLAS_CLARIDAD + """
-- "Menos datos" NO es un guion más corto: sigue siendo de 88 a 102 palabras. Las palabras que
+- "Menos datos" NO es un guion más corto: sigue siendo de 80 a 100 palabras. Las palabras que
   dejás de gastar en fechas y nombres van a explicar el cómo y el porqué.
 - Cada frase lleva `mostrar`: qué tendría que verse en pantalla mientras se dice, como búsqueda
   para Wikimedia Commons, EN INGLÉS y concreta, de 2 a 5 palabras. Tiene que nombrar la COSA

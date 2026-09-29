@@ -2583,15 +2583,27 @@ def _efe_mostrar(conn, tg: TelegramClient, chat_id: str, token: str, estado: dic
     tg.send_message(chat_id, texto, teclado={"inline_keyboard": filas})
 
 
+def _args_efemeride(args: list) -> tuple[str | None, str]:
+    """(fecha, tema) de "/efemeride [27/09] [tema]", en cualquier orden: "penicilina",
+    "28/09 penicilina" o "penicilina 28/09". Sin fecha, hoy; sin tema, el que elija Gemini."""
+    import re
+
+    fecha = next((a for a in args if re.fullmatch(r"\d{1,2}[/-]\d{1,2}", a.strip())), None)
+    tema = " ".join(a for a in args if a is not fecha).strip()
+    return fecha, tema
+
+
 def _efemeride(conn, tg: TelegramClient, chat_id: str, args: list, settings: Settings):
-    """/efemeride [27/09]: propone evento, fotos y guion para aprobar."""
+    """/efemeride [27/09] [tema]: propone evento, fotos y guion para aprobar. Con tema, solo los
+    hechos de esa fecha cuyo texto lo contiene (para pedir uno puntual)."""
     import secrets
 
     from . import efemerides as ef
     from .config import OUTPUT_DIR
 
+    fecha, tema = _args_efemeride(args)
     try:
-        dia = _fecha_efemeride(args[0] if args else None)
+        dia = _fecha_efemeride(fecha)
     except ValueError as e:
         return str(e)
     gemini = _gemini(settings)
@@ -2602,14 +2614,15 @@ def _efemeride(conn, tg: TelegramClient, chat_id: str, args: list, settings: Set
                           vencimiento_s=VENCIMIENTO_PESADO_S):
         return OCUPADO
     try:
-        tg.send_message(chat_id, f"Buscando qué pasó un {dia.day} de {ef.MESES[dia.month - 1]}…")
-        return _efe_proponer(conn, tg, [chat_id], dia, settings, gemini)
+        sobre = f" (sobre «{html.escape(tema)}»)" if tema else ""
+        tg.send_message(chat_id, f"Buscando qué pasó un {dia.day} de {ef.MESES[dia.month - 1]}{sobre}…")
+        return _efe_proponer(conn, tg, [chat_id], dia, settings, gemini, hecho=tema)
     finally:
         db.soltar_turno(conn, db.RECURSO_PESADO, turno, VENCIMIENTO_PESADO_S)
 
 
 def _efe_proponer(conn, tg: TelegramClient, chats: list[str], dia, settings: Settings,
-                  gemini) -> str | None:
+                  gemini, hecho: str = "") -> str | None:
     """Propone y manda la aprobación a `chats`. NO toma el turno pesado: lo toma quien llama
     (/efemeride, o la corrida de las 05:00, que ya lo tiene). Devuelve el error, o None."""
     import secrets
@@ -2620,7 +2633,7 @@ def _efe_proponer(conn, tg: TelegramClient, chats: list[str], dia, settings: Set
     token = secrets.token_hex(3)
     carpeta = OUTPUT_DIR / "efemerides" / f"{dia:%m%d}_{token}"
     try:
-        p = ef.proponer(ef.Wiki(), gemini, dia, carpeta, avisar=log.info)
+        p = ef.proponer(ef.Wiki(), gemini, dia, carpeta, avisar=log.info, hecho=hecho)
     except (NarrarError, ef.WikiError, GeminiError) as e:
         error = f"No salió la efeméride: {html.escape(str(e)[:400])}"
         return ErrorPasajero(error) if getattr(e, "pasajero", False) else error
@@ -3123,12 +3136,13 @@ SECCIONES = [
          "/serie https://youtu.be/... partes 3 cc: https://youtu.be/..."),
     ]),
     ("📅 Pequeña Historia", [
-        ("/efemeride [día/mes]",
+        ("/efemeride [día/mes] [tema]",
          "busco qué pasó en la fecha (default hoy) en Wikipedia, elijo el hecho más interesante para "
-         "el canal, junto fotos libres de su artículo y escribo un guion SOLO con lo que dice el "
-         "artículo. Te mando el guion y las fotos numeradas: ✅ lo armo, ✏️ cambio el guion, 🔁 "
-         "cambio una foto. Los créditos de las fotos van solos en la descripción.",
-         "/efemeride 20/07"),
+         "el canal y escribo un guion SOLO con lo que dice el artículo; para cada frase busco una "
+         "foto libre que muestre lo que se dice. Con un tema (ej. penicilina) elijo solo entre los "
+         "hechos que lo mencionan. Te mando cada frase con su foto: ✅ lo armo, ✏️ cambio el guion, "
+         "🔁 cambio una foto. Los créditos de las fotos van solos en la descripción.",
+         "/efemeride 28/09 penicilina"),
     ]),
     ("⚙️ Configuración", [
         ("/subidas",

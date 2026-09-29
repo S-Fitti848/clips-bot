@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-09-28 | **Versión:** v0.30.0 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 + escucha de Telegram 24/7)
+**Snapshot:** 2026-09-28 | **Versión:** v0.30.1 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 + escucha de Telegram 24/7)
 
 > **SI ESTÁS EMPEZANDO UNA SESIÓN NUEVA, LEÉ §10.** Ahí está qué está hecho, qué quedó a medias,
 > qué falta, y las trampas que ya nos mordieron.
@@ -302,7 +302,7 @@ dura más de 60 s (`muy largo`). Entre el primer clip y el tercer creador pasan 
 114 s). O sea: con 3 el tope por hora era lo que mandaba casi siempre, y eran ~27 procesados pesados
 por día en la Pi. Por eso se pasó al umbral relativo (punto 3).
 
-### 3c. Efemérides para el canal "Pequeña Historia" (`/efemeride [día/mes]`, `clips_bot/efemerides.py`)
+### 3c. Efemérides para el canal "Pequeña Historia" (`/efemeride [día/mes] [tema]`, `clips_bot/efemerides.py`)
 Pedido 2026-09-27. Un Short por día con un hecho de la fecha. **Desde v0.27.4 va en la corrida de
 las 05:00** (`efemeride_del_dia`, después de los clips y con el mismo turno pesado): completa la
 música que falte, propone la de hoy y manda guion + hoja para aprobar a `efemerides.chat` o, si
@@ -310,7 +310,8 @@ está vacío, a los mismos destinos de la entrega diaria. Recién con ✅ se arm
 **la escucha de Telegram reintenta sola a las 07:00 y a las 10:00** (`efemerides.reintentos`,
 estado en `bot_estado.efemeride_reintento`, con el turno pesado) y recién después del último
 avisa por qué. Si la falla es de Gemini caído (`ErrorPasajero`), además suma un intento en una
-hora, cada vez, hasta `textos.reintento_hasta` (22:00). También a demanda con `/efemeride` y el CLI `efemeride`.
+hora, cada vez, hasta `textos.reintento_hasta` (22:00). También a demanda con `/efemeride [día/mes] [tema]`
+(con tema, solo los hechos que lo mencionan: `/efemeride 28/09 penicilina`) y el CLI `efemeride`.
 **Wikimedia (desde v0.28.3):** User-Agent con nombre, link al repo y el mail de
 `WIKIMEDIA_CONTACTO` (.env) en todo pedido a Wikipedia, Commons y la música; SOLO miniaturas de
 ancho estándar (1280, o 960 si el original no pasa de 1280; si no hay ninguna, la foto no se usa),
@@ -332,7 +333,7 @@ ancho estándar (1280, o 960 si el original no pasa de 1280; si no hay ninguna, 
    equivalente en castellano para validar), con las reglas de claridad (§1) y, por cada frase,
    `mostrar` (qué se tendría que ver, en inglés, 2 a 5 palabras) y la `idea_clave`. Validación
    (`validar_guion` / `no_respaldados`): arranca con "Un día como hoy, en <año>,", cierra con
-   gancho, 85-105 palabras, `mostrar` en cada frase, y todo nombre propio, cifra, número con
+   gancho, 70-105 palabras (se le piden 80-100; mínimo 70 desde v0.30.1), `mostrar` en cada frase, y todo nombre propio, cifra, número con
    letras ("mil millones") y mes tiene que estar en el artículo. El primer guion real dijo "más de
    mil millones de búsquedas diarias" (de la memoria de Gemini): de ahí el chequeo de números.
 4b. Fotos de cada frase (regla fija, `ilustrar.py` + `fotos_para_guion`): candidatas = hasta 8 del
@@ -519,7 +520,7 @@ clips_bot/ilustrar.py    regla fija 1 (§1): una foto por frase sin repetir, mí
 clips_bot/reglas.py      regla fija 2 (§1): REGLAS_CLARIDAD, dentro de todos los prompts de guion
 clips_bot/envivo.py      modo en vivo (§3b): quién está al aire, momentos por creadores distintos,
                          alertas en la DB (no repetir, tope, vencer) y el resumen de tiempos
-tests/                   463 tests sin red ni video (test_reglas_fijas.py: las 3 reglas de §1)
+tests/                   475 tests sin red ni video (test_reglas_fijas.py: las 3 reglas de §1)
 ```
 
 Comandos:
@@ -708,6 +709,16 @@ Problemas abiertos:
 
 ## 9. CHANGELOG
 
+- v0.30.1 (2026-09-28) — Pedido de Santi después de las pruebas de Fleming: (1) mínimo del guion
+  de efemérides 85 → 70 palabras ("~30 s está bien para un Short"; con la regla de claridad,
+  flash-lite quedaba en 68-82 y la efeméride entera fallaba), se le siguen pidiendo 80-100;
+  el aviso de reintento dice cuántas palabras faltan y qué agregar. (2) Falso positivo de
+  nombres: "…Volvió" se tomaba por nombre propio; ahora puntos suspensivos, paréntesis y
+  comillas «» “” también abren oración (vale para los títulos de los clips también). (3)
+  `/efemeride [día/mes] [tema]`: con tema, solo los hechos de esa fecha que lo mencionan. Y el
+  error de la propuesta dice qué falló de cada hecho (antes decía "no llegó a 6 fotos" aunque
+  el que falló era el guion). La de Fleming NO se rehízo: la prueba real es la del 29/09.
+  475 tests OK.
 - v0.30.0 (2026-09-28) — **Tres reglas fijas para todos los videos** (§1, decisión permanente de
   Santi), cada una una sola vez en el código compartido y con `tests/test_reglas_fijas.py`:
   (1) fotos que muestran lo que se dice (`ilustrar.py`; en efemérides: guion con `mostrar` por

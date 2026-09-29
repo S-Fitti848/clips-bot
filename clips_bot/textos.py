@@ -103,7 +103,12 @@ que quien cual cuanto porque ahora despues antes siempre nunca nada todo algo
 """.split())
 
 # Tras estos caracteres, una mayúscula es principio de oración y no dice nada de si es un nombre.
-_ABRE_ORACION = ('', '.', '!', '?', '¡', '¿', ':', ';', '-', '—', '"', "'")
+# Lo que puede venir justo antes de la primera palabra de una oración: esa palabra va en mayúscula
+# siempre y no es un nombre. Los puntos suspensivos, los paréntesis y las comillas españolas y
+# tipográficas se sumaron el 2026-09-28: "…Volvió de sus vacaciones" hizo fallar un guion de
+# efemérides por "Volvió" (no estaba en el artículo, así que parecía un nombre inventado).
+_ABRE_ORACION = ('', '.', '!', '?', '¡', '¿', ':', ';', '-', '—', '–', '"', "'", '…', '«', '“',
+                 '‘', '(', '[')
 
 
 def _sin_tildes(texto: str) -> str:

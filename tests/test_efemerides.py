@@ -703,3 +703,47 @@ def test_el_reintento_espera_si_hay_algo_pesado_andando(diaria, monkeypatch):
     db.tomar_turno(conn, db.RECURSO_PESADO, "diario", maximo=1, vencimiento_s=3600)
     m._efe_reintento_tick(conn, m.TelegramClient("x"), cfg(), ahora=_a_las(7, 0))
     assert len(llamadas) == 1 and db.get_valor(conn, m.EFE_REINTENTO)   # sigue pendiente
+
+
+# ---- 2026-09-28: mínimo 70, "…Volvió" no es un nombre, /efemeride con tema -------------------------
+
+def test_un_guion_de_70_a_84_palabras_ya_no_falla_por_corto():
+    d = _guion_ok()
+    while len(" ".join(f["texto"] for f in d["frases"]).split()) > 84:
+        d["frases"].pop(-2)               # se saca del medio: el cierre con gancho queda
+    n = len(" ".join(f["texto"] for f in d["frases"]).split())
+    assert ef.PALABRAS_MIN == 70 and 70 <= n <= 84
+    assert not any("palabras" in e for e in ef.validar_guion(d, 1998, ARTICULO))
+
+
+@pytest.mark.parametrize("frase,marcados", [
+    ("…Volvió de sus vacaciones.", []),
+    ("(Volvió de sus vacaciones.)", []),
+    ("«Volvió de sus vacaciones», contó.", []),
+    ("Y entonces Volvió al laboratorio.", ["Volvió"]),     # en el medio de la oración sí cuenta
+])
+def test_mayuscula_al_principio_de_una_oracion_no_es_un_nombre(frase, marcados):
+    assert ef.no_respaldados(frase, ARTICULO) == marcados
+
+
+@pytest.mark.parametrize("args,fecha,tema", [
+    ([], None, ""),
+    (["penicilina"], None, "penicilina"),
+    (["28/09", "penicilina"], "28/09", "penicilina"),
+    (["penicilina", "28/09"], "28/09", "penicilina"),
+    (["20/07"], "20/07", ""),
+    (["piedra", "de", "Rosetta"], None, "piedra de Rosetta"),
+])
+def test_args_de_efemeride(args, fecha, tema):
+    assert m._args_efemeride(args) == (fecha, tema)
+
+
+def test_efemeride_con_tema_pasa_el_tema_a_la_propuesta(conn, monkeypatch):
+    pedidos = []
+    monkeypatch.setattr(m, "_gemini", lambda s: object())
+    monkeypatch.setattr(m, "_efe_proponer",
+                        lambda conn, tg, chats, dia, s, g, hecho="": pedidos.append((dia, hecho)))
+    tg = FakeTG()
+    m._efemeride(conn, tg, "1", ["28/09", "penicilina"], None)
+    assert pedidos and pedidos[0][0].day == 28 and pedidos[0][1] == "penicilina"
+    assert "sobre «penicilina»" in tg.mensajes[0][0]
