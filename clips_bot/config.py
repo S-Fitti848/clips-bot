@@ -321,6 +321,9 @@ class Seleccion:
     # cámara) según la mediana de vistas de lo ya subido. Solo grupos con n ≥ metricas_min_n.
     peso_metricas: float = 0.5
     metricas_min_n: int = 15
+    # Picos de chat (chat.py, solo Twitch con VOD): × (1 + peso × log2(pico)/2), pico ×4 = todo el
+    # peso. 0 = no se mide (cada clip son ~3 pedidos al chat de Twitch).
+    peso_chat: float = 0.0
 
     @property
     def n(self) -> int:

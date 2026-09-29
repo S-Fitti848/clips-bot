@@ -365,6 +365,10 @@ seleccion:
   # layout y cámara. Solo grupos con al menos metricas_min_n Shorts: con menos, se mide y no se toca.
   peso_metricas: 0.5
   metricas_min_n: 15
+  # Picos de chat (chat.py, solo Twitch con VOD): el score × (1 + peso × log2(pico)/2), con pico =
+  # mensajes/s en el momento ÷ lo normal de ese stream (×4 o más = todo el peso). En 0 hasta que
+  # Santi vea la medición (2026-09-29): con 0 ni se mide.
+  peso_chat: 0.0
   # Scores a menos de este % en el corte de una fuente → desempata Gemini. Por fuente, porque el
   # score reciente es logarítmico (3 % ≈ 20 % en vistas) y el de catálogo son vistas directas.
   empate_pct:

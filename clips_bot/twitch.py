@@ -199,6 +199,21 @@ class TwitchClient:
                 out[g["id"]] = g["name"]
         return out
 
+    def get_video_duracion(self, video_id: str) -> float:
+        """Duración del VOD en segundos ("3h2m1s" → 10921). 0 si no existe o venció."""
+        import re
+
+        try:
+            data = self._get("/videos", [("id", video_id)])
+        except TwitchError as e:
+            log.warning("No pude leer la duración del VOD %s: %s", video_id, e)
+            return 0.0
+        for v in data.get("data", []):
+            m = re.fullmatch(r"(?:(\d+)h)?(?:(\d+)m)?(?:(\d+)s)?", v.get("duration") or "")
+            if m:
+                return float(int(m.group(1) or 0) * 3600 + int(m.group(2) or 0) * 60 + int(m.group(3) or 0))
+        return 0.0
+
     def get_video_titles(self, video_ids: Iterable[str]) -> dict[str, str]:
         """video_id del VOD → título del stream. Los VODs borrados o vencidos no aparecen."""
         ids = sorted({v for v in video_ids if v})

@@ -188,6 +188,8 @@ def por_que(meta: dict) -> str:
         partes[0] += f" (×{vistas / mediana:.1f} su mediana)".replace(".", ",")
     creadores = int(meta.get("clips_mismo_momento") or 1)
     partes.append(f"{creadores} creadores distintos" if creadores > 1 else "1 creador")
+    if meta.get("chat_pico"):
+        partes.append(f"chat ×{float(meta['chat_pico']):.1f}".replace(".", ","))
     if meta.get("puntaje"):
         partes.append(f"Gemini {meta['puntaje']}/10")
     linea = "📊 " + " · ".join(partes)

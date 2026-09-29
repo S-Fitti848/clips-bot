@@ -19,6 +19,7 @@ from . import db
 from .config import Catalogo, Evento, Filtros, Kick, Seleccion, Streamer
 from .kick import KickClient, KickError, a_clip
 from .pantalla import MOTIVO_TITULO as MOTIVO_DATOS_TITULO, datos_en_texto
+from .chat import factor_pico
 from .seleccion import score_reciente
 from .twitch import TwitchClient, TwitchError
 
@@ -53,6 +54,7 @@ class Clip:
     aviso: str = ""  # algo para mirar sin descartar (ej. habla de fútbol)
     pego_vistas: int = 0  # un Short de otro canal con este momento pegó (pego.py): sus vistas
     pego_canal: str = ""
+    chat_pico: float = 0.0  # mensajes/s del chat en el momento ÷ lo normal del stream (chat.py)
 
     @classmethod
     def from_helix(cls, d: dict, login: str, game_name: str = "", stream_title: str = "",
@@ -472,6 +474,20 @@ def _con_aviso_futbol(clips: list[Clip], filtros: Filtros, mira_deportes) -> lis
             if mira_deportes(c.broadcaster_login) else c for c in clips]
 
 
+def con_picos_de_chat(clips: list[Clip], client, chat, cuantos: int) -> list[Clip]:
+    """A los primeros `cuantos` con VOD y offset, el pico de chat del momento (chat.Chat.pico)."""
+    duraciones: dict[str, float] = {}
+    out = []
+    for i, c in enumerate(clips):
+        if i < cuantos and c.video_id and c.vod_offset is not None:
+            if c.video_id not in duraciones:
+                duraciones[c.video_id] = client.get_video_duracion(c.video_id)
+            if duraciones[c.video_id]:
+                c = replace(c, chat_pico=chat.pico(c.video_id, c.vod_offset, duraciones[c.video_id]) or 0.0)
+        out.append(c)
+    return out
+
+
 def _con_mediana(clips: list[Clip], umbrales: dict[str, tuple[int, int]]) -> list[Clip]:
     return [replace(c, mediana_vistas=umbrales.get(c.broadcaster_login, (0, 0))[1]) for c in clips]
 
@@ -561,8 +577,10 @@ def buscar_candidatos(
     excluidos: dict[str, str] | None = None,
     evento: Evento = Evento(),
     palabras_titulo: tuple[str, ...] = (),
+    chat=None,
 ) -> Resultado:
-    """Fuente reciente de Twitch: filtros → un clip por momento → score → top N."""
+    """Fuente reciente de Twitch: filtros → un clip por momento → score (× pico de chat, si hay
+    `chat` y peso) → top N."""
     ahora = ahora or datetime.now(timezone.utc)
     desde = ahora - timedelta(hours=filtros.ventana_horas)
     res = res or Resultado()
@@ -593,9 +611,15 @@ def buscar_candidatos(
     pasan = _con_aviso_futbol(pasan, filtros, lambda login: _mira_deportes(por_login, login))
 
     def sc(c: Clip) -> float:
-        return score_reciente(c.view_count, c.clips_mismo_momento, seleccion.peso_momento)
+        return (score_reciente(c.view_count, c.clips_mismo_momento, seleccion.peso_momento)
+                * factor_pico(c.chat_pico, seleccion.peso_chat))
 
     pasan.sort(key=sc, reverse=True)
+    # Picos de chat (chat.py): solo con peso, y solo para los mejores 2 × n_candidatos (cada clip
+    # son ~3 pedidos al chat; el ritmo normal de cada VOD se mide una vez).
+    if chat is not None and seleccion.peso_chat:
+        pasan = con_picos_de_chat(pasan, client, chat, 2 * filtros.n_candidatos)
+        pasan.sort(key=sc, reverse=True)
     # Los del evento pasan enteros: los corta consolidar_evento, después de agrupar por momento.
     del_evento = [c for c in pasan if (c.grupo or "") == "evento"]
     otros = [c for c in pasan if (c.grupo or "") != "evento"]

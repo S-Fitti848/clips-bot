@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-09-29 | **Versión:** v0.37.0 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 + escucha de Telegram 24/7)
+**Snapshot:** 2026-09-29 | **Versión:** v0.38.0 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 + escucha de Telegram 24/7)
 
 > **SI ESTÁS EMPEZANDO UNA SESIÓN NUEVA, LEÉ §10.** Ahí está qué está hecho, qué quedó a medias,
 > qué falta, y las trampas que ya nos mordieron.
@@ -558,10 +558,11 @@ clips_bot/ilustrar.py    regla fija 1 (§1): una foto por frase sin repetir, mí
 clips_bot/reglas.py      regla fija 2 (§1): REGLAS_CLARIDAD, dentro de todos los prompts de guion
 clips_bot/pego.py        lo que pega en otros canales → el clip original (búsqueda, audio, bonus)
 clips_bot/audio_huella.py ¿mismo momento? audio a 8 kHz en 16 bandas + correlación con desfase
+clips_bot/chat.py        picos de chat de Twitch (GQL interno, una página por pedido) ÷ ritmo del VOD
 clips_bot/metricas.py    §4b: métricas de los Shorts del canal y pesos por streamer y tipo
 clips_bot/envivo.py      modo en vivo (§3b): quién está al aire, momentos por creadores distintos,
                          alertas en la DB (no repetir, tope, vencer) y el resumen de tiempos
-tests/                   527 tests sin red ni video (conftest.py: nada sale a YouTube) (test_reglas_fijas.py: las 3 reglas de §1)
+tests/                   532 tests sin red ni video (conftest.py: nada sale a YouTube) (test_reglas_fijas.py: las 3 reglas de §1)
 ```
 
 Comandos:
@@ -750,6 +751,17 @@ Problemas abiertos:
 
 ## 9. CHANGELOG
 
+- v0.38.0 (2026-09-29) — **Picos de chat** (`chat.py`, solo Twitch con VOD): mensajes/s del chat
+  en el momento del clip ÷ el ritmo normal de ese stream (mediana de 5 ventanas repartidas por el
+  VOD, una vez por VOD), del GraphQL interno de Twitch sin login. Medido 2026-09-29: sin login el
+  cursor devuelve páginas VACÍAS, así que cada pedido es una página (~50 mensajes; en Auron ~12 s)
+  y el ritmo sale de 3 páginas por ventana; la primera versión contaba mal y daba ~1,2 msg/s para
+  todo. Con eso, 12 clips reales de Auron: picos de ×0,45 a ×7,2, sin relación con las vistas (el
+  más visto, 20.032, tuvo ×1,38). Factor 1 + peso × log2(pico)/2 (×4 = todo el peso, nunca resta),
+  en el orden de candidatos de Twitch (los mejores 2 × n_candidatos) y en la selección; "chat ×N"
+  en la línea 📊. Con peso 0,5 el orden de esos 12 cambia mucho ("SOY TONI KROOS" 12° → 4°,
+  "DROPS ACTIVOS" 2° → 7°). **Subido con `peso_chat: 0`** (ni se mide) hasta que Santi decida.
+  532 tests OK.
 - v0.37.0 (2026-09-29) — **Lo que pega en otros canales** (`pego.py`, `audio_huella.py`): una vez
   por día y en /buscar, Shorts de OTROS canales que nombran a cada streamer (título, o canal aunque
   esté pegado: "SpreenClips"), ≤ 61 s, ≥ `pego.min_vistas`, tope `busquedas_por_dia` (API de

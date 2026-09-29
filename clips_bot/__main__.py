@@ -33,6 +33,7 @@ from pathlib import Path
 from . import __version__, db, metricas
 from .candidates import (MOTIVO_COSTREAM, Resultado, buscar_candidatos, buscar_catalogo, buscar_kick,
                          consolidar_evento)
+from .chat import Chat, factor_pico
 from .config import DATA_DIR, DB_PATH, ConfigError, Settings, env, load_settings, load_streamers, load_twitch_creds
 from .download import DescargaError
 from .gemini import GeminiClient, GeminiError
@@ -99,7 +100,7 @@ def buscar_todo(settings: Settings, streamers: list, incluir_sin_permiso: bool,
             client = _twitch()
             res = buscar_candidatos(client, streamers, settings.filtros, vistos, res=res,
                                     incluir_sin_permiso=incluir_sin_permiso, seleccion=settings.seleccion,
-                                    excluidos=excluidos, evento=settings.evento)
+                                    excluidos=excluidos, evento=settings.evento, chat=Chat())
             res = buscar_catalogo(client, streamers, settings.filtros, settings.catalogo, conn, vistos,
                                   incluir_sin_permiso=incluir_sin_permiso, res=res,
                                   guardar_cursor=guardar_cursor, excluidos=excluidos)
@@ -340,6 +341,7 @@ def ejecutar_seleccion(settings: Settings, gemini: GeminiClient | None, enviar: 
     # Por clip: votos de su streamer × métricas de su tipo (streamer, duración, layout, cámara).
     por_clip = {o.clip_id: factores.get(o.streamer.lower(), 1.0) * metricas.factor_de(o.meta, tabla_metricas)
                 * (settings.pego.peso if (o.meta.get("pego") or {}).get("vistas") else 1.0)
+                * factor_pico(o.meta.get("chat_pico"), cfg.peso_chat)
                 for o in opciones}
     elegidos = seleccionar(buenos, cfg, ahora, desempate_gemini(gemini) if gemini else None,
                            por_clip)
@@ -696,7 +698,8 @@ def _diario(args: argparse.Namespace, settings: Settings, atender: bool = True,
             try:
                 r = procesar(c.url, settings, streamers, gemini=gemini, fuente=fuente,
                              clips_mismo_momento=c.clips_mismo_momento, grupo=c.grupo,
-                             mediana_vistas=c.mediana_vistas, aviso=c.aviso, pego=_pego_de(c))
+                             mediana_vistas=c.mediana_vistas, aviso=c.aviso, pego=_pego_de(c),
+                             chat_pico=c.chat_pico)
             except (DescargaError, MediaError) as e:
                 print(f"ERROR: {e}", file=sys.stderr)
                 continue
@@ -1082,7 +1085,7 @@ def _buscar(conn, tg: TelegramClient, chat_id: str, args: list[str], settings: S
             else:
                 res = buscar_candidatos(_twitch(), [st], filtros, vistos,
                                         seleccion=settings.seleccion, excluidos=excluidos,
-                                        evento=settings.evento, palabras_titulo=palabras)
+                                        evento=settings.evento, palabras_titulo=palabras, chat=Chat())
             pegaron = _pegados_para(settings, [st], buscar_ahora=True, avisar=log.info)
             ids = {c.id for c in pegaron}
             por_streamer.append((st, pegaron + [c for c in res.candidatos if c.id not in ids]))
@@ -1108,7 +1111,8 @@ def _buscar(conn, tg: TelegramClient, chat_id: str, args: list[str], settings: S
                     r = procesar(c.url, settings, streamers, gemini=gemini, fuente="reciente",
                                  clips_mismo_momento=c.clips_mismo_momento,
                                  grupo=st.grupo_de("reciente"), avisar=lambda *_: None,
-                                 mediana_vistas=c.mediana_vistas, aviso=c.aviso, pego=_pego_de(c))
+                                 mediana_vistas=c.mediana_vistas, aviso=c.aviso, pego=_pego_de(c),
+                                 chat_pico=c.chat_pico)
                 except (DescargaError, MediaError) as e:
                     fallados.append(f"{c.id[:14]}: {e}")
                     continue
