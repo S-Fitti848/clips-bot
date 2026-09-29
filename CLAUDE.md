@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-09-29 | **Versión:** v0.40.1 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 + escucha de Telegram 24/7)
+**Snapshot:** 2026-09-29 | **Versión:** v0.40.2 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 + escucha de Telegram 24/7)
 
 > **SI ESTÁS EMPEZANDO UNA SESIÓN NUEVA, LEÉ §10.** Ahí está qué está hecho, qué quedó a medias,
 > qué falta, y las trampas que ya nos mordieron.
@@ -757,6 +757,12 @@ Problemas abiertos:
 
 ## 9. CHANGELOG
 
+- v0.40.2 (2026-09-29) — **Conectado el canal Rots («Roty», `UCz0-X39ylB_BAO_yFCLMS8w`)** con
+  `youtube-auth rots` (subida + yt-analytics.readonly). Token y `client_secret.json` copiados a la
+  Pi (`config/`, chmod 600, fuera de git). Verificado en la Pi: `mi_canal()` responde y
+  `actualizar_metricas()` leyó métricas de 21 clips (emparejados por título). `YOUTUBE_API_KEY`
+  copiada al .env de la Pi: la búsqueda de 🔥 pegó usa la API (probado: 25 resultados). La subida
+  sigue APAGADA hasta la auditoría. Pequeña Historia todavía sin conectar.
 - v0.40.1 (2026-09-29) — Prendidas por Santi después de la medición: `seleccion.peso_chat` 0 → 0,5,
   `textos.ejemplos_gusto` 0 → 3, `pego.activo` → true y `pego.min_vistas` 10.000 → 5.000 (esa
   semana nada llegaba a 10.000). La API key de YouTube la carga Santi en el .env de la Pi
@@ -1237,7 +1243,7 @@ Problemas abiertos:
 | `clips-bot-telegram` | activo; modo en vivo PRENDIDO por Santi en el grupo el 27/09 |
 | carpetas | Argentinos y Famosos (en vivo sí, diarios sí), Catálogo (en vivo no, diarios sí), Dedsafío (en vivo no, diarios no): el modo en vivo vigila 9 de 64 |
 | música de Pequeña Historia | 29 temas en `musica/` (9 de la Biblioteca de YouTube de Santi, 10 Kevin MacLeod, 10 Openverse), 157 MB, fuera de git |
-| subida a YouTube | APAGADA (`youtube_upload_enabled: false`); sin credenciales todavía |
+| subida a YouTube | APAGADA (`youtube_upload_enabled: false`); Rots conectado (token en la Pi, métricas andando desde el 2026-09-29); Pequeña Historia sin conectar |
 | sudoers | instalado (`/etc/sudoers.d/clips-bot`) |
 | destinos de la entrega diaria (y de la propuesta de efeméride) | el grupo **Rots clips** (`-5453399767`) |
 | chats conocidos | Rots clips (grupo), Santiago Fittipaldi (`8668060171`) y Tommy Bildo (privados) |
@@ -1265,7 +1271,8 @@ Problemas abiertos:
 - **La efeméride automática de las 05:00** nunca corrió sola todavía (la primera es la del 28/09).
 - **La voz de Gemini con el recorte de lo leído antes del guion**: el recorte está probado con
   tests; la voz sin instrucción se probó en la Pi con una frase, no con un video entero.
-- **La subida a YouTube**: nunca habló con YouTube (no hay credenciales). Tests con sesión falsa.
+- **La subida a YouTube**: Rots ya está conectado y las métricas se leen, pero nunca se subió nada
+  (apagada hasta la auditoría). Pequeña Historia sin `youtube-auth` todavía.
 - **`/narrar` y `/serie` con videos reales de proceso** (hasta ahora, sintéticos y Gemini falso).
 - **La mezcla nueva (2 argentinos + 1 Auron, votos) nunca corrió de verdad**: la primera es la
   del 05:00 del 2026-09-29.
