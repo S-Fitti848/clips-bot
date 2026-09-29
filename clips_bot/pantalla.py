@@ -133,6 +133,64 @@ def buscar(texto: str, palabras_pago: tuple[str, ...], palabras_direccion: tuple
     return out
 
 
+# ---- textos escritos: títulos y descripciones (2026-09-29) -----------------------------------
+# Un clip real de Kick se titulaba "si davo es +54 11 3396-6858": el OCR mira la pantalla, no los
+# títulos. En un texto escrito las reglas son otras: un teléfono con prefijo internacional se
+# reconoce solo (en la pantalla, un contador de un juego no lleva "+54"), y las palabras sueltas de
+# dirección del OCR ("calle", "piso") en un título son falsos positivos seguros ("en la calle").
+
+MOTIVO_TITULO = "datos personales en el título"
+TAPADO = "[dato personal]"
+# Con prefijo internacional: "+54 11 3396-6858", "+1 (555) 123-4567".
+RE_TEL_ESCRITO = re.compile(r"\+\d{1,3}[\s.\-()]*(?:\d[\s.\-()]{0,2}){7,13}\d")
+# Calle/avenida + nombre + número: "Av. Corrientes 1234", "calle Falsa 123".
+RE_DIRECCION = re.compile(
+    r"\b(?:calle|av(?:enida)?\.?|pasaje|bv\.?|boulevard|diagonal)\s+"
+    r"[A-Za-zÁÉÍÓÚÑáéíóúñ][\wÁÉÍÓÚÑáéíóúñ .]{1,30}?\s\d{2,5}\b", re.I)
+DIRECCION_ESCRITA = ("codigo postal", "direccion de envio", "shipping address", "zip code", "ship to")
+CONTEXTO_ESCRITO = ("tel", "telefono", "phone", "celular", "cel", "whatsapp", "wsp", "wpp",
+                    "contacto", "llamame", "llamen", "escribime", "dni", "cbu", "alias")
+
+
+def datos_en_texto(texto: str) -> list[Hallazgo]:
+    """Datos personales en un texto ESCRITO (título del clip o del stream, título o descripción que
+    genera Gemini): mails, teléfonos con prefijo internacional o con palabra de contexto, tarjetas
+    con contexto, y direcciones con calle y número."""
+    if not texto:
+        return []
+    out = [Hallazgo("mail", _muestra(m)) for m in RE_MAIL.findall(texto)]
+    for m in RE_TEL_ESCRITO.findall(texto):
+        if sum(c.isdigit() for c in m) >= 9:
+            out.append(Hallazgo("telefono", _muestra(m)))
+    normalizado = _normalizar(texto)
+    if any(_normalizar(p) in normalizado for p in CONTEXTO_ESCRITO):
+        for regex, tipo, minimo in ((RE_TARJETA, "tarjeta", 13), (RE_TELEFONO, "telefono", 9)):
+            for m in regex.findall(texto):
+                if sum(c.isdigit() for c in m) >= minimo and not any(h.tipo == tipo for h in out):
+                    out.append(Hallazgo(tipo, _muestra(m)))
+    for m in RE_DIRECCION.finditer(texto):
+        out.append(Hallazgo("direccion", _muestra(m.group(0))))
+    for p in DIRECCION_ESCRITA:
+        if _normalizar(p) in normalizado:
+            out.append(Hallazgo("direccion", p))
+    return out
+
+
+def tapar_datos(texto: str) -> str:
+    """El texto con los datos personales reemplazados por "[dato personal]". Es lo que va a Gemini
+    (título original del clip, transcripción): así no los puede copiar en lo que escribe."""
+    if not texto:
+        return texto
+    salida = RE_MAIL.sub(TAPADO, texto)
+    salida = RE_TEL_ESCRITO.sub(lambda m: TAPADO if sum(c.isdigit() for c in m.group(0)) >= 9
+                                else m.group(0), salida)
+    salida = RE_DIRECCION.sub(TAPADO, salida)
+    if any(_normalizar(p) in _normalizar(salida) for p in CONTEXTO_ESCRITO):
+        salida = RE_TELEFONO.sub(lambda m: TAPADO if sum(c.isdigit() for c in m.group(0)) >= 9
+                                 else m.group(0), salida)
+    return salida
+
+
 def leer_frames(video: Path, n_frames: int, idioma: str = "eng", cmd: str | None = None) -> list[str]:
     """Texto de n_frames muestreados entre el 5 % y el 95 % del clip."""
     import cv2

@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-09-29 | **Versión:** v0.33.0 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 + escucha de Telegram 24/7)
+**Snapshot:** 2026-09-29 | **Versión:** v0.34.0 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 + escucha de Telegram 24/7)
 
 > **SI ESTÁS EMPEZANDO UNA SESIÓN NUEVA, LEÉ §10.** Ahí está qué está hecho, qué quedó a medias,
 > qué falta, y las trampas que ya nos mordieron.
@@ -167,6 +167,10 @@ y por eso la unidad va con `Nice=10` y prioridad de CPU baja. NO paralelizar.
    afuera TODO ese stream. En Kick el clip no trae el título del stream: sale de
    `/api/v2/channels/{slug}/videos` (una llamada por canal, `{livestream_id: session_title}`); si
    esa llamada falla, los clips quedan sin título de stream y la corrida sigue.
+   **Datos personales en el título** del clip o del stream (motivo "datos personales en el
+   título", `pantalla.datos_en_texto`, 2026-09-29): mails, teléfonos con prefijo internacional
+   o con palabra de contexto (whatsapp, tel…), tarjetas con contexto y direcciones con calle y
+   número. En texto escrito las palabras sueltas del OCR ("calle", "piso") NO cuentan.
 3. Descargar los mejores candidatos con yt-dlp, solo hasta llenar el cupo de cada grupo.
 4. Transmisión deportiva (streamers con `detectar_marcador`) → descarta con DOS señales: marcador de
    TV en una esquina de arriba, o fracción de verde-césped alta en ≥ 2 de 12 frames (una cancha llena
@@ -199,7 +203,10 @@ y por eso la unidad va con `Nice=10` y prioridad de CPU baja. NO paralelizar.
    duda, true). Corre antes del render para no renderizar lo que se descarta.
    **El título se valida contra lo que se dice**: los nombres propios (mayúscula en medio de la
    oración) tienen que aparecer en la transcripción, la categoría o los títulos originales; si no,
-   cuenta como error de validación y se regenera. La primera palabra no se mira: en español va en
+   cuenta como error de validación y se regenera (OJO: hasta v0.34.0 NO corría, `parsear` no le
+   pasaba el contexto a `validar`). Lo original del clip (título y transcripción) le llega a
+   Gemini TAPADO (`pantalla.tapar_datos` → "[dato personal]"), y el título y la descripción que
+   devuelve se revisan con `datos_en_texto`: si traen un dato personal, se regenera. La primera palabra no se mira: en español va en
    mayúscula siempre, y mirarla haría saltar "Reconoce" como si fuera un nombre.
    En la MISMA llamada vienen **`sensible`** y **`puntaje`**, con `textos.frames_para_puntaje` (4)
    frames del clip adjuntos:
@@ -539,7 +546,7 @@ clips_bot/ilustrar.py    regla fija 1 (§1): una foto por frase sin repetir, mí
 clips_bot/reglas.py      regla fija 2 (§1): REGLAS_CLARIDAD, dentro de todos los prompts de guion
 clips_bot/envivo.py      modo en vivo (§3b): quién está al aire, momentos por creadores distintos,
                          alertas en la DB (no repetir, tope, vencer) y el resumen de tiempos
-tests/                   496 tests sin red ni video (test_reglas_fijas.py: las 3 reglas de §1)
+tests/                   513 tests sin red ni video (test_reglas_fijas.py: las 3 reglas de §1)
 ```
 
 Comandos:
@@ -728,6 +735,14 @@ Problemas abiertos:
 
 ## 9. CHANGELOG
 
+- v0.34.0 (2026-09-29) — **Datos personales en textos** (pedido de Santi, a partir de un clip real de
+  Davo titulado "si davo es +54 11 3396-6858"): `pantalla.datos_en_texto` para texto escrito
+  (mails, teléfonos con prefijo internacional o con contexto, tarjetas con contexto, direcciones
+  con calle y número) descarta en candidatos (título del clip y del stream) y en `procesar` (URL
+  manual y en vivo); lo que va a Gemini sale tapado (`tapar_datos`) y lo que devuelve (título y
+  descripción) se valida y se regenera si trae un dato. Encontrado en el camino: `parsear` no le
+  pasaba el `contexto` a `validar`, así que el chequeo de nombres del título contra la
+  transcripción (§3 paso 7, desde v0.18) NUNCA corrió en la entrega; arreglado. 513 tests OK.
 - v0.33.0 (2026-09-29) — **Davo y el fútbol:** las palabras de fútbol salen de `es_costream`
   (no descartan en ningún camino: diario, /buscar, URL manual, en vivo) y pasan a ser un aviso
   en el mensaje de los streamers con `detectar_marcador` (viaja en `Clip.aviso` → json →

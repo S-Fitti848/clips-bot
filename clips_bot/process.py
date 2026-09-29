@@ -151,6 +151,11 @@ def procesar(url: str, cfg: Settings, streamers: list[Streamer], forzar: bool = 
 
     # §3 paso 2 (versión URL manual): co-stream / evento por título o categoría.
     # No corre para un aporte: sin streamer, "co-stream" no quiere decir nada.
+    # Datos personales en el título (por URL manual o en vivo no pasan por candidatos).
+    if not aporte and pant.datos_en_texto(d.titulo) and descartar(
+        f"{pant.MOTIVO_TITULO} ({d.titulo!r})", pant.MOTIVO_TITULO
+    ):
+        return _cerrar(res)
     if not aporte and es_costream([d.titulo], d.categoria, cfg.filtros) and descartar(
         f"co-stream o evento (título {d.titulo!r}, categoría {d.categoria!r})", MOTIVO_COSTREAM
     ):

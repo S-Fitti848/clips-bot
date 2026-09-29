@@ -9,6 +9,7 @@ from dataclasses import asdict, dataclass
 
 from .config import Textos
 from .gemini import GeminiClient
+from .pantalla import datos_en_texto, tapar_datos
 
 # Tipo de gancho del título: se guarda para el análisis de métricas (§4b).
 GANCHOS = ("reaccion", "frase_textual", "pregunta", "situacion", "resultado")
@@ -197,6 +198,7 @@ def validar(data: object, cfg: Textos, contexto: str = "") -> list[str]:
             errores.append(f"titulo tiene {len(titulo.strip())} caracteres (máximo {cfg.max_titulo})")
         if "\n" in titulo or "#" in titulo:
             errores.append("titulo no puede tener saltos de línea ni hashtags")
+        _datos_personales(titulo, "titulo", errores)
         inventados = nombres_sin_respaldo(titulo, contexto) if contexto else []
         if inventados:
             errores.append(
@@ -212,6 +214,7 @@ def validar(data: object, cfg: Textos, contexto: str = "") -> list[str]:
             errores.append(f"descripcion tiene {len(desc)} caracteres (máximo {cfg.max_descripcion})")
         if "#" in desc or "http" in desc.lower():
             errores.append("descripcion no puede tener hashtags ni links")
+        _datos_personales(desc, "descripcion", errores)
 
     tags = data.get("hashtags")
     if not isinstance(tags, list) or not all(isinstance(t, str) for t in tags):
@@ -240,6 +243,15 @@ def validar(data: object, cfg: Textos, contexto: str = "") -> list[str]:
     return errores
 
 
+def _datos_personales(texto: str, campo: str, errores: list[str]) -> None:
+    """Regla fija (2026-09-29): ningún texto que genera Gemini sale con teléfonos, mails o
+    direcciones, aunque los haya copiado del título original del clip."""
+    hallados = datos_en_texto(texto)
+    if hallados:
+        errores.append(f"{campo} tiene datos personales ({', '.join(sorted({h.tipo for h in hallados}))}): "
+                       "sacalos, no pueden aparecer")
+
+
 def parsear(texto: str, cfg: Textos, canal: str, login: str,
             contexto: str = "") -> tuple[TextosClip | None, list[str]]:
     try:
@@ -250,7 +262,7 @@ def parsear(texto: str, cfg: Textos, canal: str, login: str,
     # Todo lo demás se valida tal cual llega.
     if isinstance(data, dict) and isinstance(data.get("hashtags"), list):
         data["hashtags"] = [t.strip() if isinstance(t, str) else t for t in data["hashtags"]]
-    errores = validar(data, cfg)
+    errores = validar(data, cfg, contexto)   # sin el contexto, el chequeo de nombres no corría
     if errores:
         return None, errores
     cred = credito(canal, login)
@@ -271,7 +283,10 @@ def parsear(texto: str, cfg: Textos, canal: str, login: str,
 
 def armar_prompt(canal: str, categoria: str, titulo_twitch: str, duracion: float, transcripcion: str,
                  cfg: Textos, fecha: str | None = None) -> str:
-    trans = transcripcion.strip() or "(sin habla)"
+    # Lo original del clip va TAPADO (pantalla.tapar_datos): si el título que le puso la comunidad
+    # o lo que se dice trae un teléfono, un mail o una dirección, Gemini no lo ve y no lo copia.
+    trans = tapar_datos(transcripcion.strip()) or "(sin habla)"
+    titulo_twitch = tapar_datos(titulo_twitch)
     if len(trans) > MAX_TRANSCRIPCION:
         trans = trans[:MAX_TRANSCRIPCION] + "…"
     return f"""Streamer: {canal}

@@ -18,6 +18,7 @@ from datetime import datetime, timedelta, timezone
 from . import db
 from .config import Catalogo, Evento, Filtros, Kick, Seleccion, Streamer
 from .kick import KickClient, KickError, a_clip
+from .pantalla import MOTIVO_TITULO as MOTIVO_DATOS_TITULO, datos_en_texto
 from .seleccion import score_reciente
 from .twitch import TwitchClient, TwitchError
 
@@ -312,6 +313,9 @@ def motivo_descarte(clip: Clip, filtros: Filtros, vistos: set[str], min_vistas: 
         return MOTIVO_SIN_PALABRAS
     if es_programa_de_terceros(clip.stream_title, palabras_programa):
         return MOTIVO_PROGRAMA
+    # Datos personales en el título del clip o del stream (2026-09-29: "si davo es +54 11 …").
+    if datos_en_texto(clip.title) or datos_en_texto(clip.stream_title):
+        return MOTIVO_DATOS_TITULO
     if es_costream([clip.title, clip.stream_title], clip.game_name, filtros):
         return MOTIVO_COSTREAM
     excluidas = {c.lower() for c in filtros.categorias_excluidas}
