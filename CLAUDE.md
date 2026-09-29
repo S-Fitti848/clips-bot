@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-09-29 | **Versión:** v0.36.0 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 + escucha de Telegram 24/7)
+**Snapshot:** 2026-09-29 | **Versión:** v0.37.0 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 + escucha de Telegram 24/7)
 
 > **SI ESTÁS EMPEZANDO UNA SESIÓN NUEVA, LEÉ §10.** Ahí está qué está hecho, qué quedó a medias,
 > qué falta, y las trampas que ya nos mordieron.
@@ -556,9 +556,12 @@ clips_bot/serie.py       /serie: partes, división en etapas (validada), guiones
 clips_bot/ilustrar.py    regla fija 1 (§1): una foto por frase sin repetir, mínimo 6 distintas,
                          ningún tramo de más de 6 s (`asignar`, `tramos`, `errores_plan`)
 clips_bot/reglas.py      regla fija 2 (§1): REGLAS_CLARIDAD, dentro de todos los prompts de guion
+clips_bot/pego.py        lo que pega en otros canales → el clip original (búsqueda, audio, bonus)
+clips_bot/audio_huella.py ¿mismo momento? audio a 8 kHz en 16 bandas + correlación con desfase
+clips_bot/metricas.py    §4b: métricas de los Shorts del canal y pesos por streamer y tipo
 clips_bot/envivo.py      modo en vivo (§3b): quién está al aire, momentos por creadores distintos,
                          alertas en la DB (no repetir, tope, vencer) y el resumen de tiempos
-tests/                   520 tests sin red ni video (test_reglas_fijas.py: las 3 reglas de §1)
+tests/                   527 tests sin red ni video (conftest.py: nada sale a YouTube) (test_reglas_fijas.py: las 3 reglas de §1)
 ```
 
 Comandos:
@@ -747,6 +750,18 @@ Problemas abiertos:
 
 ## 9. CHANGELOG
 
+- v0.37.0 (2026-09-29) — **Lo que pega en otros canales** (`pego.py`, `audio_huella.py`): una vez
+  por día y en /buscar, Shorts de OTROS canales que nombran a cada streamer (título, o canal aunque
+  esté pegado: "SpreenClips"), ≤ 61 s, ≥ `pego.min_vistas`, tope `busquedas_por_dia` (API de
+  YouTube con YOUTUBE_API_KEY; si no, yt-dlp). Para cada uno, el audio contra los clips originales
+  de los 7 días anteriores; el que pasa `pego.umbral` (0,55) entra primero como candidato, con
+  bonus `pego.peso` en la selección y "🔥 Pegó en otro canal: X vistas" en el mensaje. El video
+  ajeno solo se usa para comparar y se borra. Calibrado en la Pi con clips reales de Spreen (un
+  pedazo recomprimido con ruido o tono: 0,70-0,95 contra su clip, ≤ 0,39 contra otros). Un Short
+  real de otro canal (Axor, 1802 vistas) no coincidió con ninguno de los 15 clips de esos días.
+  Encontrado: el yt-dlp de Windows (2025.06) ya no baja de YouTube ("The page needs to be
+  reloaded"); el de la Pi (2026.08) sí. **Subido APAGADO** (`pego.activo: false`) hasta que Santi
+  vea la medición. `tests/conftest.py`: ningún test sale a YouTube (uno tardaba 64 s). 527 tests OK.
 - v0.36.0 (2026-09-29) — **Métricas del canal** (§4b, `metricas.py`): permiso nuevo
   `yt-analytics.readonly`; `youtube.Cliente.mis_videos / metricas / pct_entero`; tabla `metricas`;
   la corrida diaria las lee si hay token; la selección pesa streamer y tipo de clip con n ≥ 15.

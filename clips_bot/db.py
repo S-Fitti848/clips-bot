@@ -200,6 +200,19 @@ CREATE TABLE IF NOT EXISTS metricas (
     camara           INTEGER             -- 1 = tenía cámara (split/fullcam)
 );
 
+CREATE TABLE IF NOT EXISTS pegados (
+    short_id     TEXT PRIMARY KEY,       -- el Short de OTRO canal (solo para encontrar el momento)
+    streamer     TEXT NOT NULL,
+    vistas       INTEGER NOT NULL DEFAULT 0,
+    canal        TEXT,
+    titulo       TEXT,
+    publicado    TEXT,
+    clip_id      TEXT,                   -- el clip ORIGINAL que coincide; NULL = no se encontró
+    clip_json    TEXT,                   -- el Clip entero, para volverlo candidato
+    coincidencia REAL,                   -- audio_huella (0-1)
+    fecha        TEXT NOT NULL           -- cuándo se buscó
+);
+
 CREATE TABLE IF NOT EXISTS carpetas (
     nombre   TEXT PRIMARY KEY,           -- el `grupo` de los streamers: argentinos, evento, catalogo…
     etiqueta TEXT NOT NULL DEFAULT '',   -- cómo se muestra: "Argentinos", "Dedsafío"

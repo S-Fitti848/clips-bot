@@ -190,7 +190,12 @@ def por_que(meta: dict) -> str:
     partes.append(f"{creadores} creadores distintos" if creadores > 1 else "1 creador")
     if meta.get("puntaje"):
         partes.append(f"Gemini {meta['puntaje']}/10")
-    return "📊 " + " · ".join(partes)
+    linea = "📊 " + " · ".join(partes)
+    pego = meta.get("pego") or {}
+    if pego.get("vistas"):   # pego.py: el mismo momento pegó en otro canal
+        linea = (f"🔥 Pegó en otro canal: {int(pego['vistas']):,} vistas".replace(",", ".")
+                 + (f" ({pego['canal']})" if pego.get("canal") else "") + " · " + linea)
+    return linea
 
 
 def mensaje_textos(numero: int, streamer: str, clip_id: str, horario: str | None, textos: dict,

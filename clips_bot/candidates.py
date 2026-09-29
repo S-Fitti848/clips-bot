@@ -51,6 +51,8 @@ class Clip:
     creadores: tuple[str, ...] = ()  # creadores DISTINTOS del mismo momento
     mediana_vistas: int = 0  # la mediana del streamer en la ventana (para el "por qué" del mensaje)
     aviso: str = ""  # algo para mirar sin descartar (ej. habla de fútbol)
+    pego_vistas: int = 0  # un Short de otro canal con este momento pegó (pego.py): sus vistas
+    pego_canal: str = ""
 
     @classmethod
     def from_helix(cls, d: dict, login: str, game_name: str = "", stream_title: str = "",

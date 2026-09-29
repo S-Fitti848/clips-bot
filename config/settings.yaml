@@ -416,3 +416,19 @@ publicacion:
 # §3 paso 9. Queda en false hasta que la auditoría de la YouTube Data API esté aprobada
 # (sin auditoría los uploads quedan bloqueados privados para siempre).
 youtube_upload_enabled: false
+
+# Lo que pega en otros canales → el clip original (pego.py, 2026-09-29). Una vez por día (y en
+# /buscar): Shorts de OTROS canales que nombran a cada streamer de las carpetas con diarios,
+# ordenados por vistas; para los que pegaron, el mismo momento entre sus clips originales,
+# comparando el audio. El original entra primero y la selección lo multiplica por `peso`.
+# Búsqueda: API de YouTube si hay YOUTUBE_API_KEY en el .env (100 unidades cada una); si no, yt-dlp.
+pego:
+  activo: false            # APAGADO hasta que Santi vea la medición (2026-09-29)
+  busquedas_por_dia: 40
+  dias: 7
+  min_vistas: 10000
+  por_streamer: 3
+  max_originales: 15
+  umbral: 0.55             # calibrado: 0,70-0,95 contra su clip, ≤ 0,39 contra los demás
+  peso: 3.0
+  canales_propios: ["Rots", "Pequeña Historia"]

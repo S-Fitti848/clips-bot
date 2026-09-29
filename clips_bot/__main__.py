@@ -33,7 +33,7 @@ from pathlib import Path
 from . import __version__, db, metricas
 from .candidates import (MOTIVO_COSTREAM, Resultado, buscar_candidatos, buscar_catalogo, buscar_kick,
                          consolidar_evento)
-from .config import DB_PATH, ConfigError, Settings, env, load_settings, load_streamers, load_twitch_creds
+from .config import DATA_DIR, DB_PATH, ConfigError, Settings, env, load_settings, load_streamers, load_twitch_creds
 from .download import DescargaError
 from .gemini import GeminiClient, GeminiError
 from .kick import KickClient
@@ -339,6 +339,7 @@ def ejecutar_seleccion(settings: Settings, gemini: GeminiClient | None, enviar: 
                      key=lambda o: o.meta.get("puntaje", 0), reverse=True)
     # Por clip: votos de su streamer × métricas de su tipo (streamer, duración, layout, cámara).
     por_clip = {o.clip_id: factores.get(o.streamer.lower(), 1.0) * metricas.factor_de(o.meta, tabla_metricas)
+                * (settings.pego.peso if (o.meta.get("pego") or {}).get("vistas") else 1.0)
                 for o in opciones}
     elegidos = seleccionar(buenos, cfg, ahora, desempate_gemini(gemini) if gemini else None,
                            por_clip)
@@ -556,6 +557,56 @@ def cmd_diario(args: argparse.Namespace) -> int:
             conn.close()
 
 
+def _pego_de(c) -> dict | None:
+    return {"vistas": c.pego_vistas, "canal": c.pego_canal} if getattr(c, "pego_vistas", 0) else None
+
+
+def _buscador_pego():
+    """La API de YouTube si hay YOUTUBE_API_KEY (100 unidades por búsqueda); si no, yt-dlp."""
+    from . import pego
+
+    clave = env("YOUTUBE_API_KEY", requerido=False)
+    if clave:
+        return lambda consulta, desde: pego.buscar_api(consulta, desde, clave)
+    return pego.buscar_ytdlp
+
+
+def _pegados_para(settings: Settings, streamers: list, buscar_ahora: bool, avisar=log.info) -> list:
+    """Los clips originales de estos streamers cuyo momento pegó en otro canal (pego.py), ya
+    filtrados como cualquier candidato (vistos, duración, programa de terceros, datos personales;
+    sin el 30 % de vistas: que haya pegado afuera ya dice que es bueno). Con `buscar_ahora`,
+    primero busca (con el tope diario de búsquedas). Nunca tumba al que llama."""
+    from dataclasses import replace as _replace
+
+    from . import pego
+    from .candidates import motivo_descarte
+
+    cfg = settings.pego
+    if not cfg.activo or not streamers:
+        return []
+    conn = db.connect(DB_PATH)
+    try:
+        if buscar_ahora:
+            try:
+                twitch = _twitch() if any(s.plataforma == "twitch" for s in streamers) else None
+                kick = KickClient(pausa_s=settings.kick.pausa_s)
+                n = pego.buscar_pegados(conn, streamers, cfg, DATA_DIR / "pego_tmp", twitch, kick,
+                                        buscar=_buscador_pego(), avisar=avisar)
+                if n:
+                    avisar(f"pegó: {n} momentos originales encontrados")
+            except Exception as e:
+                log.exception("pegó: la búsqueda falló")
+                avisar(f"pegó: la búsqueda falló ({e})")
+        vistos = db.ids_vistos(conn)
+        filtros = _replace(settings.filtros, antiguedad_min_h=0, min_vistas=0, vistas_top=0)
+        programa = {s.login: s.palabras_programa for s in streamers}
+        return [c for c in pego.como_candidatos(conn, streamers, vistos)
+                if not motivo_descarte(c, filtros, vistos,
+                                       palabras_programa=programa.get(c.broadcaster_login, ()))]
+    finally:
+        conn.close()
+
+
 def actualizar_metricas() -> int:
     """Una vez por día (en la corrida de las 05:00): las métricas de los Shorts del canal de clips
     (§4b). Sin token de YouTube no hace nada: la conexión la hace Santi (docs/auditoria-youtube.md).
@@ -606,6 +657,10 @@ def _diario(args: argparse.Namespace, settings: Settings, atender: bool = True,
 
     print("\n=== Pasos 1-2: candidatos")
     res = buscar_todo(settings, streamers, args.incluir_sin_permiso, guardar_cursor=True)
+    pegados = _pegados_para(settings, streamers, buscar_ahora=True, avisar=print)
+    if pegados:   # van primero: se procesan antes que el resto de su grupo
+        ids = {c.id for c in pegados}
+        res.candidatos = pegados + [c for c in res.candidatos if c.id not in ids]
     _imprimir(res, settings.seleccion.peso_momento)
     if not res.candidatos and not res.catalogo:
         print("\nSin candidatos: no hay nada que procesar.")
@@ -641,7 +696,7 @@ def _diario(args: argparse.Namespace, settings: Settings, atender: bool = True,
             try:
                 r = procesar(c.url, settings, streamers, gemini=gemini, fuente=fuente,
                              clips_mismo_momento=c.clips_mismo_momento, grupo=c.grupo,
-                             mediana_vistas=c.mediana_vistas, aviso=c.aviso)
+                             mediana_vistas=c.mediana_vistas, aviso=c.aviso, pego=_pego_de(c))
             except (DescargaError, MediaError) as e:
                 print(f"ERROR: {e}", file=sys.stderr)
                 continue
@@ -1028,7 +1083,9 @@ def _buscar(conn, tg: TelegramClient, chat_id: str, args: list[str], settings: S
                 res = buscar_candidatos(_twitch(), [st], filtros, vistos,
                                         seleccion=settings.seleccion, excluidos=excluidos,
                                         evento=settings.evento, palabras_titulo=palabras)
-            por_streamer.append((st, res.candidatos))
+            pegaron = _pegados_para(settings, [st], buscar_ahora=True, avisar=log.info)
+            ids = {c.id for c in pegaron}
+            por_streamer.append((st, pegaron + [c for c in res.candidatos if c.id not in ids]))
             descartes.update(res.descartes)
 
         que = f" con {', '.join(palabras)}" if palabras else ""
@@ -1051,7 +1108,7 @@ def _buscar(conn, tg: TelegramClient, chat_id: str, args: list[str], settings: S
                     r = procesar(c.url, settings, streamers, gemini=gemini, fuente="reciente",
                                  clips_mismo_momento=c.clips_mismo_momento,
                                  grupo=st.grupo_de("reciente"), avisar=lambda *_: None,
-                                 mediana_vistas=c.mediana_vistas, aviso=c.aviso)
+                                 mediana_vistas=c.mediana_vistas, aviso=c.aviso, pego=_pego_de(c))
                 except (DescargaError, MediaError) as e:
                     fallados.append(f"{c.id[:14]}: {e}")
                     continue

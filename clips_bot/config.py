@@ -275,6 +275,20 @@ class EfemeridesCfg:
 
 
 @dataclass(frozen=True)
+class Pego:
+    """Lo que pega en otros canales → el clip original (pego.py)."""
+    activo: bool = True
+    busquedas_por_dia: int = 40       # la API cuesta 100 unidades por búsqueda (de 10.000 diarias)
+    dias: int = 7                     # Shorts de la última semana; originales de los 7 días antes
+    min_vistas: int = 10000           # "pegó"
+    por_streamer: int = 3             # Shorts que se revisan por streamer y búsqueda
+    max_originales: int = 15          # clips del streamer que se comparan por Short
+    umbral: float = 0.55              # audio_huella: calibrado con clips reales (ver pego.py)
+    peso: float = 3.0                 # bonus en la selección para un original que pegó
+    canales_propios: tuple = ("Rots", "Pequeña Historia")
+
+
+@dataclass(frozen=True)
 class EnVivo:
     """Modo /envivo: detectar un momento mientras el stream sigue al aire (§3 modo en vivo)."""
     intervalo_twitch_s: int = 300     # /streams va en lote: una llamada para todos los de Twitch
@@ -336,6 +350,7 @@ class Settings:
     seleccion: Seleccion = Seleccion()
     publicacion: Publicacion = Publicacion()
     envivo: EnVivo = EnVivo()
+    pego: Pego = Pego()
     efemerides: EfemeridesCfg = EfemeridesCfg()
     youtube_upload_enabled: bool = False
 
@@ -408,6 +423,7 @@ def load_settings(path: Path = CONFIG_DIR / "settings.yaml") -> Settings:
         publicacion=_seccion(Publicacion, raw, "publicacion", path),
         envivo=_seccion(EnVivo, raw, "envivo", path),
         efemerides=_seccion(EfemeridesCfg, raw, "efemerides", path),
+        pego=_seccion(Pego, raw, "pego", path),
         youtube_upload_enabled=bool(raw.get("youtube_upload_enabled", False)),
     )
 

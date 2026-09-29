@@ -51,6 +51,7 @@ class Resultado:
     clips_mismo_momento: int = 1
     mediana_vistas: int = 0  # del streamer en la ventana: para el "por qué" del mensaje
     aviso: str = ""  # algo para mirar sin descartar (ej. habla de fútbol): sale en el mensaje
+    pego: dict | None = None  # un Short de otro canal con este momento pegó: {vistas, canal}
     marcador_deportivo: dict | None = None
     pantalla: dict | None = None  # OCR: datos personales / pantalla de pago
     duracion_s: float = 0.0
@@ -102,7 +103,7 @@ def procesar(url: str, cfg: Settings, streamers: list[Streamer], forzar: bool = 
              gemini: GeminiClient | None = None, avisar=print, *, fuente: str | None = None,
              clips_mismo_momento: int = 1, grupo: str | None = None,
              descarga=None, permitir_fecha: bool = False, mediana_vistas: int = 0,
-             aviso: str = "") -> Resultado:
+             aviso: str = "", pego: dict | None = None) -> Resultado:
     """fuente/clips_mismo_momento vienen de `candidatos` en la corrida diaria; por URL manual la
     fuente se deduce de la antigüedad y el momento queda en 1 (sin VOD no se puede agrupar).
 
@@ -116,7 +117,7 @@ def procesar(url: str, cfg: Settings, streamers: list[Streamer], forzar: bool = 
     de seguridad ni de tono, así que ahí se anota y no se descarta.
     """
     res = Resultado(url=url, clips_mismo_momento=clips_mismo_momento, mediana_vistas=mediana_vistas,
-                    aviso=aviso)
+                    aviso=aviso, pego=pego)
     crono = Cronometro(res, avisar)
     fa = cfg.filtro_audio
     aporte = descarga is not None
