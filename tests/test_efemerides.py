@@ -146,15 +146,15 @@ def test_no_respaldados(guion, faltan):
 
 
 def _guion_ok(**cambios):
-    d = {"frases": [{"texto": "Un día como hoy, en 1998, Google estrenó su buscador en Internet.", "mostrar": "Google search 1998"},
-                    {"texto": "Larry Page y Sergey Brin lo empezaron como un proyecto universitario.", "mostrar": "Larry Page Sergey Brin"},
-                    {"texto": "Lo arrancaron en la Universidad de Stanford, con muy poco.", "mostrar": "Stanford University"},
-                    {"texto": "¡Tenían un armario lleno de servidores y dos routers HP!", "mostrar": "Google first server rack"},
-                    {"texto": "Al principio el buscador no se llamaba Google, se llamaba BackRub.", "mostrar": "BackRub logo"},
-                    {"texto": "Con el tiempo superó a AltaVista, el más popular de la época.", "mostrar": "AltaVista search"},
-                    {"texto": "Y el 27 de septiembre de 1998 el buscador salió a Internet para todos.", "mostrar": "Google garage"},
-                    {"texto": "Desde ese día la forma de buscar cosas en la web cambió para siempre.", "mostrar": "web search computer"},
-                    {"texto": "¿Te imaginás cómo buscarías cualquier cosa sin este buscador?", "mostrar": "library card catalog"}],
+    d = {"frases": [{"texto": "Un día como hoy, en 1998, Google estrenó su buscador en Internet.", "mostrar": "1998 Google search 1998", "presente": False},
+                    {"texto": "Larry Page y Sergey Brin lo empezaron como un proyecto universitario.", "mostrar": "1998 Larry Page Sergey Brin", "presente": False},
+                    {"texto": "Lo arrancaron en la Universidad de Stanford, con muy poco.", "mostrar": "1998 Stanford University", "presente": False},
+                    {"texto": "¡Tenían un armario lleno de servidores y dos routers HP!", "mostrar": "1998 Google first server rack", "presente": False},
+                    {"texto": "Al principio el buscador no se llamaba Google, se llamaba BackRub.", "mostrar": "1998 BackRub logo", "presente": False},
+                    {"texto": "Con el tiempo superó a AltaVista, el más popular de la época.", "mostrar": "1998 AltaVista search", "presente": False},
+                    {"texto": "Y el 27 de septiembre de 1998 el buscador salió a Internet para todos.", "mostrar": "1998 Google garage", "presente": False},
+                    {"texto": "Desde ese día la forma de buscar cosas en la web cambió para siempre.", "mostrar": "1998 web search computer", "presente": False},
+                    {"texto": "¿Te imaginás cómo buscarías cualquier cosa sin este buscador?", "mostrar": "1998 library card catalog", "presente": False}],
          "idea_clave": "Un buscador ordena la web para que encuentres lo que buscás.",
          "titulo": "El día que arrancó Google",
          "descripcion": "Así empezó el buscador.", "hashtags": ["#Shorts", "#Google", "#PequeñaHistoria"]}
@@ -199,7 +199,7 @@ def test_escribir_guion_reintenta_con_los_errores():
     e = ef.Evento("es", 1998, "arranca Google", ["Google"])
     guion = ef.escribir_guion(g, e, ARTICULO)
     assert "mil millones" in g.prompts[1] and g.imagenes == [0, 0]   # el guion va sin fotos
-    assert guion.mostrar[2] == "Stanford University" and guion.idea_clave and guion.fotos == []
+    assert guion.mostrar[2] == "1998 Stanford University" and guion.idea_clave and guion.fotos == []
 
 
 # ---- cambiar una foto -----------------------------------------------------------------------

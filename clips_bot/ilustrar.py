@@ -16,6 +16,9 @@ from __future__ import annotations
 import math
 
 MIN_FOTOS_DISTINTAS = 6
+# La época le gana a la cantidad (2026-09-29): si no hay 6 fotos de la época del hecho, el mínimo
+# baja a las que haya (repitiendo las del artículo), pero nunca a menos de esto.
+MIN_FOTOS_ABSOLUTO = 3
 MAX_TRAMO_S = 6.0
 RANKING_MAX = 3          # fotos que Gemini ordena por frase
 

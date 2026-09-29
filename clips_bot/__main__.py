@@ -2579,7 +2579,8 @@ def _efe_mostrar(conn, tg: TelegramClient, chat_id: str, token: str, estado: dic
     botones = [{"text": f"🔁 foto {n}", "callback_data": f"efe:f:{token}:{n}"} for n in nums]
     filas += [botones[i:i + 4] for i in range(0, len(botones), 4)]
     texto = ef.texto_aprobacion(ef.Evento(**p.evento), g, ef.usadas_en_orden(p, plan),
-                                date.fromisoformat(p.fecha), plan)
+                                date.fromisoformat(p.fecha), plan,
+                                [ef.Foto.de_dict(f) for f in p.fotos])
     tg.send_message(chat_id, texto, teclado={"inline_keyboard": filas})
 
 
@@ -2944,7 +2945,8 @@ def cmd_efemeride(args: argparse.Namespace) -> int:
         plan = ef.plan_de(p)
         ef.hoja_de_guion([ef.Foto.de_dict(f) for f in p.fotos], ef.filas_de_hoja(plan, g.frases),
                          carpeta / "hoja.jpg")
-        texto = ef.texto_aprobacion(ef.Evento(**p.evento), g, ef.usadas_en_orden(p, plan), dia, plan)
+        texto = ef.texto_aprobacion(ef.Evento(**p.evento), g, ef.usadas_en_orden(p, plan), dia, plan,
+                                    [ef.Foto.de_dict(f) for f in p.fotos])
         (carpeta / "aprobacion.txt").write_text(html.unescape(re.sub(r"<[^>]+>", "", texto)),
                                                 encoding="utf-8")
         print("\n" + html.unescape(re.sub(r"<[^>]+>", "", texto)))

@@ -349,3 +349,132 @@ def test_la_entrega_avisa_si_el_audio_esta_mal(monkeypatch, tmp_path):
             "textos": {"titulo": "t", "descripcion": "d", "hashtags": ["#Shorts"], "credito": "c"}}
     m.enviar_clip(tg, "1", db.connect(tmp_path / "t.db"), "x", meta, 1, "13:00")
     assert "⚠️ <b>Audio</b>: pico de -1.0 dB" in tg.mensajes[0]
+
+
+# ==== 1b. fotos de época (2026-09-29: un avión de 2008 en una historia de 1940) =================
+
+@pytest.mark.parametrize("fecha,anio", [
+    ("2008-08-17", 2008), ("Tomada el 20 de septiembre de 2010, 17:5", 2010),
+    ("circa WW1, pre-1923", 1923), ("1940s", 1940), ("", None), ("desconocida", None)])
+def test_anio_de_la_foto(fecha, anio):
+    assert ef.anio_de(fecha) == anio
+
+
+def test_el_mostrar_de_una_frase_del_pasado_lleva_la_epoca():
+    from test_efemerides import ARTICULO, _guion_ok
+
+    d = _guion_ok()
+    d["frases"][2]["mostrar"] = "Stanford University"           # sin año
+    errores = ef.validar_guion(d, 1998, ARTICULO)
+    assert any("le falta la época" in e and "[3]" in e for e in errores)
+    d["frases"][2]["presente"] = True                            # habla de hoy: no hace falta
+    assert not any("época" in e for e in ef.validar_guion(d, 1998, ARTICULO))
+    assert "ÉPOCA Y LUGAR" in ef.SISTEMA_GUION and "1940 German fighter aircraft grounded" in ef.SISTEMA_GUION
+    assert "presente" in ef.SCHEMA_GUION["properties"]["frases"]["items"]["required"]
+
+
+def _info_anio(archivo, anio):
+    i = _info(archivo)
+    if anio:
+        i["extmetadata"]["DateTimeOriginal"] = {"value": str(anio)}
+    return i
+
+
+class WikiEpoca(WikiFalsa):
+    """El artículo trae 2 fotos de 1940; cada búsqueda trae una de 2008 y una de 1940."""
+
+    def archivos(self, lang, titulo):
+        return ["File:art0.jpg", "File:art1.jpg"]
+
+    def info(self, lang, archivos, ancho=1280):
+        return [_info_anio(a, 1940) for a in archivos]
+
+    def buscar_commons(self, terminos, cuantas=6):
+        self.busquedas.append(terminos)
+        k = len(self.busquedas)
+        return [_info_anio(f"File:q{k}_moderna.jpg", 2008), _info_anio(f"File:q{k}_vieja.jpg", 1941)]
+
+
+class GeminiQueVe:
+    """Guarda el prompt; en cada frase pone primero lo primero de sus candidatas."""
+
+    def __init__(self, de_epoca=True):
+        self.prompts, self.de_epoca = [], de_epoca
+
+    def json(self, sistema, prompt, schema, temperatura=0.7, imagenes=None, audio=None):
+        self.prompts.append(prompt)
+        frases = []
+        for bloque in prompt.split("\nfrase ")[1:]:
+            cands = [int(x) for x in bloque.split("candidatas:")[1].split("\n")[0].split(",")]
+            frases.append({"se_ve": "x", "fotos": cands[:2], "de_epoca": self.de_epoca})
+        return json.dumps({"frases": frases, "descartadas": []})
+
+
+def _guion_epoca(n=8, presente=None):
+    g = _guion(n)
+    g.presente = presente or [False] * n
+    return g
+
+
+def test_las_fotos_modernas_no_son_candidatas_de_las_frases_del_pasado(tmp_path):
+    wiki, gem = WikiEpoca(), GeminiQueVe()
+    e = ef.Evento("es", 1940, "Two Avro Ansons collide", ["Brocklesby"])
+    art, _ = ef.fotos_del_evento(wiki, e)
+    g = _guion_epoca(presente=[False] * 7 + [True])
+    pool, g = ef.fotos_para_guion(wiki, gem, e, g, art, tmp_path)
+    modernas = {i for i, f in enumerate(pool) if f.anio == 2008}
+    assert modernas and set(g.modernas) == modernas
+    prompt = gem.prompts[0]
+    assert "EL HECHO ES DE 1940" in prompt and "(2008)" in prompt       # Gemini ve los años
+    for bloque in prompt.split("\nfrase ")[1:8]:                        # frases del pasado
+        cands = {int(x) - 1 for x in bloque.split("candidatas:")[1].split("\n")[0].split(",")}
+        assert not cands & modernas
+    ultima = prompt.split("\nfrase ")[8]                                # la que habla de hoy
+    assert "(habla de hoy)" in ultima
+    assert all(pool[f].anio != 2008 for i, f in enumerate(g.fotos) if not g.presente[i])
+
+
+def test_si_gemini_dice_que_no_es_de_la_epoca_esa_foto_sale():
+    d = {"frases": [{"fotos": [1, 2], "de_epoca": False}, {"fotos": [1, 2], "de_epoca": False}],
+         "descartadas": []}
+    rankings, _ = ef.rankings_de(d, [[0, 1], [0, 1]], presente=[False, True])
+    assert rankings == [[1], [0, 1]]                  # en la de hoy, una actual sirve
+
+
+def test_sin_fotos_de_epoca_se_repite_una_del_articulo_antes_que_una_moderna(tmp_path):
+    class SoloModernas(WikiEpoca):
+        def buscar_commons(self, terminos, cuantas=6):
+            self.busquedas.append(terminos)
+            return [_info_anio(f"File:m{len(self.busquedas)}.jpg", 2010)]
+
+    wiki = SoloModernas()
+    e = ef.Evento("es", 1940, "x", ["Brocklesby"])
+    art, _ = ef.fotos_del_evento(wiki, e)
+    wiki_art = [f for f in art]
+    wiki_art.append(ef.a_foto(_info_anio("File:art2.jpg", 1940), "Brocklesby"))
+    pool, g = ef.fotos_para_guion(wiki, GeminiQueVe(), e, _guion_epoca(), wiki_art, tmp_path)
+    usadas = {f for _, f, _ in ef.plan_estimado(g, len(pool))}
+    assert all(pool[f].anio == 1940 for f in usadas)                    # ninguna de 2010
+    assert g.minimo_fotos == 3                                          # la época le gana a la cantidad
+    texto = ef.texto_aprobacion(e, g, [], ef.date(2026, 9, 29), ef.plan_estimado(g, len(pool)), pool)
+    assert "Solo hay 3 fotos de la época" in texto and "(1940)" in texto
+
+
+def test_con_menos_de_tres_fotos_de_epoca_pasa_al_hecho_siguiente(tmp_path):
+    class Nada(WikiEpoca):
+        def archivos(self, lang, titulo):
+            return ["File:art0.jpg"]
+
+        def buscar_commons(self, terminos, cuantas=6):
+            return [_info_anio("File:moderna.jpg", 2015)]
+
+    wiki = Nada()
+    e = ef.Evento("es", 1940, "x", ["X"])
+    art, _ = ef.fotos_del_evento(wiki, e)
+    with pytest.raises(ef.NarrarError, match="fotos de época"):
+        ef.fotos_para_guion(wiki, GeminiQueVe(), e, _guion_epoca(), art, tmp_path)
+
+
+def test_la_eleccion_pide_confirmar_la_epoca():
+    assert "de_epoca" in ef.SCHEMA_FOTOS["properties"]["frases"]["items"]["required"]
+    assert "ÉPOCA Y LUGAR" in ef.SISTEMA_FOTOS and ef.MARGEN_EPOCA == 10

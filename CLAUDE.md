@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-09-28 | **Versión:** v0.30.1 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 + escucha de Telegram 24/7)
+**Snapshot:** 2026-09-29 | **Versión:** v0.31.0 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 + escucha de Telegram 24/7)
 
 > **SI ESTÁS EMPEZANDO UNA SESIÓN NUEVA, LEÉ §10.** Ahí está qué está hecho, qué quedó a medias,
 > qué falta, y las trampas que ya nos mordieron.
@@ -57,6 +57,15 @@ servicio systemd separado: `clips-bot`).
      filtros de siempre; Gemini elige la mejor para cada frase en UNA llamada. Mínimo 6 fotos
      distintas por video, ninguna más de 6 s seguidos, sin repetir salvo que no haya otra. En la
      hoja de aprobación, cada foto con su frase al lado.
+     **Fotos de época (2026-09-29, un avión de 2008 en una historia de 1940):** (a) el `mostrar`
+     de cada frase lleva año/década y lugar ("1940 German fighter aircraft grounded", no
+     "airplane"; se valida el año en las frases del pasado); (b) una foto de Commons sacada más de
+     `MARGEN_EPOCA` (10) años después del hecho no es candidata de una frase del pasado (Gemini
+     marca `presente` en las que hablan de hoy); (c) al elegir, Gemini ve el año de cada foto y
+     confirma `de_epoca` (si dice que no, esa foto sale); (d) sin foto de época, se repite una del
+     artículo del hecho antes que usar una moderna; (e) en la hoja, el año al lado de cada foto.
+     La época le gana a la cantidad: si no hay 6 fotos de época, el mínimo baja a las que haya
+     (piso `ilustrar.MIN_FOTOS_ABSOLUTO` = 3, con aviso en la aprobación); menos de 3, otro hecho.
   2. **Guiones que se entienden** (`clips_bot/reglas.py`, `REGLAS_CLARIDAD`, dentro del prompt
      de efemérides, /narrar y /serie): el cómo y el porqué, paso a paso, para un chico de 15
      años, sin dar nada técnico por sabido. Menos datos si hace falta, pero que se entienda.
@@ -520,7 +529,7 @@ clips_bot/ilustrar.py    regla fija 1 (§1): una foto por frase sin repetir, mí
 clips_bot/reglas.py      regla fija 2 (§1): REGLAS_CLARIDAD, dentro de todos los prompts de guion
 clips_bot/envivo.py      modo en vivo (§3b): quién está al aire, momentos por creadores distintos,
                          alertas en la DB (no repetir, tope, vencer) y el resumen de tiempos
-tests/                   475 tests sin red ni video (test_reglas_fijas.py: las 3 reglas de §1)
+tests/                   487 tests sin red ni video (test_reglas_fijas.py: las 3 reglas de §1)
 ```
 
 Comandos:
@@ -709,6 +718,16 @@ Problemas abiertos:
 
 ## 9. CHANGELOG
 
+- v0.31.0 (2026-09-29) — **Fotos de época** (regla fija, §1): en la efeméride del 29/09 (choque de
+  dos Avro Anson, 1940) apareció un avión de 2008. Medido con las 10 fotos que usó ese video:
+  9 eran de 1971 a 2017 según `DateTimeOriginal` de Commons (Avro Anson de exhibición, un
+  Sukhoi de 2010). Ahora: `Foto.anio` sale de esa fecha (`anio_de`); `mostrar` lleva época y
+  lugar (validado en las frases del pasado); frases con `presente`; las fotos de más de 10 años
+  después del hecho no son candidatas de las frases del pasado; Gemini ve los años y confirma
+  `de_epoca`; la reserva pone primero las fotos del artículo (repetidas antes que modernas); la
+  hoja y el texto de aprobación muestran el año de cada foto. Decidido por Claude: la época le
+  gana a la cantidad (el mínimo de 6 distintas baja a las que haya de época, piso 3, con aviso);
+  `mostrar` pasa de 2-5 a 3-7 palabras (el año y el lugar no entraban). 487 tests OK.
 - v0.30.1 (2026-09-28) — Pedido de Santi después de las pruebas de Fleming: (1) mínimo del guion
   de efemérides 85 → 70 palabras ("~30 s está bien para un Short"; con la regla de claridad,
   flash-lite quedaba en 68-82 y la efeméride entera fallaba), se le siguen pidiendo 80-100;
