@@ -281,8 +281,48 @@ def parsear(texto: str, cfg: Textos, canal: str, login: str,
     )
 
 
+def ejemplos_de_gusto(conn, ready: "Path", user_ids, n: int) -> dict[str, list[dict]]:
+    """Los últimos `n` clips que Santi votó 👍 y `n` que votó 👎 (pedido 2026-09-29), con su título
+    y lo primero que se dice, tapado (pantalla.tapar_datos). Van como ejemplo en la llamada del
+    puntaje. {"bien": [...], "mal": [...]}, cada uno {"titulo", "dice"}."""
+    import json as _json
+
+    ids = [str(u) for u in user_ids]
+    out: dict[str, list[dict]] = {"bien": [], "mal": []}
+    if not ids or n <= 0:
+        return out
+    filas = conn.execute(
+        f"SELECT clip_id, voto FROM votos WHERE user_id IN ({','.join('?' * len(ids))}) ORDER BY ts DESC",
+        ids).fetchall()
+    for clip_id, voto in filas:
+        lado = "bien" if voto > 0 else "mal"
+        if len(out[lado]) >= n:
+            continue
+        p = ready / f"{clip_id}.json"
+        if not p.exists():
+            continue
+        meta = _json.loads(p.read_text(encoding="utf-8"))
+        titulo = ((meta.get("textos") or {}).get("titulo")) or meta.get("titulo_twitch") or ""
+        dice = tapar_datos(" ".join((meta.get("transcripcion") or "").split()[:30]))
+        if titulo or dice:
+            out[lado].append({"titulo": titulo, "dice": dice})
+    return out
+
+
+def texto_gusto(gusto: dict[str, list[dict]] | None) -> str:
+    """El bloque del prompt con los ejemplos (vacío si no hay)."""
+    if not gusto or not (gusto.get("bien") or gusto.get("mal")):
+        return ""
+    lineas = ["", "CÓMO JUZGA SANTI, el dueño del canal (usalo para el `puntaje`, no para copiar títulos):"]
+    for lado, etiqueta in (("bien", "Le GUSTARON"), ("mal", "NO le gustaron")):
+        if gusto.get(lado):
+            lineas.append(f"{etiqueta}:")
+            lineas += [f"- «{e['titulo']}» — dice: {e['dice'] or '(sin habla)'}" for e in gusto[lado]]
+    return "\n".join(lineas) + "\n"
+
+
 def armar_prompt(canal: str, categoria: str, titulo_twitch: str, duracion: float, transcripcion: str,
-                 cfg: Textos, fecha: str | None = None) -> str:
+                 cfg: Textos, fecha: str | None = None, gusto: dict | None = None) -> str:
     # Lo original del clip va TAPADO (pantalla.tapar_datos): si el título que le puso la comunidad
     # o lo que se dice trae un teléfono, un mail o una dirección, Gemini no lo ve y no lo copia.
     trans = tapar_datos(transcripcion.strip()) or "(sin habla)"
@@ -297,17 +337,18 @@ Fecha del clip: {fecha or "desconocida"}
 Transcripción:
 {trans}
 
+{texto_gusto(gusto)}
 Generá: titulo (máximo {cfg.max_titulo} caracteres), descripcion, hashtags (entre {cfg.min_hashtags} y
 {cfg.max_hashtags}, incluyendo #Shorts), gancho y depende_de_fecha."""
 
 
 def generar(cliente: GeminiClient, cfg: Textos, *, canal: str, login: str, categoria: str,
             titulo_twitch: str, duracion: float, transcripcion: str, fecha: str | None = None,
-            imagenes: list[bytes] | None = None) -> TextosClip:
+            imagenes: list[bytes] | None = None, gusto: dict | None = None) -> TextosClip:
     """`imagenes`: frames del clip, en la misma llamada. Sin ellas el puntaje castiga al humor
     visual: medido sobre 30 clips, los que solo se entienden con la imagen puntuaban 4,0 de mediana
     contra 5,0 el resto, y tenían 1,60 palabras/s contra 2,45."""
-    prompt = armar_prompt(canal, categoria, titulo_twitch, duracion, transcripcion, cfg, fecha)
+    prompt = armar_prompt(canal, categoria, titulo_twitch, duracion, transcripcion, cfg, fecha, gusto)
     # Contra esto se chequean los nombres del título. El nombre del canal entra a propósito: el
     # streamer puede ir en el título aunque no se nombre a sí mismo hablando.
     contexto = " ".join([transcripcion, categoria, titulo_twitch, canal, login])

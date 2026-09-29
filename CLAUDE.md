@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-09-29 | **Versión:** v0.38.0 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 + escucha de Telegram 24/7)
+**Snapshot:** 2026-09-29 | **Versión:** v0.39.0 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 + escucha de Telegram 24/7)
 
 > **SI ESTÁS EMPEZANDO UNA SESIÓN NUEVA, LEÉ §10.** Ahí está qué está hecho, qué quedó a medias,
 > qué falta, y las trampas que ya nos mordieron.
@@ -562,7 +562,7 @@ clips_bot/chat.py        picos de chat de Twitch (GQL interno, una página por p
 clips_bot/metricas.py    §4b: métricas de los Shorts del canal y pesos por streamer y tipo
 clips_bot/envivo.py      modo en vivo (§3b): quién está al aire, momentos por creadores distintos,
                          alertas en la DB (no repetir, tope, vencer) y el resumen de tiempos
-tests/                   532 tests sin red ni video (conftest.py: nada sale a YouTube) (test_reglas_fijas.py: las 3 reglas de §1)
+tests/                   535 tests sin red ni video (conftest.py: nada sale a YouTube) (test_reglas_fijas.py: las 3 reglas de §1)
 ```
 
 Comandos:
@@ -751,6 +751,10 @@ Problemas abiertos:
 
 ## 9. CHANGELOG
 
+- v0.39.0 (2026-09-29) — **Tu gusto en el puntaje:** en la llamada de textos (la del `puntaje`),
+  los últimos `textos.ejemplos_gusto` clips que Santi votó 👍 y 👎, con su título y lo primero que
+  se dice (tapado), como ejemplo de cómo juzga (`textos.ejemplos_de_gusto`, `texto_gusto`). Hoy hay
+  4 👍 y 2 👎. **Subido con 0 (sin ejemplos)** hasta que Santi vea la medición. 535 tests OK.
 - v0.38.0 (2026-09-29) — **Picos de chat** (`chat.py`, solo Twitch con VOD): mensajes/s del chat
   en el momento del clip ÷ el ritmo normal de ese stream (mediana de 5 ventanas repartidas por el
   VOD, una vez por VOD), del GraphQL interno de Twitch sin login. Medido 2026-09-29: sin login el

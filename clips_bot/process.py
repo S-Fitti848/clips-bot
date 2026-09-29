@@ -334,8 +334,19 @@ def generar_textos(gemini: GeminiClient, cfg: Settings, meta: dict,
         gemini, cfg.textos, canal=meta["canal"] or meta["streamer"], login=meta["streamer"],
         categoria=meta["categoria"], titulo_twitch=meta["titulo_twitch"], duracion=meta["duracion_s"],
         transcripcion=meta["transcripcion"], fecha=(meta.get("creado") or "")[:10] or None,
-        imagenes=imagenes,
+        imagenes=imagenes, gusto=_gusto(cfg),
     )
+
+
+def _gusto(cfg: Settings) -> dict | None:
+    """Los ejemplos de lo que Santi votó (textos.ejemplos_gusto por lado; 0 = sin ejemplos)."""
+    if not cfg.textos.ejemplos_gusto:
+        return None
+    conn = db.connect(DB_PATH)
+    try:
+        return tx.ejemplos_de_gusto(conn, READY_DIR, cfg.seleccion.votos_de, cfg.textos.ejemplos_gusto)
+    finally:
+        conn.close()
 
 
 def _registrar(res: Resultado, estado: str, motivo: str | None) -> None:

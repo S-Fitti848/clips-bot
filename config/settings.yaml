@@ -328,6 +328,9 @@ textos:
   max_descripcion: 800
   reintentos: 2              # si la respuesta no valida, se reintenta con los errores (cuida la cuota)
   puntaje_min: 6             # 1-10 de Gemini; abajo es RELLENO. Era 5 hasta el 2026-09-29
+  # Tu gusto como ejemplo en la llamada del puntaje: los últimos N 👍 y N 👎 (título + lo que se dice).
+  # 0 = sin ejemplos, hasta que Santi vea la medición (2026-09-29).
+  ejemplos_gusto: 0
   # Gemini caído (503 "high demand", timeouts): cada llamada reintenta 3 veces (30, 60 y 120 s) y
   # después prueba el otro modelo. Si igual falla, la efeméride y los clips que faltan de la entrega
   # diaria se reintentan solos a los N minutos, hasta esta hora; recién ahí se avisa.

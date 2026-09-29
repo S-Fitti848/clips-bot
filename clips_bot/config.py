@@ -237,6 +237,8 @@ class Textos:
     # Calidad: puntaje de 1 a 10 (se entiende solo + tiene remate). Abajo del corte el clip no se
     # tira: queda como RELLENO, y solo se usa si la corrida no llega a 3 sin él.
     puntaje_min: int = 6     # 5 → 6 el 2026-09-29 (pedido de Santi: llegaban clips malos)
+    # Ejemplos del gusto de Santi en la llamada del puntaje: los últimos N 👍 y N 👎. 0 = sin.
+    ejemplos_gusto: int = 0
     frames_para_puntaje: int = 4   # 0 = puntuar solo con la transcripción
 
 
