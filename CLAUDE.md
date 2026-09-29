@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-09-29 | **Versión:** v0.34.0 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 + escucha de Telegram 24/7)
+**Snapshot:** 2026-09-29 | **Versión:** v0.35.0 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 + escucha de Telegram 24/7)
 
 > **SI ESTÁS EMPEZANDO UNA SESIÓN NUEVA, LEÉ §10.** Ahí está qué está hecho, qué quedó a medias,
 > qué falta, y las trampas que ya nos mordieron.
@@ -65,7 +65,9 @@ servicio systemd separado: `clips-bot`).
      confirma `de_epoca` (si dice que no, esa foto sale); (d) sin foto de época, se repite una del
      artículo del hecho antes que usar una moderna; (e) en la hoja, el año al lado de cada foto.
      La época le gana a la cantidad: si no hay 6 fotos de época, el mínimo baja a las que haya
-     (piso `ilustrar.MIN_FOTOS_ABSOLUTO` = 3, con aviso en la aprobación); menos de 3, otro hecho.
+     (4 o 5, con aviso). **Con menos de 4 (`ilustrar.MIN_FOTOS_ABSOLUTO`) el hecho no se usa y se
+     pasa al siguiente del día** (pedido de Santi, 2026-09-29: antes que repetir fotos); solo si
+     ninguno llega se usa el que más fotos tenga, con aviso (`sin_alternativa`, piso 2).
   2. **Guiones que se entienden** (`clips_bot/reglas.py`, `REGLAS_CLARIDAD`, dentro del prompt
      de efemérides, /narrar y /serie): el cómo y el porqué, paso a paso, para un chico de 15
      años, sin dar nada técnico por sabido. Menos datos si hace falta, pero que se entienda.
@@ -367,8 +369,9 @@ ancho estándar (1280, o 960 si el original no pasa de 1280; si no hay ninguna, 
    `filetype:bitmap` + la categoría que mejor coincide), todas bajadas (miniaturas, caché) y, en
    la llamada 2, Gemini ve el pool entero (tope 40) y ordena hasta 3 por frase, y descarta lo que
    no sirve. `asignar` elige sin repetir, `completar_distintas` llega a 6, `tramos` parte lo que
-   pasa de 6 s. Si no se llega a 6 fotos distintas → el siguiente del ranking. Tope de 2 eventos
-   intentados por día: peor caso 1 + 2 × 2 = 5 llamadas a Gemini (más la voz).
+   pasa de 6 s. Con menos de 4 fotos de época → el siguiente del ranking (si ninguno llega, el
+   de más fotos con aviso). Tope de 3 hechos intentados por día (`MAX_GUIONES`): caso normal
+   1 + 3 × 2 = 7 llamadas a Gemini (más la voz).
 5. Aprobación por Telegram: hoja con UNA FILA POR FRASE (`hoja_de_guion`: su foto, o sus dos si se
    parte, numerada, y la frase al lado; PIL, por las tildes), el guion con "[3→7] frase", la idea
    que tiene que quedar clara y los créditos. ✅ Aprobar · ✏️ Cambiar guion (reescribe y vuelve a
@@ -546,7 +549,7 @@ clips_bot/ilustrar.py    regla fija 1 (§1): una foto por frase sin repetir, mí
 clips_bot/reglas.py      regla fija 2 (§1): REGLAS_CLARIDAD, dentro de todos los prompts de guion
 clips_bot/envivo.py      modo en vivo (§3b): quién está al aire, momentos por creadores distintos,
                          alertas en la DB (no repetir, tope, vencer) y el resumen de tiempos
-tests/                   513 tests sin red ni video (test_reglas_fijas.py: las 3 reglas de §1)
+tests/                   515 tests sin red ni video (test_reglas_fijas.py: las 3 reglas de §1)
 ```
 
 Comandos:
@@ -735,6 +738,12 @@ Problemas abiertos:
 
 ## 9. CHANGELOG
 
+- v0.35.0 (2026-09-29) — Efemérides: si un hecho no llega a 4 fotos de época, `fotos_para_guion`
+  levanta `PocasFotos` (con el pool y el guion ya armados) y `proponer` pasa al hecho siguiente;
+  solo si ninguno llega usa el que más fotos tenga, con el aviso "Ningún hecho de hoy llegó a 4
+  fotos de la época" (`Guion.sin_alternativa`). Con ✏️ se queda con el mismo hecho aunque tenga
+  pocas. `MAX_GUIONES` 2 → 3 (decidido por Claude: con la regla nueva se pasa más seguido al
+  siguiente; son 2 llamadas más de Gemini en el peor caso). 515 tests OK.
 - v0.34.0 (2026-09-29) — **Datos personales en textos** (pedido de Santi, a partir de un clip real de
   Davo titulado "si davo es +54 11 3396-6858"): `pantalla.datos_en_texto` para texto escrito
   (mails, teléfonos con prefijo internacional o con contexto, tarjetas con contexto, direcciones

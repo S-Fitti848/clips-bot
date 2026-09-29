@@ -452,15 +452,18 @@ def test_sin_fotos_de_epoca_se_repite_una_del_articulo_antes_que_una_moderna(tmp
     art, _ = ef.fotos_del_evento(wiki, e)
     wiki_art = [f for f in art]
     wiki_art.append(ef.a_foto(_info_anio("File:art2.jpg", 1940), "Brocklesby"))
-    pool, g = ef.fotos_para_guion(wiki, GeminiQueVe(), e, _guion_epoca(), wiki_art, tmp_path)
+    # 3 fotos de época: no llega a 4, así que el hecho queda de respaldo (PocasFotos) con lo armado
+    with pytest.raises(ef.PocasFotos) as pocas:
+        ef.fotos_para_guion(wiki, GeminiQueVe(), e, _guion_epoca(), wiki_art, tmp_path)
+    pool, g = pocas.value.pool, pocas.value.guion
     usadas = {f for _, f, _ in ef.plan_estimado(g, len(pool))}
     assert all(pool[f].anio == 1940 for f in usadas)                    # ninguna de 2010
-    assert g.minimo_fotos == 3                                          # la época le gana a la cantidad
+    assert g.minimo_fotos == 3 and pocas.value.disponibles == 3
     texto = ef.texto_aprobacion(e, g, [], ef.date(2026, 9, 29), ef.plan_estimado(g, len(pool)), pool)
     assert "Solo hay 3 fotos de la época" in texto and "(1940)" in texto
 
 
-def test_con_menos_de_tres_fotos_de_epoca_pasa_al_hecho_siguiente(tmp_path):
+def test_con_una_sola_foto_de_epoca_ni_siquiera_sirve_de_respaldo(tmp_path):
     class Nada(WikiEpoca):
         def archivos(self, lang, titulo):
             return ["File:art0.jpg"]
@@ -478,3 +481,44 @@ def test_con_menos_de_tres_fotos_de_epoca_pasa_al_hecho_siguiente(tmp_path):
 def test_la_eleccion_pide_confirmar_la_epoca():
     assert "de_epoca" in ef.SCHEMA_FOTOS["properties"]["frases"]["items"]["required"]
     assert "ÉPOCA Y LUGAR" in ef.SISTEMA_FOTOS and ef.MARGEN_EPOCA == 10
+
+
+# ---- menos de 4 fotos de época: el hecho siguiente (pedido 2026-09-29) --------------------------
+
+def _proponer_con(monkeypatch, fotos_por_anio: dict[int, int]):
+    """proponer con todo lo externo reemplazado: cada hecho tiene N fotos de época."""
+    eventos = [ef.Evento("es", anio, f"hecho de {anio}", [f"A{anio}"]) for anio in fotos_por_anio]
+
+    class W:
+        def eventos(self, lang, dia):
+            return eventos if lang == "es" else []
+
+    monkeypatch.setattr(ef, "elegir", lambda cliente, cands: [(i, c.paginas[0]) for i, c in enumerate(cands)])
+    monkeypatch.setattr(ef, "fotos_del_evento", lambda wiki, e: ([], {}))
+    monkeypatch.setattr(ef, "texto_fuente", lambda wiki, e: "texto")
+    monkeypatch.setattr(ef, "escribir_guion", lambda cliente, e, fuente, correccion="": _guion_epoca(4))
+
+    def fotos(wiki, cliente, e, g, art, carpeta, avisar, **k):
+        n = fotos_por_anio[e.anio]
+        g.minimo_fotos, g.fotos = n, [0, 1, 0, 1]
+        pool = [ef.a_foto(_info_anio(f"File:{e.anio}_{i}.jpg", e.anio), "x") for i in range(n)]
+        if n < ilustrar.MIN_FOTOS_ABSOLUTO:
+            raise ef.PocasFotos(pool, g, n)
+        return pool, g
+
+    monkeypatch.setattr(ef, "fotos_para_guion", fotos)
+    return ef.proponer(W(), None, ef.date(2026, 9, 29), Path("."), avisar=lambda *_: None)
+
+
+def test_si_un_hecho_no_llega_a_4_fotos_de_epoca_pasa_al_siguiente(monkeypatch):
+    p = _proponer_con(monkeypatch, {1940: 3, 1954: 5, 1964: 6})
+    assert p.evento["anio"] == 1954 and not p.guion["sin_alternativa"]
+
+
+def test_si_ninguno_llega_usa_el_de_mas_fotos_con_aviso(monkeypatch):
+    p = _proponer_con(monkeypatch, {1940: 2, 1954: 3, 1964: 2})
+    assert p.evento["anio"] == 1954 and p.guion["sin_alternativa"]
+    g = ef.Guion.de_dict(p.guion)
+    texto = ef.texto_aprobacion(ef.Evento(**p.evento), g, [], ef.date(2026, 9, 29))
+    assert "Ningún hecho de hoy llegó a 4 fotos de la época" in texto and "(3)" in texto
+    assert ilustrar.MIN_FOTOS_ABSOLUTO == 4 and ef.MAX_GUIONES == 3

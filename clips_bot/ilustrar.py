@@ -17,8 +17,12 @@ import math
 
 MIN_FOTOS_DISTINTAS = 6
 # La época le gana a la cantidad (2026-09-29): si no hay 6 fotos de la época del hecho, el mínimo
-# baja a las que haya (repitiendo las del artículo), pero nunca a menos de esto.
-MIN_FOTOS_ABSOLUTO = 3
+# baja a las que haya (repitiendo las del artículo), pero con menos de MIN_FOTOS_ABSOLUTO el hecho
+# NO se usa y se pasa al siguiente del día (pedido de Santi: "que pase al siguiente hecho en vez de
+# repetir fotos"). Solo si ninguno llega se usa el que más tenga, con aviso, y nunca con menos de
+# MIN_FOTOS_RESPALDO (con una sola foto no se puede cumplir lo de 6 s seguidos).
+MIN_FOTOS_ABSOLUTO = 4
+MIN_FOTOS_RESPALDO = 2
 MAX_TRAMO_S = 6.0
 RANKING_MAX = 3          # fotos que Gemini ordena por frase
 

@@ -364,8 +364,9 @@ SCHEMA_ELEGIR = {
 
 
 ELEGIDOS = 8        # el ranking que devuelve Gemini: los 3 primeros son "los 3 más interesantes"
-MAX_GUIONES = 2     # eventos que llegan a guion por día. Cada uno son hasta 3 llamadas (con los
-                    # reintentos de la validación): peor caso 1 + 2 × 3 = 7 de las ~20 diarias
+MAX_GUIONES = 3     # hechos que se intentan por día (2 → 3 el 2026-09-29: con la regla de 4 fotos
+                    # de época se pasa más seguido al siguiente). Cada uno son 2 llamadas (guion +
+                    # fotos) más los reintentos del guion: caso normal 1 + 3 × 2 = 7
 
 
 def elegir(cliente, eventos: list[Evento], cuantos: int = ELEGIDOS) -> list[tuple[int, str]]:
@@ -662,6 +663,7 @@ class Guion:
     del_hecho: list[int] = field(default_factory=list)  # fotos del artículo del hecho (el respaldo)
     modernas: list[int] = field(default_factory=list)   # fotos de más de MARGEN_EPOCA años después
     minimo_fotos: int = ilustrar.MIN_FOTOS_DISTINTAS     # baja si no hay tantas fotos de época
+    sin_alternativa: bool = False     # ningún hecho del día llegó a 4 fotos de época: es el que más tenía
 
     @property
     def texto(self) -> str:
@@ -913,19 +915,31 @@ def fotos_para_guion(wiki: Wiki, cliente, e: Evento, g: Guion, fotos_articulo: l
     g.ranking, g.descartadas = rankings, sorted(descartadas)
     g.del_hecho, g.modernas, g.presente = del_hecho, sorted(modernas), presente
     reserva = de_reserva(g, len(pool))
-    # La época le gana a la cantidad (decidido 2026-09-29): si no hay 6 fotos de época, el mínimo
-    # baja a las que haya, con un piso de ilustrar.MIN_FOTOS_ABSOLUTO; menos que eso, otro hecho.
+    # La época le gana a la cantidad: si no hay 6 fotos de época, el mínimo baja a las que haya.
+    # Con menos de ilustrar.MIN_FOTOS_ABSOLUTO (4), PocasFotos: `proponer` pasa al hecho siguiente
+    # y se guarda este por si ninguno llega (con MIN_FOTOS_RESPALDO como piso).
     disponibles = len(set(reserva) | {x for r in rankings for x in r})
     g.minimo_fotos = min(ilustrar.MIN_FOTOS_DISTINTAS, disponibles)
-    if g.minimo_fotos < ilustrar.MIN_FOTOS_ABSOLUTO:
-        raise NarrarError(f"solo {disponibles} fotos de época que sirvan (mínimo "
-                          f"{ilustrar.MIN_FOTOS_ABSOLUTO})")
+    if g.minimo_fotos < ilustrar.MIN_FOTOS_RESPALDO:
+        raise NarrarError(f"solo {disponibles} fotos de época que sirvan")
     g.fotos = ilustrar.completar_distintas(ilustrar.asignar(rankings, reserva), rankings, reserva,
                                            g.minimo_fotos)
     errores = ilustrar.errores_plan(plan_estimado(g, len(pool)), g.minimo_fotos)
     if errores:
         raise NarrarError("las fotos no alcanzan: " + "; ".join(errores))
+    if g.minimo_fotos < ilustrar.MIN_FOTOS_ABSOLUTO:
+        raise PocasFotos(pool, g, disponibles)
     return pool, g
+
+
+class PocasFotos(NarrarError):
+    """El hecho tiene menos de ilustrar.MIN_FOTOS_ABSOLUTO fotos de época: se prueba el siguiente.
+    Trae lo ya armado (pool y guion con sus fotos) por si ninguno del día llega."""
+
+    def __init__(self, pool: list[Foto], g: Guion, disponibles: int):
+        super().__init__(f"solo {disponibles} fotos de época (mínimo {ilustrar.MIN_FOTOS_ABSOLUTO}): "
+                         "paso al hecho siguiente")
+        self.pool, self.guion, self.disponibles = pool, g, disponibles
 
 
 # Gemini TTS lee a ~2,3 palabras/s (medido el 2026-09-28): con eso se estima cuánto dura cada frase
@@ -1036,7 +1050,11 @@ def texto_aprobacion(e: Evento, g: Guion, fotos: list[Foto], fecha: date,
               f"\n<b>Título:</b> {html.escape(g.titulo)}"]
     if g.idea_clave:
         lineas.append(f"<b>Tiene que quedar claro:</b> {html.escape(g.idea_clave)}")
-    if g.minimo_fotos < ilustrar.MIN_FOTOS_DISTINTAS:
+    if g.sin_alternativa:
+        lineas.append(f"⚠️ Ningún hecho de hoy llegó a {ilustrar.MIN_FOTOS_ABSOLUTO} fotos de la época: "
+                      f"este es el que más tiene ({g.minimo_fotos}), así que se repiten. Si no te "
+                      "convence, probá ✏️ o pedí otro con /efemeride.")
+    elif g.minimo_fotos < ilustrar.MIN_FOTOS_DISTINTAS:
         lineas.append(f"⚠️ Solo hay {g.minimo_fotos} fotos de la época: algunas se repiten "
                       "(antes que usar fotos modernas).")
     lineas.append("\n<b>Guion</b> (foto → frase):")
@@ -1176,6 +1194,7 @@ def proponer(wiki: Wiki, cliente, dia: date, carpeta: Path, avisar=log.info,
     descartes: dict = {}
     guiones = 0
     fallas: list[str] = []
+    respaldo = None   # (evento, fuente, PocasFotos, fotos): el de más fotos de los que no llegaron a 4
     for i, articulo in elegidos[saltear:]:
         if guiones >= MAX_GUIONES:
             break
@@ -1191,6 +1210,13 @@ def proponer(wiki: Wiki, cliente, dia: date, carpeta: Path, avisar=log.info,
         try:
             g = escribir_guion(cliente, e, fuente, correccion)
             pool, g = fotos_para_guion(wiki, cliente, e, g, fotos, carpeta, avisar)
+        except PocasFotos as pocas:
+            # Menos de 4 fotos de época: al siguiente. Se guarda el que más tenga, por si ninguno llega.
+            avisar(f"  {pocas}")
+            fallas.append(f"{e.anio}: {pocas}")
+            if respaldo is None or pocas.disponibles > respaldo[3]:
+                respaldo = (e, fuente, pocas, pocas.disponibles)
+            continue
         except NarrarError as err:
             avisar(f"  no salió: {err}")
             fallas.append(f"{e.anio}: {err}")
@@ -1199,6 +1225,14 @@ def proponer(wiki: Wiki, cliente, dia: date, carpeta: Path, avisar=log.info,
             avisar(f"    descartada {k + 1}: {pool[k].epigrafe[:90]}")
         return Propuesta(fecha=dia.isoformat(), evento=e.a_dict(), fotos=[f.a_dict() for f in pool],
                          reserva=[], guion=g.a_dict(), fuente=fuente[:20000], descartes=descartes)
+    if respaldo:
+        e, fuente, pocas, n = respaldo
+        avisar(f"Ningún hecho llegó a {ilustrar.MIN_FOTOS_ABSOLUTO} fotos de época: uso {e.anio} "
+               f"({n} fotos), con aviso")
+        pocas.guion.sin_alternativa = True
+        return Propuesta(fecha=dia.isoformat(), evento=e.a_dict(),
+                         fotos=[f.a_dict() for f in pocas.pool], reserva=[],
+                         guion=pocas.guion.a_dict(), fuente=fuente[:20000], descartes=descartes)
     # Con la causa de cada uno: el 28/09 decía "no llegó a 6 fotos" cuando lo que falló fue el guion.
     raise NarrarError(f"Ninguno de los {len(elegidos)} hechos elegidos salió ({guiones} intentados). "
                       + " | ".join(fallas)[:600])
@@ -1223,9 +1257,13 @@ def rehacer_guion(p: Propuesta, wiki: Wiki, cliente, carpeta: Path, correccion: 
     anterior = Guion.de_dict(p.guion)
     g = escribir_guion(cliente, e, p.fuente, correccion=correccion, anterior=anterior.texto)
     fotos, _ = fotos_del_evento(wiki, e)
-    pool, g = fotos_para_guion(wiki, cliente, e, g, fotos, carpeta, avisar,
-                               pool=[Foto.de_dict(f) for f in p.fotos],
-                               descartadas=set(anterior.descartadas))
+    try:
+        pool, g = fotos_para_guion(wiki, cliente, e, g, fotos, carpeta, avisar,
+                                   pool=[Foto.de_dict(f) for f in p.fotos],
+                                   descartadas=set(anterior.descartadas))
+    except PocasFotos as pocas:   # es el hecho que ya se eligió: se sigue con lo que haya, con aviso
+        pool, g = pocas.pool, pocas.guion
+        g.sin_alternativa = anterior.sin_alternativa
     return Propuesta(fecha=p.fecha, evento=p.evento, fotos=[f.a_dict() for f in pool],
                      reserva=p.reserva, guion=g.a_dict(), fuente=p.fuente, descartes=p.descartes)
 
