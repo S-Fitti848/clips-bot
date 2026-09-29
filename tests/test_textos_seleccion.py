@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from clips_bot.candidates import es_costream
+from clips_bot.candidates import aviso_futbol, es_costream, palabras_futbol
 from clips_bot.config import Filtros, Seleccion, Textos
 from clips_bot.gemini import GeminiClient, GeminiError
 from clips_bot.seleccion import Opcion, seleccionar, validar_orden
@@ -187,18 +187,20 @@ FILTROS = Filtros(
     ],
 )
 def test_es_costream(titulos, categoria, esperado):
-    assert es_costream(titulos, categoria, FILTROS, con_deportes=True) is esperado
+    assert es_costream(titulos, categoria, FILTROS) is esperado
 
 
-def test_las_palabras_de_futbol_solo_aplican_a_los_streamers_de_deportes():
-    """Medido en los 52 canales del Dedsafío (2026-09-22): con las palabras de fútbol aplicadas a
-    todos, 6 de los 12 descartes eran falsos positivos ("Final de Geoware World", "boss final")."""
-    f = Filtros(palabras_costream=("LEC", "Worlds"), palabras_deportes=("final", "partido", "gol"))
-    juego = ["cinemática del boss final"]
-    assert es_costream(juego, "Minecraft", f, con_deportes=False) is False  # streamer normal: pasa
-    assert es_costream(juego, "Minecraft", f, con_deportes=True) is True  # Davoo y cía: se descarta
-    # las de esports siguen valiendo para todos
-    assert es_costream(["REACCIONANDO A LA LEC"], "Minecraft", f, con_deportes=False) is True
+def test_las_palabras_de_futbol_ya_no_descartan_solo_avisan():
+    """2026-09-29 (Santi: "hablar de fútbol no es problema; mostrar el partido sí"): las palabras de
+    fútbol no descartan a nadie, ni a los streamers con detectar_marcador; lo que descarta es ver
+    el partido en pantalla. Las de esports (LEC, Worlds) siguen descartando para todos."""
+    f = Filtros(palabras_costream=("LEC", "Worlds"), palabras_deportes=("final", "partido", "gol", "Boca"))
+    charla = ["Hablamos del PARTIDO de Boca", "stream"]
+    assert es_costream(charla, "Just Chatting", f) is False
+    assert palabras_futbol(charla, f) == ["partido", "Boca"]
+    assert "habla de fútbol (partido, Boca)" in aviso_futbol(charla, f)
+    assert aviso_futbol(["un clip cualquiera"], f) == ""
+    assert es_costream(["REACCIONANDO A LA LEC"], "Minecraft", f) is True
 
 
 # ---- selección (paso 8) --------------------------------------------------------------

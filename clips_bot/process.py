@@ -20,7 +20,7 @@ from . import subtitles as sub
 from . import textos as tx
 from . import deportes
 from . import pantalla as pant
-from .candidates import MOTIVO_COSTREAM, es_costream
+from .candidates import MOTIVO_COSTREAM, aviso_futbol, es_costream
 from .config import DB_PATH, OUTPUT_DIR, Settings, Streamer
 from .download import descargar
 from .gemini import GeminiClient, GeminiError
@@ -50,6 +50,7 @@ class Resultado:
     plataforma: str = "twitch"
     clips_mismo_momento: int = 1
     mediana_vistas: int = 0  # del streamer en la ventana: para el "por qué" del mensaje
+    aviso: str = ""  # algo para mirar sin descartar (ej. habla de fútbol): sale en el mensaje
     marcador_deportivo: dict | None = None
     pantalla: dict | None = None  # OCR: datos personales / pantalla de pago
     duracion_s: float = 0.0
@@ -100,7 +101,8 @@ def fuente_por_antiguedad(creado: datetime | None, cfg: Settings, ahora: datetim
 def procesar(url: str, cfg: Settings, streamers: list[Streamer], forzar: bool = False,
              gemini: GeminiClient | None = None, avisar=print, *, fuente: str | None = None,
              clips_mismo_momento: int = 1, grupo: str | None = None,
-             descarga=None, permitir_fecha: bool = False, mediana_vistas: int = 0) -> Resultado:
+             descarga=None, permitir_fecha: bool = False, mediana_vistas: int = 0,
+             aviso: str = "") -> Resultado:
     """fuente/clips_mismo_momento vienen de `candidatos` en la corrida diaria; por URL manual la
     fuente se deduce de la antigüedad y el momento queda en 1 (sin VOD no se puede agrupar).
 
@@ -113,7 +115,8 @@ def procesar(url: str, cfg: Settings, streamers: list[Streamer], forzar: bool = 
     solo tenía sentido hoy; un clip que se sube en el momento es justo lo contrario. No es un filtro
     de seguridad ni de tono, así que ahí se anota y no se descarta.
     """
-    res = Resultado(url=url, clips_mismo_momento=clips_mismo_momento, mediana_vistas=mediana_vistas)
+    res = Resultado(url=url, clips_mismo_momento=clips_mismo_momento, mediana_vistas=mediana_vistas,
+                    aviso=aviso)
     crono = Cronometro(res, avisar)
     fa = cfg.filtro_audio
     aporte = descarga is not None
@@ -148,15 +151,16 @@ def procesar(url: str, cfg: Settings, streamers: list[Streamer], forzar: bool = 
 
     # §3 paso 2 (versión URL manual): co-stream / evento por título o categoría.
     # No corre para un aporte: sin streamer, "co-stream" no quiere decir nada.
-    if not aporte and es_costream([d.titulo], d.categoria, cfg.filtros,
-                   con_deportes=bool(streamer and streamer.detectar_marcador)) and descartar(
+    if not aporte and es_costream([d.titulo], d.categoria, cfg.filtros) and descartar(
         f"co-stream o evento (título {d.titulo!r}, categoría {d.categoria!r})", MOTIVO_COSTREAM
     ):
         return _cerrar(res)
 
     # Marcador de transmisión deportiva (solo para los streamers marcados). Va antes de Whisper:
-    # es lo más barato de descartar.
+    # es lo más barato de descartar. Hablar de fútbol NO descarta (2026-09-29): es solo un aviso
+    # (por URL manual o en vivo, sale del título del clip); lo que descarta es VER el partido.
     if streamer and streamer.detectar_marcador:
+        res.aviso = res.aviso or aviso_futbol([d.titulo], cfg.filtros)
         m = cfg.marcador
         with crono.etapa("transmisión deportiva"):
             deporte = deportes.detectar_deporte(d.path, m.frames_muestra, m.quietud_min, m.bordes_min,

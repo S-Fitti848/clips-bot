@@ -496,3 +496,34 @@ def test_buscar_arma_bien_el_cliente_de_cada_plataforma(tmp_path, monkeypatch):
         assert llamadas[1][1] == "str"           # y el de Twitch pasa por _twitch()
     finally:
         conn.close()
+
+
+# ---- 2026-09-29: hablar de fútbol no descarta, ver el partido sí ------------------------------
+
+def test_davo_hablando_de_futbol_pasa_con_aviso_y_el_412_sigue_afuera():
+    davo = [Streamer("davoo", plataforma="kick", fuentes=("reciente",), grupo="argentinos",
+                     experimento=True, detectar_marcador=True, palabras_programa=("412",))]
+    f = Filtros(palabras_deportes=("gol", "Boca", "partido"))
+    s = FakeSession([
+        pagina([clip_kick("charla", views=800, horas=48, titulo="Hablamos del partido de Boca",
+                          livestream="l1"),
+                clip_kick("prog", views=700, horas=48, offset=9000, titulo="gol", livestream="l2"),
+                clip_kick("otro", views=600, horas=48, offset=20000, titulo="risas", livestream="l1")]),
+        videos({"l1": "charlando", "l2": "412 con DAVOO. PROGRAMA"}),
+    ])
+    res = buscar_kick(KickClient(session=s, sleep=lambda _: None), davo, f, vistos=set(), ahora=AHORA)
+    por_id = {c.id: c for c in res.candidatos}
+    assert set(por_id) == {"charla", "otro"}                 # el de fútbol pasa; el 412 no
+    assert res.descartes["programa_terceros"] == 1 and res.descartes["costream"] == 0
+    assert "habla de fútbol (Boca, partido)" in por_id["charla"].aviso   # en el orden de la config
+    assert por_id["otro"].aviso == ""
+
+
+def test_un_streamer_sin_detectar_marcador_no_lleva_aviso_de_futbol():
+    goncho = [Streamer("goncho", plataforma="kick", fuentes=("reciente",), grupo="argentinos",
+                       experimento=True)]
+    s = FakeSession([pagina([clip_kick("c", views=800, horas=48, titulo="el partido", livestream="l1")]),
+                     videos({"l1": "x"})])
+    res = buscar_kick(KickClient(session=s, sleep=lambda _: None), goncho,
+                      Filtros(palabras_deportes=("partido",)), vistos=set(), ahora=AHORA)
+    assert res.candidatos[0].aviso == ""

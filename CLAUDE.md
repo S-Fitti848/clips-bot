@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-09-29 | **Versión:** v0.32.0 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 + escucha de Telegram 24/7)
+**Snapshot:** 2026-09-29 | **Versión:** v0.33.0 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 + escucha de Telegram 24/7)
 
 > **SI ESTÁS EMPEZANDO UNA SESIÓN NUEVA, LEÉ §10.** Ahí está qué está hecho, qué quedó a medias,
 > qué falta, y las trampas que ya nos mordieron.
@@ -157,7 +157,11 @@ y por eso la unidad va con `Nice=10` y prioridad de CPU baja. NO paralelizar.
    informa idioma: esos no pasan por ese filtro), categoría no excluida.
    Co-streams y eventos de terceros fuera: palabra de `palabras_costream` en el título del clip o
    del stream (título del VOD), o categoría en `categorias_costream`. Se guardan en la DB con
-   motivo `costream`. Las palabras de fútbol (gol, Boca, River, partido, Mundial…) son por Davoo.
+   motivo `costream`. **Las palabras de fútbol (gol, Boca, River, partido, Mundial…) ya NO descartan
+   (2026-09-29, Santi: "hablar de fútbol no es problema; mostrar el partido sí"):** en los
+   streamers con `detectar_marcador` solo generan un aviso en el mensaje (`candidatos.aviso_futbol`,
+   "⚽ habla de fútbol (…): mirá que no se vea el partido"); lo que descarta es VER el partido
+   (paso 4). Las de esports (LEC, Worlds…) y las categorías Sports/Special Events siguen igual.
    **Programas de terceros** (`palabras_programa` por streamer, motivo `programa_terceros`): marca
    de un programa con formato propio en el TÍTULO DEL STREAM, no en el del clip. Si dispara, queda
    afuera TODO ese stream. En Kick el clip no trae el título del stream: sale de
@@ -535,7 +539,7 @@ clips_bot/ilustrar.py    regla fija 1 (§1): una foto por frase sin repetir, mí
 clips_bot/reglas.py      regla fija 2 (§1): REGLAS_CLARIDAD, dentro de todos los prompts de guion
 clips_bot/envivo.py      modo en vivo (§3b): quién está al aire, momentos por creadores distintos,
                          alertas en la DB (no repetir, tope, vencer) y el resumen de tiempos
-tests/                   493 tests sin red ni video (test_reglas_fijas.py: las 3 reglas de §1)
+tests/                   496 tests sin red ni video (test_reglas_fijas.py: las 3 reglas de §1)
 ```
 
 Comandos:
@@ -724,6 +728,17 @@ Problemas abiertos:
 
 ## 9. CHANGELOG
 
+- v0.33.0 (2026-09-29) — **Davo y el fútbol:** las palabras de fútbol salen de `es_costream`
+  (no descartan en ningún camino: diario, /buscar, URL manual, en vivo) y pasan a ser un aviso
+  en el mensaje de los streamers con `detectar_marcador` (viaja en `Clip.aviso` → json →
+  `enviar_clip`, en la misma línea del 📊). Descarta solo el partido real en pantalla (marcador de
+  TV o cancha, sin cambios). El "412" sigue afuera. Además, el umbral de vistas relativas se
+  calcula SIN los clips de programas de terceros ni co-streams (no son su contenido). **Davo, sus
+  51 clips de los últimos 7 días (Kick, medido 2026-09-29):** 23 del 412, 11 de más de 60 s, 11
+  hablan de fútbol. Antes pasaban 13; solo con el cambio del fútbol pasarían 15; con todo
+  (fútbol + 30 % de vistas sobre sus 28 clips propios: umbral 25, mediana 22) pasan 5. Los dos
+  que liberó el fútbol quedan abajo del 30 %. Con los del 412 adentro el umbral era 36 y pasaban
+  3. La detección de partido en pantalla no entra en esa cuenta (corre al procesar). 496 tests OK.
 - v0.32.0 (2026-09-29) — **Clips malos** (pedido de Santi): (a) vistas relativas: por streamer,
   solo el 30 % superior de SUS vistas (7 días en recientes; histórico en catálogo, paginado de a
   100 y guardado una semana: vegetta777 = 1095 clips, umbral 328, mediana 171, así que su

@@ -435,8 +435,9 @@ def enviar_clip(tg: TelegramClient, chat_id, conn, clip_id: str, meta: dict, num
     info = probe(video)  # dimensiones reales del archivo: sin esto Telegram lo muestra angosto
     thumb = miniatura(video, video.with_suffix(".thumb.jpg"))
     marca = f" · RELLENO (puntaje {meta.get('puntaje', 0)})" if meta.get("relleno") else ""
+    linea = " · ".join(x for x in (por_que(meta), meta.get("aviso") or "") if x)
     cuerpo = mensaje_textos(numero, meta["streamer"], clip_id, horario, meta["textos"],
-                            por_que=por_que(meta))
+                            por_que=linea)
     if meta.get("relleno"):
         cuerpo = (f"⚠️ <b>RELLENO (puntaje {meta.get('puntaje', 0)} de 10)</b> — no llegó al corte "
                   f"de calidad; entró porque faltaban clips. Mirá si vale la pena.\n\n" + cuerpo)
@@ -608,7 +609,7 @@ def _diario(args: argparse.Namespace, settings: Settings, atender: bool = True,
             try:
                 r = procesar(c.url, settings, streamers, gemini=gemini, fuente=fuente,
                              clips_mismo_momento=c.clips_mismo_momento, grupo=c.grupo,
-                             mediana_vistas=c.mediana_vistas)
+                             mediana_vistas=c.mediana_vistas, aviso=c.aviso)
             except (DescargaError, MediaError) as e:
                 print(f"ERROR: {e}", file=sys.stderr)
                 continue
@@ -670,7 +671,7 @@ def procesar_multipov_del_dia(settings: Settings, streamers: list, res: Resultad
         try:
             r = procesar(c.url, settings, streamers, gemini=gemini, fuente="reciente",
                          clips_mismo_momento=c.clips_mismo_momento, grupo="evento",
-                         mediana_vistas=c.mediana_vistas)
+                         mediana_vistas=c.mediana_vistas, aviso=c.aviso)
         except (DescargaError, MediaError) as e:
             print(f"ERROR: {e}", file=sys.stderr)
             return False
@@ -1018,7 +1019,7 @@ def _buscar(conn, tg: TelegramClient, chat_id: str, args: list[str], settings: S
                     r = procesar(c.url, settings, streamers, gemini=gemini, fuente="reciente",
                                  clips_mismo_momento=c.clips_mismo_momento,
                                  grupo=st.grupo_de("reciente"), avisar=lambda *_: None,
-                                 mediana_vistas=c.mediana_vistas)
+                                 mediana_vistas=c.mediana_vistas, aviso=c.aviso)
                 except (DescargaError, MediaError) as e:
                     fallados.append(f"{c.id[:14]}: {e}")
                     continue

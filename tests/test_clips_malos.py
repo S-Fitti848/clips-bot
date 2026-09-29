@@ -71,3 +71,16 @@ def test_por_que_en_una_linea():
                                                        "hashtags": ["#Shorts"], "credito": "c"},
                            por_que=por_que(meta))
     assert "<i>📊 1.240 vistas" in texto.split("Título")[0]               # arriba, antes de los textos
+
+
+def test_el_umbral_no_cuenta_los_clips_del_programa_de_terceros():
+    """Davo (2026-09-29): 23 de 51 clips eran del "412" y los más vistos; con ellos adentro la vara
+    subía de 25 a 36 vistas."""
+    from clips_bot.candidates import MOTIVO_PROGRAMA, aplicar_vistas_relativas
+
+    clips = [Clip.from_helix(helix_clip(f"p{i}", views=v), "davo") for i, v in enumerate([900, 800, 700])]
+    clips += [Clip.from_helix(helix_clip(f"s{i}", views=v), "davo") for i, v in enumerate([50, 40, 30, 20])]
+    motivos = {c.id: (MOTIVO_PROGRAMA if c.id.startswith("p") else None) for c in clips}
+    umbrales = aplicar_vistas_relativas(clips, motivos, 0.30)
+    assert umbrales["davo"] == (40, 35)                         # top 2 de sus 4 propios
+    assert [c.id for c in clips if motivos[c.id] is None] == ["s0", "s1"]

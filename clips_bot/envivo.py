@@ -157,7 +157,6 @@ def elegir(m: Momento, filtros: Filtros, vistos: set[str],
     descartes: Counter = Counter()
     for c in m.clips:
         motivo = motivo_descarte(c, sin_espera, vistos,
-                                 con_deportes=bool(streamer and streamer.detectar_marcador),
                                  palabras_programa=streamer.palabras_programa if streamer else ())
         if motivo is None:
             return c, descartes

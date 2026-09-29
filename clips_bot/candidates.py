@@ -108,9 +108,14 @@ def umbrales_vistas(clips: list[Clip], fraccion: float) -> dict[str, tuple[int, 
 def aplicar_vistas_relativas(todos: list[Clip], motivos: dict[str, str | None],
                              fraccion: float) -> dict[str, tuple[int, int]]:
     """Marca con MOTIVO_VISTAS_RELATIVAS los que pasaban todo lo demás pero están debajo del umbral
-    de su streamer. El umbral se calcula sobre TODOS los clips de la ventana (antes de los otros
-    filtros): es "el 30 % de sus clips", no "el 30 % de los que sobrevivieron"."""
+    de su streamer. El umbral se calcula sobre los clips de SU stream en la ventana, antes de los
+    otros filtros ("el 30 % de sus clips", no "el 30 % de los que sobrevivieron"), pero SIN los de
+    programas de terceros ni co-streams: no son su contenido, y con Davo (23 de 51 clips del "412",
+    los más vistos) subían la vara de 25 a 36 vistas y dejaban pasar 3 en vez de 5 (2026-09-29)."""
+    ajenos = (MOTIVO_PROGRAMA, MOTIVO_COSTREAM)
+    propios = [c for c in todos if motivos.get(c.id) not in ajenos]
     umbrales = umbrales_vistas(todos, fraccion)
+    umbrales.update(umbrales_vistas(propios, fraccion))   # sin propios, queda el de todos
     for c in todos:
         if not motivos.get(c.id) and c.view_count < umbrales[c.broadcaster_login][0]:
             motivos[c.id] = MOTIVO_VISTAS_RELATIVAS
@@ -161,21 +166,37 @@ def _normalizar(texto: str) -> str:
     return " " + re.sub(r"[^a-z0-9]+", " ", sin_tildes.lower()).strip() + " "
 
 
-def es_costream(textos: list[str], categoria: str, filtros: Filtros, con_deportes: bool = False) -> bool:
+def es_costream(textos: list[str], categoria: str, filtros: Filtros) -> bool:
     """Co-stream o evento: palabra de la lista (completa) en algún título, o categoría de eventos.
 
-    `con_deportes` suma las palabras de fútbol, y va SOLO para los streamers con detectar_marcador:
-    aplicadas a todos, "final" y "partido" tiran clips de juego sanos (medido 2026-09-22).
-    """
+    Las palabras de FÚTBOL ya no están acá (2026-09-29, pedido de Santi: "hablar de fútbol no es
+    problema; mostrar el partido sí"). Para los streamers con detectar_marcador lo que descarta es
+    ver un partido en pantalla (marcador de TV o cancha, `deportes.py`); las palabras solo avisan
+    (`palabras_futbol`)."""
     if categoria.strip().lower() in {c.lower() for c in filtros.categorias_costream}:
         return True
     normalizados = [_normalizar(t) for t in textos if t]
-    palabras = filtros.palabras_costream + (filtros.palabras_deportes if con_deportes else ())
-    for palabra in palabras:
+    for palabra in filtros.palabras_costream:
         p = _normalizar(palabra)
         if p.strip() and any(p in t for t in normalizados):
             return True
     return False
+
+
+def palabras_futbol(textos: list[str], filtros: Filtros) -> list[str]:
+    """Las palabras de fútbol (`candidatos.palabras_deportes`) que aparecen en los títulos."""
+    normalizados = [_normalizar(t) for t in textos if t]
+    return [p for p in filtros.palabras_deportes
+            if _normalizar(p).strip() and any(_normalizar(p) in t for t in normalizados)]
+
+
+def aviso_futbol(textos: list[str], filtros: Filtros) -> str:
+    """El aviso que acompaña al clip en el mensaje, o vacío."""
+    halladas = palabras_futbol(textos, filtros)
+    if not halladas:
+        return ""
+    return (f"⚽ habla de fútbol ({', '.join(halladas[:4])}): no se descarta por eso; "
+            "mirá que no se vea el partido")
 
 
 def tiene_palabras(clip: Clip, palabras: tuple[str, ...]) -> bool:
@@ -267,7 +288,7 @@ def consolidar_evento(res: "Resultado", cfg: Evento, peso_momento: float,
 
 
 def motivo_descarte(clip: Clip, filtros: Filtros, vistos: set[str], min_vistas: int | None = None,
-                    ahora: datetime | None = None, con_deportes: bool = False,
+                    ahora: datetime | None = None,
                     palabras_programa: tuple[str, ...] = (),
                     palabras_titulo: tuple[str, ...] = ()) -> str | None:
     """Devuelve por qué se descarta el clip, o None si pasa. El orden importa solo para el reporte.
@@ -291,7 +312,7 @@ def motivo_descarte(clip: Clip, filtros: Filtros, vistos: set[str], min_vistas: 
         return MOTIVO_SIN_PALABRAS
     if es_programa_de_terceros(clip.stream_title, palabras_programa):
         return MOTIVO_PROGRAMA
-    if es_costream([clip.title, clip.stream_title], clip.game_name, filtros, con_deportes):
+    if es_costream([clip.title, clip.stream_title], clip.game_name, filtros):
         return MOTIVO_COSTREAM
     excluidas = {c.lower() for c in filtros.categorias_excluidas}
     if clip.game_name.lower() in excluidas:
@@ -370,7 +391,7 @@ def _ids(client: TwitchClient, activos: list[Streamer], res: Resultado) -> dict[
 
 
 def _motivo(clip: Clip, filtros: Filtros, vistos: set[str], ahora: datetime, evento: Evento,
-            con_deportes: bool, palabras_programa: tuple[str, ...] = (),
+            palabras_programa: tuple[str, ...] = (),
             palabras_titulo: tuple[str, ...] = ()) -> str | None:
     """Motivo de descarte, con el filtro del evento incluido.
 
@@ -378,7 +399,7 @@ def _motivo(clip: Clip, filtros: Filtros, vistos: set[str], ahora: datetime, eve
     si no, los clips de otra cosa del mismo streamer se comen los lugares y el cupo del evento queda
     vacío aunque haya clips buenos del evento más abajo (visto en la simulación del 2026-09-22).
     """
-    m = motivo_descarte(clip, filtros, vistos, ahora=ahora, con_deportes=con_deportes,
+    m = motivo_descarte(clip, filtros, vistos, ahora=ahora,
                         palabras_programa=palabras_programa, palabras_titulo=palabras_titulo)
     if m:
         return m
@@ -438,6 +459,13 @@ def _vistas_relativas(todos: list[Clip], motivos: dict[str, str | None], filtros
     return aplicar_vistas_relativas(todos, motivos, filtros.vistas_top)
 
 
+def _con_aviso_futbol(clips: list[Clip], filtros: Filtros, mira_deportes) -> list[Clip]:
+    """A los de los streamers con detectar_marcador que hablan de fútbol, el aviso (no se descartan:
+    lo que descarta es ver el partido, y eso lo mira `procesar` en la pantalla)."""
+    return [replace(c, aviso=aviso_futbol([c.title, c.stream_title], filtros))
+            if mira_deportes(c.broadcaster_login) else c for c in clips]
+
+
 def _con_mediana(clips: list[Clip], umbrales: dict[str, tuple[int, int]]) -> list[Clip]:
     return [replace(c, mediana_vistas=umbrales.get(c.broadcaster_login, (0, 0))[1]) for c in clips]
 
@@ -492,7 +520,6 @@ def buscar_kick(
     if not todos:
         return res
     motivos = {c.id: _motivo(c, filtros, vistos, ahora, evento,
-                             deportes_de.get(c.broadcaster_login, False),
                              programa_de.get(c.broadcaster_login, ()), palabras_titulo)
                for c in todos}
     umbrales = _vistas_relativas(todos, motivos, filtros, palabras_titulo)
@@ -503,6 +530,7 @@ def buscar_kick(
                 res.costream.append(c)
 
     pasan = _con_mediana(_elegir_por_momento(todos, motivos, filtros, res, res.descartes), umbrales)
+    pasan = _con_aviso_futbol(pasan, filtros, lambda login: deportes_de.get(login, False))
     pasan.sort(key=lambda c: score_reciente(c.view_count, c.clips_mismo_momento, seleccion.peso_momento),
                reverse=True)
     nuevos = pasan[: filtros.n_candidatos]
@@ -545,7 +573,6 @@ def buscar_candidatos(
 
     todos = _a_clips(client, crudos, "reciente", por_login)
     motivos = {c.id: _motivo(c, filtros, vistos, ahora, evento,
-                             _mira_deportes(por_login, c.broadcaster_login),
                              _programa_de(por_login, c.broadcaster_login), palabras_titulo)
                for c in todos}
     umbrales = _vistas_relativas(todos, motivos, filtros, palabras_titulo)
@@ -557,6 +584,7 @@ def buscar_candidatos(
                 res.costream.append(c)
 
     pasan = _con_mediana(_elegir_por_momento(todos, motivos, filtros, res, res.descartes), umbrales)
+    pasan = _con_aviso_futbol(pasan, filtros, lambda login: _mira_deportes(por_login, login))
 
     def sc(c: Clip) -> float:
         return score_reciente(c.view_count, c.clips_mismo_momento, seleccion.peso_momento)
@@ -629,7 +657,6 @@ def buscar_catalogo(
             paginas += 1
             for c in _a_clips(client, [(login, d) for d in page], "catalogo", por_login):
                 m = motivo_descarte(c, filtros, vistos, min_vistas=cat.min_vistas,
-                                    con_deportes=_mira_deportes(por_login, c.broadcaster_login),
                                     palabras_programa=_programa_de(por_login, c.broadcaster_login))
                 if not m and c.view_count < umbral:
                     m = MOTIVO_VISTAS_RELATIVAS
@@ -638,7 +665,8 @@ def buscar_catalogo(
                     if m == MOTIVO_COSTREAM:
                         res.costream.append(c)
                 else:
-                    propios.append(replace(c, mediana_vistas=mediana))
+                    propios += _con_aviso_futbol([replace(c, mediana_vistas=mediana)], filtros,
+                                                 lambda login: _mira_deportes(por_login, login))
             cursor = siguiente
             if not cursor or len(propios) >= cat.n_candidatos:
                 break
