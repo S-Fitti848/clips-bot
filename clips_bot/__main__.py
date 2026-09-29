@@ -573,7 +573,8 @@ def _buscador_pego():
     return pego.buscar_ytdlp
 
 
-def _pegados_para(settings: Settings, streamers: list, buscar_ahora: bool, avisar=log.info) -> list:
+def _pegados_para(settings: Settings, streamers: list, buscar_ahora: bool, avisar=log.info,
+                  forzar: bool = False) -> list:
     """Los clips originales de estos streamers cuyo momento pegó en otro canal (pego.py), ya
     filtrados como cualquier candidato (vistos, duración, programa de terceros, datos personales;
     sin el 30 % de vistas: que haya pegado afuera ya dice que es bueno). Con `buscar_ahora`,
@@ -584,7 +585,9 @@ def _pegados_para(settings: Settings, streamers: list, buscar_ahora: bool, avisa
     from .candidates import motivo_descarte
 
     cfg = settings.pego
-    if not cfg.activo or not streamers:
+    # `pego.activo` es para lo automático (diario y el agregado en /buscar); el botón 🔥 de /buscar
+    # lo pide Santi a mano y busca igual (`forzar`).
+    if (not cfg.activo and not forzar) or not streamers:
         return []
     conn = db.connect(DB_PATH)
     try:
@@ -1036,12 +1039,13 @@ def _buscar(conn, tg: TelegramClient, chat_id: str, args: list[str], settings: S
 
     from .candidates import buscar_candidatos, buscar_kick
     from .process import READY_DIR, procesar
-    from .telegram import parse_buscar, repartir, sacar_cantidad
+    from .telegram import parse_buscar, repartir, sacar_cantidad, sacar_modo
 
     from dataclasses import replace as _replace
 
     try:
         args, cantidad = sacar_cantidad(list(args), CANTIDAD_MAX_PEDIDO)
+        args, modo = sacar_modo(args)     # "viejos" (más de 30 días) o "pego" (🔥 pegó afuera)
         logins, palabras, dias = parse_buscar(args, max_logins=TOPE_BUSCAR)
     except ValueError as e:
         return str(e)
@@ -1078,6 +1082,13 @@ def _buscar(conn, tg: TelegramClient, chat_id: str, args: list[str], settings: S
         vistos = db.ids_vistos(conn)
         por_streamer, descartes = [], Counter()
         for st in elegidos_st:
+            if modo == "pego":
+                por_streamer.append((st, _pegados_para(settings, [st], buscar_ahora=True,
+                                                       avisar=log.info, forzar=True)))
+                continue
+            if modo == "viejos":
+                por_streamer.append((st, _candidatos_viejos(st, settings, vistos, descartes)))
+                continue
             if st.plataforma == "kick":
                 res = buscar_kick(KickClient(pausa_s=settings.kick.pausa_s), [st], filtros, vistos,
                                   settings.kick, seleccion=settings.seleccion, excluidos=excluidos,
@@ -1092,15 +1103,17 @@ def _buscar(conn, tg: TelegramClient, chat_id: str, args: list[str], settings: S
             descartes.update(res.descartes)
 
         que = f" con {', '.join(palabras)}" if palabras else ""
+        periodo = {"pego": "en lo que pegó en otros canales", "viejos": "de hace más de 30 días"}.get(
+            modo, f"de los últimos {dias} días")
         quienes = ", ".join(st.login for st, _ in por_streamer)
         total = sum(len(c) for _, c in por_streamer)
         if not total:
-            return (f"Busqué en {quienes}{que} de los últimos {dias} días y no quedó ninguno."
+            return (f"Busqué en {quienes}{que} {periodo} y no quedó ninguno."
                     + _resumen(descartes) + _problemas(problemas))
 
         cupos = repartir(cupo, [len(c) for _, c in por_streamer])
         detalle = ", ".join(f"{st.login} {len(c)}" for st, c in por_streamer)
-        tg.send_message(chat_id, f"Buscando{html.escape(que)} en los últimos {dias} días: "
+        tg.send_message(chat_id, f"Buscando{html.escape(que)} {periodo}: "
                                  f"<b>{total} candidatos</b> ({html.escape(detalle)}). "
                                  f"Proceso {sum(cupos)}, tarda unos minutos.")
 
@@ -2127,6 +2140,10 @@ def escuchar_telegram(settings: Settings, timeout_poll: int = 50) -> int:
                     _seguro(tg, cb["chat_id"], cb["data"], _efe_callback, conn, tg, cb, settings,
                             cola)
                     continue
+                if cb["data"].startswith("bu:"):
+                    _seguro(tg, cb["chat_id"], cb["data"], _buscar_callback, conn, tg, cb, settings,
+                            cola)
+                    continue
                 if cb["data"].startswith("ser:"):
                     _seguro(tg, cb["chat_id"], cb["data"], _serie_callback, conn, tg, cb, settings,
                             cola)
@@ -2238,10 +2255,65 @@ def escuchar_telegram(settings: Settings, timeout_poll: int = 50) -> int:
             conn.close()
 
 
+ESPERA_BUSCAR = "bu"   # bot_estado "bu:<token>": un /buscar a medio preguntar (período, cantidad)
+
+
+def _preguntar_buscar(conn, tg: TelegramClient, chat_id: str, args: list[str]) -> bool:
+    """Si a un /buscar le falta el período o la cantidad, lo pregunta con botones y guarda el
+    pedido. True si preguntó. "/buscar spreen 30 x5" (o con palabras) no pregunta nada."""
+    import secrets
+
+    from .menu import teclado_cantidad, teclado_periodo
+    from .telegram import que_falta_buscar
+
+    try:
+        falta_periodo, falta_cantidad = que_falta_buscar(args)
+    except ValueError:
+        return False                  # que el /buscar conteste con el error de siempre
+    if not (falta_periodo or falta_cantidad):
+        return False
+    token = secrets.token_hex(3)
+    db.set_valor(conn, f"{ESPERA_BUSCAR}:{token}", json.dumps({"args": args}))
+    quien = html.escape(args[0])
+    if falta_periodo:
+        tg.send_message(chat_id, f"🔎 <b>{quien}</b>: ¿de cuándo?", teclado_periodo(token))
+    else:
+        tg.send_message(chat_id, f"🔎 <b>{quien}</b>: ¿cuántos videos?", teclado_cantidad(token))
+    return True
+
+
+def _buscar_callback(conn, tg: TelegramClient, cb: dict, settings: Settings, cola: list) -> None:
+    """Los botones del período y de la cantidad de un /buscar (o de /streamers)."""
+    from .menu import parse_callback, teclado_cantidad
+    from .telegram import que_falta_buscar
+
+    d = parse_callback(cb["data"])
+    if not d or d["menu"] != "bu" or len(d["crudos"]) < 2:
+        return
+    token, valor = d["crudos"][0], d["crudos"][1]
+    guardado = db.get_valor(conn, f"{ESPERA_BUSCAR}:{token}")
+    if not guardado:
+        return tg.answer_callback(cb["callback_id"], "Esa búsqueda venció: mandá /buscar de nuevo.")
+    args = json.loads(guardado)["args"]
+    args = args + ([valor] if d["accion"] == "p" else [f"x{valor}"])
+    tg.answer_callback(cb["callback_id"])
+    if que_falta_buscar(args)[1]:     # falta la cantidad
+        db.set_valor(conn, f"{ESPERA_BUSCAR}:{token}", json.dumps({"args": args}))
+        return tg.edit_message(cb["chat_id"], cb["message_id"],
+                               f"🔎 <b>{html.escape(args[0])}</b>: ¿cuántos videos?",
+                               teclado_cantidad(token))
+    db.borrar_valor(conn, f"{ESPERA_BUSCAR}:{token}")
+    tg.edit_message(cb["chat_id"], cb["message_id"],
+                    f"🔎 <b>{html.escape(' '.join(args))}</b>", {"inline_keyboard": []})
+    _encolar_busqueda(conn, tg, cb["chat_id"], args, settings, cola)
+
+
 def _despachar(conn, tg: TelegramClient, c: dict, settings: Settings, cola: list[dict]) -> None:
     """Un comando del modo escucha. /buscar puede quedar en cola; el resto contesta al toque."""
     print(f"  {c['comando']} {' '.join(c['args'])} de {c['usuario'] or c['user_id']} "
           f"(chat {c['chat_id']})")
+    if c["comando"] == "/buscar" and _preguntar_buscar(conn, tg, c["chat_id"], list(c["args"])):
+        return   # faltaba el período o la cantidad: se preguntó con botones
     if c["comando"] in ("/buscar", "/ya", "/editar", "/narrar", "/serie", "/efemeride"):
         if len(cola) >= MAX_BUSQUEDAS:
             tg.send_message(c["chat_id"], f"Ya tengo {len(cola)} búsquedas en cola. Esperá a que "
@@ -3181,12 +3253,13 @@ SECCIONES = [
          "<b>📦 Mover a otra carpeta</b>; una carpeta vacía se puede borrar. Los excluidos salen "
          "con 🚫 y no se pueden tocar.",
          "/streamers"),
-        ("/buscar &lt;streamer[,streamer]&gt; [palabras] [días]",
-         f"busco en sus clips de los últimos días (default 7, tope 90) los que tengan esas "
-         f"palabras en el título del clip o del stream, proceso hasta {TOPE_BUSCAR} y te los "
-         "mando. Con varios streamers separados por coma, el tope se reparte entre ellos. Con "
-         "<code>x5</code> pedís esa cantidad (tope 6).",
-         "/buscar spreen,davooxeneize gol x5"),
+        ("/buscar &lt;streamer[,streamer]&gt; [palabras] [días | viejos | pego] [xN]",
+         f"busco en sus clips los que tengan esas palabras en el título del clip o del stream, "
+         f"proceso hasta {TOPE_BUSCAR} y te los mando. Solo con el streamer, te pregunto con "
+         "botones de cuándo (7 días, 30 días, viejos de más de 30 días, o 🔥 lo que pegó en otros "
+         "canales) y cuántos (1, 3, 5); si ya escribís todo, no pregunto nada. Con varios "
+         "streamers separados por coma, el tope se reparte entre ellos.",
+         "/buscar spreen 30 x5"),
         ("/ya",
          "corro la mezcla diaria ahora mismo, sin esperar a las 05:00. Tarda 15-30 min en la Pi "
          "y te la entrego en este chat. Con <code>x2</code> pedís esa cantidad.",
@@ -3473,11 +3546,51 @@ def _menu_callback(conn, tg: TelegramClient, cb: dict, settings: Settings, cola:
                                f"Escribime la palabra para buscar en <b>{html.escape(s.login)}</b>."
                                f"\n(o mandá /streamers para volver al menú)", {"inline_keyboard": []})
     if d["accion"] == "b":
-        dias = int(d["args"][2]) if len(d["args"]) > 2 else 7
-        tg.answer_callback(cb["callback_id"], f"Buscando en {s.login}…")
-        tg.edit_message(chat, msg, f"🔎 <b>{html.escape(s.login)}</b>, últimos {dias} días.",
-                        {"inline_keyboard": []})
-        return _encolar_busqueda(conn, tg, chat, [s.login, str(dias)], settings, cola)
+        # El período ya se eligió (7, 30, viejos, pego): falta cuántos videos.
+        import secrets
+
+        from .menu import teclado_cantidad
+
+        periodo = d["crudos"][2] if len(d["crudos"]) > 2 else "7"
+        token = secrets.token_hex(3)
+        db.set_valor(conn, f"{ESPERA_BUSCAR}:{token}", json.dumps({"args": [s.login, periodo]}))
+        tg.answer_callback(cb["callback_id"])
+        return tg.edit_message(chat, msg, f"🔎 <b>{html.escape(s.login)}</b>: ¿cuántos videos?",
+                               teclado_cantidad(token))
+
+
+def _candidatos_viejos(st, settings: Settings, vistos: set, descartes) -> list:
+    """/buscar "viejos": los clips del streamer de hace más de 30 días (hasta el tope del catálogo,
+    3 años), los más vistos primero, con los filtros de siempre menos la antigüedad y las vistas."""
+    from dataclasses import replace as _replace
+
+    from .candidates import Clip, motivo_descarte, umbrales_vistas
+    from .kick import a_clip
+
+    ahora = datetime.now(timezone.utc)
+    limite = ahora - timedelta(days=30)
+    if st.plataforma == "kick":
+        clips = []
+        for d in KickClient(pausa_s=settings.kick.pausa_s).get_clips(st.login, 100, "view", ""):
+            p = a_clip(d, st.login)
+            clips.append(Clip.from_helix(p, st.login, p["_game_name"], "", "catalogo", "kick"))
+    else:
+        tw = _twitch()
+        bid = tw.get_user_ids([st.login]).get(st.login)
+        desde = ahora - timedelta(days=settings.catalogo.antiguedad_max_dias)
+        clips = [Clip.from_helix(d, st.login, "", "", "catalogo")
+                 for d in tw.get_clips(bid, desde, limite, 100)] if bid else []
+    clips = [c for c in clips if c.created_at < limite]
+    filtros = _replace(settings.filtros, antiguedad_min_h=0, min_vistas=0, vistas_top=0)
+    mediana = umbrales_vistas(clips, 1.0).get(st.login, (0, 0))[1] if clips else 0
+    out = []
+    for c in clips:
+        m = motivo_descarte(c, filtros, vistos, palabras_programa=st.palabras_programa)
+        if m:
+            descartes[m] += 1
+        else:
+            out.append(_replace(c, mediana_vistas=mediana, grupo=st.grupo_de("catalogo")))
+    return sorted(out, key=lambda c: -c.view_count)[:20]
 
 
 def _encolar_busqueda(conn, tg: TelegramClient, chat_id: str, args: list, settings: Settings,

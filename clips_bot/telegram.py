@@ -303,7 +303,7 @@ def videos(updates: list[dict]) -> list[dict]:
 # Todos los botones que atiende la escucha, menos los votos (esos los toma `votos`). Si un teclado
 # nuevo usa otro prefijo, va acá: hasta el 2026-09-27 la lista era ("st", "add") y los botones de
 # /ayuda, /destinos, ➕ más y ✅ del guion de /narrar se tiraban en silencio.
-PREFIJOS_BOTONES = ("st", "add", "gui", "ay", "dst", "ped", "pas", "ser", "efe", "sub")
+PREFIJOS_BOTONES = ("st", "add", "gui", "ay", "dst", "ped", "pas", "ser", "efe", "sub", "bu")
 
 
 def callbacks(updates: list[dict], prefijos: tuple[str, ...] = PREFIJOS_BOTONES) -> list[dict]:
@@ -454,6 +454,40 @@ def parse_buscar(args: list[str], dias_default: int = 7, dias_max: int = 90, max
         raise ValueError(f"Máximo {max_logins} streamers por búsqueda (pediste {len(logins)}): "
                          "el tope de clips se reparte entre ellos.")
     return logins, tuple(partes), dias
+
+
+# /buscar con modos (2026-09-29): además de "N días", "viejos" (más de 30 días) y "pego" (🔥 lo que
+# pegó en otros canales). Los botones del período mandan estos mismos tokens.
+MODOS_BUSCAR = {"viejos": "viejos", "pego": "pego", "pegó": "pego", "🔥": "pego"}
+PERIODOS_BUSCAR = (("7", "Últimos 7 días"), ("30", "Últimos 30 días"),
+                   ("viejos", "Viejos (más de 30 días)"), ("pego", "🔥 Lo que pegó en otros canales"))
+CANTIDADES_BUSCAR = (1, 3, 5)
+
+
+def sacar_modo(args: list[str]) -> tuple[list[str], str | None]:
+    """Saca "viejos" / "pego" de los argumentos: (el resto, el modo o None)."""
+    quedan, modo = [], None
+    for a in args:
+        m = MODOS_BUSCAR.get(a.strip().lower())
+        if m:
+            modo = m
+        else:
+            quedan.append(a)
+    return quedan, modo
+
+
+def que_falta_buscar(args: list[str]) -> tuple[bool, bool]:
+    """(falta el período, falta la cantidad) de un /buscar. Si trae palabras, no falta nada (van
+    los 7 días de siempre): se pregunta solo cuando el pedido es "streamer" a secas (o casi)."""
+    resto, modo = sacar_modo(list(args))
+    resto, cantidad = sacar_cantidad(resto, 99)
+    if not resto:
+        return False, False            # sin streamer: que conteste el /buscar con el uso
+    logins, palabras, _ = parse_buscar(resto)
+    if palabras:
+        return False, False
+    dias_dado = len(resto) > 1 and resto[-1].isdigit()
+    return not (dias_dado or modo), cantidad is None
 
 
 def repartir(cupos: int, disponibles: list[int]) -> list[int]:

@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-09-29 | **Versión:** v0.39.0 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 + escucha de Telegram 24/7)
+**Snapshot:** 2026-09-29 | **Versión:** v0.40.0 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 + escucha de Telegram 24/7)
 
 > **SI ESTÁS EMPEZANDO UNA SESIÓN NUEVA, LEÉ §10.** Ahí está qué está hecho, qué quedó a medias,
 > qué falta, y las trampas que ya nos mordieron.
@@ -562,7 +562,7 @@ clips_bot/chat.py        picos de chat de Twitch (GQL interno, una página por p
 clips_bot/metricas.py    §4b: métricas de los Shorts del canal y pesos por streamer y tipo
 clips_bot/envivo.py      modo en vivo (§3b): quién está al aire, momentos por creadores distintos,
                          alertas en la DB (no repetir, tope, vencer) y el resumen de tiempos
-tests/                   535 tests sin red ni video (conftest.py: nada sale a YouTube) (test_reglas_fijas.py: las 3 reglas de §1)
+tests/                   549 tests sin red ni video (conftest.py: nada sale a YouTube) (test_reglas_fijas.py: las 3 reglas de §1)
 ```
 
 Comandos:
@@ -581,6 +581,10 @@ Comandos:
   - `/reclamo <id del clip>` — marca el reclamo, excluye al streamer y responde.
   - `/ya` — corre la mezcla diaria en el momento. Mismo turno pesado y misma cola que `/buscar`;
     no atiende Telegram por dentro (le robaría los updates al modo escucha).
+  - **Desde v0.40.0, con botones:** `/buscar spreen` a secas pregunta el período (Últimos 7 días,
+    Últimos 30 días, Viejos (más de 30 días), 🔥 Lo que pegó en otros canales) y la cantidad (1, 3,
+    5); en /streamers, el período sale al elegir el streamer. Con todo en el comando
+    (`/buscar spreen 30 x5`, `viejos`, `pego`) o con palabras, no pregunta nada.
   - `/buscar <streamer[,streamer]> [palabras] [días]` — busca a mano en los clips de esos
     streamers (hasta 3, separados por coma; el tope se reparte de a uno por vuelta, así lo que a
     uno le sobra lo usa otro) de los
@@ -751,6 +755,12 @@ Problemas abiertos:
 
 ## 9. CHANGELOG
 
+- v0.40.0 (2026-09-29) — **/buscar y /streamers con botones:** período (7 días, 30 días, viejos de
+  más de 30 días hasta 3 años, 🔥 lo que pegó en otros canales) y cantidad (1, 3, 5); pedido a medio
+  preguntar en `bot_estado` (`bu:<token>`, botones `bu:p` / `bu:c`). Si el comando trae todo, o
+  palabras, no pregunta. "Viejos": Twitch por fechas, Kick los 100 más vistos de siempre, con los
+  filtros de siempre menos antigüedad y vistas. "🔥": solo los originales que pegaron; busca aunque
+  `pego.activo` esté apagado (lo pide Santi a mano). 549 tests OK.
 - v0.39.0 (2026-09-29) — **Tu gusto en el puntaje:** en la llamada de textos (la del `puntaje`),
   los últimos `textos.ejemplos_gusto` clips que Santi votó 👍 y 👎, con su título y lo primero que
   se dice (tapado), como ejemplo de cómo juzga (`textos.ejemplos_de_gusto`, `texto_gusto`). Hoy hay

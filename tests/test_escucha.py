@@ -44,7 +44,9 @@ def _falso_buscar(conn_, corridas):
 
 
 def _cmd(args):
-    return {"comando": "/buscar", "args": args, "chat_id": "1", "usuario": "santi", "user_id": "7"}
+    """Un /buscar completo (período y cantidad): así arranca sin preguntar con botones."""
+    return {"comando": "/buscar", "args": args + ["7", "x3"], "chat_id": "1", "usuario": "santi",
+            "user_id": "7"}
 
 
 def test_si_corre_el_diario_la_busqueda_queda_en_cola(conn, monkeypatch):
@@ -56,7 +58,7 @@ def test_si_corre_el_diario_la_busqueda_queda_en_cola(conn, monkeypatch):
 
     db.tomar_turno(conn, db.RECURSO_PESADO, "diario:123", maximo=1)
     m._despachar(conn, tg, _cmd(["davoo"]), cfg, cola)
-    assert corridas == [] and [x["args"] for x in cola] == [["davoo"]]
+    assert corridas == [] and [x["args"] for x in cola] == [["davoo", "7", "x3"]]
     assert "En cola" in tg.mensajes[-1] and "la corrida diaria" in tg.mensajes[-1]
 
     # mientras el diario siga andando, drenar no hace nada

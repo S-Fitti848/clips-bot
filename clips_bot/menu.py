@@ -80,14 +80,32 @@ def teclado_streamers(gi: int, streamers: list, pagina: int, excluidos: dict,
 
 
 def teclado_streamer(gi: int, si: int, pagina: int) -> dict:
-    """Tercer nivel: qué hacer con ese streamer."""
+    """Tercer nivel: qué hacer con ese streamer. El período va directo; después, la cantidad."""
     return {"inline_keyboard": [
-        [{"text": "Últimos 7 días", "callback_data": _cb("st", "b", gi, si, 7)},
-         {"text": "Últimos 30 días", "callback_data": _cb("st", "b", gi, si, 30)}],
+        [{"text": "Últimos 7 días", "callback_data": _cb("st", "b", gi, si, "7")},
+         {"text": "Últimos 30 días", "callback_data": _cb("st", "b", gi, si, "30")}],
+        [{"text": "Viejos (más de 30 días)", "callback_data": _cb("st", "b", gi, si, "viejos")}],
+        [{"text": "🔥 Lo que pegó en otros canales", "callback_data": _cb("st", "b", gi, si, "pego")}],
         [{"text": "🔎 Con palabra…", "callback_data": _cb("st", "w", gi, si)}],
         [{"text": "📦 Mover a otra carpeta", "callback_data": _cb("st", "m", gi, si)}],
         [{"text": "⬅️ Volver", "callback_data": _cb("st", "g", gi, pagina)}],
     ]}
+
+
+def teclado_periodo(token: str) -> dict:
+    """/buscar sin período: de cuándo (el pedido queda guardado en bot_estado con `token`)."""
+    from .telegram import PERIODOS_BUSCAR
+
+    return {"inline_keyboard": [[{"text": texto, "callback_data": _cb("bu", "p", token, clave)}]
+                                for clave, texto in PERIODOS_BUSCAR]}
+
+
+def teclado_cantidad(token: str) -> dict:
+    """Cuántos videos: 1, 3 o 5."""
+    from .telegram import CANTIDADES_BUSCAR
+
+    return {"inline_keyboard": [[{"text": str(n), "callback_data": _cb("bu", "c", token, n)}
+                                 for n in CANTIDADES_BUSCAR]]}
 
 
 def teclado_mover(gi: int, si: int, carpetas: list[tuple[str, str]]) -> dict:
