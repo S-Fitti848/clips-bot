@@ -762,7 +762,9 @@ Problemas abiertos:
   Pi (`config/`, chmod 600, fuera de git). Verificado en la Pi: `mi_canal()` responde y
   `actualizar_metricas()` leyó métricas de 21 clips (emparejados por título). `YOUTUBE_API_KEY`
   copiada al .env de la Pi: la búsqueda de 🔥 pegó usa la API (probado: 25 resultados). La subida
-  sigue APAGADA hasta la auditoría. Pequeña Historia todavía sin conectar.
+  sigue APAGADA hasta la auditoría. Pequeña Historia todavía sin conectar. Después Santi pasó la
+  app de OAuth a *En producción* y se rehízo `youtube-auth rots` (token nuevo en la Pi, verificado):
+  ya no vence a los 7 días.
 - v0.40.1 (2026-09-29) — Prendidas por Santi después de la medición: `seleccion.peso_chat` 0 → 0,5,
   `textos.ejemplos_gusto` 0 → 3, `pego.activo` → true y `pego.min_vistas` 10.000 → 5.000 (esa
   semana nada llegaba a 10.000). La API key de YouTube la carga Santi en el .env de la Pi
@@ -1243,7 +1245,7 @@ Problemas abiertos:
 | `clips-bot-telegram` | activo; modo en vivo PRENDIDO por Santi en el grupo el 27/09 |
 | carpetas | Argentinos y Famosos (en vivo sí, diarios sí), Catálogo (en vivo no, diarios sí), Dedsafío (en vivo no, diarios no): el modo en vivo vigila 9 de 64 |
 | música de Pequeña Historia | 29 temas en `musica/` (9 de la Biblioteca de YouTube de Santi, 10 Kevin MacLeod, 10 Openverse), 157 MB, fuera de git |
-| subida a YouTube | APAGADA (`youtube_upload_enabled: false`); Rots conectado (token en la Pi, métricas andando desde el 2026-09-29); Pequeña Historia sin conectar |
+| subida a YouTube | APAGADA (`youtube_upload_enabled: false`); Rots conectado (token en la Pi, app de OAuth en producción: no vence; métricas andando desde el 2026-09-29); Pequeña Historia sin conectar |
 | sudoers | instalado (`/etc/sudoers.d/clips-bot`) |
 | destinos de la entrega diaria (y de la propuesta de efeméride) | el grupo **Rots clips** (`-5453399767`) |
 | chats conocidos | Rots clips (grupo), Santiago Fittipaldi (`8668060171`) y Tommy Bildo (privados) |
