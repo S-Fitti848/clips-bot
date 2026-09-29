@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-09-29 | **Versión:** v0.31.0 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 + escucha de Telegram 24/7)
+**Snapshot:** 2026-09-29 | **Versión:** v0.32.0 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 + escucha de Telegram 24/7)
 
 > **SI ESTÁS EMPEZANDO UNA SESIÓN NUEVA, LEÉ §10.** Ahí está qué está hecho, qué quedó a medias,
 > qué falta, y las trampas que ya nos mordieron.
@@ -138,7 +138,12 @@ y por eso la unidad va con `Nice=10` y prioridad de CPU baja. NO paralelizar.
      uno solo (el más visto que pase los filtros) y cuántos hubo suma puntaje.
      Score = (1 + peso_momento × (clips del momento − 1)) × (1 + log10(1 + vistas)).
      El log achata las vistas (0 → 1,0; 10 → 2,0; 500 → 3,7; 50.000 → 5,7): un clip sin vistas que
-     3 personas clipearon compite con uno de 500 vistas sin duplicados. `min_vistas` 0, sin umbral.
+     3 personas clipearon compite con uno de 500 vistas sin duplicados. `min_vistas` 0.
+     **Vistas relativas (2026-09-29):** por streamer, solo pasan los clips del 30 % superior de
+     SUS vistas en la ventana (`candidatos.vistas_top`, motivo "debajo del 30 % superior…");
+     el catálogo, sobre su histórico (`umbral_historico`, guardado una semana). En /buscar con
+     palabras no filtra. OJO: Kick y Twitch devuelven hasta 100 clips, así que en los canales
+     grandes es el 30 % de ese tope.
    - **catalogo**: clips de 7 días a 3 años, por vistas absolutas, con su propio `min_vistas`.
      Cursor de Helix por streamer en la DB (tabla `catalogo_cursor`, junto con la ventana de fechas
      con la que se creó): cada corrida sigue donde quedó; al agotarse o si Twitch lo rechaza, ciclo
@@ -199,7 +204,8 @@ y por eso la unidad va con `Nice=10` y prioridad de CPU baja. NO paralelizar.
      (algo que pasó y se muestra o se cuenta) o salud mental. NO cuentan el humor normal, las
      puteadas, las derrotas, las peleas DENTRO de un juego ni una charla hipotética sobre quién
      ganaría una pelea.
-   - **`puntaje` 1–10** (se entiende solo + tiene remate). Abajo de `textos.puntaje_min` (5) el clip
+   - **`puntaje` 1–10** (se entiende solo + tiene remate). Abajo de `textos.puntaje_min` (6 desde el
+     2026-09-29; era 5) el clip
      NO se tira: se renderiza igual y queda marcado como **relleno**, y solo entra si la corrida no
      llega al cupo sin él. Sale con `RELLENO (puntaje X)` en el mensaje.
      **Los frames son imprescindibles**: sin ellos el puntaje castiga al humor visual. Medido sobre
@@ -529,7 +535,7 @@ clips_bot/ilustrar.py    regla fija 1 (§1): una foto por frase sin repetir, mí
 clips_bot/reglas.py      regla fija 2 (§1): REGLAS_CLARIDAD, dentro de todos los prompts de guion
 clips_bot/envivo.py      modo en vivo (§3b): quién está al aire, momentos por creadores distintos,
                          alertas en la DB (no repetir, tope, vencer) y el resumen de tiempos
-tests/                   487 tests sin red ni video (test_reglas_fijas.py: las 3 reglas de §1)
+tests/                   493 tests sin red ni video (test_reglas_fijas.py: las 3 reglas de §1)
 ```
 
 Comandos:
@@ -718,6 +724,16 @@ Problemas abiertos:
 
 ## 9. CHANGELOG
 
+- v0.32.0 (2026-09-29) — **Clips malos** (pedido de Santi): (a) vistas relativas: por streamer,
+  solo el 30 % superior de SUS vistas (7 días en recientes; histórico en catálogo, paginado de a
+  100 y guardado una semana: vegetta777 = 1095 clips, umbral 328, mediana 171, así que su
+  `min_vistas` de 500 ya era más estricto); (b) `puntaje_min` 5 → 6; (c) en cada clip, una
+  línea `📊 1.240 vistas (×3,1 su mediana) · 3 creadores distintos · Gemini 7/10`
+  (`telegram.por_que`, la mediana viaja de candidatos al json del clip). **La semana pasada con
+  las reglas nuevas** (43 entregados del 22 al 29/09, umbral con la ventana de hoy): 29 pasan
+  vistas, 37 pasan puntaje ≥ 6, **25 pasan las dos** (58 %). Decidido por Claude: /buscar con
+  palabras no filtra por vistas (el que busca algo puntual lo quiere igual); el default de
+  `Filtros.vistas_top` es 0 y el 0,30 está en settings.yaml (un test lo exige). 493 tests OK.
 - v0.31.0 (2026-09-29) — **Fotos de época** (regla fija, §1): en la efeméride del 29/09 (choque de
   dos Avro Anson, 1940) apareció un avión de 2008. Medido con las 10 fotos que usó ese video:
   9 eran de 1971 a 2017 según `DateTimeOriginal` de Commons (Avro Anson de exhibición, un

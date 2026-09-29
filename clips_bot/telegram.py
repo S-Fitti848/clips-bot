@@ -176,14 +176,34 @@ def resolver_chat_id(cliente: TelegramClient, configurado: str, guardado: str | 
                         "(ver `python -m clips_bot telegram-chat-id`).")
 
 
+def por_que(meta: dict) -> str:
+    """Por qué se eligió un clip, en una línea (pedido 2026-09-29): vistas contra la mediana del
+    streamer, creadores distintos del momento y el puntaje de Gemini. Vacío si no es un clip de
+    streamer (efemérides, /editar)."""
+    vistas, mediana = int(meta.get("vistas") or 0), int(meta.get("mediana_vistas") or 0)
+    if not vistas and not mediana:
+        return ""
+    partes = [f"{vistas:,} vistas".replace(",", ".")]
+    if mediana:
+        partes[0] += f" (×{vistas / mediana:.1f} su mediana)".replace(".", ",")
+    creadores = int(meta.get("clips_mismo_momento") or 1)
+    partes.append(f"{creadores} creadores distintos" if creadores > 1 else "1 creador")
+    if meta.get("puntaje"):
+        partes.append(f"Gemini {meta['puntaje']}/10")
+    return "📊 " + " · ".join(partes)
+
+
 def mensaje_textos(numero: int, streamer: str, clip_id: str, horario: str | None, textos: dict,
-                   youtube_url: str | None = None) -> str:
-    """Mensaje HTML con cada texto en su propio bloque <pre> (en Telegram se copia con un toque)."""
+                   youtube_url: str | None = None, por_que: str = "") -> str:
+    """Mensaje HTML con cada texto en su propio bloque <pre> (en Telegram se copia con un toque).
+    `por_que`: la línea chiquita de por qué se eligió (ver `por_que`)."""
     e = html.escape
     cabecera = f"<b>#{numero} · {e(streamer)}</b>"
     if horario:
         cabecera += f" · sugerido {e(horario)} AR"
     partes = [cabecera, f"id: <code>{e(clip_id)}</code>"]
+    if por_que:
+        partes.append(f"<i>{e(por_que)}</i>")
     if youtube_url:
         partes.append(f"YouTube: {e(youtube_url)}")
     for etiqueta, valor in [

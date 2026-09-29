@@ -73,6 +73,10 @@ class Filtros:
     palabras_deportes: tuple[str, ...] = ()  # solo para streamers con detectar_marcador
     categorias_costream: tuple[str, ...] = ()
     ventana_momento_s: float = 60
+    # Vistas relativas (2026-09-29): por streamer, solo pasan los clips en esta fracción superior de
+    # SUS vistas (7 días en recientes, histórico en catálogo). 0 = apagado; el valor real (0,30)
+    # está en settings.yaml, y un test exige que siga ahí.
+    vistas_top: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -232,7 +236,7 @@ class Textos:
     reintento_hasta: str = "22:00"
     # Calidad: puntaje de 1 a 10 (se entiende solo + tiene remate). Abajo del corte el clip no se
     # tira: queda como RELLENO, y solo se usa si la corrida no llega a 3 sin él.
-    puntaje_min: int = 5
+    puntaje_min: int = 6     # 5 → 6 el 2026-09-29 (pedido de Santi: llegaban clips malos)
     frames_para_puntaje: int = 4   # 0 = puntuar solo con la transcripción
 
 

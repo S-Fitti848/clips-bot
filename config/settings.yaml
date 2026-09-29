@@ -10,6 +10,9 @@ candidatos:
   min_vistas: 0              # recientes: no se filtra por vistas (el score ya las pondera)
   n_candidatos: 8            # cuántos pasan a descarga (§3 paso 3)
   max_clips_por_streamer: 100
+  # Vistas relativas (2026-09-29, "llegan clips malos"): por streamer, solo pasan los clips del 30 %
+  # superior de SUS vistas en la ventana (el catálogo, sobre su histórico). 0 = apagado.
+  vistas_top: 0.30
   # §4 capa 1 del filtro de música: categorías que se descartan directo.
   categorias_excluidas:
     - Music
@@ -324,6 +327,7 @@ textos:
   max_hashtags: 5
   max_descripcion: 800
   reintentos: 2              # si la respuesta no valida, se reintenta con los errores (cuida la cuota)
+  puntaje_min: 6             # 1-10 de Gemini; abajo es RELLENO. Era 5 hasta el 2026-09-29
   # Gemini caído (503 "high demand", timeouts): cada llamada reintenta 3 veces (30, 60 y 120 s) y
   # después prueba el otro modelo. Si igual falla, la efeméride y los clips que faltan de la entrega
   # diaria se reintentan solos a los N minutos, hasta esta hora; recién ahí se avisa.

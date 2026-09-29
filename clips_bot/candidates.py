@@ -48,6 +48,8 @@ class Clip:
     grupo: str = ""  # cupo en el que compite (seleccion.mezcla)
     creator_id: str = ""  # quién hizo el clip (no el streamer)
     creadores: tuple[str, ...] = ()  # creadores DISTINTOS del mismo momento
+    mediana_vistas: int = 0  # la mediana del streamer en la ventana (para el "por qué" del mensaje)
+    aviso: str = ""  # algo para mirar sin descartar (ej. habla de fútbol)
 
     @classmethod
     def from_helix(cls, d: dict, login: str, game_name: str = "", stream_title: str = "",
@@ -79,6 +81,76 @@ MOTIVO_PROGRAMA = "programa_terceros"
 MOTIVO_SIN_PALABRAS = "sin las palabras buscadas"
 MOTIVO_FUERA_EVENTO = "fuera del evento (categoría, título o fecha)"
 MOTIVO_MUY_NUEVO = "muy nuevo (no llegó a antiguedad_min_h; se reevalúa mañana)"
+MOTIVO_VISTAS_RELATIVAS = "debajo del 30 % superior de vistas del streamer"
+
+
+def umbrales_vistas(clips: list[Clip], fraccion: float) -> dict[str, tuple[int, int]]:
+    """{streamer: (umbral, mediana)} de vistas. El umbral es la vista más baja dentro del
+    `fraccion` superior de ESE streamer (pedido 2026-09-29: "solo los clips en el 30 % superior de
+    sus vistas"). Relativo a propósito: 300 vistas es un clip flojo de Spreen y uno bueno de Goncho.
+
+    OJO con el tope de las APIs: Kick da los 100 más vistos de la semana y Twitch hasta
+    `max_clips_por_streamer`, así que en los canales grandes el 30 % es de ese tope (más estricto)."""
+    import math
+    import statistics
+
+    por: dict[str, list[int]] = {}
+    for c in clips:
+        por.setdefault(c.broadcaster_login, []).append(c.view_count)
+    out = {}
+    for login, vistas in por.items():
+        vistas.sort(reverse=True)
+        k = max(1, math.ceil(len(vistas) * fraccion))
+        out[login] = (vistas[k - 1], int(statistics.median(vistas)))
+    return out
+
+
+def aplicar_vistas_relativas(todos: list[Clip], motivos: dict[str, str | None],
+                             fraccion: float) -> dict[str, tuple[int, int]]:
+    """Marca con MOTIVO_VISTAS_RELATIVAS los que pasaban todo lo demás pero están debajo del umbral
+    de su streamer. El umbral se calcula sobre TODOS los clips de la ventana (antes de los otros
+    filtros): es "el 30 % de sus clips", no "el 30 % de los que sobrevivieron"."""
+    umbrales = umbrales_vistas(todos, fraccion)
+    for c in todos:
+        if not motivos.get(c.id) and c.view_count < umbrales[c.broadcaster_login][0]:
+            motivos[c.id] = MOTIVO_VISTAS_RELATIVAS
+    return umbrales
+
+
+UMBRAL_HISTORICO_DIAS = 7   # el del catálogo se recalcula una vez por semana
+UMBRAL_HISTORICO_PAGINAS = 15
+
+
+def umbral_historico(client: TwitchClient, conn: sqlite3.Connection, login: str, bid: str,
+                     desde: datetime, hasta: datetime, fraccion: float,
+                     ahora: datetime | None = None) -> tuple[int, int]:
+    """(umbral, mediana) del catálogo de un streamer sobre TODO su histórico de la ventana (no la
+    página de hoy: la paginación va de más a menos vistos, y el 30 % de una página no dice nada).
+    Se pagina de a 100 y queda guardado una semana. Medido 2026-09-29: vegetta777 da 1095 clips en
+    11 páginas (Helix corta ahí), umbral 328 y mediana 171."""
+    import json
+
+    ahora = ahora or datetime.now(timezone.utc)
+    clave = f"umbral_catalogo:{login}"
+    guardado = db.get_valor(conn, clave)
+    if guardado:
+        d = json.loads(guardado)
+        if (ahora - datetime.fromisoformat(d["fecha"])).days < UMBRAL_HISTORICO_DIAS:
+            return d["umbral"], d["mediana"]
+    vistas: list[Clip] = []
+    cursor, paginas = None, 0
+    while paginas < UMBRAL_HISTORICO_PAGINAS:
+        page, cursor = client.get_clips_pagina(bid, desde, hasta, 100, cursor)
+        paginas += 1
+        vistas += [Clip.from_helix(d, login) for d in page]
+        if not cursor:
+            break
+    if not vistas:
+        return 0, 0
+    umbral, mediana = umbrales_vistas(vistas, fraccion)[login]
+    db.set_valor(conn, clave, json.dumps({"umbral": umbral, "mediana": mediana, "n": len(vistas),
+                                          "fecha": ahora.isoformat()}))
+    return umbral, mediana
 
 
 def _normalizar(texto: str) -> str:
@@ -357,6 +429,19 @@ def _elegir_por_momento(todos: list[Clip], motivos: dict[str, str | None], filtr
     return pasan
 
 
+def _vistas_relativas(todos: list[Clip], motivos: dict[str, str | None], filtros: Filtros,
+                      palabras_titulo: tuple[str, ...]) -> dict[str, tuple[int, int]]:
+    """El filtro de vistas relativas de las corridas; en /buscar con palabras NO filtra (el que busca
+    algo puntual lo quiere aunque haya tenido pocas vistas), solo calcula la mediana."""
+    if palabras_titulo or not filtros.vistas_top:
+        return umbrales_vistas(todos, filtros.vistas_top or 1.0)
+    return aplicar_vistas_relativas(todos, motivos, filtros.vistas_top)
+
+
+def _con_mediana(clips: list[Clip], umbrales: dict[str, tuple[int, int]]) -> list[Clip]:
+    return [replace(c, mediana_vistas=umbrales.get(c.broadcaster_login, (0, 0))[1]) for c in clips]
+
+
 def buscar_kick(
     client: KickClient,
     streamers: list[Streamer],
@@ -410,13 +495,14 @@ def buscar_kick(
                              deportes_de.get(c.broadcaster_login, False),
                              programa_de.get(c.broadcaster_login, ()), palabras_titulo)
                for c in todos}
+    umbrales = _vistas_relativas(todos, motivos, filtros, palabras_titulo)
     for c in todos:
         if motivos[c.id]:
             res.descartes[motivos[c.id]] += 1
             if motivos[c.id] == MOTIVO_COSTREAM:
                 res.costream.append(c)
 
-    pasan = _elegir_por_momento(todos, motivos, filtros, res, res.descartes)
+    pasan = _con_mediana(_elegir_por_momento(todos, motivos, filtros, res, res.descartes), umbrales)
     pasan.sort(key=lambda c: score_reciente(c.view_count, c.clips_mismo_momento, seleccion.peso_momento),
                reverse=True)
     nuevos = pasan[: filtros.n_candidatos]
@@ -462,6 +548,7 @@ def buscar_candidatos(
                              _mira_deportes(por_login, c.broadcaster_login),
                              _programa_de(por_login, c.broadcaster_login), palabras_titulo)
                for c in todos}
+    umbrales = _vistas_relativas(todos, motivos, filtros, palabras_titulo)
     for c in todos:
         m = motivos[c.id]
         if m:
@@ -469,7 +556,7 @@ def buscar_candidatos(
             if m == MOTIVO_COSTREAM:
                 res.costream.append(c)
 
-    pasan = _elegir_por_momento(todos, motivos, filtros, res, res.descartes)
+    pasan = _con_mediana(_elegir_por_momento(todos, motivos, filtros, res, res.descartes), umbrales)
 
     def sc(c: Clip) -> float:
         return score_reciente(c.view_count, c.clips_mismo_momento, seleccion.peso_momento)
@@ -523,6 +610,10 @@ def buscar_catalogo(
 
         propios: list[Clip] = []
         paginas = 0
+        # Vistas relativas sobre TODO su histórico (no sobre la página de hoy): ver umbral_historico.
+        umbral, mediana = (umbral_historico(client, conn, login, bid, *_ventana_catalogo(ahora, cat),
+                                            filtros.vistas_top)
+                           if filtros.vistas_top else (0, 0))
         while paginas < cat.max_paginas:
             try:
                 page, siguiente = client.get_clips_pagina(bid, desde, hasta, cat.por_pagina, cursor)
@@ -540,12 +631,14 @@ def buscar_catalogo(
                 m = motivo_descarte(c, filtros, vistos, min_vistas=cat.min_vistas,
                                     con_deportes=_mira_deportes(por_login, c.broadcaster_login),
                                     palabras_programa=_programa_de(por_login, c.broadcaster_login))
+                if not m and c.view_count < umbral:
+                    m = MOTIVO_VISTAS_RELATIVAS
                 if m:
                     res.descartes_catalogo[m] += 1
                     if m == MOTIVO_COSTREAM:
                         res.costream.append(c)
                 else:
-                    propios.append(c)
+                    propios.append(replace(c, mediana_vistas=mediana))
             cursor = siguiente
             if not cursor or len(propios) >= cat.n_candidatos:
                 break
