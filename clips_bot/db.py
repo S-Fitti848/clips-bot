@@ -185,6 +185,21 @@ CREATE TABLE IF NOT EXISTS subidas (
     creada     TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+CREATE TABLE IF NOT EXISTS metricas (
+    clip_id          TEXT PRIMARY KEY,   -- el clip entregado que Santi subió
+    video_id         TEXT NOT NULL,      -- el Short en su canal (emparejado por título)
+    publicado        TEXT,               -- ISO UTC
+    actualizado      TEXT NOT NULL,      -- cuándo se leyó (una vez por día)
+    vistas           INTEGER NOT NULL DEFAULT 0,
+    duracion_media_s REAL,               -- averageViewDuration
+    pct_visto_medio  REAL,               -- averageViewPercentage
+    pct_entero       REAL,               -- retención al 100 % del video
+    streamer         TEXT,
+    duracion_s       REAL,
+    layout           TEXT,
+    camara           INTEGER             -- 1 = tenía cámara (split/fullcam)
+);
+
 CREATE TABLE IF NOT EXISTS carpetas (
     nombre   TEXT PRIMARY KEY,           -- el `grupo` de los streamers: argentinos, evento, catalogo…
     etiqueta TEXT NOT NULL DEFAULT '',   -- cómo se muestra: "Argentinos", "Dedsafío"

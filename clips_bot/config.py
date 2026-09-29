@@ -303,6 +303,10 @@ class Seleccion:
     peso_votos: float = 0.5
     votos_previa: int = 3
     votos_de: tuple = ()
+    # Métricas del canal (§4b, metricas.py): peso por streamer y por tipo de clip (duración, layout,
+    # cámara) según la mediana de vistas de lo ya subido. Solo grupos con n ≥ metricas_min_n.
+    peso_metricas: float = 0.5
+    metricas_min_n: int = 15
 
     @property
     def n(self) -> int:

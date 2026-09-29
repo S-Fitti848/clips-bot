@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-09-29 | **Versión:** v0.35.0 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 + escucha de Telegram 24/7)
+**Snapshot:** 2026-09-29 | **Versión:** v0.36.0 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 + escucha de Telegram 24/7)
 
 > **SI ESTÁS EMPEZANDO UNA SESIÓN NUEVA, LEÉ §10.** Ahí está qué está hecho, qué quedó a medias,
 > qué falta, y las trampas que ya nos mordieron.
@@ -387,6 +387,15 @@ CLI: `python -m clips_bot efemeride [--fecha 27/09] [--hecho penicilina] [--apro
 (`--hecho`: solo los hechos que contienen esa palabra, para rehacer uno a mano).
 
 ### 4b. Módulo de métricas (feedback loop)
+**Hecho (v0.36.0, solo YouTube, `clips_bot/metricas.py`):** en la corrida de las 05:00, si hay
+token de YouTube (`youtube-auth rots`, con el permiso `yt-analytics.readonly`), se listan los
+Shorts del canal, se emparejan con los clips entregados POR TÍTULO (la subida es manual y el título
+es el que generó el bot; similitud ≥ 0,85 y publicado después de la entrega) y se guardan por clip
+en la tabla `metricas`: vistas, duración media vista, % visto medio y % que llega al final (curva
+de retención en 100 %). Con eso la selección multiplica el score por streamer, duración (corto <30
+s, medio <45, largo), layout y cámara: 1 + `peso_metricas` × log2(mediana del grupo / general),
+±1 en el log, SOLO con `metricas_min_n` (15) Shorts por grupo. Lo de abajo (IG/FB/TikTok, reporte
+semanal, snapshots) sigue pendiente.
 Job cada 6 h: para cada post de los últimos 30 días, pedir vistas/likes/comentarios/shares
 (YouTube `videos.list` + Analytics API para retención promedio; Meta Graph insights para IG/FB;
 TikTok Display API para la cuenta propia). Guardar snapshots a 24 h, 72 h y 7 d.
@@ -549,7 +558,7 @@ clips_bot/ilustrar.py    regla fija 1 (§1): una foto por frase sin repetir, mí
 clips_bot/reglas.py      regla fija 2 (§1): REGLAS_CLARIDAD, dentro de todos los prompts de guion
 clips_bot/envivo.py      modo en vivo (§3b): quién está al aire, momentos por creadores distintos,
                          alertas en la DB (no repetir, tope, vencer) y el resumen de tiempos
-tests/                   515 tests sin red ni video (test_reglas_fijas.py: las 3 reglas de §1)
+tests/                   520 tests sin red ni video (test_reglas_fijas.py: las 3 reglas de §1)
 ```
 
 Comandos:
@@ -738,6 +747,14 @@ Problemas abiertos:
 
 ## 9. CHANGELOG
 
+- v0.36.0 (2026-09-29) — **Métricas del canal** (§4b, `metricas.py`): permiso nuevo
+  `yt-analytics.readonly`; `youtube.Cliente.mis_videos / metricas / pct_entero`; tabla `metricas`;
+  la corrida diaria las lee si hay token; la selección pesa streamer y tipo de clip con n ≥ 15.
+  Hoy no hay token (la conexión con YouTube no se hizo) ni Shorts medidos: el peso no mueve nada
+  todavía y no se pudo mostrar su efecto en el orden. Guía actualizada: habilitar YouTube
+  Analytics API y sumar el permiso en la pantalla de consentimiento. También: GitHub Pages para la
+  pantalla de consentimiento (https://s-fitti848.github.io/ y /privacidad.html, repo
+  `S-Fitti848.github.io`, fuera de este repo). 520 tests OK.
 - v0.35.0 (2026-09-29) — Efemérides: si un hecho no llega a 4 fotos de época, `fotos_para_guion`
   levanta `PocasFotos` (con el pool y el guion ya armados) y `proponer` pasa al hecho siguiente;
   solo si ninguno llega usa el que más fotos tenga, con el aviso "Ningún hecho de hoy llegó a 4

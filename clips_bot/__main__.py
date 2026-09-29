@@ -30,7 +30,7 @@ from collections import Counter
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from . import __version__, db
+from . import __version__, db, metricas
 from .candidates import (MOTIVO_COSTREAM, Resultado, buscar_candidatos, buscar_catalogo, buscar_kick,
                          consolidar_evento)
 from .config import DB_PATH, ConfigError, Settings, env, load_settings, load_streamers, load_twitch_creds
@@ -299,12 +299,15 @@ def ejecutar_seleccion(settings: Settings, gemini: GeminiClient | None, enviar: 
     try:
         cupo = n or db.cantidad_diaria(conn_c)
         factores = factores_votos(db.votos_por_streamer(conn_c, cfg.votos_de), cfg)
+        tabla_metricas = metricas.factores(conn_c, cfg.peso_metricas, cfg.metricas_min_n)
     finally:
         conn_c.close()
     movidos = {s: f for s, f in factores.items() if abs(f - 1) >= 0.005}
     if movidos:
         print("Peso por votos: " + ", ".join(f"{s} ×{f:.2f}" for s, f in
                                              sorted(movidos.items(), key=lambda kv: -kv[1])))
+    if tabla_metricas:
+        print("Peso por métricas del canal: " + json.dumps(tabla_metricas, ensure_ascii=False))
 
     def reintentar_mas_tarde(faltan: int) -> bool:
         """La entrega diaria quedó corta porque Gemini está caído: en vez de avisar, se agenda un
@@ -334,8 +337,11 @@ def ejecutar_seleccion(settings: Settings, gemini: GeminiClient | None, enviar: 
     buenos = [o for o in opciones if not o.meta.get("relleno")]
     relleno = sorted((o for o in opciones if o.meta.get("relleno")),
                      key=lambda o: o.meta.get("puntaje", 0), reverse=True)
+    # Por clip: votos de su streamer × métricas de su tipo (streamer, duración, layout, cámara).
+    por_clip = {o.clip_id: factores.get(o.streamer.lower(), 1.0) * metricas.factor_de(o.meta, tabla_metricas)
+                for o in opciones}
     elegidos = seleccionar(buenos, cfg, ahora, desempate_gemini(gemini) if gemini else None,
-                           factores)
+                           por_clip)
     if len(elegidos) < cupo and relleno:
         # Solo puede salir de acá lo que falló ÚNICAMENTE por calidad: lo que se descarta por tono,
         # copyright, datos en pantalla o cualquier filtro de seguridad nunca llega a `opciones`.
@@ -368,7 +374,7 @@ def ejecutar_seleccion(settings: Settings, gemini: GeminiClient | None, enviar: 
     for i, o in enumerate(elegidos, 1):
         edad = f"{(ahora - o.creado).total_seconds() / 3600 / 24:.1f} d" if o.creado else "?"
         horario = horarios[i - 1] if i <= len(horarios) else "?"
-        print(f"\n{i}. [{o.grupo_o_fuente()}] score {score(o, ahora, cfg, factores):,.2f}  {o.vistas:,} vistas  "
+        print(f"\n{i}. [{o.grupo_o_fuente()}] score {score(o, ahora, cfg, por_clip):,.2f}  {o.vistas:,} vistas  "
               f"x{o.clips_mismo_momento} dup  {edad}  {o.streamer}  ({horario} AR)")
         t = o.meta["textos"]
         print(f"   Título:      {t['titulo']}")
@@ -550,6 +556,30 @@ def cmd_diario(args: argparse.Namespace) -> int:
             conn.close()
 
 
+def actualizar_metricas() -> int:
+    """Una vez por día (en la corrida de las 05:00): las métricas de los Shorts del canal de clips
+    (§4b). Sin token de YouTube no hace nada: la conexión la hace Santi (docs/auditoria-youtube.md).
+    Nunca tumba la corrida."""
+    from . import youtube
+    from .process import READY_DIR
+
+    if not youtube.ruta_token("rots").exists():
+        print("\n=== Métricas del canal: sin conexión con YouTube todavía (youtube-auth rots)")
+        return 0
+    print("\n=== Métricas del canal")
+    conn = db.connect(DB_PATH)
+    try:
+        n = metricas.actualizar(conn, youtube.Cliente("rots"), READY_DIR)
+        print(f"  {n} clips con métricas (sus Shorts, emparejados por título)")
+        return n
+    except Exception as e:
+        log.exception("no pude leer las métricas")
+        print(f"  no pude leer las métricas: {e}")
+        return 0
+    finally:
+        conn.close()
+
+
 def _diario(args: argparse.Namespace, settings: Settings, atender: bool = True,
             destinos: list[str] | None = None, cuantos: int | None = None) -> int:
     from . import registro
@@ -571,6 +601,8 @@ def _diario(args: argparse.Namespace, settings: Settings, atender: bool = True,
             atender_telegram(settings, silencioso=True)
         except (TelegramError, ConfigError) as e:
             print(f"  (no pude leer Telegram: {e})")
+
+    actualizar_metricas()
 
     print("\n=== Pasos 1-2: candidatos")
     res = buscar_todo(settings, streamers, args.incluir_sin_permiso, guardar_cursor=True)

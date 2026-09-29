@@ -22,14 +22,21 @@ Todo con la cuenta de Google que maneja los dos canales (Rots y Pequeña Histori
 1. Entrá a **https://console.cloud.google.com**. Si es la primera vez, aceptá los términos.
 2. Arriba a la izquierda, en el selector de proyectos → **Proyecto nuevo** → nombre `clips-bot`
    → **Crear**. Asegurate de que quede seleccionado arriba.
-3. **Habilitar la API:** menú ☰ → *APIs y servicios* → *Biblioteca* → buscá **YouTube Data API
-   v3** → **Habilitar**.
+3. **Habilitar las APIs:** menú ☰ → *APIs y servicios* → *Biblioteca* → buscá **YouTube Data API
+   v3** → **Habilitar**. Volvé a la *Biblioteca*, buscá **YouTube Analytics API** → **Habilitar**
+   (la usan las métricas de tus Shorts, desde el 2026-09-29).
 4. **Pantalla de consentimiento** (lo que ves cuando el bot te pide permiso): menú ☰ → *APIs y
    servicios* → *Pantalla de consentimiento de OAuth* (en algunas cuentas se llama *Google Auth
    Platform*).
    - Tipo de usuario: **Externo**.
    - Nombre de la app: `Clips Bot`. Correo de asistencia: el tuyo.
-   - Permisos (scopes): agregá `.../auth/youtube.upload` y `.../auth/youtube`.
+   - Permisos (scopes, en *Acceso a los datos* → *Agregar o quitar permisos*): agregá
+     `.../auth/youtube.upload`, `.../auth/youtube` y `.../auth/yt-analytics.readonly`. Si alguno
+     no aparece en la lista, pegalo entero en *Agregar permisos manualmente*
+     (ej. `https://www.googleapis.com/auth/yt-analytics.readonly`).
+   - **Información de la marca:** página principal `https://s-fitti848.github.io/`, política de
+     privacidad `https://s-fitti848.github.io/privacidad.html`, dominio autorizado
+     `s-fitti848.github.io`.
    - Usuarios de prueba: agregá tu propia cuenta de Google.
    - **Importante:** mientras la app esté en modo *Prueba* (Testing), Google hace vencer el permiso
      **cada 7 días** y habría que volver a conectar los canales todas las semanas. Cuando termines
@@ -71,6 +78,11 @@ scp config/client_secret.json config/youtube_token_rots.json config/youtube_toke
 
 Ya con esto la Pi puede subir, pero **no lo va a hacer** mientras `youtube_upload_enabled` esté
 en `false`.
+
+**Si ya habías conectado los canales antes del 2026-09-29:** el permiso nuevo de métricas
+(`yt-analytics.readonly`) no estaba en el pedido. Después de sumarlo en la pantalla de
+consentimiento, repetí `python -m clips_bot youtube-auth rots` (y copiá de nuevo el token a la Pi):
+sin eso, las métricas dan error 403 y el bot sigue sin ellas.
 
 ## Parte 3 — La auditoría
 

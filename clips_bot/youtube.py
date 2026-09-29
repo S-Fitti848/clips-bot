@@ -34,7 +34,9 @@ log = logging.getLogger(__name__)
 
 CANALES = {"rots": "Rots (clips)", "pequena_historia": "Pequeña Historia (efemérides)"}
 SCOPES = ["https://www.googleapis.com/auth/youtube.upload",
-          "https://www.googleapis.com/auth/youtube"]      # el segundo, para cancelar (videos.update)
+          "https://www.googleapis.com/auth/youtube",       # para cancelar (videos.update) y listar
+          "https://www.googleapis.com/auth/yt-analytics.readonly"]   # métricas de los Shorts (§4b)
+ANALYTICS = "https://youtubeanalytics.googleapis.com/v2/reports"
 AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 TOKEN_URL = "https://oauth2.googleapis.com/token"
 API = "https://www.googleapis.com/youtube/v3"
@@ -196,6 +198,66 @@ class Cliente:
         if r2.status_code not in (200, 201):
             raise YouTubeError(f"La subida se cortó: {r2.status_code} {r2.text[:300]}")
         return r2.json()["id"]
+
+    def mis_videos(self, desde: datetime, maximo: int = 200) -> list[dict]:
+        """Los videos subidos al canal desde `desde`, más nuevos primero: [{id, titulo, publicado}].
+        Sale de la lista de "uploads" del canal (1 unidad por página de 50)."""
+        r = self.session.get(f"{API}/channels", params={"part": "contentDetails", "mine": "true"},
+                             headers=self._headers(), timeout=30)
+        items = (r.json() or {}).get("items") or [] if r.status_code == 200 else []
+        if not items:
+            raise YouTubeError(f"No encontré los videos de {self.canal}: {r.status_code} {r.text[:200]}")
+        lista = items[0]["contentDetails"]["relatedPlaylists"]["uploads"]
+        out, pagina = [], None
+        while len(out) < maximo:
+            params = {"part": "snippet,contentDetails", "playlistId": lista, "maxResults": 50}
+            if pagina:
+                params["pageToken"] = pagina
+            r = self.session.get(f"{API}/playlistItems", params=params, headers=self._headers(),
+                                 timeout=30)
+            if r.status_code != 200:
+                raise YouTubeError(f"playlistItems: {r.status_code} {r.text[:200]}")
+            d = r.json()
+            for it in d.get("items") or []:
+                publicado = it["contentDetails"].get("videoPublishedAt") or it["snippet"]["publishedAt"]
+                cuando = datetime.fromisoformat(publicado.replace("Z", "+00:00"))
+                if cuando < desde:
+                    return out
+                out.append({"id": it["contentDetails"]["videoId"], "titulo": it["snippet"]["title"],
+                            "publicado": cuando.isoformat()})
+            pagina = d.get("nextPageToken")
+            if not pagina:
+                break
+        return out
+
+    def _analytics(self, params: dict) -> list[list]:
+        r = self.session.get(ANALYTICS, params={"ids": "channel==MINE", **params},
+                             headers=self._headers(), timeout=60)
+        if r.status_code != 200:
+            raise YouTubeError(f"YouTube Analytics: {r.status_code} {r.text[:300]}")
+        return (r.json() or {}).get("rows") or []
+
+    def metricas(self, video_ids: list[str], desde: datetime, hasta: datetime) -> dict[str, dict]:
+        """{video_id: {vistas, duracion_media_s, pct_visto_medio}} (YouTube Analytics, por video)."""
+        out: dict[str, dict] = {}
+        for i in range(0, len(video_ids), 200):
+            filas = self._analytics({
+                "startDate": desde.strftime("%Y-%m-%d"), "endDate": hasta.strftime("%Y-%m-%d"),
+                "metrics": "views,averageViewDuration,averageViewPercentage", "dimensions": "video",
+                "filters": "video==" + ",".join(video_ids[i:i + 200])})
+            for vid, vistas, dur, pct in filas:
+                out[vid] = {"vistas": int(vistas), "duracion_media_s": float(dur),
+                            "pct_visto_medio": float(pct)}
+        return out
+
+    def pct_entero(self, video_id: str, desde: datetime, hasta: datetime) -> float | None:
+        """% de la audiencia que sigue mirando al final (curva de retención en 100 %): lo más
+        parecido que da YouTube a "lo mira entero". En un Short puede pasar de 100 (repeticiones)."""
+        filas = self._analytics({
+            "startDate": desde.strftime("%Y-%m-%d"), "endDate": hasta.strftime("%Y-%m-%d"),
+            "metrics": "audienceWatchRatio", "dimensions": "elapsedVideoTimeRatio",
+            "filters": f"video=={video_id}"})
+        return round(float(filas[-1][1]) * 100, 1) if filas else None
 
     def cancelar(self, video_id: str) -> None:
         """Saca la programación: el video queda privado y sin fecha (no se borra: se puede

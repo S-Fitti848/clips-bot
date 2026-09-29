@@ -75,7 +75,9 @@ def factores_votos(votos: dict[str, tuple[int, int]], cfg: Seleccion) -> dict[st
 def score(o: Opcion, ahora: datetime, cfg: Seleccion, factores: dict[str, float] | None = None) -> float:
     base = (float(o.vistas) if o.fuente == "catalogo"
             else score_reciente(o.vistas, o.clips_mismo_momento, cfg.peso_momento))
-    return base * (factores or {}).get(o.streamer.lower(), 1.0)
+    # Un factor por clip (votos × métricas de su tipo) si lo hay; si no, el del streamer (votos).
+    f = factores or {}
+    return base * f.get(o.clip_id, f.get(o.streamer.lower(), 1.0))
 
 
 Desempate = Callable[[list[Opcion]], list[Opcion]]
