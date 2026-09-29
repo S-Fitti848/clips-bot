@@ -37,5 +37,5 @@ def test_el_prompt_lleva_los_ejemplos():
     assert texto_gusto(None) == "" and "CÓMO JUZGA" not in armar_prompt("S", "", "t", 30, "h", Textos())
 
 
-def test_de_fabrica_esta_apagado_hasta_decidir():
-    assert load_settings().textos.ejemplos_gusto == 0
+def test_la_config_real_lleva_3_ejemplos_por_lado():
+    assert load_settings().textos.ejemplos_gusto == 3   # decidido por Santi el 2026-09-29

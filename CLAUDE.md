@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-09-29 | **Versión:** v0.40.0 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 + escucha de Telegram 24/7)
+**Snapshot:** 2026-09-29 | **Versión:** v0.40.1 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 + escucha de Telegram 24/7)
 
 > **SI ESTÁS EMPEZANDO UNA SESIÓN NUEVA, LEÉ §10.** Ahí está qué está hecho, qué quedó a medias,
 > qué falta, y las trampas que ya nos mordieron.
@@ -46,7 +46,9 @@ servicio systemd separado: `clips-bot`).
   sin diarios ni en vivo, sin cupo del evento, cupos `argentinos: 2` + `famosos: 1` (Auron) y el
   catálogo de fallback, máximo 1 clip por streamer (relleno incluido), multi-POV APAGADO (era
   para el Dedsafío), y el score pesa los 👍/👎 de Santi por streamer (después, las vistas de
-  YouTube, cuando exista §4b).
+  YouTube, cuando exista §4b). **Señales prendidas por Santi el 2026-09-29, después de ver la
+  medición:** picos de chat con `peso_chat` 0,5, su gusto con `ejemplos_gusto` 3, y lo que pegó en
+  otros canales con `pego.activo` y `min_vistas` 5.000 (API de YouTube con `YOUTUBE_API_KEY`).
 - **REGLAS FIJAS PARA TODOS LOS VIDEOS (decisión permanente de Santi, 2026-09-28).** Valen para
   efemérides, /narrar, /serie, /editar y los clips donde aplique. Están UNA vez en el código
   compartido y `tests/test_reglas_fijas.py` falla si alguna se rompe. No se tocan sin que Santi
@@ -755,6 +757,10 @@ Problemas abiertos:
 
 ## 9. CHANGELOG
 
+- v0.40.1 (2026-09-29) — Prendidas por Santi después de la medición: `seleccion.peso_chat` 0 → 0,5,
+  `textos.ejemplos_gusto` 0 → 3, `pego.activo` → true y `pego.min_vistas` 10.000 → 5.000 (esa
+  semana nada llegaba a 10.000). La API key de YouTube la carga Santi en el .env de la Pi
+  (`YOUTUBE_API_KEY`); sin ella, la búsqueda sigue con yt-dlp. 549 tests OK.
 - v0.40.0 (2026-09-29) — **/buscar y /streamers con botones:** período (7 días, 30 días, viejos de
   más de 30 días hasta 3 años, 🔥 lo que pegó en otros canales) y cantidad (1, 3, 5); pedido a medio
   preguntar en `bot_estado` (`bu:<token>`, botones `bu:p` / `bu:c`). Si el comando trae todo, o
