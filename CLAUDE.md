@@ -773,10 +773,12 @@ Problemas abiertos:
   salió: "Voz: Laomedeia" o "Voz: Piper (respaldo, sin cuota | Gemini no respondió)" (el motivo
   viaja en el motor, `piper:…|motivo`); con Piper, botón "🔁 Rehacer con Laomedeia" (`efe:voz`, la
   misma cola que ✅; la propuesta se guarda hasta que salga con Laomedeia). (2) La clave del amigo
-  (`GEMINI_API_KEY_2`, formato nuevo de Google: 53 caracteres, no empieza con "AIza") ANDA: el
-  2026-09-30 dio 200 por encabezado y por URL. El 401 del 29/09 fue, casi seguro, la clave recién
-  creada. Pero el bot la había marcado inválida PARA SIEMPRE: ahora la marca vale solo ese día
-  (`gemini_clave_invalida` = {huella, día del Pacífico}) y al día siguiente se vuelve a probar.
+  (`GEMINI_API_KEY_2`, formato nuevo de Google: 53 caracteres, empieza con "AQ.", no "AIza") ANDA
+  igual que una de AI Studio (200 por encabezado y por URL). La del 29/09 era OTRA (daba 401 desde
+  la Pi y desde Windows); Santi la cambió en el .env de Windows y se copió a la Pi el 30/09 (huellas
+  comparadas, sin mostrarlas). OJO: la escucha tiene que reiniciarse para leer un .env nuevo
+  (`load_dotenv` no pisa lo ya cargado). Además, el bot marcaba una clave inválida PARA SIEMPRE:
+  ahora la marca vale solo ese día (`gemini_clave_invalida` = {huella, día del Pacífico}).
   (3) `vod.py` + `audio_huella.coincidencia_rapida` (FFT, igual resultado que la lenta, 13× más
   rápida; 7 h de VOD en ~1 s en Windows): sin conectar hasta medir con un Short de Davo.
 - v0.44.0 (2026-09-30) — **La corrida del 30/09 no entregó nada**: "pegó" (dentro de la corrida,
