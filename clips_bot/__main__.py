@@ -152,9 +152,14 @@ def _twitch() -> TwitchClient:
 
 
 def _gemini(settings: Settings) -> GeminiClient | None:
-    key = env("GEMINI_API_KEY", requerido=False)
-    return GeminiClient(key, settings.textos.modelo,
-                        modelo_fallback=settings.textos.modelo_fallback) if key else None
+    """Con la principal y, si hay, GEMINI_API_KEY_2 (solo cuando la principal se queda sin cuota)."""
+    from .gemini import aviso_por_telegram, claves_activas
+
+    claves = claves_activas()
+    if not claves or claves[0][0] != "principal":
+        return None
+    return GeminiClient(claves, settings.textos.modelo, modelo_fallback=settings.textos.modelo_fallback,
+                        aviso=aviso_por_telegram)
 
 
 class ErrorPasajero(str):

@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-09-29 | **Versión:** v0.41.0 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 + escucha de Telegram 24/7)
+**Snapshot:** 2026-09-29 | **Versión:** v0.42.0 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 + escucha de Telegram 24/7)
 
 > **SI ESTÁS EMPEZANDO UNA SESIÓN NUEVA, LEÉ §10.** Ahí está qué está hecho, qué quedó a medias,
 > qué falta, y las trampas que ya nos mordieron.
@@ -509,7 +509,9 @@ config/streamers.yaml    la lista "de autor". Las altas y bajas por Telegram NO 
                          + sección evento_dedsafio
 .env                     TWITCH_*, GEMINI_API_KEY, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID,
                          TELEGRAM_ALLOWED_USERS (ids que pueden mandar comandos; vacío = ninguno),
-                         WIKIMEDIA_CONTACTO (mail del User-Agent de Wikimedia)
+                         WIKIMEDIA_CONTACTO (mail del User-Agent de Wikimedia),
+                         GEMINI_API_KEY_2 (segunda clave: solo con la principal sin cuota del día),
+                         YOUTUBE_API_KEY (búsqueda de 🔥)
 clips_bot/config.py      carga YAML + .env; Streamer.permitido = cita o experimento
 clips_bot/twitch.py      Helix: token, /users, /search/channels, /clips (paginado o página con
                          cursor), /games, /videos (título del stream)
@@ -758,6 +760,16 @@ Problemas abiertos:
 
 ## 9. CHANGELOG
 
+- v0.42.0 (2026-09-29) — **Segunda clave de Gemini** (`GEMINI_API_KEY_2`, pedido de Santi):
+  siempre la principal; la segunda SOLO si la principal da 429 de cuota del día, y recién después
+  de las dos el modelo de respaldo (orden: flash/principal → flash/segunda → lite/principal →
+  lite/segunda). Un 429 que no es de cuota o un 5xx no cambian de clave (el modelo está caído,
+  otra clave no lo arregla). El cliente recuerda qué clave quedó sin cuota hasta la medianoche del
+  Pacífico. El log dice qué clave usó cada llamada ("Gemini X con la clave principal/segunda").
+  La primera vez del día que se usa la segunda, aviso a TELEGRAM_CHAT_ID (`gemini_segunda_dia` en
+  bot_estado). Si la segunda es inválida, se ignora, se avisa una vez y se guarda su huella
+  (sha256, 12 caracteres, nunca la clave) en `gemini_clave_invalida`: si se cambia en el .env,
+  se vuelve a probar. La voz de Pequeña Historia (`hablar_con_claves`) hace lo mismo. 573 tests OK.
 - v0.41.0 (2026-09-29) — **🔥 con Davo no daba nada.** Medido en la Pi: la búsqueda
   "davooxeneize" traía 25 Shorts (21 de ≤ 61 s, 21 con 5.000+ vistas, 16 "lo nombraban"), pero
   los 3 más vistos que se comparaban eran memes de fútbol de MordoTv con `#davooxeneize` de relleno
