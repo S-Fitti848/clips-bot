@@ -268,9 +268,14 @@ def hablar(api_key: str, texto: str, instruccion: str = "", voz: str = "Puck",
             "speechConfig": {"voiceConfig": {"prebuiltVoiceConfig": {"voiceName": voz}}},
         },
     }
-    r = (session or requests.Session()).post(
-        URL.format(modelo=modelo), json=cuerpo, timeout=timeout,
-        headers={"x-goog-api-key": api_key, "Content-Type": "application/json"})
+    try:
+        r = (session or requests.Session()).post(
+            URL.format(modelo=modelo), json=cuerpo, timeout=timeout,
+            headers={"x-goog-api-key": api_key, "Content-Type": "application/json"})
+    except requests.RequestException as e:
+        # Un timeout no puede tumbar la efeméride: con GeminiError sigue Piper (2026-09-30, la
+        # muestra del Sputnik se cayó con "Read timed out" en vez de pasar al respaldo).
+        raise GeminiError(f"Gemini TTS ({modelo}): {e}", pasajero=True) from e
     if r.status_code != 200:
         raise GeminiError(f"Gemini TTS ({modelo}): {r.status_code} {r.text[:300]}")
     try:

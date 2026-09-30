@@ -149,3 +149,15 @@ def test_un_401_de_credenciales_tambien_es_clave_invalida():
     t = '401 {"error": {"code": 401, "message": "Request had invalid authentication credentials.", "status": "UNAUTHENTICATED"}}'
     assert gemini.es_clave_invalida(401, t)
     assert not gemini.es_clave_invalida(429, t) and not gemini.es_clave_invalida(401, "otra cosa")
+
+
+def test_un_timeout_de_la_voz_es_un_error_de_gemini_y_sigue_piper():
+    import requests
+
+    class S:
+        def post(self, *a, **k):
+            raise requests.ReadTimeout("Read timed out. (read timeout=180)")
+
+    with pytest.raises(GeminiError) as e:
+        gemini.hablar("K", "hola", session=S())
+    assert e.value.pasajero
