@@ -108,12 +108,27 @@ def test_el_boton_pasa_de_video_a_foto_y_de_foto_a_video(tmp_path, monkeypatch):
     assert ef.alternar_video(p, 3, tmp_path) == "Frase 3: vuelve a foto."
     assert ef.Guion.de_dict(p.guion).con_video == []
     assert "🎬 video (archive.org, 1957)" in ef.alternar_video(p, 3, tmp_path)
-    # una frase sin video: lo busca en el momento, sin Gemini
+    # una frase sin video: lo busca en el momento y Gemini MIRA los cuadros antes de usarlo
     monkeypatch.setattr(ef, "buscar_videos",
                         lambda g, anio, c, b, avisar, frases, tema: {frases[0]: [_v("commons", 1957)]})
-    assert "Wikimedia Commons" in ef.alternar_video(p, 5, tmp_path)
+    monkeypatch.setattr(ef, "_jpeg_chico", lambda ruta, ancho=512: b"x")
+
+    class Gem:
+        def __init__(self, respuesta):
+            self.r, self.vistas = respuesta, []
+
+        def json(self, sistema, prompt, schema, temperatura=0.7, imagenes=None, audio=None):
+            self.vistas.append((prompt, len(imagenes or [])))
+            return json.dumps(self.r)
+
+    gem = Gem({"se_ve": "un cohete despegando", "video": 1, "momento": 3, "video_de_epoca": True})
+    assert "Wikimedia Commons" in ef.alternar_video(p, 5, tmp_path, cliente=gem)
+    assert gem.vistas[0][1] == 3 and "EL HECHO ES DE 1957" in gem.vistas[0][0]
     g2 = ef.Guion.de_dict(p.guion)
-    assert g2.con_video == [2, 4] and g2.videos["4"]["momento"] == 22.5
+    assert g2.con_video == [2, 4] and g2.videos["4"]["momento"] == 36.0
+    dibujo = Gem({"se_ve": "un dibujo animado", "video": 0, "momento": 1, "video_de_epoca": True})
+    assert "ninguno muestra lo que dice" in ef.alternar_video(p, 4, tmp_path, cliente=dibujo)
+    assert "Sin Gemini" in ef.alternar_video(p, 2, tmp_path)
     monkeypatch.setattr(ef, "buscar_videos", lambda *a, **k: {})
     assert "No encontré" in ef.alternar_video(p, 6, tmp_path)
 

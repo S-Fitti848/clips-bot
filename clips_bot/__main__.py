@@ -3131,7 +3131,7 @@ def _efe_callback(conn, tg: TelegramClient, cb: dict, settings: Settings, cola: 
         n = int(d["crudos"][1]) if len(d["crudos"]) > 1 and d["crudos"][1].isdigit() else 0
         p = ef.Propuesta(**estado["propuesta"])
         tg.answer_callback(cb["callback_id"], "Un momento…")
-        que = ef.alternar_video(p, n, Path(estado["carpeta"]))
+        que = ef.alternar_video(p, n, Path(estado["carpeta"]), cliente=_gemini(settings))
         tg.edit_message(cb["chat_id"], cb["message_id"], f"🎬 {html.escape(que)} Te mando cómo quedó:",
                         {"inline_keyboard": []})
         return _efe_mostrar(conn, tg, cb["chat_id"], token, {**estado, "propuesta": p.__dict__})

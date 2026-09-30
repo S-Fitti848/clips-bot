@@ -809,6 +809,8 @@ frase (0 si ninguno sirve: mejor la foto que un video que no tiene nada que ver)
 cuál de sus 3 cuadros (1, 2 o 3) es el mejor lugar para cortar. Preferí la filmación de la época
 (la marcada "de archivo"). En `video_de_epoca` confirmá que el video no es un anacronismo para la
 frase: un cohete moderno no sirve para 1957; el cielo, el mar o el espacio pueden servir.
+Nada de dibujos animados, animaciones ni ilustraciones (0), salvo que la frase hable justamente de
+eso; tampoco videos con texto encima tapando la imagen, ni recreaciones hechas por computadora.
 
 `descartadas`: MIRÁ las fotos y descartá las que no sirven para nada: mapas, gráficos, diagramas,
 banderas, escudos, firmas, logos, capturas de pantalla, retratos de alguien que NO protagoniza el
@@ -1460,10 +1462,45 @@ def videos_en_orden(p: Propuesta, plan: list[tuple[int, int, float]] | None = No
     return [Video.de_dict(g.videos[str(i)]) for i, f, _ in (plan or plan_de(p)) if f == VIDEO]
 
 
-def alternar_video(p: Propuesta, n: int, carpeta: Path, buscador=None, avisar=log.info) -> str:
+SISTEMA_VIDEO = """Elegís el video para UNA frase de un video corto narrado de historia. Te paso la
+frase, el año del hecho y videos candidatos V1, V2…; de cada uno ves 3 cuadros (las imágenes, en
+orden: 3 por video). En `video` poné el número del que muestra LO QUE DICE la frase (0 si ninguno:
+mejor una foto que un video que no tiene nada que ver) y en `momento` su mejor cuadro (1, 2 o 3).
+En `video_de_epoca` confirmá que no es un anacronismo (un cohete moderno no sirve para 1957).
+Nada de dibujos animados, animaciones ni ilustraciones (0), salvo que la frase hable de eso; tampoco
+videos con texto encima tapando la imagen ni recreaciones por computadora.
+Respondé solo con el JSON pedido."""
+
+SCHEMA_VIDEO = {"type": "OBJECT",
+                "properties": {"se_ve": {"type": "STRING"}, "video": {"type": "INTEGER"},
+                               "momento": {"type": "INTEGER"}, "video_de_epoca": {"type": "BOOLEAN"}},
+                "required": ["se_ve", "video", "momento", "video_de_epoca"]}
+
+
+def revisar_video(cliente, frase: str, anio: int, presente: bool, vs: list, avisar=log.info):
+    """UNA llamada: Gemini mira los 3 cuadros de cada candidato con la frase y la época y elige uno
+    (o ninguno). Es lo mismo que pasa en la llamada de las fotos, para una frase suelta (🎬)."""
+    if not vs:
+        return None
+    lineas = [f"EL HECHO ES DE {anio}.", f"FRASE{' (habla de hoy)' if presente else ''}: {frase}",
+              "VIDEOS:"]
+    imagenes = []
+    for k, v in enumerate(vs, 1):
+        tipo = "de archivo" if v.de_archivo else "stock"
+        lineas.append(f"V{k}: {v.titulo[:90]} ({tipo}, {v.etiqueta()}, {v.duracion:.0f} s) — "
+                      f"imágenes {len(imagenes) + 1} a {len(imagenes) + len(v.frames)}")
+        imagenes += [_jpeg_chico(Path(fr), 384) for fr in v.frames]
+    d = json.loads(cliente.json(SISTEMA_VIDEO, "\n".join(lineas), SCHEMA_VIDEO, temperatura=0.2,
+                                imagenes=imagenes))
+    avisar(f"    🎬 revisión: se ve {str(d.get('se_ve'))[:80]}")
+    return video_elegido({0: d}, {0: vs}, [presente], avisar).get(0)
+
+
+def alternar_video(p: Propuesta, n: int, carpeta: Path, buscador=None, avisar=log.info,
+                   cliente=None) -> str:
     """"🎬 frase N": de video a foto o de foto a video. Si la frase no tiene video elegido, lo busca
-    en el momento (sin Gemini: el primero de archivo, y si no, de stock; el cuadro del medio). Lo
-    mira Santi en la hoja antes de aprobar. Devuelve qué pasó, en castellano."""
+    en el momento y Gemini mira los cuadros de los candidatos con la frase y la época
+    (`revisar_video`); si ninguno corresponde, queda la foto. Devuelve qué pasó, en castellano."""
     g, e = Guion.de_dict(p.guion), Evento(**p.evento)
     i = n - 1
     if not 0 <= i < len(g.frases):
@@ -1477,9 +1514,13 @@ def alternar_video(p: Propuesta, n: int, carpeta: Path, buscador=None, avisar=lo
                                  tema=e.paginas[0] if e.paginas else "").get(i) or []
         if not halladas:
             return f"No encontré un video libre para la frase {n} (queda con foto)."
-        v = halladas[0]
-        cuadro = len(v.momentos) // 2
-        v.momento, v.frames = v.momentos[cuadro], [v.frames[cuadro]]
+        if cliente is None:
+            return f"Sin Gemini no puedo revisar los videos de la frase {n} (queda con foto)."
+        hoy = i < len(g.presente) and g.presente[i]
+        v = revisar_video(cliente, g.frases[i], e.anio, hoy, halladas, avisar)
+        if v is None:
+            return (f"Encontré {len(halladas)} videos para la frase {n} pero ninguno muestra lo que "
+                    "dice (o no es de la época): queda con foto.")
         g.videos[str(i)] = v.a_dict()
     g.con_video = sorted(set(g.con_video) | {i})
     p.guion = g.a_dict()
