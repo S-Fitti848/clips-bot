@@ -48,8 +48,12 @@ def _dia_pacifico() -> str:
 
 def es_clave_invalida(status: int, texto: str) -> bool:
     t = texto.lower()
+    # 401 "invalid authentication credentials": lo que devuelve con una clave que no es de AI
+    # Studio (medido 2026-09-29 con una de 53 caracteres que no empieza con "AIza").
     return status in (400, 401, 403) and ("api_key_invalid" in t or "api key not valid" in t
-                                          or "api key expired" in t or "permission_denied" in t)
+                                          or "api key expired" in t or "permission_denied" in t
+                                          or "invalid authentication credentials" in t
+                                          or "unauthenticated" in t)
 
 
 def es_sin_cuota(status: int, texto: str) -> bool:

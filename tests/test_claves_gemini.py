@@ -142,3 +142,10 @@ def test_la_voz_tambien_pasa_a_la_segunda_sin_cuota(monkeypatch):
     monkeypatch.setattr(gemini, "hablar", hablar)
     assert hablar_con_claves(CLAVES, "hola", aviso=lambda *a: avisos.append(a[0])) == (b"pcm", 24000)
     assert usadas == ["K1", "K2"] and avisos == ["segunda"]
+
+
+def test_un_401_de_credenciales_tambien_es_clave_invalida():
+    # medido en la Pi 2026-09-29 con una clave que no es de AI Studio
+    t = '401 {"error": {"code": 401, "message": "Request had invalid authentication credentials.", "status": "UNAUTHENTICATED"}}'
+    assert gemini.es_clave_invalida(401, t)
+    assert not gemini.es_clave_invalida(429, t) and not gemini.es_clave_invalida(401, "otra cosa")
