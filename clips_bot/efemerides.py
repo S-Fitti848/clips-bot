@@ -309,6 +309,24 @@ class Wiki:
                 out.append({"archivo": p["title"], **p["imageinfo"][0]})
         return out
 
+    def coordenadas(self, lang: str, titulo: str) -> tuple[float, float] | None:
+        """(lat, lon) del artículo, si Wikipedia las tiene (para el mapa con el punto)."""
+        d = self._get(API.format(lang=lang), {"action": "query", "format": "json", "prop": "coordinates",
+                                              "redirects": 1, "titles": titulo})
+        for p in (d.get("query") or {}).get("pages", {}).values():
+            for c in p.get("coordinates") or []:
+                return float(c["lat"]), float(c["lon"])
+        return None
+
+    def mapa_base(self, carpeta: Path) -> Path:
+        """El mapa del mundo (NASA Blue Marble, dominio público) en miniatura de 2560 px, en caché."""
+        from .graficos import MAPA_BASE
+
+        info = self.info("commons", [MAPA_BASE], 2560)
+        if not info or not es_miniatura(info[0].get("thumburl") or ""):
+            raise WikiError("no pude conseguir el mapa base")
+        return self.bajar(info[0]["thumburl"], carpeta / "mapa_base.png")
+
     def bajar(self, url: str, destino: Path) -> Path:
         """Solo miniaturas (ver MINIATURAS), y cada una una sola vez: queda en la caché."""
         if not es_miniatura(url):
@@ -579,6 +597,8 @@ nombre, ni un número, ni una fecha que no esté ahí. Si el artículo no lo dic
   que se puede ver en movimiento (un despegue, una explosión controlada, un descubrimiento, algo en
   el espacio, una multitud que festeja). Esas van con video en vez de foto. false en las de
   contexto (quién era, dónde, por qué importa) y en la primera frase.
+- `claves`: 2 a 4 palabras SUELTAS del guion, escritas tal cual aparecen, que conviene ver grandes
+  en pantalla cuando la voz las dice (la cosa, el nombre o la cifra clave). No "hoy" ni "año".
 - `idea_clave`: en una frase, lo que un chico de 15 años tiene que haber entendido al final (qué
   pasó y por qué importa). El guion tiene que explicarlo.
 - `titulo`: hasta 55 caracteres, con gancho, sin clickbait falso. `descripcion`: 1 a 3 frases
@@ -596,6 +616,7 @@ SCHEMA_GUION = {
                            "presente": {"type": "BOOLEAN"}, "accion": {"type": "BOOLEAN"}},
             "required": ["texto", "mostrar", "presente", "accion"]}},
         "idea_clave": {"type": "STRING"},
+        "claves": {"type": "ARRAY", "items": {"type": "STRING"}},
         "titulo": {"type": "STRING"},
         "descripcion": {"type": "STRING"},
         "hashtags": {"type": "ARRAY", "items": {"type": "STRING"}},
@@ -674,6 +695,7 @@ class Guion:
     # ({"3": Video como dict}) y las que van con video (lo que eligió Gemini, o lo que cambió Santi
     # con 🎬). `con_videos`: la propuesta se armó buscando videos (lo respeta ✏️).
     accion: list[int] = field(default_factory=list)
+    claves: list[str] = field(default_factory=list)   # palabras que se ven grandes al decirlas
     videos: dict = field(default_factory=dict)
     con_video: list[int] = field(default_factory=list)
     con_videos: bool = False
@@ -754,6 +776,17 @@ def validar_guion(d: dict, anio: int, fuente: str) -> list[str]:
 MAX_VIDEOS = 3
 
 
+def claves_del_guion(claves, frases: list[str]) -> list[str]:
+    """Hasta 4 palabras sueltas que estén de verdad en el guion (lo demás, afuera sin reintentar)."""
+    palabras = set(re.findall(r"\w+", _norm(" ".join(frases))))
+    out = []
+    for c in claves or []:
+        c = str(c).strip(" ,.;:¡!¿?\"'«»")
+        if c and len(c.split()) == 1 and _norm(c) in palabras and c not in out:
+            out.append(c)
+    return out[:4]
+
+
 def frases_de_accion(frases: list[dict]) -> list[int]:
     """Las que Gemini marcó con `accion`, sin la primera (es el "Un día como hoy") y hasta 3."""
     return [i for i, f in enumerate(frases) if i > 0 and (f or {}).get("accion")][:MAX_VIDEOS]
@@ -780,7 +813,8 @@ def escribir_guion(cliente, e: Evento, fuente: str, correccion: str = "", anteri
                          mostrar=[f["mostrar"].strip() for f in d["frases"]],
                          idea_clave=str(d["idea_clave"]).strip(),
                          presente=[bool(f.get("presente")) for f in d["frases"]],
-                         accion=frases_de_accion(d["frases"]))
+                         accion=frases_de_accion(d["frases"]),
+                         claves=claves_del_guion(d.get("claves"), [f["texto"] for f in d["frases"]]))
     raise NarrarError("El guion no pasó la validación: " + "; ".join(errores))
 
 
@@ -1254,7 +1288,8 @@ def filtro_tramo(ancho: int, alto: int, W: int, H: int, frames: int, fx: float, 
 
 
 def armar_video(tramos: list[tuple[Path, float]], voz: Path, dir_subs: Path, salida: Path,
-                render, fps: int = 30) -> Path:
+                render, fps: int = 30, parallax: bool = False,
+                mapa: tuple[Path, float, float] | None = None) -> Path:
     """Una foto por frase (cada tramo dura lo que su frase), la voz, y los subtítulos + el año que
     ya están en `dir_subs/subs.ass`. Cada tramo se encodea aparte y al final se pegan."""
     from PIL import Image
@@ -1275,10 +1310,20 @@ def armar_video(tramos: list[tuple[Path, float]], voz: Path, dir_subs: Path, sal
                  "-crf", "18", "-pix_fmt", "yuv420p", str(parte.resolve())])
             partes.append(parte)
             continue
-        with Image.open(foto) as im:
-            ancho, alto = im.size
         fx, fy = foco(foto)
         parte = dir_subs / f"tramo_{i:02d}.mp4"
+        if parallax:
+            from . import parallax as px
+
+            try:
+                px.renderizar(Path(foto).resolve(), frames / fps, parte.resolve(), W, H,
+                              render.blur_sigma, (fx, fy), fps=fps, preset=render.x264_preset)
+                partes.append(parte)
+                continue
+            except RuntimeError as e:     # si falla, esa foto va con el zoom de siempre
+                log.warning("parallax de %s falló (%s): va con zoom", foto, e)
+        with Image.open(foto) as im:
+            ancho, alto = im.size
         run([find_bin("ffmpeg"), "-hide_banner", "-loglevel", "error", "-y",
              "-loop", "1", "-framerate", str(fps), "-t", f"{frames / fps:.3f}", "-i", str(foto.resolve()),
              "-i", str(foto.resolve()),
@@ -1296,9 +1341,16 @@ def armar_video(tramos: list[tuple[Path, float]], voz: Path, dir_subs: Path, sal
     # el audio a 26,7 s en un video de 35,4 s.
     total = sum(max(1, int(round(d * fps))) for _, d in tramos) / fps
     audio = preparar_audio(voz, total, dir_subs / "audio_final.wav")
+    entrada_mapa, filtro = [], "[0:v]ass=subs.ass[v]"
+    if mapa:
+        from .graficos import filtro_mapa
+
+        entrada_mapa = ["-loop", "1", "-i", str(Path(mapa[0]).resolve())]
+        filtro = ("[0:v]null[base];" + filtro_mapa(2, mapa[1], mapa[2], W, H).replace(
+            "enable=", "shortest=1:enable=") + "[vm];[vm]ass=subs.ass[v]")
     run([find_bin("ffmpeg"), "-hide_banner", "-loglevel", "error", "-y",
-         "-f", "concat", "-safe", "0", "-i", "tramos.txt", "-i", str(audio.resolve()),
-         "-filter_complex", "[0:v]ass=subs.ass[v]", "-map", "[v]", "-map", "1:a",
+         "-f", "concat", "-safe", "0", "-i", "tramos.txt", "-i", str(audio.resolve()), *entrada_mapa,
+         "-filter_complex", filtro, "-map", "[v]", "-map", "1:a",
          "-c:v", "libx264", "-preset", render.x264_preset, "-crf", str(render.crf),
          "-pix_fmt", "yuv420p", "-maxrate", f"{render.maxrate_kbps}k",
          "-bufsize", f"{2 * render.maxrate_kbps}k", "-c:a", "aac", "-b:a", "160k", "-ar", "48000",
@@ -1694,11 +1746,19 @@ def hacer_video(p: Propuesta, settings, carpeta: Path, avisar=log.info, conn=Non
     subs = sub.palabra_por_palabra(palabras, settings.subtitulos)
     sub.escribir_ass(subs, carpeta / "subs.ass", settings.subtitulos, settings.render,
                      cartel=str(e.anio), cartel_s=2.0, cartel_grande=True)
+    cfg_ef = settings.efemerides
+    if cfg_ef.graficos:
+        # El año contando (en vez de quieto) y las palabras clave grandes cuando la voz las dice.
+        from . import graficos as gr
+
+        gr.sacar_cartel(carpeta / "subs.ass")
+        gr.agregar_al_ass(carpeta / "subs.ass",
+                          gr.estilos(settings.render.ancho, settings.render.alto, settings.subtitulos.fuente),
+                          gr.anio_contando(e.anio) + gr.claves_en_tiempo(palabras, g.claves))
     avisar(f"subtítulos: {len(subs)} palabras en {time.time() - t0:.0f} s")
     # La música entra DESPUÉS de los subtítulos: Whisper tiene que escuchar la voz sola.
     from .config import ROOT
 
-    cfg_ef = settings.efemerides
     carpeta_musica = ROOT / cfg_ef.carpeta_musica
     tema = musica.elegir(musica.cargar(carpeta_musica), g.tono,
                          musica.recientes(conn) if conn else [],
@@ -1731,10 +1791,34 @@ def hacer_video(p: Propuesta, settings, carpeta: Path, avisar=log.info, conn=Non
     for problema in ilustrar.errores_plan([x for x in plan if x[1] != VIDEO], g.minimo_fotos):
         avisar(f"⚠️ fotos: {problema}")
     tramos = [(rutas_video[i] if f == VIDEO else Path(p.fotos[f]["ruta"]), s) for i, f, s in plan]
+    mapa = None
+    if cfg_ef.graficos:
+        from . import graficos as gr
+
+        # Un whoosh suave en cada cambio de foto o video (en la voz+música, antes de las reglas de
+        # audio que aplica armar_video).
+        cortes, t = [], 0.0
+        for _, _, s in plan[:-1]:
+            t += round(s * 30) / 30
+            cortes.append(t)
+        audio = gr.mezclar_whoosh(audio, cortes, gr.whoosh(carpeta / "whoosh.wav"),
+                                  carpeta / "voz_musica_whoosh.wav")
+        # El mapa con el punto, durante la segunda frase (si el artículo tiene coordenadas).
+        try:
+            wiki = Wiki()
+            coords = wiki.coordenadas(e.lang, e.paginas[0])
+            if coords and gr.distancia_ok(*coords) and len(inicios) > 1:
+                desde = inicios[1]
+                hasta = min(desde + 3.5, inicios[2] if len(inicios) > 2 else fin)
+                mapa = (gr.mapa(wiki.mapa_base(carpeta), *coords, carpeta / "mapa.png"), desde, hasta)
+                avisar(f"mapa: {coords[0]:.2f}, {coords[1]:.2f} de {desde:.1f} a {hasta:.1f} s")
+        except (WikiError, OSError, KeyError, ValueError) as err:
+            avisar(f"mapa: no salió ({str(err)[:100]})")
     t0 = time.time()
     dia = date.fromisoformat(p.fecha)
     clip_id = f"efemeride_{dia:%m%d}_{e.anio}"
-    salida = armar_video(tramos, audio, carpeta, carpeta / f"{clip_id}.mp4", settings.render)
+    salida = armar_video(tramos, audio, carpeta, carpeta / f"{clip_id}.mp4", settings.render,
+                         parallax=cfg_ef.parallax, mapa=mapa)
     avisar(f"video: {time.time() - t0:.0f} s, {len(tramos)} tramos, "
            f"{len({f for _, f, _ in plan if f != VIDEO})} fotos distintas, {len(rutas_video)} videos")
     for problema in chequear_audio(salida):
@@ -1744,6 +1828,10 @@ def hacer_video(p: Propuesta, settings, carpeta: Path, avisar=log.info, conn=Non
     cred = creditos(usadas_en_orden(p, plan))
     if rutas_video:
         cred += "\n" + creditos_videos(videos_en_orden(p, plan))
+    if mapa:
+        from .graficos import MAPA_CREDITO
+
+        cred += f"\n{MAPA_CREDITO}"
     if tema:
         cred += f"\nMúsica: {tema.credito()}"
     return {"clip_id": clip_id, "streamer": "Pequeña Historia", "salida": str(salida),

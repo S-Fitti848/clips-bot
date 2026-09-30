@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-09-30 | **Versión:** v0.45.0 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 + escucha de Telegram 24/7)
+**Snapshot:** 2026-09-30 | **Versión:** v0.46.0 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 + escucha de Telegram 24/7)
 
 > **SI ESTÁS EMPEZANDO UNA SESIÓN NUEVA, LEÉ §10.** Ahí está qué está hecho, qué quedó a medias,
 > qué falta, y las trampas que ya nos mordieron.
@@ -769,6 +769,22 @@ Problemas abiertos:
 
 ## 9. CHANGELOG
 
+- v0.46.0 (2026-09-30) — **Pequeña Historia más dinámica** (pedido de Santi). (1) Ningún video
+  entra sin que Gemini mire sus 3 cuadros con la frase y la época: también el del botón 🎬 sobre
+  una frase sin video (`revisar_video`, una llamada; antes elegía el primero sin mirar); nada de
+  dibujos animados, ilustraciones ni recreaciones salvo que la frase hable de eso. (2) Fotos con
+  **parallax 3D** (`parallax.py`, sin modelos: GrabCut separa la figura de la cara o del centro,
+  el hueco se rellena con inpaint, dos capas a distinta velocidad; figura llena de contorno
+  exterior, porque GrabCut dejaba la boca de un retrato como fondo). Medido en Windows: 5,5 s por
+  foto de 5 s contra 7,3 s del zoom de antes (la mezcla en float tardaba 75 ms por cuadro;
+  `cv2.blendLinear`, 12). (3) Fotos y videos horizontales ocupan al menos el **72 % del alto**
+  (`parallax.caja`, `ALTO_MIN`), recortando los costados hacia la cara o el centro. (4)
+  `graficos.py`: el año **contando** al principio (en vez de quieto), **mapa** con el punto
+  (coordenadas del artículo + NASA Blue Marble de Commons, dominio público, en la segunda frase),
+  **palabras clave grandes** cuando la voz las dice (`claves` en el guion, misma llamada; solo
+  palabras que están en el guion) y un **whoosh** sintetizado en cada cambio, mezclado antes de las
+  reglas de audio. Interruptores `efemerides.parallax` y `efemerides.graficos` (prendidos).
+  609 tests OK.
 - v0.45.0 (2026-09-30) — **Voz y claves.** (1) El mensaje del video de la efeméride dice qué voz
   salió: "Voz: Laomedeia" o "Voz: Piper (respaldo, sin cuota | Gemini no respondió)" (el motivo
   viaja en el motor, `piper:…|motivo`); con Piper, botón "🔁 Rehacer con Laomedeia" (`efe:voz`, la

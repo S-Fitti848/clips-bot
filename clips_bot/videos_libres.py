@@ -380,7 +380,8 @@ def filtro_video(W: int, H: int, blur: float, fps: int = 30) -> str:
     return (f"[0:v]fps={fps},split[a][b];"
             f"[a]scale={W}:{H}:force_original_aspect_ratio=increase,crop={W}:{H},"
             f"gblur=sigma={blur},setsar=1[fondo];"
-            f"[b]scale={W}:{H}:force_original_aspect_ratio=decrease,setsar=1[frente];"
+            # Que ocupe al menos el 72 % del alto: los costados se recortan (centro de la acción).
+            f"[b]scale=-2:{int(H * 0.72) // 2 * 2},crop='min(iw,{W})':ih,setsar=1[frente];"
             f"[fondo][frente]overlay=(W-w)/2:(H-h)/2,format=yuv420p[v]")
 
 
