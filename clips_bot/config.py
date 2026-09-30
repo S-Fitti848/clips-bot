@@ -255,6 +255,8 @@ class EfemeridesCfg:
     # después del último avisa que no hay propuesta.
     reintentos: tuple = ("07:00", "10:00")
     musica: bool = True
+    # 2 o 3 frases de acción con video libre (videos_libres.py). Apagado hasta que Santi vea la muestra.
+    videos: bool = False
     carpeta_musica: str = "musica"
     musica_volumen: float = 0.12
     musica_por_fuente: int = 10      # temas que se bajan solos de Kevin MacLeod y de Openverse

@@ -281,7 +281,7 @@ def conn(tmp_path):
 
 
 def test_la_aprobacion_trae_un_boton_por_foto_del_guion(conn, monkeypatch, tmp_path):
-    monkeypatch.setattr(ef, "hoja_de_guion", lambda fotos, filas, salida: salida)
+    monkeypatch.setattr(ef, "hoja_de_guion", lambda fotos, filas, salida, videos=None: salida)
     tg = FakeTG()
     m._efe_mostrar(conn, tg, "1", "0a1b2c", {"propuesta": _propuesta().__dict__,
                                             "carpeta": str(tmp_path), "chat_id": "1"})
@@ -305,7 +305,7 @@ def test_aprobar_con_algo_pesado_andando_va_a_la_cola(conn, tmp_path):
 def test_sin_aprobar_no_se_sintetiza(conn, monkeypatch, tmp_path):
     """✏️ y 🔁 nunca llegan a la voz."""
     monkeypatch.setattr(ef, "hacer_video", lambda *a, **k: pytest.fail("no se aprobó"))
-    monkeypatch.setattr(ef, "hoja_de_guion", lambda fotos, filas, salida: salida)
+    monkeypatch.setattr(ef, "hoja_de_guion", lambda fotos, filas, salida, videos=None: salida)
     monkeypatch.setattr(ef, "Wiki", FakeWiki)
     db.set_valor(conn, "efe:0a1b2c", json.dumps({"propuesta": _propuesta().__dict__,
                                                  "carpeta": str(tmp_path), "chat_id": "1"}))

@@ -22,6 +22,7 @@ import json
 import logging
 import re
 import shutil
+import subprocess
 import time
 import unicodedata
 from dataclasses import asdict, dataclass, field
@@ -36,6 +37,7 @@ from . import ilustrar
 from .narrar import NarrarError
 from .reglas import REGLAS_CLARIDAD
 from .textos import nombres_propios
+from .videos_libres import Video
 
 log = logging.getLogger(__name__)
 
@@ -573,6 +575,10 @@ nombre, ni un número, ni una fecha que no esté ahí. Si el artículo no lo dic
 - Cada frase lleva `presente`: true SOLO si la frase habla de HOY (algo que sigue existiendo o
   pasa ahora: "hoy ese avión está en un museo"); si no, false. Con false, las fotos de mucho
   después del hecho no se usan.
+- `accion`: true en 2 o 3 frases (nunca más), las de ACCIÓN o el MOMENTO CLAVE: donde pasa algo
+  que se puede ver en movimiento (un despegue, una explosión controlada, un descubrimiento, algo en
+  el espacio, una multitud que festeja). Esas van con video en vez de foto. false en las de
+  contexto (quién era, dónde, por qué importa) y en la primera frase.
 - `idea_clave`: en una frase, lo que un chico de 15 años tiene que haber entendido al final (qué
   pasó y por qué importa). El guion tiene que explicarlo.
 - `titulo`: hasta 55 caracteres, con gancho, sin clickbait falso. `descripcion`: 1 a 3 frases
@@ -587,8 +593,8 @@ SCHEMA_GUION = {
         "frases": {"type": "ARRAY", "items": {
             "type": "OBJECT",
             "properties": {"texto": {"type": "STRING"}, "mostrar": {"type": "STRING"},
-                           "presente": {"type": "BOOLEAN"}},
-            "required": ["texto", "mostrar", "presente"]}},
+                           "presente": {"type": "BOOLEAN"}, "accion": {"type": "BOOLEAN"}},
+            "required": ["texto", "mostrar", "presente", "accion"]}},
         "idea_clave": {"type": "STRING"},
         "titulo": {"type": "STRING"},
         "descripcion": {"type": "STRING"},
@@ -664,6 +670,13 @@ class Guion:
     modernas: list[int] = field(default_factory=list)   # fotos de más de MARGEN_EPOCA años después
     minimo_fotos: int = ilustrar.MIN_FOTOS_DISTINTAS     # baja si no hay tantas fotos de época
     sin_alternativa: bool = False     # ningún hecho del día llegó a 4 fotos de época: es el que más tenía
+    # Videos (2026-09-29): las frases de acción que marcó Gemini, el video elegido para cada frase
+    # ({"3": Video como dict}) y las que van con video (lo que eligió Gemini, o lo que cambió Santi
+    # con 🎬). `con_videos`: la propuesta se armó buscando videos (lo respeta ✏️).
+    accion: list[int] = field(default_factory=list)
+    videos: dict = field(default_factory=dict)
+    con_video: list[int] = field(default_factory=list)
+    con_videos: bool = False
 
     @property
     def texto(self) -> str:
@@ -738,6 +751,14 @@ def validar_guion(d: dict, anio: int, fuente: str) -> list[str]:
     return errores
 
 
+MAX_VIDEOS = 3
+
+
+def frases_de_accion(frases: list[dict]) -> list[int]:
+    """Las que Gemini marcó con `accion`, sin la primera (es el "Un día como hoy") y hasta 3."""
+    return [i for i, f in enumerate(frases) if i > 0 and (f or {}).get("accion")][:MAX_VIDEOS]
+
+
 def escribir_guion(cliente, e: Evento, fuente: str, correccion: str = "", anterior: str = "",
                    reintentos: int = 2) -> Guion:
     """Gemini con el artículo, SIN fotos: el guion y qué mostrar en cada frase. Las fotos se buscan
@@ -758,7 +779,8 @@ def escribir_guion(cliente, e: Evento, fuente: str, correccion: str = "", anteri
                          tono=d.get("tono") if d.get("tono") in TONOS_GUION else "",
                          mostrar=[f["mostrar"].strip() for f in d["frases"]],
                          idea_clave=str(d["idea_clave"]).strip(),
-                         presente=[bool(f.get("presente")) for f in d["frases"]])
+                         presente=[bool(f.get("presente")) for f in d["frases"]],
+                         accion=frases_de_accion(d["frases"]))
     raise NarrarError("El guion no pasó la validación: " + "; ".join(errores))
 
 
@@ -781,6 +803,13 @@ contar un choque de 1940, aunque sea del mismo modelo. En `de_epoca` confirmá s
 pusiste primera es de la época y el lugar de la frase (para las frases marcadas "habla de hoy",
 una foto actual sirve y va true).
 
+VIDEOS: algunas frases (las de acción) tienen además videos candidatos, V1, V2…, y de cada uno
+ves 3 cuadros. Para esas frases, en `video` poné el número del video que muestra LO QUE DICE la
+frase (0 si ninguno sirve: mejor la foto que un video que no tiene nada que ver) y en `momento`
+cuál de sus 3 cuadros (1, 2 o 3) es el mejor lugar para cortar. Preferí la filmación de la época
+(la marcada "de archivo"). En `video_de_epoca` confirmá que el video no es un anacronismo para la
+frase: un cohete moderno no sirve para 1957; el cielo, el mar o el espacio pueden servir.
+
 `descartadas`: MIRÁ las fotos y descartá las que no sirven para nada: mapas, gráficos, diagramas,
 banderas, escudos, firmas, logos, capturas de pantalla, retratos de alguien que NO protagoniza el
 hecho, fotos de otro tema, y cualquier imagen violenta o con muertos o heridos. Nunca las pongas en
@@ -794,7 +823,9 @@ SCHEMA_FOTOS = {
             "type": "OBJECT",
             "properties": {"se_ve": {"type": "STRING"},
                            "fotos": {"type": "ARRAY", "items": {"type": "INTEGER"}},
-                           "de_epoca": {"type": "BOOLEAN"}},
+                           "de_epoca": {"type": "BOOLEAN"},
+                           "video": {"type": "INTEGER"}, "momento": {"type": "INTEGER"},
+                           "video_de_epoca": {"type": "BOOLEAN"}},
             "required": ["se_ve", "fotos", "de_epoca"]}},
         "descartadas": {"type": "ARRAY", "items": {"type": "INTEGER"}},
     },
@@ -829,10 +860,13 @@ def rankings_de(d: dict, candidatas: list[list[int]],
 
 def elegir_fotos(cliente, g: Guion, pool: list[Foto], candidatas: list[list[int]],
                  propias: list[list[int]] | None = None, reintentos: int = 1,
-                 avisar=log.info, anio: int | None = None) -> tuple[list[list[int]], set[int]]:
+                 avisar=log.info, anio: int | None = None, videos: dict | None = None,
+                 elegidos: dict | None = None) -> tuple[list[list[int]], set[int]]:
     """UNA llamada: Gemini ve todas las fotos y ordena las que sirven para cada frase.
     `propias`: las que salieron de la búsqueda de esa frase (se le muestran primero). `anio`: el
-    del hecho; junto con el año de cada foto, para que confirme la época (`de_epoca`)."""
+    del hecho; junto con el año de cada foto, para que confirme la época (`de_epoca`).
+    `videos`: {frase: [Video con sus cuadros]} de las frases de acción; en la MISMA llamada Gemini
+    elige cuál y en qué momento, y lo elegido queda en `elegidos` ({frase: Video})."""
     lineas = []
     for i, (frase, cands) in enumerate(zip(g.frases, candidatas), 1):
         mostrar = g.mostrar[i - 1] if i - 1 < len(g.mostrar) else ""
@@ -846,6 +880,17 @@ def elegir_fotos(cliente, g: Guion, pool: list[Foto], candidatas: list[list[int]
     prompt = ((f"EL HECHO ES DE {anio}.\n\n" if anio else "") + "FRASES:\n" + "\n".join(lineas)
               + "\n\nFOTOS (entre paréntesis, cuándo se sacó):\n" + epigrafes)
     imagenes = [_jpeg_chico(Path(f.ruta), 384) for f in pool]
+    videos = {i: vs for i, vs in (videos or {}).items() if vs}
+    if videos:
+        partes = ["\n\nVIDEOS (después de las fotos vienen sus cuadros, 3 por video, en este orden):"]
+        for i, vs in sorted(videos.items()):
+            for k, v in enumerate(vs, 1):
+                tipo = "de archivo" if v.de_archivo else "stock, sin fecha" if v.anio is None else "stock"
+                partes.append(f"frase {i + 1}, V{k}: {v.titulo[:90]} ({tipo}, {v.etiqueta()}, "
+                              f"{v.duracion:.0f} s) — imágenes {len(imagenes) + 1} a "
+                              f"{len(imagenes) + len(v.frames)}")
+                imagenes += [_jpeg_chico(Path(fr), 384) for fr in v.frames]
+        prompt += "\n".join(partes)
     error = ""
     for _ in range(reintentos + 1):
         extra = f"\n\nTu respuesta anterior no servía: {error}" if error else ""
@@ -860,13 +905,58 @@ def elegir_fotos(cliente, g: Guion, pool: list[Foto], candidatas: list[list[int]
             epoca = "" if (f or {}).get("de_epoca") is not False else " (NO es de la época)"
             avisar(f"    frase {i}: {[x + 1 for x in rk]} — se ve: "
                    f"{str((f or {}).get('se_ve'))[:80]}{epoca}")
+        if elegidos is not None:
+            elegidos.update(video_elegido(d["frases"], videos, g.presente, avisar))
         return rankings, malas
     raise NarrarError(f"Gemini no eligió bien las fotos: {error}")
 
 
+def video_elegido(frases: list, videos: dict, presente: list[bool], avisar=log.info) -> dict:
+    """{frase: Video} de la respuesta: el que eligió Gemini, cortado en el cuadro que dijo. Afuera
+    si dice que es un anacronismo en una frase del pasado, o si el número no existe."""
+    out = {}
+    for i, vs in videos.items():
+        f = frases[i] if i < len(frases) else {}
+        k, m = (f or {}).get("video"), (f or {}).get("momento")
+        if not isinstance(k, int) or not 1 <= k <= len(vs):
+            avisar(f"    frase {i + 1}: ningún video sirve, queda la foto")
+            continue
+        hoy = i < len(presente) and presente[i]
+        if (f or {}).get("video_de_epoca") is False and not hoy:
+            avisar(f"    frase {i + 1}: el video V{k} es de otra época, queda la foto")
+            continue
+        v = Video.de_dict(vs[k - 1].a_dict())   # una copia: la lista de candidatos no cambia
+        cuadro = (m - 1) if isinstance(m, int) and 1 <= m <= len(v.momentos) else len(v.momentos) // 2
+        v.momento = v.momentos[cuadro] if v.momentos else 0.0
+        v.frames = [v.frames[cuadro]] if v.frames else []
+        out[i] = v
+        avisar(f"    frase {i + 1}: 🎬 video V{k} ({v.etiqueta()}) en {v.momento:.0f} s")
+    return out
+
+
+def buscar_videos(g: Guion, anio: int, carpeta: Path, buscador=None, avisar=log.info,
+                  frases: list[int] | None = None) -> dict:
+    """{frase: [Video con 3 cuadros]} para las frases de acción (o las pedidas)."""
+    from . import videos_libres as vl
+
+    buscador = buscador or vl.Buscador()
+    out = {}
+    for i in (g.accion if frases is None else frases):
+        if i >= len(g.mostrar):
+            continue
+        hoy = i < len(g.presente) and g.presente[i]
+        vs = buscador.candidatos(g.mostrar[i], anio, hoy, avisar)[:4]
+        vs = [vl.sacar_frames(v, carpeta / "videos", f"f{i:02d}_v{k}") for k, v in enumerate(vs)]
+        out[i] = [v for v in vs if v.frames]
+        avisar(f"    frase {i + 1} (acción): {len(out[i])} videos candidatos "
+               f"({', '.join(v.etiqueta() for v in out[i]) or 'ninguno'})")
+    return out
+
+
 def fotos_para_guion(wiki: Wiki, cliente, e: Evento, g: Guion, fotos_articulo: list[Foto],
                      carpeta: Path, avisar=log.info, pool: list[Foto] | None = None,
-                     descartadas: set[int] | None = None) -> tuple[list[Foto], Guion]:
+                     descartadas: set[int] | None = None, videos: bool = False,
+                     buscador=None) -> tuple[list[Foto], Guion]:
     """Busca candidatas para cada frase (las del artículo + Commons con su `mostrar`), las baja,
     Gemini elige, y arma la foto de cada frase con las reglas de `ilustrar`. Devuelve el pool (las
     fotos que se bajaron, en su numeración) y el guion con `fotos`, `ranking` y `descartadas`.
@@ -909,8 +999,13 @@ def fotos_para_guion(wiki: Wiki, cliente, e: Evento, g: Guion, fotos_articulo: l
     todas = [i for i in range(len(pool)) if i not in descartadas]
     candidatas = [[x for x in dict.fromkeys(p + del_hecho + todas) if hoy or x not in modernas]
                   for p, hoy in zip(propias, presente)]
+    candidatos_video = buscar_videos(g, e.anio, carpeta, buscador, avisar) if videos else {}
+    elegidos: dict = {}
     rankings, vistas_malas = elegir_fotos(cliente, g, pool, candidatas, propias, avisar=avisar,
-                                          anio=e.anio)
+                                          anio=e.anio, videos=candidatos_video, elegidos=elegidos)
+    g.con_videos = videos
+    g.videos = {str(i): v.a_dict() for i, v in elegidos.items()}
+    g.con_video = sorted(elegidos)
     descartadas |= vistas_malas
     g.ranking, g.descartadas = rankings, sorted(descartadas)
     g.del_hecho, g.modernas, g.presente = del_hecho, sorted(modernas), presente
@@ -997,9 +1092,10 @@ def filas_de_hoja(plan: list[tuple[int, int, float]], frases: list[str]) -> list
 
 
 def hoja_de_guion(fotos: list[Foto], filas: list[tuple[list[int], str]], salida: Path,
-                  ancho: int = 1000, miniatura: int = 220) -> Path:
+                  ancho: int = 1000, miniatura: int = 220, videos: dict | None = None) -> Path:
     """La hoja para aprobar: por cada frase, su foto (o sus dos fotos) numerada a la izquierda y la
-    frase al lado (con tildes: por eso PIL y no cv2.putText)."""
+    frase al lado (con tildes: por eso PIL y no cv2.putText). Una frase con video muestra el
+    cuadro elegido con "VIDEO" y de dónde sale (`videos`: {frase: Video})."""
     import textwrap
 
     from PIL import Image, ImageDraw
@@ -1007,13 +1103,27 @@ def hoja_de_guion(fotos: list[Foto], filas: list[tuple[list[int], str]], salida:
     chica, grande = _fuente_ttf(26), _fuente_ttf(30)
     alto_mini = int(miniatura * 0.75)
     renglones = []
-    for nums, frase in filas:
+    for fila_i, (nums, frase) in enumerate(filas):
         x_texto = 12 + len(nums) * (miniatura + 8) + 8
         lineas = textwrap.wrap(frase, max(20, int((ancho - x_texto) / 14)))
         alto = max(alto_mini, 30 * len(lineas)) + 16
         fila = Image.new("RGB", (ancho, alto), (20, 20, 20))
         d = ImageDraw.Draw(fila)
         for k, n in enumerate(nums):
+            if n == VIDEO:
+                v = (videos or {}).get(fila_i)
+                x = 12 + k * (miniatura + 8)
+                if v is not None and v.frames:
+                    img = Image.open(v.frames[0]).convert("RGB")
+                    img = img.resize((miniatura, max(1, int(img.height * miniatura / img.width))))
+                    fila.paste(img.crop((0, 0, miniatura, min(img.height, alto_mini))), (x, 8))
+                d.rectangle((x, 8, x + 110, 48), fill=(170, 20, 20))
+                d.text((x + 8, 10), "VIDEO", font=grande, fill=(255, 255, 255))
+                etiqueta = v.etiqueta() if v is not None else "video"
+                d.rectangle((x, alto_mini - 28, x + min(miniatura, 13 * len(etiqueta) + 12), alto_mini + 6),
+                            fill=(0, 0, 0))
+                d.text((x + 6, alto_mini - 26), etiqueta, font=chica, fill=(255, 220, 120))
+                continue
             img = Image.open(fotos[n].ruta).convert("RGB")
             img = img.resize((miniatura, max(1, int(img.height * miniatura / img.width))))
             img = img.crop((0, 0, miniatura, min(img.height, alto_mini)))
@@ -1057,17 +1167,33 @@ def texto_aprobacion(e: Evento, g: Guion, fotos: list[Foto], fecha: date,
     elif g.minimo_fotos < ilustrar.MIN_FOTOS_DISTINTAS:
         lineas.append(f"⚠️ Solo hay {g.minimo_fotos} fotos de la época: algunas se repiten "
                       "(antes que usar fotos modernas).")
-    lineas.append("\n<b>Guion</b> (foto → frase):")
+    from .videos_libres import Video
+
+    lineas.append("\n<b>Guion</b> (foto → frase; 🎬 = video):")
     filas = filas_de_hoja(plan, g.frases) if plan else [([f], t) for f, t in zip(g.fotos, g.frases)]
-    for nums, texto in filas:
+    for i, (nums, texto) in enumerate(filas):
+        if VIDEO in nums and str(i) in g.videos:
+            v = Video.de_dict(g.videos[str(i)])
+            lineas.append(f"🎬 {i + 1}. [video: {html.escape(v.etiqueta())} — "
+                          f"{html.escape(v.titulo[:60])}] {html.escape(texto)}")
+            continue
         cuales = "→".join(f"{n + 1} ({fotos_por_num[n].anio or 's/f'})" if n in fotos_por_num
                           else str(n + 1) for n in nums)
-        lineas.append(f"[{cuales}] {html.escape(texto)}")
+        accion = " (acción: sin video libre, va con foto)" if i in g.accion and g.con_videos else ""
+        lineas.append(f"{i + 1}. [{cuales}] {html.escape(texto)}{accion}")
     palabras = len(g.texto.split())
     # Con la voz de Gemini (~2,3 palabras/s medido), acelerada hasta 45 s si hace falta.
+    videos = [Video.de_dict(g.videos[str(i)]) for i, (nums, _) in enumerate(filas)
+              if VIDEO in nums and str(i) in g.videos]
     lineas.append(f"\n{palabras} palabras, ~{min(palabras / PALABRAS_POR_S_VOZ, 45):.0f} s de voz, "
-                  f"{len({n for nums, _ in filas for n in nums})} fotos distintas.")
-    lineas.append("\n<b>Créditos</b>\n" + html.escape(creditos(fotos)))
+                  f"{len({n for nums, _ in filas for n in nums if n != VIDEO})} fotos distintas"
+                  + (f", {len(videos)} con video" if videos else "") + ".")
+    if g.con_videos:
+        lineas.append("Con 🎬 N pasás una frase de foto a video o al revés.")
+    from .videos_libres import creditos as creditos_videos
+
+    lineas.append("\n<b>Créditos</b>\n" + html.escape(creditos(fotos))
+                  + (("\n" + html.escape(creditos_videos(videos))) if videos else ""))
     return "\n".join(lineas)[:4000]
 
 
@@ -1116,10 +1242,22 @@ def armar_video(tramos: list[tuple[Path, float]], voz: Path, dir_subs: Path, sal
     ya están en `dir_subs/subs.ass`. Cada tramo se encodea aparte y al final se pegan."""
     from PIL import Image
 
+    from .videos_libres import filtro_video
+
     W, H = render.ancho, render.alto
     partes = []
     for i, (foto, dur) in enumerate(tramos):
         frames = max(1, int(round(dur * fps)))
+        if Path(foto).suffix.lower() in (".mp4", ".webm", ".mov", ".mkv"):
+            # Un tramo de video: dura EXACTO lo de su frase (si es más corto, se repite).
+            parte = dir_subs / f"tramo_{i:02d}.mp4"
+            run([find_bin("ffmpeg"), "-hide_banner", "-loglevel", "error", "-y",
+                 "-stream_loop", "-1", "-i", str(Path(foto).resolve()),
+                 "-filter_complex", filtro_video(W, H, render.blur_sigma, fps), "-map", "[v]", "-an",
+                 "-frames:v", str(frames), "-c:v", "libx264", "-preset", render.x264_preset,
+                 "-crf", "18", "-pix_fmt", "yuv420p", str(parte.resolve())])
+            partes.append(parte)
+            continue
         with Image.open(foto) as im:
             ancho, alto = im.size
         fx, fy = foco(foto)
@@ -1165,7 +1303,7 @@ class Propuesta:
 
 
 def proponer(wiki: Wiki, cliente, dia: date, carpeta: Path, avisar=log.info,
-             correccion: str = "", saltear: int = 0, hecho: str = "") -> Propuesta:
+             correccion: str = "", saltear: int = 0, hecho: str = "", videos: bool = False) -> Propuesta:
     """Elige el evento, escribe el guion (con qué mostrar en cada frase), busca y elige las fotos
     de cada frase. Si un evento no llega a ilustrar.MIN_FOTOS_DISTINTAS fotos distintas que
     sirvan, pasa al siguiente del ranking.
@@ -1209,7 +1347,7 @@ def proponer(wiki: Wiki, cliente, dia: date, carpeta: Path, avisar=log.info,
         guiones += 1
         try:
             g = escribir_guion(cliente, e, fuente, correccion)
-            pool, g = fotos_para_guion(wiki, cliente, e, g, fotos, carpeta, avisar)
+            pool, g = fotos_para_guion(wiki, cliente, e, g, fotos, carpeta, avisar, videos=videos)
         except PocasFotos as pocas:
             # Menos de 4 fotos de época: al siguiente. Se guarda el que más tenga, por si ninguno llega.
             avisar(f"  {pocas}")
@@ -1260,7 +1398,7 @@ def rehacer_guion(p: Propuesta, wiki: Wiki, cliente, carpeta: Path, correccion: 
     try:
         pool, g = fotos_para_guion(wiki, cliente, e, g, fotos, carpeta, avisar,
                                    pool=[Foto.de_dict(f) for f in p.fotos],
-                                   descartadas=set(anterior.descartadas))
+                                   descartadas=set(anterior.descartadas), videos=anterior.con_videos)
     except PocasFotos as pocas:   # es el hecho que ya se eligió: se sigue con lo que haya, con aviso
         pool, g = pocas.pool, pocas.guion
         g.sin_alternativa = anterior.sin_alternativa
@@ -1271,23 +1409,77 @@ def rehacer_guion(p: Propuesta, wiki: Wiki, cliente, carpeta: Path, correccion: 
 # La música de fondo vive en musica.py (biblioteca, elección por tono, mezcla con ducking).
 
 
+VIDEO = -1   # en un plan, (frase, VIDEO, segundos) = esa frase entera va con su video
+
+
+def con_videos(plan: list[tuple[int, int, float]], g: Guion) -> list[tuple[int, int, float]]:
+    """Las frases que van con video pasan a UN tramo del largo de toda la frase (el video se corta
+    a lo que dura su frase; la regla de 6 s es para las fotos quietas)."""
+    usar = {i for i in g.con_video if str(i) in g.videos}
+    if not usar:
+        return plan
+    out, hecho = [], set()
+    for i, f, s in plan:
+        if i not in usar:
+            out.append((i, f, s))
+        elif i not in hecho:
+            hecho.add(i)
+            out.append((i, VIDEO, round(sum(x for j, _, x in plan if j == i), 3)))
+    return out
+
+
 def plan_de(p: Propuesta, duraciones: list[float] | None = None) -> list[tuple[int, int, float]]:
-    """(frase, foto, segundos) de la propuesta: con las duraciones reales de la voz, o estimadas."""
+    """(frase, foto, segundos) de la propuesta: con las duraciones reales de la voz, o estimadas.
+    Las frases con video salen como (frase, VIDEO, segundos de la frase)."""
     g = Guion.de_dict(p.guion)
     if duraciones is None:
-        return plan_estimado(g, len(p.fotos))
-    return ilustrar.tramos(g.fotos, duraciones, g.rankings(), de_reserva(g, len(p.fotos)))
+        return con_videos(plan_estimado(g, len(p.fotos)), g)
+    return con_videos(ilustrar.tramos(g.fotos, duraciones, g.rankings(), de_reserva(g, len(p.fotos))), g)
+
+
+def videos_en_orden(p: Propuesta, plan: list[tuple[int, int, float]] | None = None):
+    from .videos_libres import Video
+
+    g = Guion.de_dict(p.guion)
+    return [Video.de_dict(g.videos[str(i)]) for i, f, _ in (plan or plan_de(p)) if f == VIDEO]
+
+
+def alternar_video(p: Propuesta, n: int, carpeta: Path, buscador=None, avisar=log.info) -> str:
+    """"🎬 frase N": de video a foto o de foto a video. Si la frase no tiene video elegido, lo busca
+    en el momento (sin Gemini: el primero de archivo, y si no, de stock; el cuadro del medio). Lo
+    mira Santi en la hoja antes de aprobar. Devuelve qué pasó, en castellano."""
+    g, e = Guion.de_dict(p.guion), Evento(**p.evento)
+    i = n - 1
+    if not 0 <= i < len(g.frases):
+        return "Esa frase no existe."
+    if i in g.con_video:
+        g.con_video = [x for x in g.con_video if x != i]
+        p.guion = g.a_dict()
+        return f"Frase {n}: vuelve a foto."
+    if str(i) not in g.videos:
+        halladas = buscar_videos(g, e.anio, carpeta, buscador, avisar, frases=[i]).get(i) or []
+        if not halladas:
+            return f"No encontré un video libre para la frase {n} (queda con foto)."
+        v = halladas[0]
+        cuadro = len(v.momentos) // 2
+        v.momento, v.frames = v.momentos[cuadro], [v.frames[cuadro]]
+        g.videos[str(i)] = v.a_dict()
+    g.con_video = sorted(set(g.con_video) | {i})
+    p.guion = g.a_dict()
+    from .videos_libres import Video
+
+    return f"Frase {n}: 🎬 video ({Video.de_dict(g.videos[str(i)]).etiqueta()})."
 
 
 def usadas_en_orden(p: Propuesta, plan: list[tuple[int, int, float]] | None = None) -> list[Foto]:
     """Las fotos que aparecen en el video, en el orden en que aparecen (para los créditos)."""
-    orden = list(dict.fromkeys(f for _, f, _ in (plan or plan_de(p))))
+    orden = list(dict.fromkeys(f for _, f, _ in (plan or plan_de(p)) if f != VIDEO))
     return [Foto.de_dict(p.fotos[i]) for i in orden]
 
 
 def numeros_usados(p: Propuesta) -> list[int]:
     """Los números (desde 1) de las fotos que se ven, ordenados: los de la hoja y los botones 🔁."""
-    return sorted({f + 1 for _, f, _ in plan_de(p)})
+    return sorted({f + 1 for _, f, _ in plan_de(p) if f != VIDEO})
 
 
 def cambiar_foto(p: Propuesta, n: int, wiki: Wiki, carpeta: Path) -> Foto | None:
@@ -1445,18 +1637,40 @@ def hacer_video(p: Propuesta, settings, carpeta: Path, avisar=log.info, conn=Non
     avisar(f"música: {tema.ruta if tema else 'ninguna'} (tono {g.tono or '?'})")
     # Regla fija (ilustrar.py): con los tiempos REALES de la voz, ninguna foto más de 6 s seguidos.
     plan = plan_de(p, duraciones)
-    for problema in ilustrar.errores_plan(plan, g.minimo_fotos):
+    # Los videos: el tramo de cada uno, del largo REAL de su frase. Si uno no baja, esa frase
+    # vuelve a su foto (el video no puede tumbar la efeméride).
+    from .videos_libres import Video, bajar_tramo
+
+    rutas_video: dict[int, Path] = {}
+    for i, f, s in plan:
+        if f != VIDEO:
+            continue
+        v = Video.de_dict(g.videos[str(i)])
+        try:
+            rutas_video[i] = bajar_tramo(v, s, carpeta / f"video_frase_{i + 1:02d}.mp4")
+            avisar(f"video frase {i + 1}: {v.etiqueta()}, {s:.1f} s desde {v.momento:.0f} s")
+        except (RuntimeError, OSError, subprocess.SubprocessError) as err:
+            avisar(f"⚠️ video frase {i + 1} no bajó ({str(err)[:120]}): vuelve a foto")
+            g.con_video = [x for x in g.con_video if x != i]
+    if len(rutas_video) < sum(1 for _, f, _ in plan if f == VIDEO):
+        p.guion = g.a_dict()
+        plan = plan_de(p, duraciones)
+    for problema in ilustrar.errores_plan([x for x in plan if x[1] != VIDEO], g.minimo_fotos):
         avisar(f"⚠️ fotos: {problema}")
-    tramos = [(Path(p.fotos[f]["ruta"]), s) for _, f, s in plan]
+    tramos = [(rutas_video[i] if f == VIDEO else Path(p.fotos[f]["ruta"]), s) for i, f, s in plan]
     t0 = time.time()
     dia = date.fromisoformat(p.fecha)
     clip_id = f"efemeride_{dia:%m%d}_{e.anio}"
     salida = armar_video(tramos, audio, carpeta, carpeta / f"{clip_id}.mp4", settings.render)
     avisar(f"video: {time.time() - t0:.0f} s, {len(tramos)} tramos, "
-           f"{len({f for _, f, _ in plan})} fotos distintas")
+           f"{len({f for _, f, _ in plan if f != VIDEO})} fotos distintas, {len(rutas_video)} videos")
     for problema in chequear_audio(salida):
         avisar(f"⚠️ audio: {problema}")
+    from .videos_libres import creditos as creditos_videos
+
     cred = creditos(usadas_en_orden(p, plan))
+    if rutas_video:
+        cred += "\n" + creditos_videos(videos_en_orden(p, plan))
     if tema:
         cred += f"\nMúsica: {tema.credito()}"
     return {"clip_id": clip_id, "streamer": "Pequeña Historia", "salida": str(salida),

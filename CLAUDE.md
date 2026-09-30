@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-09-29 | **Versión:** v0.42.0 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 + escucha de Telegram 24/7)
+**Snapshot:** 2026-09-29 | **Versión:** v0.43.0 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 + escucha de Telegram 24/7)
 
 > **SI ESTÁS EMPEZANDO UNA SESIÓN NUEVA, LEÉ §10.** Ahí está qué está hecho, qué quedó a medias,
 > qué falta, y las trampas que ya nos mordieron.
@@ -379,6 +379,14 @@ ancho estándar (1280, o 960 si el original no pasa de 1280; si no hay ninguna, 
    que tiene que quedar clara y los créditos. ✅ Aprobar · ✏️ Cambiar guion (reescribe y vuelve a
    buscar las fotos; el pool y lo descartado se conservan) · 🔁 foto N (la siguiente de la lista
    de esa frase; después, otra del pool). Sin ✅ no se sintetiza nada.
+5b. **Videos en 2-3 frases de acción** (`videos_libres.py`, `efemerides.videos`, APAGADO hasta que
+   Santi apruebe una muestra): Gemini marca `accion` en el guion (misma llamada); para esas frases,
+   filmación de la época en Commons (licencias de las fotos) y archive.org (solo dominio público);
+   si no hay, stock (Pexels/Pixabay con clave en el .env) o NASA si es de espacio; regla de época
+   igual que las fotos (y Gemini confirma `video_de_epoca`). Gemini elige video y cuadro en la
+   llamada de las fotos (ve 3 cuadros por video). La frase con video es UN tramo del largo de la
+   frase (plan con `VIDEO` = -1), fit_blur con movimiento, sin su audio; si no baja, vuelve a foto.
+   Hoja: el cuadro con "VIDEO" y la fuente; botones 🎬/🖼 frase N para cambiar antes de aprobar.
 6. Video (`hacer_video`): la voz (Gemini TTS, respaldo Piper); con sus tiempos REALES se arma el
    plan de tramos (ninguna foto más de 6 s), fit_blur con zoom suave hasta 110 % sobre la foto
    agrandada 4× (zoompan redondea a píxel entero y a tamaño normal tiembla), hacia la cara más
@@ -558,6 +566,7 @@ clips_bot/efemerides.py  Pequeña Historia (§3c): Wikipedia/Commons, filtros de
                          validado contra el artículo, hoja de aprobación y el video con zoom
 clips_bot/serie.py       /serie: partes, división en etapas (validada), guiones encadenados,
                          título numerado, horarios, hoja de miniaturas por etapa
+clips_bot/videos_libres.py videos de las frases de acción (Commons, archive.org, Pexels, Pixabay, NASA)
 clips_bot/ilustrar.py    regla fija 1 (§1): una foto por frase sin repetir, mínimo 6 distintas,
                          ningún tramo de más de 6 s (`asignar`, `tramos`, `errores_plan`)
 clips_bot/reglas.py      regla fija 2 (§1): REGLAS_CLARIDAD, dentro de todos los prompts de guion
@@ -760,6 +769,16 @@ Problemas abiertos:
 
 ## 9. CHANGELOG
 
+- v0.43.0 (2026-09-29) — **Videos en Pequeña Historia** (pedido de Santi; §3c 5b), APAGADO
+  (`efemerides.videos: false`) hasta que apruebe una muestra. Fuentes medidas con el Sputnik: Commons
+  y archive.org tienen el noticiero "New Moon" de 1957 (dominio público, 45 s); NASA da material de
+  2005 (afuera por época). Sin llamadas nuevas a Gemini: `accion` va en el guion y la elección del
+  video (3 cuadros por candidato, hasta 4 por frase) en la de las fotos. Pexels/Pixabay necesitan
+  `PEXELS_API_KEY` / `PIXABAY_API_KEY` (sin clave, se saltean). OJO: el efecto de las fotos es un
+  zoom suave hacia la cara (no parallax); no se tocó. CLI: `efemeride --videos` para la muestra.
+  Decidido por Claude: el stock solo se busca si no hay filmación de archivo; un 🎬 sobre una frase
+  sin video busca en el momento sin Gemini (el primero de archivo, cuadro del medio) y lo mira Santi
+  en la hoja. 585 tests OK.
 - v0.42.0 (2026-09-29) — **Segunda clave de Gemini** (`GEMINI_API_KEY_2`, pedido de Santi):
   siempre la principal; la segunda SOLO si la principal da 429 de cuota del día, y recién después
   de las dos el modelo de respaldo (orden: flash/principal → flash/segunda → lite/principal →

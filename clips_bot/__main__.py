@@ -2794,16 +2794,23 @@ def _efe_mostrar(conn, tg: TelegramClient, chat_id: str, token: str, estado: dic
     carpeta = Path(estado["carpeta"])
     g = ef.Guion.de_dict(p.guion)
     plan = ef.plan_de(p)
-    nums = sorted({f + 1 for _, f, _ in plan})
-    # La hoja: cada foto con su frase al lado (regla fija de ilustrar.py).
+    nums = sorted({f + 1 for _, f, _ in plan if f != ef.VIDEO})
+    videos = {i: ef.Video.de_dict(v) for i, v in ((int(k), v) for k, v in g.videos.items())}
+    # La hoja: cada foto con su frase al lado (regla fija de ilustrar.py); las de video, su cuadro.
     hoja = ef.hoja_de_guion([ef.Foto.de_dict(f) for f in p.fotos], ef.filas_de_hoja(plan, g.frases),
-                            carpeta / f"hoja_{token}.jpg")
+                            carpeta / f"hoja_{token}.jpg", videos=videos)
     db.set_valor(conn, f"efe:{token}", json.dumps(estado, ensure_ascii=False))
-    tg.send_photo(chat_id, hoja, "Cada frase con la foto que se ve mientras se dice")
+    tg.send_photo(chat_id, hoja, "Cada frase con la foto (o el VIDEO) que se ve mientras se dice")
     filas = [[{"text": "✅ Aprobar", "callback_data": f"efe:ok:{token}"},
               {"text": "✏️ Cambiar guion", "callback_data": f"efe:gno:{token}"}]]
     botones = [{"text": f"🔁 foto {n}", "callback_data": f"efe:f:{token}:{n}"} for n in nums]
     filas += [botones[i:i + 4] for i in range(0, len(botones), 4)]
+    if g.con_videos:
+        # 🎬 N: pasar la frase N de foto a video o al revés. Las que van con video, marcadas.
+        con = set(g.con_video)
+        cine = [{"text": f"{'🎬' if i in con else '🖼'} frase {i + 1}",
+                 "callback_data": f"efe:v:{token}:{i + 1}"} for i in range(len(g.frases))]
+        filas += [cine[i:i + 4] for i in range(0, len(cine), 4)]
     texto = ef.texto_aprobacion(ef.Evento(**p.evento), g, ef.usadas_en_orden(p, plan),
                                 date.fromisoformat(p.fecha), plan,
                                 [ef.Foto.de_dict(f) for f in p.fotos])
@@ -2860,7 +2867,8 @@ def _efe_proponer(conn, tg: TelegramClient, chats: list[str], dia, settings: Set
     token = secrets.token_hex(3)
     carpeta = OUTPUT_DIR / "efemerides" / f"{dia:%m%d}_{token}"
     try:
-        p = ef.proponer(ef.Wiki(), gemini, dia, carpeta, avisar=log.info, hecho=hecho)
+        p = ef.proponer(ef.Wiki(), gemini, dia, carpeta, avisar=log.info, hecho=hecho,
+                        videos=settings.efemerides.videos)
     except (NarrarError, ef.WikiError, GeminiError) as e:
         error = f"No salió la efeméride: {html.escape(str(e)[:400])}"
         return ErrorPasajero(error) if getattr(e, "pasajero", False) else error
@@ -3055,6 +3063,14 @@ def _efe_callback(conn, tg: TelegramClient, cb: dict, settings: Settings, cola: 
         tg.edit_message(cb["chat_id"], cb["message_id"], f"🔁 Foto {n} cambiada. Te mando cómo quedó:",
                         {"inline_keyboard": []})
         return _efe_mostrar(conn, tg, cb["chat_id"], token, {**estado, "propuesta": p.__dict__})
+    if d["accion"] == "v":
+        n = int(d["crudos"][1]) if len(d["crudos"]) > 1 and d["crudos"][1].isdigit() else 0
+        p = ef.Propuesta(**estado["propuesta"])
+        tg.answer_callback(cb["callback_id"], "Un momento…")
+        que = ef.alternar_video(p, n, Path(estado["carpeta"]))
+        tg.edit_message(cb["chat_id"], cb["message_id"], f"🎬 {html.escape(que)} Te mando cómo quedó:",
+                        {"inline_keyboard": []})
+        return _efe_mostrar(conn, tg, cb["chat_id"], token, {**estado, "propuesta": p.__dict__})
     tg.answer_callback(cb["callback_id"], "Aprobado")
     tg.edit_message(cb["chat_id"], cb["message_id"], "✅ Aprobado. Armo el video…",
                     {"inline_keyboard": []})
@@ -3164,7 +3180,8 @@ def cmd_efemeride(args: argparse.Namespace) -> int:
         if gemini is None:
             print("Falta GEMINI_API_KEY", file=sys.stderr)
             return 2
-        p = ef.proponer(ef.Wiki(), gemini, dia, carpeta, avisar=print, hecho=args.hecho or "")
+        p = ef.proponer(ef.Wiki(), gemini, dia, carpeta, avisar=print, hecho=args.hecho or "",
+                        videos=settings.efemerides.videos or getattr(args, "videos", False))
         (carpeta / "propuesta.json").write_text(json.dumps(p.__dict__, ensure_ascii=False, indent=2),
                                                encoding="utf-8")
         g = ef.Guion.de_dict(p.guion)
@@ -4119,6 +4136,8 @@ def main(argv: list[str] | None = None) -> int:
     pf.add_argument("--aprobar", action="store_true", help="armar el video (voz, fotos, subtítulos)")
     pf.add_argument("--propuesta", help="propuesta.json ya guardada: arma el video sin gastar Gemini")
     pf.add_argument("--hecho", help="solo los hechos que contienen esto (ej. penicilina): para rehacer uno")
+    pf.add_argument("--videos", action="store_true",
+                    help="con video en las frases de acción aunque efemerides.videos esté apagado (muestra)")
     pf.set_defaults(func=cmd_efemeride)
 
     pb = sub.add_parser("benchmark", help="cuánto tarda un clip completo en esta máquina")

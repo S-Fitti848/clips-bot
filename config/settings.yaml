@@ -289,6 +289,10 @@ efemerides:
   # diaria (/destinos); para mandarla a otro lado, poné el id (o varios, con coma).
   diaria: true
   chat: ""
+  # Video en 2 o 3 frases de acción (las marca Gemini en el guion): filmación de la época de
+  # Commons/archive.org; si no hay, stock libre (Pexels/Pixabay con su clave en el .env) o NASA;
+  # si no, la foto. APAGADO hasta que Santi apruebe una muestra (pedido 2026-09-29).
+  videos: false
   # Si no sale a las 05:00 (el 2026-09-28: 429 de upload.wikimedia.org), la escucha de Telegram
   # reintenta sola a estas horas (AR). Recién si falla la última avisa que hoy no hay propuesta.
   reintentos: ["07:00", "10:00"]
