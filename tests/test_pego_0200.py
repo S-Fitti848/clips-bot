@@ -97,3 +97,29 @@ def test_el_resumen_diario_lleva_titulo_vistas_y_link():
                                   "coincidencia": 0.15, "comparados": 42}])
     assert t.startswith("🔥 <b>Pegó en otros canales</b>")
     assert "DAVO es del MADRID?" in t and "438.737 vistas" in t and "shorts/abc" in t
+
+
+def test_message_is_not_modified_se_ignora_y_los_demas_errores_no():
+    import pytest
+
+    from clips_bot.telegram import TelegramClient, TelegramError
+
+    class R:
+        def __init__(self, texto):
+            self.status_code, self.text = 400, texto
+
+        def json(self):
+            return {"ok": False, "description": self.text}
+
+    class S:
+        def __init__(self, texto):
+            self.texto = texto
+
+        def post(self, *a, **k):
+            return R(self.texto)
+
+    TelegramClient("T", session=S("Bad Request: message is not modified: specified new message "
+                                   "content and reply markup are exactly the same")).edit_message("1", 2, "x")
+    TelegramClient("T", session=S("Bad Request: message is not modified")).edit_reply_markup("1", 2, {})
+    with pytest.raises(TelegramError):
+        TelegramClient("T", session=S("Bad Request: message to edit not found")).edit_message("1", 2, "x")

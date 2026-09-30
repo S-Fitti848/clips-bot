@@ -64,11 +64,20 @@ class TelegramClient:
                 "parse_mode": "HTML", "disable_web_page_preview": "true"}
         if teclado is not None:
             data["reply_markup"] = json.dumps(teclado)
-        self._llamar("editMessageText", data)
+        self._editar("editMessageText", data)
 
     def edit_reply_markup(self, chat_id: str, message_id: int, teclado: dict) -> None:
-        self._llamar("editMessageReplyMarkup", {"chat_id": chat_id, "message_id": message_id,
+        self._editar("editMessageReplyMarkup", {"chat_id": chat_id, "message_id": message_id,
                                                 "reply_markup": json.dumps(teclado)})
+
+    def _editar(self, metodo: str, data: dict) -> None:
+        """"message is not modified" (tocar dos veces el mismo botón, o un menú que ya estaba así)
+        no es un error: se ignora en silencio y quien llama sigue (y contesta el callback)."""
+        try:
+            self._llamar(metodo, data)
+        except TelegramError as e:
+            if "message is not modified" not in str(e):
+                raise
 
     def send_video(self, chat_id: str, path: Path, caption: str = "", *, width: int | None = None,
                    height: int | None = None, duration: int | None = None,
