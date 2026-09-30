@@ -36,8 +36,29 @@ ESCAPADO="$(printf '%s' "$COLAS" | sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/
 TEXTO="$(printf '\xe2\x9a\xa0\xef\xb8\x8f <b>%s</b> fallo (%s) en la Pi.\n\nUltimas lineas:\n<pre>%s</pre>\n\nPara ver todo:\n<pre>%s</pre>' \
   "$UNIDAD" "$ESTADO" "$ESCAPADO" "$AYUDA")"
 
-curl -sS --max-time 30 -X POST \
-  "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
-  --data-urlencode "chat_id=${TELEGRAM_CHAT_ID}" \
-  --data-urlencode "parse_mode=HTML" \
-  --data-urlencode "text=${TEXTO}" >/dev/null
+# La respuesta de Telegram se mira: curl termina bien aunque Telegram rechace el mensaje (un 400
+# por el HTML), y así la alerta del 2026-09-30 figuró como enviada sin que nadie supiera si llegó.
+# Si el HTML no pasa, se reintenta en texto plano; si tampoco, la unidad termina con error.
+enviar() {
+  curl -sS --max-time 30 -X POST     "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage"     --data-urlencode "chat_id=${TELEGRAM_CHAT_ID}"     "$@"
+}
+RESPUESTA="$(enviar --data-urlencode "parse_mode=HTML" --data-urlencode "text=${TEXTO}" 2>&1)"
+if printf '%s' "$RESPUESTA" | grep -q '"ok":true'; then
+  echo "alerta enviada a Telegram"
+  exit 0
+fi
+echo "Telegram rechazó la alerta en HTML: ${RESPUESTA:0:300}"
+PLANO="$(printf '%s fallo (%s) en la Pi.
+
+Ultimas lineas:
+%s
+
+Para ver todo:
+%s'   "$UNIDAD" "$ESTADO" "$(printf '%s' "$COLAS" | tail -c 1500)" "$AYUDA")"
+RESPUESTA="$(enviar --data-urlencode "text=${PLANO}" 2>&1)"
+if printf '%s' "$RESPUESTA" | grep -q '"ok":true'; then
+  echo "alerta enviada a Telegram (texto plano)"
+  exit 0
+fi
+echo "Telegram rechazó la alerta también en texto plano: ${RESPUESTA:0:300}"
+exit 1
