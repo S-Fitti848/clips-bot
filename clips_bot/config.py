@@ -294,6 +294,11 @@ class Pego:
     umbral: float = 0.55              # audio_huella: calibrado con clips reales (ver pego.py)
     peso: float = 3.0                 # bonus en la selección para un original que pegó
     canales_propios: tuple = ("Rots", "Pequeña Historia")
+    # Corre APARTE de la corrida diaria (2026-09-30: dentro de ella tardó 90 min y systemd la mató
+    # sin entregar nada): en la escucha, a esta hora, con este tope TOTAL. La de las 05:00 solo usa
+    # lo que ya encontró.
+    hora: str = "02:00"
+    tope_min: int = 15
 
 
 @dataclass(frozen=True)

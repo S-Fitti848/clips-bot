@@ -444,3 +444,7 @@ pego:
   umbral: 0.55             # calibrado: 0,70-0,95 contra su clip, ≤ 0,39 contra los demás
   peso: 3.0
   canales_propios: ["Rots", "Pequeña Historia"]
+  # Aparte de la corrida diaria (el 30/09 se comió los 90 min de la de las 05:00 y no salió nada):
+  # corre en la escucha a esta hora, con este tope total; la de las 05:00 usa lo ya encontrado.
+  hora: "02:00"
+  tope_min: 15

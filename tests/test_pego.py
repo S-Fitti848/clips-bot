@@ -66,7 +66,7 @@ def test_de_punta_a_punta_encuentra_guarda_y_devuelve_el_original(tmp_path, monk
     monkeypatch.setattr(pego, "originales",
                         lambda s, cuando, dias, maximo, tw, k, ahora: [_clip("c1"), _clip("c2")])
     monkeypatch.setattr(pego, "encontrar",
-                        lambda audio, clips, d, umbral: (clips[1], 0.81) if "a" in str(audio) else (None, 0.2))
+                        lambda audio, clips, d, umbral, **k: (clips[1], 0.81) if "a" in str(audio) else (None, 0.2))
     buscar = lambda consulta, desde: [_short("s1", vistas=80000), _short("s2", vistas=30000)]
     recs = pego.buscar_pegados(conn, [SPREEN], Pego(), tmp_path, buscar=buscar, ahora=AHORA)
     assert recs[0].encontrados == 2 and recs[0].comparados == 2 and recs[0].clips == [2, 2]
@@ -167,7 +167,7 @@ def test_sin_original_se_avisa_con_link_y_vistas(tmp_path, monkeypatch):
     monkeypatch.setattr(pego, "bajar_audio_short", lambda short, d: (d / "a.m4a", AHORA))
     monkeypatch.setattr(pego, "originales",
                         lambda s, cuando, dias, maximo, tw, k, ahora: [_clip(f"c{i}") for i in range(40)])
-    monkeypatch.setattr(pego, "encontrar", lambda audio, clips, d, umbral: (None, 0.31))
+    monkeypatch.setattr(pego, "encontrar", lambda audio, clips, d, umbral, **k: (None, 0.31))
     buscar = lambda consulta, desde: [_short("s1", titulo="DAVO se enoja", vistas=438428),
                                       _short("s2", titulo="goles #davooxeneize", vistas=700000)]
     recs = pego.buscar_pegados(conn, [DAVO], Pego(min_vistas=5000), tmp_path, buscar=buscar, ahora=AHORA)

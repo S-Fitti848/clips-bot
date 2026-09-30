@@ -1,0 +1,99 @@
+""""Pegó" fuera de la corrida diaria (2026-09-30: se comió los 90 min y no se entregó nada)."""
+
+from datetime import datetime, timedelta, timezone
+
+import clips_bot.__main__ as m
+from clips_bot import db, pego
+from clips_bot.config import Pego, Streamer, load_settings
+
+AHORA = datetime(2026, 9, 29, 12, tzinfo=timezone.utc)
+
+
+def _streamers(n=3):
+    return [Streamer(f"s{i}", plataforma="kick", experimento=True) for i in range(n)]
+
+
+def test_el_tope_corta_y_la_proxima_vuelta_arranca_por_el_que_quedo(tmp_path, monkeypatch):
+    conn = db.connect(tmp_path / "t.db")
+    reloj = [0.0]
+    buscados = []
+
+    def buscar(consulta, desde):
+        buscados.append(consulta)
+        reloj[0] += 400          # cada streamer "tarda" 400 s
+        return []
+
+    tope = 15 * 60
+    pego.buscar_pegados(conn, _streamers(), Pego(), tmp_path, buscar=buscar, ahora=AHORA,
+                        hasta=tope, reloj=lambda: reloj[0])
+    assert buscados == ["s0", "s1", "s2"][:3]            # 0, 400, 800 < 900: los tres arrancan
+    reloj[0] = 0.0
+    buscados.clear()
+    pego.buscar_pegados(conn, _streamers(), Pego(), tmp_path, buscar=buscar,
+                        ahora=AHORA + timedelta(days=1), hasta=500, reloj=lambda: reloj[0])
+    assert buscados == ["s0", "s1"]                       # 0 y 400 < 500; a los 800 se corta
+    assert db.get_valor(conn, pego.CLAVE_SIGUIENTE) == "s2"
+    buscados.clear()
+    reloj[0] = 0.0
+    pego.buscar_pegados(conn, _streamers(), Pego(), tmp_path, buscar=buscar,
+                        ahora=AHORA + timedelta(days=2), hasta=100, reloj=lambda: reloj[0])
+    assert buscados == ["s2"]                             # arrancó por el que había quedado
+
+
+def test_a_mitad_de_un_short_no_se_anota_y_se_retoma(tmp_path, monkeypatch):
+    conn = db.connect(tmp_path / "t.db")
+    monkeypatch.setattr(pego, "bajar_audio_short", lambda short, d: (d / "a.m4a", AHORA))
+    monkeypatch.setattr(pego, "originales", lambda *a: [])
+
+    def encontrar(*a, **k):
+        raise pego.SinTiempo()
+
+    monkeypatch.setattr(pego, "encontrar", encontrar)
+    corto = pego.ShortAjeno("x1", "s0 se cae", "Otro", 90000, 30, AHORA.isoformat())
+    recs = pego.buscar_pegados(conn, _streamers(), Pego(), tmp_path,
+                               buscar=lambda q, d: [corto], ahora=AHORA)
+    assert not pego.ya_visto(conn, "x1") and "se terminó el tiempo" in recs[0].error
+    assert db.get_valor(conn, pego.CLAVE_SIGUIENTE) == "s0" and len(recs) == 1
+
+
+def test_el_tick_corre_una_vez_por_dia_desde_las_02(tmp_path, monkeypatch):
+    conn = db.connect(tmp_path / "t.db")
+    monkeypatch.setattr(m, "DB_PATH", tmp_path / "t.db")
+    monkeypatch.setattr(m, "_streamers", lambda c=None: _streamers(1))
+    llamadas = []
+    monkeypatch.setattr(m, "_pegados_para",
+                        lambda s, sts, buscar_ahora, avisar=None, tope_s=None: llamadas.append(tope_s) or [])
+    settings = load_settings()
+    AR = m.AR
+    m._pego_tick(conn, settings, ahora=datetime(2026, 10, 1, 1, 59, tzinfo=AR))
+    assert llamadas == []
+    m._pego_tick(conn, settings, ahora=datetime(2026, 10, 1, 2, 0, tzinfo=AR))
+    m._pego_tick(conn, settings, ahora=datetime(2026, 10, 1, 3, 0, tzinfo=AR))
+    assert llamadas == [settings.pego.tope_min * 60]      # una sola vez ese día, con el tope
+    assert db.hay_trabajo_pesado(conn) is None            # soltó el turno
+    m._pego_tick(conn, settings, ahora=datetime(2026, 10, 2, 2, 5, tzinfo=AR))
+    assert len(llamadas) == 2
+
+
+def test_la_corrida_diaria_no_busca_y_un_extra_que_falla_no_la_tumba(tmp_path, monkeypatch):
+    import argparse
+    import inspect
+
+    fuente = inspect.getsource(m._diario)          # antes de reemplazarla
+    assert "buscar_ahora=False" in fuente and "buscar_ahora=True" not in fuente
+    monkeypatch.setattr(m, "DB_PATH", tmp_path / "t.db")
+    orden = []
+    monkeypatch.setattr(m, "_diario", lambda args, settings: orden.append("clips") or 0)
+    monkeypatch.setattr(m, "actualizar_metricas", lambda: (_ for _ in ()).throw(RuntimeError("x")))
+    monkeypatch.setattr(m, "_resumen_pego", lambda s, simular: orden.append("pego"))
+    monkeypatch.setattr(m, "efemeride_del_dia", lambda s, simular: orden.append("efemeride"))
+    assert m.cmd_diario(argparse.Namespace(simular=True)) == 0
+    assert orden == ["clips", "pego", "efemeride"]
+
+
+def test_el_resumen_diario_lleva_titulo_vistas_y_link():
+    t = pego.texto_sin_original([{"url": "https://www.youtube.com/shorts/abc", "streamer": "davooxeneize",
+                                  "vistas": 438737, "canal": "santiamadorr", "titulo": "DAVO es del MADRID?",
+                                  "coincidencia": 0.15, "comparados": 42}])
+    assert t.startswith("🔥 <b>Pegó en otros canales</b>")
+    assert "DAVO es del MADRID?" in t and "438.737 vistas" in t and "shorts/abc" in t

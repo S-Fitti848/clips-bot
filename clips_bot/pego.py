@@ -52,6 +52,10 @@ SEGURO = 0.70          # con esto ya es el mismo momento (calibrado): no hace fa
 DIAS_HUELLAS = 30      # las huellas de los clips originales se guardan un mes
 
 
+class SinTiempo(Exception):
+    """Se terminó el tope de la vuelta: lo que quedó a medio comparar no se anota (se retoma)."""
+
+
 @dataclass
 class ShortAjeno:
     id: str
@@ -287,15 +291,18 @@ def limpiar_huellas(cache: Path, dias: int = DIAS_HUELLAS) -> None:
 
 
 def encontrar(short_audio: Path, clips: list[Clip], carpeta: Path, umbral: float,
-              huella_de=None) -> tuple[Clip | None, float]:
+              huella_de=None, hasta: float | None = None,
+              reloj=time.monotonic) -> tuple[Clip | None, float]:
     """El clip cuyo audio coincide con el del Short: (el mejor si pasa el umbral, o None; la mejor
-    coincidencia vista). Corta apenas uno pasa `SEGURO`."""
+    coincidencia vista). Corta apenas uno pasa `SEGURO`. SinTiempo si se pasa de `hasta`."""
     from . import audio_huella as ah
 
     huella_de = huella_de or (lambda c: huella_de_clip(c, carpeta.parent / "huellas", carpeta))
     corto = ah.huella(ah.leer_audio(short_audio))
     mejor: tuple[Clip | None, float] = (None, 0.0)
     for c in clips:
+        if hasta is not None and reloj() >= hasta:
+            raise SinTiempo()
         try:
             valor, _ = ah.coincidencia(corto, huella_de(c))
         except Exception as e:
@@ -352,12 +359,12 @@ def sin_original(conn: sqlite3.Connection, streamers: list[Streamer], desde: dat
 
 
 def texto_sin_original(filas: list[dict]) -> str:
-    """El aviso en HTML de Telegram: link, vistas y "no encontré el original"."""
+    """El resumen en HTML de Telegram: título, vistas y link de cada Short sin original."""
     import html
 
     if not filas:
         return ""
-    lineas = ["🔥 <b>Pegaron en otros canales y no encontré el original</b> (buscalo vos):"]
+    lineas = ["🔥 <b>Pegó en otros canales</b> — no encontré el clip original, buscalo vos:"]
     for f in filas:
         vistas = f"{f['vistas']:,}".replace(",", ".")
         cuantos = f", comparé con {f['comparados']} clips" if f["comparados"] else ""
@@ -392,11 +399,28 @@ def como_candidatos(conn: sqlite3.Connection, streamers: list[Streamer], vistos:
 
 # ---- de punta a punta -------------------------------------------------------------------------
 
+CLAVE_SIGUIENTE = "pego_siguiente"      # bot_estado: el login por el que arranca la próxima vuelta
+
+
+def rotar(conn: sqlite3.Connection, streamers: list[Streamer]) -> list[Streamer]:
+    """Arranca por el que quedó pendiente la vuelta anterior: con el tope de tiempo, si siempre se
+    empezara por el primero, Davo se comería los 15 minutos todos los días y nadie más."""
+    siguiente = db.get_valor(conn, CLAVE_SIGUIENTE)
+    logins = [s.login for s in streamers]
+    if siguiente in logins:
+        k = logins.index(siguiente)
+        return streamers[k:] + streamers[:k]
+    return list(streamers)
+
+
 def buscar_pegados(conn: sqlite3.Connection, streamers: list[Streamer], cfg, carpeta: Path,
                    twitch=None, kick=None, buscar=None, avisar=log.info,
-                   ahora: datetime | None = None) -> list[Recuento]:
+                   ahora: datetime | None = None, hasta: float | None = None,
+                   reloj=time.monotonic) -> list[Recuento]:
     """Una vuelta: busca, filtra, compara y guarda. Devuelve el recuento de cada streamer.
-    `buscar(consulta, desde)`: el buscador (API o yt-dlp); lo elige quien llama."""
+    `buscar(consulta, desde)`: el buscador (API o yt-dlp); lo elige quien llama.
+    `hasta` (en `reloj`): el tope; al pasarlo se corta, lo que quedó a medias no se anota y la
+    próxima vuelta arranca por ese streamer."""
     import shutil
 
     ahora = ahora or datetime.now(timezone.utc)
@@ -404,7 +428,12 @@ def buscar_pegados(conn: sqlite3.Connection, streamers: list[Streamer], cfg, car
     buscar = buscar or buscar_ytdlp
     limpiar_huellas(carpeta / "huellas")
     recuentos: list[Recuento] = []
-    for s in streamers:
+    orden = rotar(conn, streamers)
+    for n_s, s in enumerate(orden):
+        if hasta is not None and reloj() >= hasta:
+            db.set_valor(conn, CLAVE_SIGUIENTE, s.login)
+            avisar(f"pegó: se terminó el tiempo; la próxima vuelta arranca por {s.login}")
+            break
         rec = Recuento(s.login, consulta(s))
         if busquedas_hechas(conn, hoy) >= cfg.busquedas_por_dia:
             rec.error = f"llegué al tope de {cfg.busquedas_por_dia} búsquedas de hoy"
@@ -423,6 +452,7 @@ def buscar_pegados(conn: sqlite3.Connection, streamers: list[Streamer], cfg, car
         elegidos = filtrar(resultados, s, cfg.min_vistas, cfg.canales_propios, rec)
         nuevos = [x for x in elegidos if not ya_visto(conn, x.id)]
         rec.ya_vistos = len(elegidos) - len(nuevos)
+        sin_tiempo = False
         for short in nuevos[:cfg.por_streamer]:
             tmp = carpeta / short.id
             try:
@@ -430,7 +460,10 @@ def buscar_pegados(conn: sqlite3.Connection, streamers: list[Streamer], cfg, car
                 short.publicado = short.publicado or (fecha.isoformat() if fecha else "")
                 cuando = datetime.fromisoformat(short.publicado.replace("Z", "+00:00")) if short.publicado else ahora
                 clips = originales(s, cuando, cfg.dias_antes, cfg.max_originales, twitch, kick, ahora)
-                hallado = encontrar(audio, clips, tmp, cfg.umbral)
+                hallado = encontrar(audio, clips, tmp, cfg.umbral, hasta=hasta, reloj=reloj)
+            except SinTiempo:
+                sin_tiempo = True
+                break
             except Exception as e:
                 avisar(f"pegó: {short.id} ({short.canal}): {e}")
                 continue
@@ -447,5 +480,12 @@ def buscar_pegados(conn: sqlite3.Connection, streamers: list[Streamer], cfg, car
                 rec.sin_original.append(short)
                 avisar(f"pegó: {s.login} — «{short.titulo[:50]}»: no está en sus {len(clips)} clips "
                        f"(mejor coincidencia {hallado[1]:.2f})")
+        if sin_tiempo:
+            rec.error = "se terminó el tiempo a mitad de un Short (se retoma en la próxima vuelta)"
+            db.set_valor(conn, CLAVE_SIGUIENTE, s.login)
+            avisar(f"pegó: {rec.texto(cfg.min_vistas)}")
+            break
         avisar(f"pegó: {rec.texto(cfg.min_vistas)}")
+        # Terminó este: la próxima vuelta arranca por el que sigue.
+        db.set_valor(conn, CLAVE_SIGUIENTE, orden[(n_s + 1) % len(orden)].login)
     return recuentos

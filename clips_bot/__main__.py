@@ -552,9 +552,18 @@ def cmd_diario(args: argparse.Namespace) -> int:
     finally:
         conn.close()
     try:
+        # Orden fijo (2026-09-30: "pegó" se comió los 90 min y no se entregó nada): PRIMERO los
+        # clips (candidatos, procesado, entrega). Después, cada extra por separado: si uno falla o
+        # tarda, los clips ya salieron.
         codigo = _diario(args, settings)
-        # Pequeña Historia va después de los clips y con el mismo turno: los dos procesan pesado.
-        efemeride_del_dia(settings, simular=args.simular)
+        for nombre, extra in (("las métricas", actualizar_metricas),
+                              ("el resumen de pegó", lambda: _resumen_pego(settings, args.simular)),
+                              ("la efeméride", lambda: efemeride_del_dia(settings, simular=args.simular))):
+            try:
+                extra()
+            except Exception:   # noqa: BLE001 — ninguno de estos puede tumbar la corrida
+                log.exception("la corrida diaria: falló %s (los clips ya salieron)", nombre)
+                print(f"  (falló {nombre}; los clips ya salieron)", file=sys.stderr)
         return codigo
     finally:
         conn = db.connect(DB_PATH)
@@ -588,6 +597,59 @@ def _avisar_sin_original(settings: Settings, streamers: list, desde: datetime,
     return texto
 
 
+PEGO_DIA = "pego_dia"              # bot_estado: el día (AR) en que ya corrió la vuelta de las 02:00
+PEGO_RESUMEN = "pego_resumen_desde"   # bot_estado: desde cuándo va el próximo resumen (ISO UTC)
+
+
+def _pego_tick(conn, settings: Settings, ahora=None) -> None:
+    """La vuelta de "pegó", una vez por día a `pego.hora` (02:00), en la escucha y con el turno
+    pesado, con tope total de `pego.tope_min`. Si está ocupado, espera a la vuelta siguiente."""
+    from . import registro
+
+    cfg = settings.pego
+    ahora = ahora or datetime.now(AR)
+    hoy = ahora.date().isoformat()
+    if not cfg.activo or ahora.strftime("%H:%M") < cfg.hora or db.get_valor(conn, PEGO_DIA) == hoy:
+        return
+    turno = "pego:diario"
+    if not db.tomar_turno(conn, db.RECURSO_PESADO, turno, maximo=1, vencimiento_s=VENCIMIENTO_PESADO_S):
+        return
+    db.set_valor(conn, PEGO_DIA, hoy)     # antes de correr: una falla no lo deja en loop
+    try:
+        streamers = registro.filtrar(_streamers(conn), conn, "diarios")
+        log.info("pegó: vuelta de las %s (tope %d min)", cfg.hora, cfg.tope_min)
+        _pegados_para(settings, streamers, buscar_ahora=True, avisar=log.info,
+                      tope_s=cfg.tope_min * 60)
+    finally:
+        db.soltar_turno(conn, db.RECURSO_PESADO, turno, VENCIMIENTO_PESADO_S)
+
+
+def _resumen_pego(settings: Settings, simular: bool = False) -> str:
+    """"🔥 Pegó en otros canales": los Shorts sin original anotados desde el resumen anterior, con
+    título, vistas y link, a los destinos de la entrega diaria. Va DESPUÉS de los clips."""
+    from . import registro
+
+    conn = db.connect(DB_PATH)
+    try:
+        desde_raw = db.get_valor(conn, PEGO_RESUMEN)
+        desde = (datetime.fromisoformat(desde_raw) if desde_raw
+                 else datetime.now(timezone.utc) - timedelta(days=1))
+        streamers = _streamers(conn)
+        ahora = datetime.now(timezone.utc)
+    finally:
+        conn.close()
+    if simular:
+        return ""
+    texto = _avisar_sin_original(settings, streamers, desde)
+    conn = db.connect(DB_PATH)
+    try:
+        db.set_valor(conn, PEGO_RESUMEN, ahora.isoformat())
+    finally:
+        conn.close()
+    print("\n=== 🔥 Pegó en otros canales: " + (f"{texto.count(chr(10))} Shorts sin original" if texto else "nada nuevo"))
+    return texto
+
+
 def _pego_de(c) -> dict | None:
     return {"vistas": c.pego_vistas, "canal": c.pego_canal} if getattr(c, "pego_vistas", 0) else None
 
@@ -603,7 +665,8 @@ def _buscador_pego():
 
 
 def _pegados_para(settings: Settings, streamers: list, buscar_ahora: bool, avisar=log.info,
-                  forzar: bool = False, recuentos: list | None = None) -> list:
+                  forzar: bool = False, recuentos: list | None = None,
+                  tope_s: float | None = None) -> list:
     """Los clips originales de estos streamers cuyo momento pegó en otro canal (pego.py), ya
     filtrados como cualquier candidato (vistos, duración, programa de terceros, datos personales;
     sin el 30 % de vistas: que haya pegado afuera ya dice que es bueno). Con `buscar_ahora`,
@@ -624,8 +687,10 @@ def _pegados_para(settings: Settings, streamers: list, buscar_ahora: bool, avisa
             try:
                 twitch = _twitch() if any(s.plataforma == "twitch" for s in streamers) else None
                 kick = KickClient(pausa_s=settings.kick.pausa_s)
+                tope = tope_s if tope_s is not None else cfg.tope_min * 60
                 recs = pego.buscar_pegados(conn, streamers, cfg, DATA_DIR / "pego_tmp", twitch, kick,
-                                           buscar=_buscador_pego(), avisar=avisar)
+                                           buscar=_buscador_pego(), avisar=avisar,
+                                           hasta=time.monotonic() + tope)
                 if recuentos is not None:
                     recuentos.extend(recs)
                 n = sum(r.encontrados for r in recs)
@@ -690,14 +755,11 @@ def _diario(args: argparse.Namespace, settings: Settings, atender: bool = True,
         except (TelegramError, ConfigError) as e:
             print(f"  (no pude leer Telegram: {e})")
 
-    actualizar_metricas()
-
     print("\n=== Pasos 1-2: candidatos")
     res = buscar_todo(settings, streamers, args.incluir_sin_permiso, guardar_cursor=True)
-    inicio_pego = datetime.now(timezone.utc)
-    pegados = _pegados_para(settings, streamers, buscar_ahora=True, avisar=print)
-    if not args.simular:
-        _avisar_sin_original(settings, streamers, inicio_pego, destinos)
+    # "Pegó" NO busca acá: corre a las 02:00 en la escucha (`_pego_tick`). Acá solo se usa lo que
+    # ya encontró.
+    pegados = _pegados_para(settings, streamers, buscar_ahora=False, avisar=print)
     if pegados:   # van primero: se procesan antes que el resto de su grupo
         ids = {c.id for c in pegados}
         res.candidatos = pegados + [c for c in res.candidatos if c.id not in ids]
@@ -2157,6 +2219,8 @@ def escuchar_telegram(settings: Settings, timeout_poll: int = 50) -> int:
                     _efe_reintento_tick, conn, tg, settings)
             _seguro(tg, str(chat_ultimo or ""), "el reintento de los clips",
                     _clips_reintento_tick, conn, settings)
+            _seguro(tg, str(chat_ultimo or ""), "la búsqueda de lo que pegó",
+                    _pego_tick, conn, settings)
             _seguro(tg, str(chat_ultimo or ""), "la cola", _drenar_cola, conn, tg, cola, settings)
             guardado = db.get_valor(conn, "telegram_offset")
             pendientes = db.alertas(conn, estados=("pendiente",)) if db.envivo_chat(conn) else []

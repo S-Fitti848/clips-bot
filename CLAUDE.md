@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-09-29 | **Versión:** v0.43.0 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 + escucha de Telegram 24/7)
+**Snapshot:** 2026-09-30 | **Versión:** v0.44.0 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 + escucha de Telegram 24/7)
 
 > **SI ESTÁS EMPEZANDO UNA SESIÓN NUEVA, LEÉ §10.** Ahí está qué está hecho, qué quedó a medias,
 > qué falta, y las trampas que ya nos mordieron.
@@ -769,6 +769,20 @@ Problemas abiertos:
 
 ## 9. CHANGELOG
 
+- v0.44.0 (2026-09-30) — **La corrida del 30/09 no entregó nada**: "pegó" (dentro de la corrida,
+  antes de procesar) tardó 90 min y systemd la mató por `TimeoutStartSec`. Ahora: (1) "pegó" corre
+  APARTE, en la escucha a las 02:00 (`_pego_tick`, `pego.hora`/`pego.tope_min` 15, con el turno
+  pesado; en la escucha y no en un timer nuevo porque instalar una unidad pide sudo), con tope
+  TOTAL real (`pego.SinTiempo`: lo que quedó a medias no se anota) y rotando el streamer por el que
+  arranca (`pego_siguiente` en bot_estado; si no, Davo se come los 15 min todos los días);
+  la corrida de las 05:00 solo usa lo ya encontrado (`buscar_ahora=False`). (2) Orden fijo de la
+  corrida: PRIMERO los clips (candidatos, procesado, entrega); después, cada extra aparte y sin
+  poder tumbarla: métricas, el resumen "🔥 Pegó en otros canales" (título, vistas y link de los
+  Shorts sin original desde el resumen anterior, `pego_resumen_desde`) y la efeméride. Las
+  métricas pasan a después de la entrega: la selección usa las del día anterior. /buscar 🔥 también
+  con el tope. (3) `alerta.sh` ahora mira la respuesta de Telegram (curl daba bien aunque Telegram
+  rechazara) y reintenta en texto plano; la de 06:32 del 30/09 corrió, y la prueba a mano llegó.
+  595 tests OK.
 - v0.43.0 (2026-09-29) — **Videos en Pequeña Historia** (pedido de Santi; §3c 5b), APAGADO
   (`efemerides.videos: false`) hasta que apruebe una muestra. Fuentes medidas con el Sputnik: Commons
   y archive.org tienen el noticiero "New Moon" de 1957 (dominio público, 45 s); NASA da material de
