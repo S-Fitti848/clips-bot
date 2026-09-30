@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-09-30 | **Versión:** v0.47.0 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 + escucha de Telegram 24/7)
+**Snapshot:** 2026-09-30 | **Versión:** v0.48.0 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 + escucha de Telegram 24/7)
 
 > **SI ESTÁS EMPEZANDO UNA SESIÓN NUEVA, LEÉ §10.** Ahí está qué está hecho, qué quedó a medias,
 > qué falta, y las trampas que ya nos mordieron.
@@ -769,6 +769,15 @@ Problemas abiertos:
 
 ## 9. CHANGELOG
 
+- v0.48.0 (2026-09-30) — **La subida, separada del voto.** 👍/👎 solo votan (antes el 👍 de un
+  clip lo programaba en Rots) y el ✅ de la efeméride solo arma el video (antes también lo
+  programaba). Debajo de cada clip de streamer y de cada efeméride terminada, una fila aparte:
+  "📤 Subir" / "🚫 No subir" (`telegram.fila_subida`, `sub:u|n|x|r|i:<clip_id>`). 📤 programa en su
+  horario (clips: el sugerido; efemérides: `hora_publicacion`) y el botón pasa a "📤 Programado
+  para las HH:MM" con "❌ Cancelar"; con la subida apagada, 📤 contesta en un cartel "La subida a
+  YouTube todavía está apagada (esperando la auditoría)". El estado sale de la DB (`subidas` y
+  `no_subir:<clip_id>` en bot_estado), así votar no borra la fila. Los videos propios (/editar,
+  /narrar, /serie) no llevan fila: no tienen canal fijo. 620 tests OK.
 - v0.47.0 (2026-09-30) — **Formato de los clips de Rots** (APAGADO hasta que Santi vea 3
   muestras: `camara.seguir_cara`, `render.titulo_arriba`). (1) Layout nuevo **"sigue"**: en charla
   o IRL (`camara.categorias_charla`) con UNA persona (o una cara grande), un recorte 9:16 que se

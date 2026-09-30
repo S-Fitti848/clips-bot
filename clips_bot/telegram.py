@@ -53,9 +53,11 @@ class TelegramClient:
             data["reply_markup"] = json.dumps(teclado)
         self._llamar("sendMessage", data)
 
-    def answer_callback(self, callback_id: str, texto: str = "") -> None:
-        """Le saca el relojito al botón. Si no se contesta, Telegram lo deja girando."""
-        self._llamar("answerCallbackQuery", {"callback_query_id": callback_id, "text": texto})
+    def answer_callback(self, callback_id: str, texto: str = "", alerta: bool = False) -> None:
+        """Le saca el relojito al botón. Si no se contesta, Telegram lo deja girando. `alerta`: el
+        texto sale en un cartel que hay que cerrar (para lo que no se puede pasar por alto)."""
+        self._llamar("answerCallbackQuery", {"callback_query_id": callback_id, "text": texto,
+                                             "show_alert": "true" if alerta else "false"})
 
     def edit_message(self, chat_id: str, message_id: int, texto_html: str,
                      teclado: dict | None = None) -> None:
@@ -235,8 +237,22 @@ def mensaje_textos(numero: int, streamer: str, clip_id: str, horario: str | None
     return "\n".join(partes)
 
 
+def fila_subida(clip_id: str, estado: str | None) -> list[list[dict]]:
+    """La subida, aparte del voto (2026-09-30): 👍/👎 solo votan. `estado`: None = sin subida (videos
+    propios), "" = sin decidir, "no" = no se sube, "HH:MM" = programado para esa hora."""
+    if estado is None:
+        return []
+    if estado == "no":
+        return [[{"text": "🚫 No se sube", "callback_data": f"sub:r:{clip_id}"}]]
+    if estado:
+        return [[{"text": f"📤 Programado para las {estado}", "callback_data": f"sub:i:{clip_id}"},
+                 {"text": "❌ Cancelar", "callback_data": f"sub:x:{clip_id}"}]]
+    return [[{"text": "📤 Subir", "callback_data": f"sub:u:{clip_id}"},
+             {"text": "🚫 No subir", "callback_data": f"sub:n:{clip_id}"}]]
+
+
 def teclado_voto(clip_id: str, elegido: int = 0, pedido: str = "", ultimo: bool = False,
-                 cuantos_mas: int = 0) -> dict:
+                 cuantos_mas: int = 0, subida: str | None = None) -> dict:
     """Los botones debajo de un clip: 👍/👎 y, según el caso, "más" o "reemplazar".
 
     - `ultimo` + `pedido`: debajo del ÚLTIMO clip de la entrega va "➕ N más", que trae los
@@ -254,6 +270,7 @@ def teclado_voto(clip_id: str, elegido: int = 0, pedido: str = "", ultimo: bool 
         filas.append([{"text": "🔁 Reemplazar", "callback_data": f"ped:r:{pedido}:{clip_id}"}])
     if pedido and ultimo and cuantos_mas:
         filas.append([{"text": f"➕ {cuantos_mas} más", "callback_data": f"ped:m:{pedido}"}])
+    filas += fila_subida(clip_id, subida)
     return {"inline_keyboard": filas}
 
 

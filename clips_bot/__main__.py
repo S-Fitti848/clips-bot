@@ -471,7 +471,8 @@ def enviar_clip(tg: TelegramClient, chat_id, conn, clip_id: str, meta: dict, num
             enviado = tg.send_video(destino, video, caption, width=info.ancho, height=info.alto,
                                     duration=round(info.duracion), thumbnail=thumb, file_id=file_id)
             file_id = file_id or (enviado or {}).get("video", {}).get("file_id")
-            teclado = teclado_voto(clip_id, pedido=pedido, ultimo=ultimo, cuantos_mas=cuantos_mas)
+            teclado = teclado_voto(clip_id, pedido=pedido, ultimo=ultimo, cuantos_mas=cuantos_mas,
+                                   subida=_estado_subida(conn, clip_id, meta))
             teclado["inline_keyboard"] += list(extra_filas or [])
             tg.send_message(destino, cuerpo, teclado=teclado)
             llegaron += 1
@@ -2519,22 +2520,14 @@ def _atender_votos(conn, tg: TelegramClient, updates: list[dict], permitidos: se
         try:
             tg.edit_reply_markup(
                 v["chat_id"], v["message_id"],
-                teclado_voto(v["clip_id"], v["voto"], pedido=str(meta.get("pedido") or "")))
+                teclado_voto(v["clip_id"], v["voto"], pedido=str(meta.get("pedido") or ""),
+                             subida=_estado_subida(conn, v["clip_id"], meta)))
         except TelegramError as e:
             log.warning("No pude marcar el botón votado: %s", e)
         tg.answer_callback(v["callback_id"], "👍 anotado" if v["voto"] > 0 else "👎 anotado")
         n += 1
         print(f"  voto {'+1' if v['voto'] > 0 else '-1'} en {v['clip_id'][:28]}")
-        # 👍 a un clip de streamer = aprobado: con la subida prendida, se programa en Rots a su
-        # horario sugerido. Los videos propios (/editar, /narrar, /serie) no: no tienen canal fijo.
-        if v["voto"] > 0 and meta.get("plataforma") in ("twitch", "kick"):
-            ajustes = load_settings()
-            if ajustes.youtube_upload_enabled:
-                hora = ((meta.get("entregado") or {}).get("horario")
-                        or ajustes.publicacion.horarios[0])
-                aviso = _programar_subida(conn, ajustes, meta, "rots", hora)
-                if aviso:
-                    tg.send_message(v["chat_id"], aviso)
+        # El voto ya NO programa la subida (2026-09-30): para eso está "📤 Subir", aparte.
         if v["voto"] < 0 and v["clip_id"].startswith(db.PREFIJO_MULTIPOV):
             _revisar_prueba_multipov(conn, tg, v["chat_id"])
     return n
@@ -3201,11 +3194,7 @@ def _efe_video(conn, tg: TelegramClient, chat_id: str, token: str, settings: Set
                                f"🎙 {html.escape(ef.texto_voz(motor))}", extra_filas=extra)
         if not extra:
             db.borrar_valor(conn, f"efe:{token}")
-        # Con la subida prendida, el ✅ ya alcanza: se programa sola (a la hora de publicación).
-        aviso = _programar_subida(conn, settings, meta, "pequena_historia",
-                                  settings.efemerides.hora_publicacion)
-        if aviso:
-            tg.send_message(chat_id, aviso)
+        # El ✅ arma el video; subirlo es aparte, con "📤 Subir" debajo del video (2026-09-30).
         return None
     finally:
         db.soltar_turno(conn, db.RECURSO_PESADO, turno, VENCIMIENTO_PESADO_S)
@@ -3358,11 +3347,115 @@ def _subidas_texto(conn, settings: Settings) -> tuple[str, dict | None]:
         {"inline_keyboard": filas} if filas else None)
 
 
+NO_SUBIR = "no_subir"   # bot_estado "no_subir:<clip_id>" = "1": tocaron 🚫 No subir
+APAGADA = "La subida a YouTube todavía está apagada (esperando la auditoría)"
+
+
+def _canal_de(clip_id: str, meta: dict) -> str | None:
+    """A qué canal va: los clips de streamers a Rots, las efemérides a Pequeña Historia; los videos
+    propios (/editar, /narrar, /serie) no tienen canal fijo: sin botón de subida."""
+    if clip_id.startswith("efemeride_") or meta.get("efemeride"):
+        return "pequena_historia"
+    if meta.get("plataforma") in ("twitch", "kick") or clip_id.startswith(db.PREFIJO_MULTIPOV):
+        return "rots"
+    return None
+
+
+def _estado_subida(conn, clip_id: str, meta: dict) -> str | None:
+    """El estado para la fila de botones: None sin subida, "" sin decidir, "no", o "HH:MM"."""
+    if _canal_de(clip_id, meta) is None:
+        return None
+    prog = db.subidas(conn, ("programada",), clip_id=clip_id)
+    if prog and prog[-1]["publish_at"]:
+        cuando = datetime.fromisoformat(prog[-1]["publish_at"].replace("Z", "+00:00")).astimezone(AR)
+        return cuando.strftime("%H:%M")
+    return "no" if db.get_valor(conn, f"{NO_SUBIR}:{clip_id}") else ""
+
+
+def _hora_de(settings: Settings, canal: str, meta: dict) -> str:
+    if canal == "pequena_historia":
+        return settings.efemerides.hora_publicacion
+    return (meta.get("entregado") or {}).get("horario") or settings.publicacion.horarios[0]
+
+
+def _meta_de(clip_id: str) -> dict:
+    from .process import READY_DIR
+
+    ruta = READY_DIR / f"{clip_id}.json"
+    try:
+        return json.loads(ruta.read_text(encoding="utf-8")) if ruta.exists() else {}
+    except ValueError:
+        return {}
+
+
+def _subir_callback(conn, tg: TelegramClient, cb: dict, settings: Settings, d: dict) -> None:
+    """📤 Subir · 🚫 No subir · ❌ Cancelar · (🚫 No se sube → vuelve a elegir)."""
+    from . import youtube
+    from .telegram import teclado_voto
+
+    clip_id = ":".join(d["crudos"])
+    meta = _meta_de(clip_id)
+    canal = _canal_de(clip_id, meta)
+    voto = db.voto_de(conn, clip_id, cb["user_id"]) or 0
+
+    def redibujar() -> None:
+        tg.edit_reply_markup(cb["chat_id"], cb["message_id"],
+                             teclado_voto(clip_id, voto, pedido=str(meta.get("pedido") or ""),
+                                          subida=_estado_subida(conn, clip_id, meta)))
+
+    if canal is None or not meta:
+        return tg.answer_callback(cb["callback_id"], "Ese video ya no está.")
+    if d["accion"] == "i":
+        return tg.answer_callback(cb["callback_id"], "Ya está programado. ❌ Cancelar para sacarlo.")
+    if d["accion"] == "n":
+        db.set_valor(conn, f"{NO_SUBIR}:{clip_id}", "1")
+        tg.answer_callback(cb["callback_id"], "No se sube.")
+        return redibujar()
+    if d["accion"] == "r":
+        db.borrar_valor(conn, f"{NO_SUBIR}:{clip_id}")
+        tg.answer_callback(cb["callback_id"])
+        return redibujar()
+    if d["accion"] == "x":
+        s = next(iter(db.subidas(conn, ("programada",), clip_id=clip_id)[-1:]), None)
+        if not s:
+            tg.answer_callback(cb["callback_id"], "Ya no estaba programado.")
+            return redibujar()
+        try:
+            youtube.Cliente(s["canal"]).cancelar(s["video_id"])
+        except youtube.YouTubeError as e:
+            return tg.answer_callback(cb["callback_id"], f"No pude: {str(e)[:150]}", alerta=True)
+        db.marcar_subida(conn, s["id"], "cancelada")
+        tg.answer_callback(cb["callback_id"], "Cancelado: queda privado en Studio.")
+        return redibujar()
+    # 📤 Subir
+    db.borrar_valor(conn, f"{NO_SUBIR}:{clip_id}")
+    avisos = _subir(conn, settings, meta, canal)
+    if not settings.youtube_upload_enabled and not avisos:
+        return tg.answer_callback(cb["callback_id"], APAGADA, alerta=True)
+    tg.answer_callback(cb["callback_id"], "Listo" if _estado_subida(conn, clip_id, meta) else "")
+    redibujar()
+    for a in avisos:
+        tg.send_message(cb["chat_id"], a)
+
+
+def _subir(conn, settings: Settings, meta: dict, canal: str) -> list[str]:
+    """📤: YouTube (programado en su horario, si la subida está prendida) y, para Pequeña
+    Historia, Facebook (si está prendido). Devuelve los avisos para Telegram."""
+    avisos = []
+    if settings.youtube_upload_enabled:
+        aviso = _programar_subida(conn, settings, meta, canal, _hora_de(settings, canal, meta))
+        if aviso:
+            avisos.append(aviso)
+    return avisos
+
+
 def _subidas_callback(conn, tg: TelegramClient, cb: dict, settings: Settings) -> None:
     from . import youtube
     from .menu import parse_callback
 
     d = parse_callback(cb["data"])
+    if d and d["menu"] == "sub" and d["accion"] in ("u", "n", "x", "r", "i") and d["crudos"]:
+        return _subir_callback(conn, tg, cb, settings, d)
     if not d or d["menu"] != "sub" or d["accion"] != "c" or not d["crudos"]:
         return
     sid = int(d["crudos"][0]) if d["crudos"][0].isdigit() else -1
