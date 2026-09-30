@@ -427,7 +427,7 @@ def ejecutar_seleccion(settings: Settings, gemini: GeminiClient | None, enviar: 
 
 def enviar_clip(tg: TelegramClient, chat_id, conn, clip_id: str, meta: dict, numero: int,
                 horario: str | None, pedido: str = "", ultimo: bool = False,
-                cuantos_mas: int = 0, encabezado: str = "") -> int:
+                cuantos_mas: int = 0, encabezado: str = "", extra_filas: list | None = None) -> int:
     """`chat_id` puede ser uno o una lista. El mp4 se sube UNA vez: a partir del segundo destino se
     manda el file_id que devolvió Telegram, que en la Pi ahorra varios minutos de subida.
 
@@ -471,9 +471,9 @@ def enviar_clip(tg: TelegramClient, chat_id, conn, clip_id: str, meta: dict, num
             enviado = tg.send_video(destino, video, caption, width=info.ancho, height=info.alto,
                                     duration=round(info.duracion), thumbnail=thumb, file_id=file_id)
             file_id = file_id or (enviado or {}).get("video", {}).get("file_id")
-            tg.send_message(destino, cuerpo,
-                            teclado=teclado_voto(clip_id, pedido=pedido, ultimo=ultimo,
-                                                 cuantos_mas=cuantos_mas))
+            teclado = teclado_voto(clip_id, pedido=pedido, ultimo=ultimo, cuantos_mas=cuantos_mas)
+            teclado["inline_keyboard"] += list(extra_filas or [])
+            tg.send_message(destino, cuerpo, teclado=teclado)
             llegaron += 1
         except TelegramError as e:
             # Que un destino falle (bloqueado, sacaron al bot del grupo) no puede tumbar el resto.
@@ -3135,9 +3135,13 @@ def _efe_callback(conn, tg: TelegramClient, cb: dict, settings: Settings, cola: 
         tg.edit_message(cb["chat_id"], cb["message_id"], f"🎬 {html.escape(que)} Te mando cómo quedó:",
                         {"inline_keyboard": []})
         return _efe_mostrar(conn, tg, cb["chat_id"], token, {**estado, "propuesta": p.__dict__})
-    tg.answer_callback(cb["callback_id"], "Aprobado")
-    tg.edit_message(cb["chat_id"], cb["message_id"], "✅ Aprobado. Armo el video…",
-                    {"inline_keyboard": []})
+    if d["accion"] == "voz":
+        tg.answer_callback(cb["callback_id"], "La rehago con Laomedeia")
+        tg.edit_reply_markup(cb["chat_id"], cb["message_id"], {"inline_keyboard": []})
+    else:
+        tg.answer_callback(cb["callback_id"], "Aprobado")
+        tg.edit_message(cb["chat_id"], cb["message_id"], "✅ Aprobado. Armo el video…",
+                        {"inline_keyboard": []})
     r = _pesado(conn, tg, cb["chat_id"], "efe:video", [token], settings, cb["user_id"])
     if r is OCUPADO:
         cola.append({"chat_id": cb["chat_id"], "comando": "efe:video", "args": [token],
@@ -3187,9 +3191,16 @@ def _efe_video(conn, tg: TelegramClient, chat_id: str, token: str, settings: Set
                                   Path(estado["carpeta"]), avisar=log.info, conn=conn)
         except NarrarError as e:
             return f"No pude armar el video: {html.escape(str(e)[:300])}"
+        motor = meta.get("efemeride", {}).get("voz", "")
+        # Con Piper (Gemini sin cuota o sin respuesta): el botón para rehacerla con Laomedeia
+        # cuando vuelva la cuota. Por eso la propuesta se guarda hasta que salga con Laomedeia.
+        extra = ([[{"text": "🔁 Rehacer con Laomedeia", "callback_data": f"efe:voz:{token}"}]]
+                 if ef.es_piper(motor) else [])
         enviar_clip(tg, chat_id, conn, meta["clip_id"], meta, 1, None,
-                    encabezado="📅 <b>Pequeña Historia</b> — subilo al canal de efemérides")
-        db.borrar_valor(conn, f"efe:{token}")
+                    encabezado="📅 <b>Pequeña Historia</b> — subilo al canal de efemérides\n"
+                               f"🎙 {html.escape(ef.texto_voz(motor))}", extra_filas=extra)
+        if not extra:
+            db.borrar_valor(conn, f"efe:{token}")
         # Con la subida prendida, el ✅ ya alcanza: se programa sola (a la hora de publicación).
         aviso = _programar_subida(conn, settings, meta, "pequena_historia",
                                   settings.efemerides.hora_publicacion)

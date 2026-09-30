@@ -99,8 +99,16 @@ def test_claves_saca_la_segunda_ya_marcada_invalida(tmp_path, monkeypatch):
     monkeypatch.setattr("clips_bot.config.load_dotenv", lambda *a, **k: None)
     conn = db.connect(tmp_path / "t.db")
     assert gemini.claves(conn) == CLAVES
-    db.set_valor(conn, gemini.CLAVE_INVALIDA, json.dumps({"segunda": gemini.huella("K2")}))
+    db.set_valor(conn, gemini.CLAVE_INVALIDA,
+                 json.dumps({"segunda": {"huella": gemini.huella("K2"), "dia": gemini._dia_pacifico()}}))
     assert gemini.claves(conn) == [("principal", "K1")]
+    db.set_valor(conn, gemini.CLAVE_INVALIDA,
+                 json.dumps({"segunda": {"huella": gemini.huella("K2"), "dia": "2026-09-29"}}))
+    assert gemini.claves(conn) == CLAVES                          # otro día: se vuelve a probar
+    db.set_valor(conn, gemini.CLAVE_INVALIDA, json.dumps({"segunda": gemini.huella("K2")}))
+    assert gemini.claves(conn) == CLAVES                          # la marca vieja (sin día) no bloquea
+    db.set_valor(conn, gemini.CLAVE_INVALIDA,
+                 json.dumps({"segunda": {"huella": gemini.huella("K2"), "dia": gemini._dia_pacifico()}}))
     monkeypatch.setenv("GEMINI_API_KEY_2", "K3")                  # la cambió: se vuelve a probar
     assert gemini.claves(conn) == [("principal", "K1"), ("segunda", "K3")]
 
@@ -127,7 +135,7 @@ def test_el_aviso_de_la_segunda_sale_una_vez_por_dia(tmp_path, monkeypatch):
     gemini.aviso_por_telegram("invalida", "segunda", "K2", "400 API key not valid")
     assert "inválida" in mandados[-1][1] and "K2" not in mandados[-1][1]   # la clave no se muestra
     conn = db.connect(tmp_path / "t.db")
-    assert json.loads(db.get_valor(conn, gemini.CLAVE_INVALIDA)) == {"segunda": gemini.huella("K2")}
+    assert json.loads(db.get_valor(conn, gemini.CLAVE_INVALIDA))["segunda"]["huella"] == gemini.huella("K2")
 
 
 def test_la_voz_tambien_pasa_a_la_segunda_sin_cuota(monkeypatch):

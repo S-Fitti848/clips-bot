@@ -74,7 +74,10 @@ def claves(conn=None) -> list[tuple[str, str]]:
         k = env(var, requerido=False)
         if not k or any(k == c for _, c in out):
             continue
-        if nombre != PRINCIPAL and invalidas.get(nombre) == huella(k):
+        # Se ignora solo el MISMO día: una clave recién creada puede dar 401 unos minutos (le pasó
+        # a la del amigo el 2026-09-29; al día siguiente andaba) y no puede quedar afuera para siempre.
+        marca = invalidas.get(nombre)
+        if nombre != PRINCIPAL and isinstance(marca, dict) and marca.get("huella") == huella(k)                 and marca.get("dia") == _dia_pacifico():
             log.info("Gemini: la clave %s es inválida (ya avisado): la ignoro", nombre)
             continue
         out.append((nombre, k))
@@ -111,10 +114,10 @@ def aviso_por_telegram(evento: str, nombre: str, clave: str, detalle: str = "") 
                          "sigo con la segunda (GEMINI_API_KEY_2).")
             elif evento == "invalida":
                 inv = json.loads(db.get_valor(conn, CLAVE_INVALIDA) or "{}")
-                inv[nombre] = huella(clave)
+                inv[nombre] = {"huella": huella(clave), "dia": _dia_pacifico()}
                 db.set_valor(conn, CLAVE_INVALIDA, json.dumps(inv))
-                texto = (f"⚠️ Gemini: la clave {nombre} (GEMINI_API_KEY_2) es inválida y la ignoro. "
-                         f"Revisala en AI Studio y cambiala en el .env. ({detalle[:120]})")
+                texto = (f"🔧 Claude Code: la clave {nombre} de Gemini (GEMINI_API_KEY_2) dio inválida; "
+                         f"hoy la ignoro y mañana la vuelvo a probar. ({detalle[:120]})")
             else:
                 return
         finally:

@@ -1585,6 +1585,7 @@ def voz_efemeride(frases: list[str], settings, carpeta: Path, avisar=log.info,
     from .gemini import GeminiError, aviso_por_telegram, claves_activas, hablar_con_claves
 
     cfg = settings.efemerides
+    motivo = ""
     if cfg.voz_motor == "gemini":
         try:
             claves = claves_activas() if env("GEMINI_API_KEY", requerido=False) else []
@@ -1602,6 +1603,7 @@ def voz_efemeride(frases: list[str], settings, carpeta: Path, avisar=log.info,
             return wav, None, f"gemini:{cfg.tts_voz}"
         except GeminiError as e:
             avisar(f"Gemini TTS no anduvo ({str(e)[:120]}): sigo con Piper")
+            motivo = "sin cuota" if "quota" in str(e).lower() or "429" in str(e) else "Gemini no respondió"
     ajustes = replace(settings.voz, length_scale=cfg.piper_length_scale,
                       noise_scale=cfg.piper_noise_scale, noise_w_scale=cfg.piper_noise_w_scale,
                       semitonos=cfg.piper_semitonos)
@@ -1609,7 +1611,20 @@ def voz_efemeride(frases: list[str], settings, carpeta: Path, avisar=log.info,
     if not modelo.exists():
         raise NarrarError(f"Falta la voz en {modelo}")
     wav, duraciones = narrar.sintetizar_frases(frases, modelo, carpeta / "voz.wav", ajustes=ajustes)
-    return wav, duraciones, f"piper:{modelo.stem}"
+    # El motivo viaja pegado ("piper:…|sin cuota"): la entrega dice qué voz salió y por qué.
+    return wav, duraciones, f"piper:{modelo.stem}" + (f"|{motivo}" if motivo else "")
+
+
+def texto_voz(motor: str) -> str:
+    """Lo que dice el mensaje del video: "Voz: Laomedeia" o "Voz: Piper (respaldo, sin cuota)"."""
+    if motor.startswith("gemini:"):
+        return f"Voz: {motor.split(':', 1)[1]}"
+    motivo = motor.partition("|")[2]
+    return "Voz: Piper (respaldo" + (f", {motivo}" if motivo else "") + ")"
+
+
+def es_piper(motor: str) -> bool:
+    return motor.startswith("piper:")
 
 
 def hacer_video(p: Propuesta, settings, carpeta: Path, avisar=log.info, conn=None) -> dict:

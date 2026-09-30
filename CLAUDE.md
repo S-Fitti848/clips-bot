@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-09-30 | **Versión:** v0.44.0 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 + escucha de Telegram 24/7)
+**Snapshot:** 2026-09-30 | **Versión:** v0.45.0 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 + escucha de Telegram 24/7)
 
 > **SI ESTÁS EMPEZANDO UNA SESIÓN NUEVA, LEÉ §10.** Ahí está qué está hecho, qué quedó a medias,
 > qué falta, y las trampas que ya nos mordieron.
@@ -769,6 +769,16 @@ Problemas abiertos:
 
 ## 9. CHANGELOG
 
+- v0.45.0 (2026-09-30) — **Voz y claves.** (1) El mensaje del video de la efeméride dice qué voz
+  salió: "Voz: Laomedeia" o "Voz: Piper (respaldo, sin cuota | Gemini no respondió)" (el motivo
+  viaja en el motor, `piper:…|motivo`); con Piper, botón "🔁 Rehacer con Laomedeia" (`efe:voz`, la
+  misma cola que ✅; la propuesta se guarda hasta que salga con Laomedeia). (2) La clave del amigo
+  (`GEMINI_API_KEY_2`, formato nuevo de Google: 53 caracteres, no empieza con "AIza") ANDA: el
+  2026-09-30 dio 200 por encabezado y por URL. El 401 del 29/09 fue, casi seguro, la clave recién
+  creada. Pero el bot la había marcado inválida PARA SIEMPRE: ahora la marca vale solo ese día
+  (`gemini_clave_invalida` = {huella, día del Pacífico}) y al día siguiente se vuelve a probar.
+  (3) `vod.py` + `audio_huella.coincidencia_rapida` (FFT, igual resultado que la lenta, 13× más
+  rápida; 7 h de VOD en ~1 s en Windows): sin conectar hasta medir con un Short de Davo.
 - v0.44.0 (2026-09-30) — **La corrida del 30/09 no entregó nada**: "pegó" (dentro de la corrida,
   antes de procesar) tardó 90 min y systemd la mató por `TimeoutStartSec`. Ahora: (1) "pegó" corre
   APARTE, en la escucha a las 02:00 (`_pego_tick`, `pego.hora`/`pego.tope_min` 15, con el turno
