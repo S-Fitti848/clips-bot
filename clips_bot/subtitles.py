@@ -143,6 +143,56 @@ def _escapar_ass(t: str) -> str:
     return t.replace("\\", "\\\\").replace("{", "(").replace("}", ")")
 
 
+TITULO_TAMANOS = ((84, 21), (70, 25), (60, 30))   # (tamaño, caracteres por línea): el que entre en 2
+
+
+def lineas_titulo(titulo: str) -> tuple[int, list[str]]:
+    """El título en 2 líneas como máximo: baja la letra hasta que entre; si ni así, corta."""
+    import textwrap
+
+    for tamano, ancho in TITULO_TAMANOS:
+        lineas = textwrap.wrap(titulo.strip(), ancho)
+        if len(lineas) <= 2:
+            return tamano, lineas
+    tamano, ancho = TITULO_TAMANOS[-1]
+    lineas = textwrap.wrap(titulo.strip(), ancho)[:2]
+    lineas[-1] = lineas[-1].rstrip(" .,;:") + "…"
+    return tamano, lineas
+
+
+def escribir_titulo_ass(path: Path, titulo: str, streamer: str, cfg: Subtitulos, render: Render,
+                        y_centro: int | None = None, duracion: float = 600) -> None:
+    """El título del clip grande (letra gruesa blanca con borde negro, 2 líneas como máximo) y el
+    nombre del streamer chiquito encima (pedido 2026-09-30). Arriba; o, en el split, centrado en
+    `y_centro` (la línea entre la cámara y el juego), para no taparle la cara al streamer."""
+    tamano, lineas = lineas_titulo(titulo)
+    W = render.ancho
+    y_titulo = y_centro if y_centro is not None else int(render.alto * 0.075) + 50 + tamano * len(lineas) // 2
+    y_nombre = y_titulo - tamano * len(lineas) // 2 - 36
+    cabecera = f"""[Script Info]
+ScriptType: v4.00+
+PlayResX: {W}
+PlayResY: {render.alto}
+WrapStyle: 2
+ScaledBorderAndShadow: yes
+
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+Style: Titulo,{cfg.fuente},{tamano},&H00FFFFFF,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,7,3,5,50,50,0,1
+Style: Nombre,{cfg.fuente},40,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,1,0,1,4,2,5,50,50,0,1
+
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+"""
+    texto = "\\N".join(_escapar_ass(l) for l in lineas)
+    eventos = [
+        f"Dialogue: 3,{_t_ass(0)},{_t_ass(duracion)},Titulo,,0,0,0,,{{\\an5\\pos({W // 2},{y_titulo})}}{texto}",
+        f"Dialogue: 3,{_t_ass(0)},{_t_ass(duracion)},Nombre,,0,0,0,,{{\\an5\\pos({W // 2},{y_nombre})}}"
+        f"{_escapar_ass(streamer)}",
+    ]
+    path.write_text(cabecera + "\n".join(eventos) + "\n", encoding="utf-8")
+
+
 def escribir_ass(subs: list[Subtitulo], path: Path, cfg: Subtitulos, render: Render,
                  cartel: str = "", cartel_s: float = 3.0, cartel_grande: bool = False) -> None:
     """`cartel`: un texto arriba durante los primeros `cartel_s` segundos (ej. "Parte 1/3").

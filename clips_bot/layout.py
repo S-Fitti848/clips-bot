@@ -43,11 +43,93 @@ class Caja:
 
 @dataclass(frozen=True)
 class Layout:
-    tipo: str  # split | fullcam | fit_blur
-    principal: Caja  # juego (split), el recorte (fullcam) o el frame entero (fit_blur)
+    tipo: str  # split | fullcam | fit_blur | sigue
+    principal: Caja  # juego (split), el recorte (fullcam, sigue) o el frame entero (fit_blur)
     camara: Caja | None
     presencia: float  # fracción de frames con la cara estable
     cara: Deteccion | None
+    # "sigue": el recorte se mueve con la cara. ((t, x, y) de la esquina del recorte, en segundos).
+    camino: tuple = ()
+
+    def ffmpeg_crop_movil(self) -> str:
+        """crop con x e y que cambian con el tiempo: interpolación lineal entre los puntos."""
+        c = self.principal
+        return f"crop={c.w}:{c.h}:x='{_expr(self.camino, 1)}':y='{_expr(self.camino, 2)}'"
+
+
+def _expr(puntos: tuple, k: int) -> str:
+    """Una expresión de ffmpeg que va de punto a punto (lineal) según t."""
+    if not puntos:
+        return "0"
+    if len(puntos) == 1:
+        return str(puntos[0][k])
+    expr = str(puntos[-1][k])
+    for (t0, *a), (t1, *b) in reversed(list(zip(puntos, puntos[1:]))):
+        v0, v1 = (a[k - 1], b[k - 1])
+        tramo = f"{v0}+({v1}-{v0})*(t-{t0:.2f})/{max(t1 - t0, 0.01):.2f}"
+        expr = f"if(lt(t,{t1:.2f}),{tramo},{expr})"
+    return f"if(lt(t,{puntos[0][0]:.2f}),{puntos[0][k]},{expr})"   # entre comillas simples: sin escapar comas
+
+
+# ---- "sigue": charla o IRL, zoom siguiendo la cara (pedido 2026-09-30) -----------------------------
+
+ALTO_PERSONA = 3.3        # la persona visible (cabeza a pecho) ≈ 3,3 alturas de cara
+ALTO_MIN_RECORTE = 0.45   # nunca más chico que esto del alto del frame (se vería muy pixelado)
+CARA_Y = 0.36             # la cara a esta altura del recorte (deja lugar al cuerpo y al título)
+
+
+def trayectoria(video: Path, n: int = 24) -> tuple[float, list[tuple[float, Deteccion | None]]]:
+    """(duración, [(t, cara más grande de ese cuadro o None)]) en n cuadros parejos."""
+    import cv2
+
+    cap = cv2.VideoCapture(str(video))
+    fps = cap.get(cv2.CAP_PROP_FPS) or 30
+    total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    W = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    cascade = cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_frontalface_default.xml")
+    escala = min(1.0, 960 / max(W, 1))
+    out = []
+    for i in range(n):
+        idx = int(total * (0.02 + 0.96 * i / max(n - 1, 1)))
+        cap.set(cv2.CAP_PROP_POS_FRAMES, idx)
+        ok, img = cap.read()
+        if not ok:
+            continue
+        gris = cv2.cvtColor(cv2.resize(img, None, fx=escala, fy=escala), cv2.COLOR_BGR2GRAY)
+        caras = cascade.detectMultiScale(gris, scaleFactor=1.1, minNeighbors=6,
+                                         minSize=(max(24, int(0.04 * gris.shape[0])),) * 2)
+        mejor = max(caras, key=lambda c: c[2] * c[3]) if len(caras) else None
+        out.append((idx / fps, tuple(int(v / escala) for v in mejor) if mejor is not None else None))
+    cap.release()
+    return total / fps, out
+
+
+def layout_sigue(W: int, H: int, render: Render, puntos: list, cara: Deteccion, presencia: float,
+                 persona_min: float = 0.6) -> Layout | None:
+    """Un recorte 9:16 que acompaña a la cara, del alto justo para que la persona ocupe al menos
+    `persona_min` de la pantalla. None si no hay suficientes cuadros con cara para seguirla."""
+    con = [(t, c) for t, c in puntos if c is not None]
+    if len(con) < max(3, len(puntos) // 3):
+        return None
+    fh = sorted(c[3] for _, c in con)[len(con) // 2]
+    ratio = render.ancho / render.alto
+    alto = min(H, W / ratio, max(ALTO_PERSONA * fh / persona_min, ALTO_MIN_RECORTE * H))
+    w, h = max(_par(alto * ratio), 2), max(_par(alto), 2)
+    # Centro de la cara en cada cuadro (los que no tienen cara, interpolados), suavizado.
+    ts = [t for t, _ in puntos]
+    import numpy as np
+
+    cx = np.interp(ts, [t for t, _ in con], [c[0] + c[2] / 2 for _, c in con])
+    cy = np.interp(ts, [t for t, _ in con], [c[1] + c[3] / 2 for _, c in con])
+    k = np.ones(3) / 3
+    cx = np.convolve(np.pad(cx, 1, mode="edge"), k, mode="valid")
+    cy = np.convolve(np.pad(cy, 1, mode="edge"), k, mode="valid")
+    camino = []
+    for t, x, y in zip(ts, cx, cy):
+        x0 = _par(min(max(x - w / 2, 0), W - w))
+        y0 = _par(min(max(y - CARA_Y * h, 0), H - h))
+        camino.append((round(t, 2), x0, y0))
+    return Layout("sigue", Caja(camino[0][1], camino[0][2], w, h), None, presencia, cara, tuple(camino))
 
 
 def _par(n: float) -> int:
@@ -172,7 +254,7 @@ def layout_fit_blur(W: int, H: int, render: Render, presencia: float = 0.0,
 
 
 def decidir_layout(W: int, H: int, frames: list[list[Deteccion]], cam: Camara, render: Render,
-                   forzado: str = "") -> Layout:
+                   forzado: str = "", charla: bool = False, puntos: list | None = None) -> Layout:
     """Elige el layout (ver `fit_blur` en render.py para el porqué de cada regla).
 
     - facecam clara (una cara chica y estable) → split cámara/juego, salvo que abajo, en la zona del
@@ -201,6 +283,14 @@ def decidir_layout(W: int, H: int, frames: list[list[Deteccion]], cam: Camara, r
 
     fx, fy, fw, fh = cara
     cx, cy = fx + fw / 2, fy + fh / 2
+
+    # Charla o IRL con UNA persona (o una cara grande): zoom siguiendo la cara, que la persona ocupe
+    # al menos `persona_min` del alto. fit_blur queda para cuando hace falta ver todo el cuadro.
+    if cam.seguir_cara and not forzado and len(caras) == 1 and puntos \
+            and (charla or fw / W >= cam.cara_grande):
+        sigue = layout_sigue(W, H, render, puntos, cara, presencia, cam.persona_min)
+        if sigue is not None:
+            return sigue
 
     if forzado == "fullcam" or (not forzado and fw / W >= cam.cara_grande):
         central = recorte(W, H, ratio_total, cx, H / 2, H)

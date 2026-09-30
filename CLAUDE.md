@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-09-30 | **Versión:** v0.46.0 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 + escucha de Telegram 24/7)
+**Snapshot:** 2026-09-30 | **Versión:** v0.47.0 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 + escucha de Telegram 24/7)
 
 > **SI ESTÁS EMPEZANDO UNA SESIÓN NUEVA, LEÉ §10.** Ahí está qué está hecho, qué quedó a medias,
 > qué falta, y las trampas que ya nos mordieron.
@@ -769,6 +769,17 @@ Problemas abiertos:
 
 ## 9. CHANGELOG
 
+- v0.47.0 (2026-09-30) — **Formato de los clips de Rots** (APAGADO hasta que Santi vea 3
+  muestras: `camara.seguir_cara`, `render.titulo_arriba`). (1) Layout nuevo **"sigue"**: en charla
+  o IRL (`camara.categorias_charla`) con UNA persona (o una cara grande), un recorte 9:16 que se
+  mueve con la cara (`layout.trayectoria`: 24 cuadros, cara más grande, interpolada y suavizada;
+  crop con x/y en función de t, lineal entre puntos), del alto justo para que la persona (≈3,3
+  alturas de cara) ocupe al menos `persona_min` (60 %) del alto, nunca menos del 45 % del cuadro
+  original. fit_blur queda para 2+ personas o sin cara; `layout_forzado` se respeta. (2) **Título
+  grande** (`subtitles.escribir_titulo_ass`: letra gruesa blanca con borde negro, 2 líneas como
+  máximo bajando la letra 84→70→60) y el streamer chiquito encima; arriba, o en el split centrado
+  en la línea cámara/juego para no taparle la cara. Va en su propio `titulo.ass`, así sale aunque
+  el streamer tenga `subtitulos_propios`. 614 tests OK.
 - v0.46.0 (2026-09-30) — **Pequeña Historia más dinámica** (pedido de Santi). (1) Ningún video
   entra sin que Gemini mire sus 3 cuadros con la frase y la época: también el del botón 🎬 sobre
   una frase sin video (`revisar_video`, una llamada; antes elegía el primero sin mirar); nada de

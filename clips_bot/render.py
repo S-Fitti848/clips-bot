@@ -19,12 +19,17 @@ from .layout import Layout
 from .media import cola_audio, find_bin, probe, run
 
 SUBS_ARCHIVO = "subs.ass"
+TITULO_ARCHIVO = "titulo.ass"
 
 
-def filtro(layout: Layout, render: Render, con_subs: bool) -> str:
+def filtro(layout: Layout, render: Render, con_subs: bool, con_titulo: bool = False) -> str:
     W, H = render.ancho, render.alto
     escalar = "scale={w}:{h}:flags=lanczos,setsar=1"
-    final = f"fps={render.fps}" + (f",ass={SUBS_ARCHIVO}" if con_subs else "")
+    final = f"fps={render.fps}" + (f",ass={SUBS_ARCHIVO}" if con_subs else "") \
+        + (f",ass={TITULO_ARCHIVO}" if con_titulo else "")
+    if layout.tipo == "sigue":
+        # Charla o IRL: el recorte 9:16 se mueve con la cara (layout.ffmpeg_crop_movil).
+        return f"[0:v]{layout.ffmpeg_crop_movil()},{escalar.format(w=W, h=H)},{final}[v]"
 
     if layout.tipo == "split":
         assert layout.camara is not None
@@ -50,11 +55,13 @@ def filtro(layout: Layout, render: Render, con_subs: bool) -> str:
     return f"[0:v]{layout.principal.ffmpeg_crop()},{escalar.format(w=W, h=H)},{final}[v]"
 
 
-def renderizar(entrada: Path, salida: Path, layout: Layout, render: Render, dir_subs: Path | None) -> None:
+def renderizar(entrada: Path, salida: Path, layout: Layout, render: Render, dir_subs: Path | None,
+               dir_titulo: Path | None = None) -> None:
     """dir_subs: carpeta que contiene subs.ass (ffmpeg corre ahí para no pelear con el escapado
-    de rutas de Windows dentro del filtro). None = sin subtítulos."""
+    de rutas de Windows dentro del filtro). None = sin subtítulos. `dir_titulo`: la carpeta con
+    titulo.ass (el título grande); es la misma carpeta de trabajo que la de los subtítulos."""
     salida.parent.mkdir(parents=True, exist_ok=True)
-    grafo, audio = filtro(layout, render, dir_subs is not None), []
+    grafo, audio = filtro(layout, render, dir_subs is not None, dir_titulo is not None), []
     info = probe(entrada)
     if info.tiene_audio:   # audio limpio (media.cola_audio): fundidos y termina con el video
         dur = min(info.duracion, render.duracion_max_s) if info.duracion else render.duracion_max_s
@@ -72,4 +79,4 @@ def renderizar(entrada: Path, salida: Path, layout: Layout, render: Render, dir_
         "-movflags", "+faststart",
         str(salida.resolve()),
     ]
-    run(args, cwd=dir_subs)
+    run(args, cwd=dir_subs or dir_titulo)

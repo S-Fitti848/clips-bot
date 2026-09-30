@@ -272,7 +272,11 @@ def procesar(url: str, cfg: Settings, streamers: list[Streamer], forzar: bool = 
     forzado = streamer.layout_forzado if streamer else ""
     with crono.etapa("detectar cámara"):
         W, H, frames, imagenes = lay.detectar_caras(d.path, cfg.camara.frames_muestra)
-        layout = lay.decidir_layout(W, H, frames, cfg.camara, cfg.render, forzado=forzado)
+        # Charla o IRL: la trayectoria de la cara, para el zoom que la sigue (layout "sigue").
+        charla = (d.categoria or "") in cfg.camara.categorias_charla
+        puntos = lay.trayectoria(d.path)[1] if cfg.camara.seguir_cara and not forzado else None
+        layout = lay.decidir_layout(W, H, frames, cfg.camara, cfg.render, forzado=forzado,
+                                    charla=charla, puntos=puntos)
         if imagenes:
             lay.guardar_debug(imagenes[len(imagenes) // 2], layout, DEBUG_DIR / f"{d.clip_id}_layout.jpg")
     res.layout, res.presencia_cara = layout.tipo, round(layout.presencia, 2)
@@ -281,9 +285,16 @@ def procesar(url: str, cfg: Settings, streamers: list[Streamer], forzar: bool = 
            + f" (cara estable en {layout.presencia:.0%} de los frames)")
 
     quemar = bool(subs) and res.subtitulos_quemados
+    # El título del clip grande arriba y el streamer chiquito encima (2026-09-30), si hay título.
+    titulo_dir = None
+    if cfg.render.titulo_arriba and res.textos and res.textos.get("titulo"):
+        sub.escribir_titulo_ass(work / "titulo.ass", res.textos["titulo"], d.canal or d.streamer,
+                                cfg.subtitulos, cfg.render,
+                                y_centro=cfg.render.alto_camara if layout.tipo == "split" else None)
+        titulo_dir = work
     salida = READY_DIR / f"{d.clip_id}.mp4"
     with crono.etapa("render 9:16" + (" + subtítulos" if quemar else "")):
-        renderizar(d.path, salida, layout, cfg.render, work if quemar else None)
+        renderizar(d.path, salida, layout, cfg.render, work if quemar else None, titulo_dir)
 
     # Chequeo post-render: si el recorte partió una cara, se rehace con fit_blur (que no recorta).
     # Atrapa lo que la decisión previa no vio, ej. la persona que se corre a un costado a mitad del clip.
@@ -296,8 +307,11 @@ def procesar(url: str, cfg: Settings, streamers: list[Streamer], forzar: bool = 
             res.rerender_fit_blur = detalle
             layout = lay.layout_fit_blur(W, H, cfg.render, layout.presencia, layout.cara)
             res.layout = layout.tipo
+            if titulo_dir:   # en fit_blur el título va arriba, no en la línea del split
+                sub.escribir_titulo_ass(work / "titulo.ass", res.textos["titulo"], d.canal or d.streamer,
+                                        cfg.subtitulos, cfg.render)
             with crono.etapa("re-render fit_blur"):
-                renderizar(d.path, salida, layout, cfg.render, work if quemar else None)
+                renderizar(d.path, salida, layout, cfg.render, work if quemar else None, titulo_dir)
 
     shutil.copyfile(work / "subs.srt", READY_DIR / f"{d.clip_id}.srt")
     res.salida = str(salida)

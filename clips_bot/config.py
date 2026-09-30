@@ -121,6 +121,9 @@ class Render:
     recorte_inferior_camara_px: int = 50
     zoom_sin_camara: float = 1.08
     blur_sigma: float = 30  # fondo del layout fit_blur
+    # El título del clip grande arriba y el streamer chiquito encima (2026-09-30). Apagado hasta
+    # que Santi vea 3 muestras.
+    titulo_arriba: bool = False
     x264_preset: str = "medium"
     crf: int = 20
     maxrate_kbps: int = 5000
@@ -136,6 +139,12 @@ class Camara:
     # Por encima de esto no hay juego: es contenido multicámara y el split parte a alguien.
     presencia_juego_max: float = 0.20
     cara_juego_min: float = 0.065     # ancho mínimo (fracción del frame) para contar como persona
+    # Charla o IRL con una persona: zoom siguiendo la cara (layout "sigue", 2026-09-30). Apagado
+    # hasta que Santi vea 3 muestras.
+    seguir_cara: bool = False
+    persona_min: float = 0.6          # la persona ocupa al menos esto del alto
+    categorias_charla: tuple = ("Just Chatting", "IRL", "Talk Shows & Podcasts", "Travel & Outdoors",
+                                "Food & Drink", "Pools, Hot Tubs, and Beaches", "ASMR")
 
 
 @dataclass(frozen=True)
