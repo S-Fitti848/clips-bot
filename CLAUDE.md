@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-09-30 | **Versión:** v0.48.0 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 + escucha de Telegram 24/7)
+**Snapshot:** 2026-09-30 | **Versión:** v0.49.0 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 + escucha de Telegram 24/7)
 
 > **SI ESTÁS EMPEZANDO UNA SESIÓN NUEVA, LEÉ §10.** Ahí está qué está hecho, qué quedó a medias,
 > qué falta, y las trampas que ya nos mordieron.
@@ -566,6 +566,10 @@ clips_bot/efemerides.py  Pequeña Historia (§3c): Wikipedia/Commons, filtros de
                          validado contra el artículo, hoja de aprobación y el video con zoom
 clips_bot/serie.py       /serie: partes, división en etapas (validada), guiones encadenados,
                          título numerado, horarios, hoja de miniaturas por etapa
+clips_bot/facebook.py    Reels de Pequeña Historia a la página de Facebook (apagado; docs/facebook.md)
+clips_bot/parallax.py    fotos con parallax 3D (GrabCut + inpaint + dos capas)
+clips_bot/graficos.py    año contando, mapa con el punto, palabras clave grandes, whoosh
+clips_bot/vod.py         buscar un Short en el VOD (audio 160p, huella, FFT)
 clips_bot/videos_libres.py videos de las frases de acción (Commons, archive.org, Pexels, Pixabay, NASA)
 clips_bot/ilustrar.py    regla fija 1 (§1): una foto por frase sin repetir, mínimo 6 distintas,
                          ningún tramo de más de 6 s (`asignar`, `tramos`, `errores_plan`)
@@ -769,6 +773,15 @@ Problemas abiertos:
 
 ## 9. CHANGELOG
 
+- v0.49.0 (2026-09-30) — **Facebook para Pequeña Historia** (APAGADO: `facebook.activo`, hasta que
+  Santi complete `docs/facebook.md`). `facebook.py`: Reels Publishing API de Meta en tres pasos
+  (`video_reels` start → rupload con el archivo → finish PUBLISHED o SCHEDULED a la misma hora que
+  YouTube; si ya pasó, ya; nunca al día siguiente). Mismo "📤 Subir" de la efeméride: se sube a
+  Facebook aunque la subida a YouTube esté apagada (el aviso dice las dos cosas). ❌ Cancelar borra
+  el Reel programado también. Tabla `subidas`, canal "facebook" (estados programada/publicada/error).
+  Credenciales: `FACEBOOK_PAGE_ID` y `FACEBOOK_PAGE_TOKEN` (token de página de larga duración, "no
+  vence") en el .env. Sin revisión de Meta: página y app propias, app en modo desarrollo.
+  `facebook.version` v23.0 (la guía dice cómo ver la del Explorer). 625 tests OK.
 - v0.48.0 (2026-09-30) — **La subida, separada del voto.** 👍/👎 solo votan (antes el 👍 de un
   clip lo programaba en Rots) y el ✅ de la efeméride solo arma el video (antes también lo
   programaba). Debajo de cada clip de streamer y de cada efeméride terminada, una fila aparte:

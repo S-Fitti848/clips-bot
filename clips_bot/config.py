@@ -313,6 +313,13 @@ class Pego:
 
 
 @dataclass(frozen=True)
+class Facebook:
+    """Reels de Pequeña Historia a la página de Facebook (facebook.py, docs/facebook.md)."""
+    activo: bool = False       # apagado hasta que Santi complete la guía y cargue el .env
+    version: str = "v23.0"     # la versión de la Graph API (la que muestre el Graph API Explorer)
+
+
+@dataclass(frozen=True)
 class EnVivo:
     """Modo /envivo: detectar un momento mientras el stream sigue al aire (§3 modo en vivo)."""
     intervalo_twitch_s: int = 300     # /streams va en lote: una llamada para todos los de Twitch
@@ -378,6 +385,7 @@ class Settings:
     publicacion: Publicacion = Publicacion()
     envivo: EnVivo = EnVivo()
     pego: Pego = Pego()
+    facebook: Facebook = Facebook()
     efemerides: EfemeridesCfg = EfemeridesCfg()
     youtube_upload_enabled: bool = False
 
@@ -451,6 +459,7 @@ def load_settings(path: Path = CONFIG_DIR / "settings.yaml") -> Settings:
         envivo=_seccion(EnVivo, raw, "envivo", path),
         efemerides=_seccion(EfemeridesCfg, raw, "efemerides", path),
         pego=_seccion(Pego, raw, "pego", path),
+        facebook=_seccion(Facebook, raw, "facebook", path),
         youtube_upload_enabled=bool(raw.get("youtube_upload_enabled", False)),
     )
 

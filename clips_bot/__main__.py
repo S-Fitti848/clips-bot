@@ -3416,16 +3416,22 @@ def _subir_callback(conn, tg: TelegramClient, cb: dict, settings: Settings, d: d
         tg.answer_callback(cb["callback_id"])
         return redibujar()
     if d["accion"] == "x":
-        s = next(iter(db.subidas(conn, ("programada",), clip_id=clip_id)[-1:]), None)
-        if not s:
+        from . import facebook
+
+        programadas = db.subidas(conn, ("programada",), clip_id=clip_id)
+        if not programadas:
             tg.answer_callback(cb["callback_id"], "Ya no estaba programado.")
             return redibujar()
-        try:
-            youtube.Cliente(s["canal"]).cancelar(s["video_id"])
-        except youtube.YouTubeError as e:
-            return tg.answer_callback(cb["callback_id"], f"No pude: {str(e)[:150]}", alerta=True)
-        db.marcar_subida(conn, s["id"], "cancelada")
-        tg.answer_callback(cb["callback_id"], "Cancelado: queda privado en Studio.")
+        for s in programadas:
+            try:
+                if s["canal"] == "facebook":
+                    facebook.cancelar(s["video_id"], settings.facebook.version)
+                else:
+                    youtube.Cliente(s["canal"]).cancelar(s["video_id"])
+            except (youtube.YouTubeError, facebook.FacebookError) as e:
+                return tg.answer_callback(cb["callback_id"], f"No pude: {str(e)[:150]}", alerta=True)
+            db.marcar_subida(conn, s["id"], "cancelada")
+        tg.answer_callback(cb["callback_id"], "Cancelado.")
         return redibujar()
     # 📤 Subir
     db.borrar_valor(conn, f"{NO_SUBIR}:{clip_id}")
@@ -3446,7 +3452,41 @@ def _subir(conn, settings: Settings, meta: dict, canal: str) -> list[str]:
         aviso = _programar_subida(conn, settings, meta, canal, _hora_de(settings, canal, meta))
         if aviso:
             avisos.append(aviso)
+    if canal == "pequena_historia" and settings.facebook.activo:
+        aviso = _subir_facebook(conn, settings, meta)
+        if aviso:
+            if not settings.youtube_upload_enabled:
+                avisos.append("YouTube: " + APAGADA.split("YouTube ", 1)[1] + ".")
+            avisos.append(aviso)
     return avisos
+
+
+def _subir_facebook(conn, settings: Settings, meta: dict, ahora: datetime | None = None) -> str:
+    """El Reel a la página de Facebook, a la misma hora que YouTube (o ya, si esa hora pasó)."""
+    import requests
+
+    from . import facebook, youtube
+
+    clip_id = meta["clip_id"]
+    if any(s["canal"] == "facebook" for s in db.subidas(conn, ("programada", "publicada"), clip_id=clip_id)):
+        return ""
+    hoy = (ahora or datetime.now(timezone.utc)).astimezone(AR)
+    cuando = youtube.proximo_horario(settings.efemerides.hora_publicacion, ahora=hoy)
+    if cuando.date() != hoy.date():          # "un día como hoy": nunca mañana
+        cuando = None
+    t = meta["textos"]
+    texto = f"{t['titulo']}\n\n{t['descripcion']}\n\n{' '.join(t.get('hashtags') or [])}"
+    try:
+        vid = facebook.subir_reel(Path(meta["salida"]), texto, cuando, settings.facebook.version)
+    except (facebook.FacebookError, OSError, requests.RequestException) as e:
+        db.crear_subida(conn, clip_id, "facebook", "error", error=str(e)[:500])
+        return f"⚠️ No pude subirlo a Facebook: {html.escape(str(e)[:300])}"
+    if cuando is None or (cuando - hoy).total_seconds() < facebook.MIN_PROGRAMAR_S:
+        db.crear_subida(conn, clip_id, "facebook", "publicada", video_id=vid)
+        return "📘 Publicado en Facebook (Reels de la página)."
+    iso = cuando.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    db.crear_subida(conn, clip_id, "facebook", "programada", video_id=vid, publish_at=iso)
+    return f"📘 Programado en Facebook para las {cuando:%H:%M}."
 
 
 def _subidas_callback(conn, tg: TelegramClient, cb: dict, settings: Settings) -> None:

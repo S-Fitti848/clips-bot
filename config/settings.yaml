@@ -433,6 +433,13 @@ publicacion:
 # (sin auditoría los uploads quedan bloqueados privados para siempre).
 youtube_upload_enabled: false
 
+# Reels de Pequeña Historia a la página de Facebook (Reels Publishing API de Meta): con el mismo
+# "📤 Subir" de la efeméride, además de programarse en YouTube. APAGADO hasta completar
+# docs/facebook.md (FACEBOOK_PAGE_ID y FACEBOOK_PAGE_TOKEN en el .env, nunca en git).
+facebook:
+  activo: false
+  version: "v23.0"         # la que muestre el Graph API Explorer
+
 # Lo que pega en otros canales → el clip original (pego.py, 2026-09-29). Una vez por día (y en
 # /buscar): Shorts de OTROS canales que nombran a cada streamer de las carpetas con diarios,
 # ordenados por vistas; para los que pegaron, el mismo momento entre sus clips originales,
