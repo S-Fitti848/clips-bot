@@ -621,6 +621,12 @@ def _pego_tick(conn, settings: Settings, ahora=None) -> None:
         log.info("pegó: vuelta de las %s (tope %d min)", cfg.hora, cfg.tope_min)
         _pegados_para(settings, streamers, buscar_ahora=True, avisar=log.info,
                       tope_s=cfg.tope_min * 60)
+        if cfg.vod:   # los que no tienen clip, buscados en el VOD (apagado hasta medir)
+            from . import pego
+
+            pego.buscar_en_vod_del_dia(conn, streamers, cfg, DATA_DIR / "pego_tmp",
+                                       kick=KickClient(pausa_s=settings.kick.pausa_s), avisar=log.info,
+                                       hasta=time.monotonic() + cfg.vod_tope_min * 60)
     finally:
         db.soltar_turno(conn, db.RECURSO_PESADO, turno, VENCIMIENTO_PESADO_S)
 

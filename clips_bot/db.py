@@ -41,10 +41,13 @@ def connect(path: Path) -> sqlite3.Connection:
     conn.executescript(SCHEMA)
     conn.executescript(SCHEMA_CURSOR)
     conn.executescript(SCHEMA_ESTADO)
-    try:   # la columna llegó después de la tabla (v0.41.0)
-        conn.execute("ALTER TABLE pegados ADD COLUMN comparados INTEGER DEFAULT 0")
-    except sqlite3.OperationalError:
-        pass
+    # Columnas que llegaron después de la tabla: comparados (v0.41.0), las del VOD (v0.50.0).
+    for columna in ("comparados INTEGER DEFAULT 0", "vod_url TEXT", "vod_segundo REAL",
+                    "vod_intentado INTEGER DEFAULT 0"):
+        try:
+            conn.execute(f"ALTER TABLE pegados ADD COLUMN {columna}")
+        except sqlite3.OperationalError:
+            pass
     return conn
 
 

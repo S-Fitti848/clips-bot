@@ -123,3 +123,23 @@ def test_message_is_not_modified_se_ignora_y_los_demas_errores_no():
     TelegramClient("T", session=S("Bad Request: message is not modified")).edit_reply_markup("1", 2, {})
     with pytest.raises(TelegramError):
         TelegramClient("T", session=S("Bad Request: message to edit not found")).edit_message("1", 2, "x")
+
+
+def test_en_el_vod_se_prueban_solo_los_2_con_mas_vistas_y_se_avisa_donde(tmp_path, monkeypatch):
+    from clips_bot import vod as vd
+
+    conn = db.connect(tmp_path / "t.db")
+    davo = Streamer("davooxeneize", plataforma="kick", experimento=True, apodos=("Davo",))
+    for i, vistas in enumerate((900000, 500000, 300000)):
+        pego.guardar(conn, pego.ShortAjeno(f"s{i}", f"DAVO {i}", "Otro", vistas, 30,
+                                           AHORA.isoformat()), "davooxeneize", None, 40)
+    probados = []
+    monkeypatch.setattr(pego, "bajar_audio_short", lambda short, d: probados.append(short.id) or (d / "a", AHORA))
+    monkeypatch.setattr(vd, "vods_kick", lambda k, slug, a, b: ["vod"])
+    monkeypatch.setattr(vd, "buscar_en_vods", lambda *a, **k: (
+        vd.Vod("1", "kick", "u", "https://kick.com/davooxeneize/videos/x", AHORA, 3600), 3725.0, 0.8)
+        if probados[-1] == "s0" else None)
+    n = pego.buscar_en_vod_del_dia(conn, [davo], Pego(), tmp_path, kick=object())
+    assert probados == ["s0", "s1"] and n == 1
+    t = pego.texto_sin_original(pego.sin_original(conn, [davo], AHORA - timedelta(days=2)))
+    assert "salió del VOD" in t and "1:02:05" in t and "No encontré el original" in t

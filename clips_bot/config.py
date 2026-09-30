@@ -310,6 +310,11 @@ class Pego:
     # lo que ya encontró.
     hora: str = "02:00"
     tope_min: int = 15
+    # El Short sin original, buscado en el VOD (vod.py): los `vod_por_dia` con más vistas, con su
+    # propio tope. APAGADO hasta medir el tiempo en la Pi con uno de Davo.
+    vod: bool = False
+    vod_por_dia: int = 2
+    vod_tope_min: int = 25
 
 
 @dataclass(frozen=True)

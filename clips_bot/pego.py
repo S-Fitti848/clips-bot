@@ -344,18 +344,69 @@ def sin_original(conn: sqlite3.Connection, streamers: list[Streamer], desde: dat
     mirar que lo nombren (las filas viejas se guardaron con la regla de antes, hashtags incluidos)."""
     por_login = {s.login: s for s in streamers}
     filas = conn.execute(
-        """SELECT short_id, streamer, vistas, canal, titulo, coincidencia, comparados FROM pegados
+        """SELECT short_id, streamer, vistas, canal, titulo, coincidencia, comparados, vod_url,
+                  vod_segundo FROM pegados
            WHERE clip_id IS NULL AND fecha >= ? AND vistas >= ? ORDER BY vistas DESC""",
         (desde.isoformat(), min_vistas)).fetchall()
     out = []
-    for sid, login, vistas, canal, titulo, valor, comparados in filas:
+    for sid, login, vistas, canal, titulo, valor, comparados, vod_url, vod_seg in filas:
         s = por_login.get(login)
         if s is None or not nombra(s, titulo or "", canal or ""):
             continue
         out.append({"url": f"https://www.youtube.com/shorts/{sid}", "streamer": login,
                     "vistas": int(vistas or 0), "canal": canal or "", "titulo": titulo or "",
-                    "coincidencia": float(valor or 0), "comparados": int(comparados or 0)})
+                    "coincidencia": float(valor or 0), "comparados": int(comparados or 0),
+                    "vod_url": vod_url or "", "vod_segundo": float(vod_seg or 0)})
     return out
+
+
+def buscar_en_vod_del_dia(conn: sqlite3.Connection, streamers: list[Streamer], cfg, carpeta: Path,
+                          kick=None, avisar=log.info, hasta: float | None = None,
+                          reloj=time.monotonic) -> int:
+    """Los `cfg.vod_por_dia` Shorts sin original con más vistas (de las últimas 24 h, sin probar en
+    el VOD) se buscan en los VODs del streamer de los días antes de publicado. Solo Kick por ahora
+    (el VOD de Twitch va por otro camino). Devuelve cuántos encontró."""
+    import shutil
+
+    from . import vod as vd
+
+    por_login = {s.login: s for s in streamers}
+    desde = (datetime.now(timezone.utc) - timedelta(days=1)).isoformat()
+    filas = conn.execute(
+        """SELECT short_id, streamer, titulo, vistas, publicado FROM pegados
+           WHERE clip_id IS NULL AND COALESCE(vod_intentado, 0) = 0 AND fecha >= ?
+           ORDER BY vistas DESC""", (desde,)).fetchall()
+    hallados = intentados = 0
+    for sid, login, titulo, vistas, publicado in filas:
+        if intentados >= cfg.vod_por_dia or (hasta is not None and reloj() >= hasta):
+            break
+        s = por_login.get(login)
+        if s is None or s.plataforma != "kick" or kick is None or not nombra(s, titulo or "", ""):
+            continue
+        intentados += 1
+        conn.execute("UPDATE pegados SET vod_intentado = 1 WHERE short_id = ?", (sid,))
+        conn.commit()
+        tmp = carpeta / f"vod_{sid}"
+        try:
+            audio, fecha = bajar_audio_short(ShortAjeno(sid, titulo or "", "", vistas, 0), tmp)
+            cuando = (datetime.fromisoformat(publicado.replace("Z", "+00:00")) if publicado
+                      else fecha or datetime.now(timezone.utc))
+            vods = vd.vods_kick(kick, s.login, cuando - timedelta(days=cfg.dias_antes), cuando)
+            mejor = vd.buscar_en_vods(audio, vods, carpeta / "huellas", cfg.umbral, avisar, hasta, reloj)
+        except Exception as e:
+            avisar(f"pegó (VOD): {sid}: {str(e)[:150]}")
+            continue
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+        if mejor:
+            v, seg, valor = mejor
+            conn.execute("UPDATE pegados SET vod_url = ?, vod_segundo = ?, coincidencia = ? WHERE short_id = ?",
+                         (v.pagina, seg, valor, sid))
+            conn.commit()
+            hallados += 1
+            avisar(f"pegó (VOD): «{(titulo or '')[:50]}» está en {v.pagina} a los {seg / 60:.1f} min "
+                   f"({valor:.2f})")
+    return hallados
 
 
 def texto_sin_original(filas: list[dict]) -> str:
@@ -368,9 +419,16 @@ def texto_sin_original(filas: list[dict]) -> str:
     for f in filas:
         vistas = f"{f['vistas']:,}".replace(",", ".")
         cuantos = f", comparé con {f['comparados']} clips" if f["comparados"] else ""
+        if f.get("vod_url"):
+            m, s = divmod(int(f["vod_segundo"]), 60)
+            h, m = divmod(m, 60)
+            donde = (f"No hay clip, pero salió del VOD: <a href=\"{f['vod_url']}\">acá</a>, en el "
+                     f"{h}:{m:02d}:{s:02d}.")
+        else:
+            donde = "No encontré el original."
         lineas.append(f"• <a href=\"{f['url']}\">{html.escape(f['titulo'][:70])}</a> — "
                       f"{html.escape(f['canal'])}, {vistas} vistas ({html.escape(f['streamer'])}"
-                      f"{cuantos}). No encontré el original.")
+                      f"{cuantos}). {donde}")
     return "\n".join(lineas)
 
 
