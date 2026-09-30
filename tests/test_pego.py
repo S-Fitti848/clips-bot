@@ -264,3 +264,13 @@ def test_la_config_real_busca_mas_originales_y_davo_tiene_apodos():
     assert cfg.max_originales >= 60 and cfg.dias_antes == 3
     davo = next(s for s in load_streamers() if s.login == "davooxeneize")
     assert "Davo" in davo.apodos
+
+
+def test_la_busqueda_rapida_da_lo_mismo_que_la_lenta():
+    rng = np.random.default_rng(1)
+    larga = rng.standard_normal((6000, 16)).astype(np.float32)
+    corta = larga[2000:2400] + 0.3 * rng.standard_normal((400, 16)).astype(np.float32)
+    rapida = ah.coincidencia_rapida(corta, larga)
+    lenta = ah.coincidencia(corta, larga, paso=1)
+    assert rapida == lenta and rapida[1] == pytest.approx(2000 * ah.SALTO / ah.SR)
+    assert ah.coincidencia_rapida(corta[:10], larga) == (0.0, 0.0)          # muy corto

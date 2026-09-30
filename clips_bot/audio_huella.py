@@ -72,3 +72,37 @@ def coincidencia(a: np.ndarray, b: np.ndarray, paso: int = 2) -> tuple[float, fl
 
 def comparar(short: Path, clip: Path) -> tuple[float, float]:
     return coincidencia(huella(leer_audio(short)), huella(leer_audio(clip)))
+
+
+def coincidencia_rapida(corta: np.ndarray, larga: np.ndarray) -> tuple[float, float]:
+    """Lo mismo que `coincidencia` (Pearson sobre la parte que se superpone, desfase de `corta`
+    dentro de `larga`), pero en TODOS los desfases a la vez con FFT: para buscar un Short de 30 s
+    dentro de un VOD de 7 horas (~790.000 cuadros), donde el recorrido de a uno tarda demasiado."""
+    n, bandas = corta.shape
+    if n == 0 or len(larga) < n or n < int(SUPERPOSICION_MIN_S * SR / SALTO):
+        return 0.0, 0.0
+    a = corta.astype(np.float64)
+    a0 = a - a.mean()
+    saa = float((a0 * a0).sum())
+    if saa == 0:
+        return 0.0, 0.0
+    b = larga.astype(np.float64)
+    L = len(b)
+    tam = 1 << int(np.ceil(np.log2(L + n)))
+    # sum(a0 * ventana de b) para cada desfase, sumado por banda.
+    prod = np.zeros(L - n + 1)
+    for k in range(bandas):
+        fa = np.fft.rfft(a0[::-1, k], tam)
+        fb = np.fft.rfft(b[:, k], tam)
+        prod += np.fft.irfft(fa * fb, tam)[n - 1:L]
+    # sum y sum² de cada ventana de b (todas las bandas juntas), con sumas acumuladas.
+    fila, fila2 = b.sum(axis=1), (b * b).sum(axis=1)
+    c1 = np.concatenate([[0.0], np.cumsum(fila)])
+    c2 = np.concatenate([[0.0], np.cumsum(fila2)])
+    s1 = c1[n:] - c1[:-n]
+    s2 = c2[n:] - c2[:-n]
+    sbb = s2 - s1 * s1 / (n * bandas)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        corr = np.where(sbb > 1e-9, prod / np.sqrt(saa * sbb), 0.0)
+    lag = int(np.argmax(corr))
+    return round(float(corr[lag]), 3), round(lag * SALTO / SR, 2)
