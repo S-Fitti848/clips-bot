@@ -95,6 +95,18 @@ def sin_anios(q: str) -> str:
     return " ".join(_ANIOS.sub(" ", q).split())
 
 
+def consultas(mostrar: str, tema: str = "") -> list[str]:
+    """De la más puntual a la más general. Medido 2026-09-29 con el Sputnik: "R-7 rocket launch
+    pad" no trae nada en Commons ni en archive.org; "rocket launch" (con los años 1955-1967 en
+    archive.org) trae primero el noticiero de 1957, y el tema del artículo ("Sputnik 1") también."""
+    palabras = sin_anios(mostrar).split()
+    out = [" ".join(palabras[:k]) for k in range(len(palabras), 1, -1)]
+    out += [" ".join(palabras[k:k + 2]) for k in range(1, len(palabras) - 1)]
+    if tema:
+        out.append(sin_anios(tema.replace("_", " ")))
+    return [q for q in dict.fromkeys(out) if q]
+
+
 def es_de_espacio(q: str) -> bool:
     return bool(_ESPACIO.search(q or ""))
 
@@ -260,34 +272,46 @@ class Buscador:
 
     # ---- las dos etapas -------------------------------------------------------------------
 
-    def candidatos(self, mostrar: str, anio: int, presente: bool, avisar=log.info) -> list[Video]:
-        """Etapa 1 (archivo); solo si no trae nada, la 2 (stock y NASA). La regla de época: en una
-        frase del pasado, nada con fecha de más de MARGEN_EPOCA años después del hecho."""
+    def candidatos(self, mostrar: str, anio: int, presente: bool, avisar=log.info,
+                   tema: str = "", cuantos: int = 4) -> list[Video]:
+        """Etapa 1 (archivo); solo si no trae nada, la 2 (stock y NASA). En cada etapa, las
+        búsquedas de `consultas` en orden, hasta juntar `cuantos`. La regla de época: en una frase
+        del pasado, nada con fecha de más de MARGEN_EPOCA años después del hecho."""
         from .efemerides import MARGEN_EPOCA
-
-        q = sin_anios(mostrar)
 
         def epoca_ok(v: Video) -> bool:
             return presente or v.anio is None or v.anio <= anio + MARGEN_EPOCA
 
-        etapas = [[("commons", lambda: self.commons(q)),
-                   ("archive", lambda: self.archive(q, None if presente else anio))],
-                  [("pexels", lambda: self.pexels(q)), ("pixabay", lambda: self.pixabay(q))]
-                  + ([("nasa", lambda: self.nasa(q))] if es_de_espacio(mostrar) else [])]
-        for etapa in etapas:
-            out = []
-            for nombre, buscar in etapa:
-                try:
-                    halladas = buscar()
-                except (requests.RequestException, ValueError) as e:
-                    avisar(f"    video: {nombre} falló ({str(e)[:80]})")
-                    continue
-                viejas = [v for v in halladas if epoca_ok(v)]
-                if len(viejas) < len(halladas):
-                    avisar(f"    video: {nombre} — {len(halladas) - len(viejas)} de otra época afuera")
-                out += viejas
+        def etapas(q: str) -> list[list[tuple]]:
+            return [[("commons", lambda: self.commons(q)),
+                     ("archive", lambda: self.archive(q, None if presente else anio))],
+                    [("pexels", lambda: self.pexels(q)), ("pixabay", lambda: self.pixabay(q))]
+                    + ([("nasa", lambda: self.nasa(q))] if es_de_espacio(mostrar + " " + tema) else [])]
+
+        qs = consultas(mostrar, tema)
+        for n_etapa in range(2):
+            out, urls, afuera = [], set(), 0
+            for q in qs:
+                for nombre, buscar in etapas(q)[n_etapa]:
+                    try:
+                        halladas = buscar()
+                    except (requests.RequestException, ValueError) as e:
+                        avisar(f"    video: {nombre} «{q}» falló ({str(e)[:80]})")
+                        continue
+                    for v in halladas:
+                        if v.url in urls:
+                            continue
+                        urls.add(v.url)
+                        if epoca_ok(v):
+                            out.append(v)
+                        else:
+                            afuera += 1
+                if len(out) >= cuantos:
+                    break
+            if afuera:
+                avisar(f"    video: {afuera} de otra época afuera")
             if out:
-                return out
+                return out[:cuantos]
         return []
 
 

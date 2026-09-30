@@ -935,8 +935,9 @@ def video_elegido(frases: list, videos: dict, presente: list[bool], avisar=log.i
 
 
 def buscar_videos(g: Guion, anio: int, carpeta: Path, buscador=None, avisar=log.info,
-                  frases: list[int] | None = None) -> dict:
-    """{frase: [Video con 3 cuadros]} para las frases de acción (o las pedidas)."""
+                  frases: list[int] | None = None, tema: str = "") -> dict:
+    """{frase: [Video con 3 cuadros]} para las frases de acción (o las pedidas). `tema`: el
+    artículo del hecho ("Sputnik 1"), la búsqueda de último recurso."""
     from . import videos_libres as vl
 
     buscador = buscador or vl.Buscador()
@@ -945,7 +946,7 @@ def buscar_videos(g: Guion, anio: int, carpeta: Path, buscador=None, avisar=log.
         if i >= len(g.mostrar):
             continue
         hoy = i < len(g.presente) and g.presente[i]
-        vs = buscador.candidatos(g.mostrar[i], anio, hoy, avisar)[:4]
+        vs = buscador.candidatos(g.mostrar[i], anio, hoy, avisar, tema=tema)[:4]
         vs = [vl.sacar_frames(v, carpeta / "videos", f"f{i:02d}_v{k}") for k, v in enumerate(vs)]
         out[i] = [v for v in vs if v.frames]
         avisar(f"    frase {i + 1} (acción): {len(out[i])} videos candidatos "
@@ -999,7 +1000,8 @@ def fotos_para_guion(wiki: Wiki, cliente, e: Evento, g: Guion, fotos_articulo: l
     todas = [i for i in range(len(pool)) if i not in descartadas]
     candidatas = [[x for x in dict.fromkeys(p + del_hecho + todas) if hoy or x not in modernas]
                   for p, hoy in zip(propias, presente)]
-    candidatos_video = buscar_videos(g, e.anio, carpeta, buscador, avisar) if videos else {}
+    candidatos_video = (buscar_videos(g, e.anio, carpeta, buscador, avisar, tema=e.paginas[0])
+                        if videos else {})
     elegidos: dict = {}
     rankings, vistas_malas = elegir_fotos(cliente, g, pool, candidatas, propias, avisar=avisar,
                                           anio=e.anio, videos=candidatos_video, elegidos=elegidos)
@@ -1457,7 +1459,8 @@ def alternar_video(p: Propuesta, n: int, carpeta: Path, buscador=None, avisar=lo
         p.guion = g.a_dict()
         return f"Frase {n}: vuelve a foto."
     if str(i) not in g.videos:
-        halladas = buscar_videos(g, e.anio, carpeta, buscador, avisar, frases=[i]).get(i) or []
+        halladas = buscar_videos(g, e.anio, carpeta, buscador, avisar, frases=[i],
+                                 tema=e.paginas[0] if e.paginas else "").get(i) or []
         if not halladas:
             return f"No encontré un video libre para la frase {n} (queda con foto)."
         v = halladas[0]

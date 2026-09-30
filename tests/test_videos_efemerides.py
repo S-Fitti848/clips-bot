@@ -66,7 +66,7 @@ class B:
 def test_primero_la_filmacion_de_archivo_y_recien_si_no_hay_el_stock():
     b = B(archivo=[_v()], stock=[_v("pexels", None)])
     assert [v.fuente for v in b.candidatos("1957 Sputnik launch Soviet Union", 1957, False)] == ["archive"]
-    assert ("commons", "Sputnik launch Soviet Union") in b.pedidos      # sin el año
+    assert b.pedidos[0] == ("commons", "Sputnik launch Soviet Union")   # sin el año
     assert not any(p[0] == "pexels" for p in b.pedidos)
     b = B(archivo=[_v(anio=2008)], stock=[_v("pexels", None)], nasa=[_v("nasa", 2005)])
     out = b.candidatos("1957 Sputnik launch", 1957, False)
@@ -109,7 +109,8 @@ def test_el_boton_pasa_de_video_a_foto_y_de_foto_a_video(tmp_path, monkeypatch):
     assert ef.Guion.de_dict(p.guion).con_video == []
     assert "🎬 video (archive.org, 1957)" in ef.alternar_video(p, 3, tmp_path)
     # una frase sin video: lo busca en el momento, sin Gemini
-    monkeypatch.setattr(ef, "buscar_videos", lambda g, anio, c, b, avisar, frases: {frases[0]: [_v("commons", 1957)]})
+    monkeypatch.setattr(ef, "buscar_videos",
+                        lambda g, anio, c, b, avisar, frases, tema: {frases[0]: [_v("commons", 1957)]})
     assert "Wikimedia Commons" in ef.alternar_video(p, 5, tmp_path)
     g2 = ef.Guion.de_dict(p.guion)
     assert g2.con_video == [2, 4] and g2.videos["4"]["momento"] == 22.5
@@ -208,3 +209,22 @@ def test_apagado_de_fabrica_hasta_la_muestra():
 def test_sin_anios_y_espacio():
     assert vl.sin_anios("1957 Sputnik launch 1950s Soviet") == "Sputnik launch Soviet"
     assert vl.es_de_espacio("1969 Apollo 11 rocket launch") and not vl.es_de_espacio("1928 London mold")
+
+
+def test_las_consultas_van_de_la_puntual_a_la_general():
+    # medido con el Sputnik: la puntual no trae nada, "rocket launch" y el tema sí
+    assert vl.consultas("1957 R-7 rocket launch pad", "Sputnik_1") == [
+        "R-7 rocket launch pad", "R-7 rocket launch", "R-7 rocket", "rocket launch", "launch pad",
+        "Sputnik 1"]
+
+
+def test_si_la_puntual_no_trae_nada_prueba_la_siguiente_y_corta_al_juntar():
+    class B2(B):
+        def commons(self, q):
+            self.pedidos.append(("commons", q))
+            return [_v("commons", 1957, titulo=q)] if q in ("rocket launch", "Sputnik 1") else []
+
+    b = B2()
+    out = b.candidatos("1957 R-7 rocket launch pad", 1957, False, tema="Sputnik_1", cuantos=1)
+    assert [v.titulo for v in out] == ["rocket launch"]
+    assert ("commons", "Sputnik 1") not in b.pedidos            # ya había juntado lo que pedía

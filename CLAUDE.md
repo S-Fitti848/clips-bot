@@ -779,6 +779,10 @@ Problemas abiertos:
   Decidido por Claude: el stock solo se busca si no hay filmación de archivo; un 🎬 sobre una frase
   sin video busca en el momento sin Gemini (el primero de archivo, cuadro del medio) y lo mira Santi
   en la hoja. 585 tests OK.
+  **Primera muestra (Sputnik, en la Pi): 0 videos.** Las frases de acción buscaban "R-7 rocket
+  launch pad" y eso no trae nada en ninguna fuente. Ahora `videos_libres.consultas` prueba de la
+  puntual a la general (acortando, de a pares de palabras y al final el tema del artículo) hasta
+  juntar 4 de la época: "rocket launch" en archive.org (1955-1967) trae primero el noticiero de 1957.
 - v0.42.0 (2026-09-29) — **Segunda clave de Gemini** (`GEMINI_API_KEY_2`, pedido de Santi):
   siempre la principal; la segunda SOLO si la principal da 429 de cuota del día, y recién después
   de las dos el modelo de respaldo (orden: flash/principal → flash/segunda → lite/principal →
