@@ -432,10 +432,11 @@ youtube_upload_enabled: false
 pego:
   activo: true             # prendido el 2026-09-29 por Santi, después de ver la medición
   busquedas_por_dia: 40
-  dias: 7
+  dias: 7                  # Shorts publicados en la última semana
+  dias_antes: 3            # originales de 3 días antes de publicado cada Short a 12 h después
   min_vistas: 5000         # 10.000 → 5.000 (Santi, 2026-09-29): esa semana nada llegaba a 10.000
-  por_streamer: 3
-  max_originales: 15
+  por_streamer: 5          # Shorts nuevos que se comparan por streamer (3 → 5, v0.41.0)
+  max_originales: 60       # 15 → 60 (v0.41.0): la huella de cada clip se guarda, se baja una vez
   umbral: 0.55             # calibrado: 0,70-0,95 contra su clip, ≤ 0,39 contra los demás
   peso: 3.0
   canales_propios: ["Rots", "Pequeña Historia"]

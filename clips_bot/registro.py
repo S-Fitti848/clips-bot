@@ -70,13 +70,40 @@ def combinar(del_yaml: list[Streamer], conn: sqlite3.Connection) -> list[Streame
         if d and d["accion"] in (MOVER, ALTA):   # movido de carpeta por Telegram
             s = replace(s, grupo=d["grupo"])
         out.append(s)
+    apodos = apodos_db(conn)
+    out = [replace(s, apodos=apodos[s.login]) if s.login in apodos else s for s in out]
     por_login = {s.login for s in out}
     for login, d in sorted(extra.items()):
         if d["accion"] != ALTA or login in por_login:
             continue
         out.append(Streamer(login=login, plataforma=d["plataforma"], fuentes=("reciente",),
-                            grupo=d["grupo"], experimento=True))
+                            grupo=d["grupo"], experimento=True, apodos=apodos.get(login, ())))
     return out
+
+
+def apodos_db(conn: sqlite3.Connection) -> dict[str, tuple[str, ...]]:
+    """{login: apodos} cargados por Telegram. Mandan sobre los del YAML (vacío = sin apodos)."""
+    import json
+
+    return {f[0]: tuple(json.loads(f[1])) for f in conn.execute("SELECT login, lista FROM apodos")}
+
+
+def guardar_apodos(conn: sqlite3.Connection, login: str, texto: str, quien: str) -> tuple[str, ...]:
+    """Los apodos separados por coma ("Davo, Davo Xeneize"). "-" o vacío = ninguno."""
+    import json
+
+    lista, vistos = [], set()
+    for a in (texto or "").split(","):
+        a = " ".join(a.split())
+        if a and a != "-" and a.lower() != login.lower() and a.lower() not in vistos:
+            vistos.add(a.lower())
+            lista.append(a[:40])
+    conn.execute(
+        """INSERT INTO apodos (login, lista, quien, ts) VALUES (?, ?, ?, datetime('now'))
+           ON CONFLICT(login) DO UPDATE SET lista = excluded.lista, quien = excluded.quien,
+               ts = excluded.ts""", (login.lower(), json.dumps(lista[:8], ensure_ascii=False), str(quien)))
+    conn.commit()
+    return tuple(lista[:8])
 
 
 def carpeta_de(s: Streamer) -> str:

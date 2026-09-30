@@ -41,6 +41,10 @@ def connect(path: Path) -> sqlite3.Connection:
     conn.executescript(SCHEMA)
     conn.executescript(SCHEMA_CURSOR)
     conn.executescript(SCHEMA_ESTADO)
+    try:   # la columna llegó después de la tabla (v0.41.0)
+        conn.execute("ALTER TABLE pegados ADD COLUMN comparados INTEGER DEFAULT 0")
+    except sqlite3.OperationalError:
+        pass
     return conn
 
 
@@ -209,8 +213,16 @@ CREATE TABLE IF NOT EXISTS pegados (
     publicado    TEXT,
     clip_id      TEXT,                   -- el clip ORIGINAL que coincide; NULL = no se encontró
     clip_json    TEXT,                   -- el Clip entero, para volverlo candidato
-    coincidencia REAL,                   -- audio_huella (0-1)
-    fecha        TEXT NOT NULL           -- cuándo se buscó
+    coincidencia REAL,                   -- audio_huella (0-1): la mejor, aunque no pase el umbral
+    fecha        TEXT NOT NULL,          -- cuándo se buscó
+    comparados   INTEGER DEFAULT 0       -- contra cuántos clips originales se comparó
+);
+
+CREATE TABLE IF NOT EXISTS apodos (
+    login  TEXT PRIMARY KEY,             -- cómo lo nombran en otros canales (pego.py); manda sobre el YAML
+    lista  TEXT NOT NULL,                -- JSON: ["Davo", "Davo Xeneize"]
+    quien  TEXT,
+    ts     TEXT
 );
 
 CREATE TABLE IF NOT EXISTS carpetas (

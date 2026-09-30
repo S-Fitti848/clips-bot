@@ -27,6 +27,7 @@ streamers:
     plataforma: kick
     fuentes: [reciente]
     grupo: argentinos
+    apodos: ["Davo", "Davo Xeneize", "Davoo"]   # para buscar lo que pegó en otros canales (editable en /streamers)
     # El 412 se transmite en los dos canales. Medido 2026-09-23: 8 de sus 100 clips de la semana
     # salen de streams "412", y los de análisis de fútbol dicen "ANALIZAMOS" en el título.
     palabras_programa:
@@ -40,6 +41,7 @@ streamers:
     plataforma: kick
     fuentes: [reciente]
     grupo: argentinos
+    apodos: ["La Cobra"]   # para buscar lo que pegó en otros canales (editable en /streamers)
     detectar_marcador: true    # bio: "Hablo de FÚTBOL y deportes"
     # Marcas de programa en el TÍTULO DEL STREAM (no el del clip). Motivo de descarte:
     # programa_terceros. El 2026-09-22 salió un Short del stream "412 con LA COBRA, DAVOOXENEIZE,
@@ -101,6 +103,7 @@ streamers:
     plataforma: twitch
     fuentes: [catalogo]        # solo catálogo: sus clips recientes tienen muy pocas vistas
     grupo: catalogo
+    apodos: ["Vegetta"]   # para buscar lo que pegó en otros canales (editable en /streamers)
     permiso:
       experimento: true
 
@@ -111,6 +114,7 @@ streamers:
     plataforma: twitch
     fuentes: [reciente]
     grupo: famosos
+    apodos: ["Auron"]   # para buscar lo que pegó en otros canales (editable en /streamers)
     permiso:
       experimento: true
 

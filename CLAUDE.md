@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-09-29 | **Versión:** v0.40.2 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 + escucha de Telegram 24/7)
+**Snapshot:** 2026-09-29 | **Versión:** v0.41.0 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 + escucha de Telegram 24/7)
 
 > **SI ESTÁS EMPEZANDO UNA SESIÓN NUEVA, LEÉ §10.** Ahí está qué está hecho, qué quedó a medias,
 > qué falta, y las trampas que ya nos mordieron.
@@ -504,7 +504,8 @@ config/streamers.yaml    la lista "de autor". Las altas y bajas por Telegram NO 
                          está en git y si el bot escribiera acá cada alta sería un conflicto en el
                          próximo `git pull` de la Pi. La DB manda sobre el YAML.
                          login, plataforma, fuentes, grupo, permiso (cita/fuente o experimento),
-                         subtitulos_propios, detectar_marcador, palabras_programa, layout_forzado
+                         subtitulos_propios, detectar_marcador, palabras_programa, layout_forzado,
+                         apodos (para 🔥; los de /streamers van a la tabla `apodos` y mandan)
                          + sección evento_dedsafio
 .env                     TWITCH_*, GEMINI_API_KEY, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID,
                          TELEGRAM_ALLOWED_USERS (ids que pueden mandar comandos; vacío = ninguno),
@@ -757,6 +758,22 @@ Problemas abiertos:
 
 ## 9. CHANGELOG
 
+- v0.41.0 (2026-09-29) — **🔥 con Davo no daba nada.** Medido en la Pi: la búsqueda
+  "davooxeneize" traía 25 Shorts (21 de ≤ 61 s, 21 con 5.000+ vistas, 16 "lo nombraban"), pero
+  los 3 más vistos que se comparaban eran memes de fútbol de MordoTv con `#davooxeneize` de relleno
+  (600-720 mil vistas), no Davo: no coincidieron con sus 15 clips. Los Shorts de verdad dicen
+  "DAVO". Cambios: (1) **apodos** por streamer (`apodos` en el YAML; editables en /streamers →
+  🏷 Apodos, tabla `apodos`, que manda): una búsqueda por streamer con todos los nombres unidos por
+  `|` (OR de YouTube), 50 resultados; (2) un nombre que está SOLO como hashtag no cuenta
+  (`pego.nombra`); (3) originales de los días cercanos al Short (`dias_antes` 3 antes → 12 h
+  después) y hasta `max_originales` 60 (antes 15 de 7 días); Kick trae 300 por vistas de la
+  semana/mes y filtra por fecha (en orden cronológico no se puede: Davo hace ~500 clips por día);
+  la huella de cada clip se guarda en `data/pego_tmp/huellas/` (un mes) y se baja una vez; corta
+  apenas uno pasa 0,70; `por_streamer` 3 → 5 Shorts nuevos; (4) **los que pegaron sin original
+  se avisan** con link, vistas, contra cuántos clips se comparó y "No encontré el original" (en
+  /buscar 🔥 y en la corrida diaria, a los destinos); (5) /buscar 🔥 manda el paso por paso
+  (`pego.Recuento`). En `pegados`: columna `comparados` y la mejor coincidencia aunque no pase.
+  564 tests OK.
 - v0.40.2 (2026-09-29) — **Conectado el canal Rots («Roty», `UCz0-X39ylB_BAO_yFCLMS8w`)** con
   `youtube-auth rots` (subida + yt-analytics.readonly). Token y `client_secret.json` copiados a la
   Pi (`config/`, chmod 600, fuera de git). Verificado en la Pi: `mi_canal()` responde y

@@ -559,6 +559,30 @@ def cmd_diario(args: argparse.Namespace) -> int:
             conn.close()
 
 
+def _avisar_sin_original(settings: Settings, streamers: list, desde: datetime,
+                         destinos: list | None = None, chat_id: str | None = None) -> str:
+    """Los Shorts de otros canales que pegaron y cuyo clip original no apareció (anotados desde
+    `desde`): link, vistas y "no encontré el original", para buscar el momento a mano. Lo manda a
+    `chat_id` o a los destinos; devuelve el texto (vacío si no hubo ninguno)."""
+    from . import pego
+
+    conn = db.connect(DB_PATH)
+    try:
+        texto = pego.texto_sin_original(pego.sin_original(conn, streamers, desde,
+                                                          settings.pego.min_vistas))
+        chats = [chat_id] if chat_id else (list(destinos) if destinos is not None else db.destinos(conn))
+    finally:
+        conn.close()
+    if texto and chats:
+        try:
+            tg = TelegramClient(env("TELEGRAM_BOT_TOKEN"))
+            for c in chats:
+                tg.send_message(c, texto)
+        except (TelegramError, ConfigError) as e:
+            log.warning("pegó: no pude avisar los que no tienen original: %s", e)
+    return texto
+
+
 def _pego_de(c) -> dict | None:
     return {"vistas": c.pego_vistas, "canal": c.pego_canal} if getattr(c, "pego_vistas", 0) else None
 
@@ -574,7 +598,7 @@ def _buscador_pego():
 
 
 def _pegados_para(settings: Settings, streamers: list, buscar_ahora: bool, avisar=log.info,
-                  forzar: bool = False) -> list:
+                  forzar: bool = False, recuentos: list | None = None) -> list:
     """Los clips originales de estos streamers cuyo momento pegó en otro canal (pego.py), ya
     filtrados como cualquier candidato (vistos, duración, programa de terceros, datos personales;
     sin el 30 % de vistas: que haya pegado afuera ya dice que es bueno). Con `buscar_ahora`,
@@ -595,8 +619,11 @@ def _pegados_para(settings: Settings, streamers: list, buscar_ahora: bool, avisa
             try:
                 twitch = _twitch() if any(s.plataforma == "twitch" for s in streamers) else None
                 kick = KickClient(pausa_s=settings.kick.pausa_s)
-                n = pego.buscar_pegados(conn, streamers, cfg, DATA_DIR / "pego_tmp", twitch, kick,
-                                        buscar=_buscador_pego(), avisar=avisar)
+                recs = pego.buscar_pegados(conn, streamers, cfg, DATA_DIR / "pego_tmp", twitch, kick,
+                                           buscar=_buscador_pego(), avisar=avisar)
+                if recuentos is not None:
+                    recuentos.extend(recs)
+                n = sum(r.encontrados for r in recs)
                 if n:
                     avisar(f"pegó: {n} momentos originales encontrados")
             except Exception as e:
@@ -662,7 +689,10 @@ def _diario(args: argparse.Namespace, settings: Settings, atender: bool = True,
 
     print("\n=== Pasos 1-2: candidatos")
     res = buscar_todo(settings, streamers, args.incluir_sin_permiso, guardar_cursor=True)
+    inicio_pego = datetime.now(timezone.utc)
     pegados = _pegados_para(settings, streamers, buscar_ahora=True, avisar=print)
+    if not args.simular:
+        _avisar_sin_original(settings, streamers, inicio_pego, destinos)
     if pegados:   # van primero: se procesan antes que el resto de su grupo
         ids = {c.id for c in pegados}
         res.candidatos = pegados + [c for c in res.candidatos if c.id not in ids]
@@ -1080,11 +1110,12 @@ def _buscar(conn, tg: TelegramClient, chat_id: str, args: list[str], settings: S
         filtros = _replace(settings.filtros, ventana_horas=dias * 24, antiguedad_min_h=0,
                            n_candidatos=max(settings.filtros.n_candidatos, 20))
         vistos = db.ids_vistos(conn)
-        por_streamer, descartes = [], Counter()
+        por_streamer, descartes, recuentos_pego = [], Counter(), []
         for st in elegidos_st:
             if modo == "pego":
                 por_streamer.append((st, _pegados_para(settings, [st], buscar_ahora=True,
-                                                       avisar=log.info, forzar=True)))
+                                                       avisar=log.info, forzar=True,
+                                                       recuentos=recuentos_pego)))
                 continue
             if modo == "viejos":
                 por_streamer.append((st, _candidatos_viejos(st, settings, vistos, descartes)))
@@ -1107,6 +1138,20 @@ def _buscar(conn, tg: TelegramClient, chat_id: str, args: list[str], settings: S
             modo, f"de los últimos {dias} días")
         quienes = ", ".join(st.login for st, _ in por_streamer)
         total = sum(len(c) for _, c in por_streamer)
+        if modo == "pego":
+            # Paso por paso (qué dio YouTube y dónde se cayó cada cosa) y los que pegaron pero
+            # no tienen original a la vista: el link, para buscar el momento a mano.
+            from . import pego as _pego
+
+            pasos = "\n".join("• " + html.escape(r.texto(settings.pego.min_vistas))
+                               for r in recuentos_pego)
+            if pasos:
+                tg.send_message(chat_id, "🔥 <b>Lo que pegó en otros canales</b>, paso por paso:\n" + pasos)
+            sin = _pego.texto_sin_original(_pego.sin_original(
+                conn, elegidos_st, datetime.now(timezone.utc) - timedelta(days=settings.pego.dias + 1),
+                settings.pego.min_vistas))
+            if sin:
+                tg.send_message(chat_id, sin)
         if not total:
             return (f"Busqué en {quienes}{que} {periodo} y no quedó ninguno."
                     + _resumen(descartes) + _problemas(problemas))
@@ -2190,6 +2235,12 @@ def escuchar_telegram(settings: Settings, timeout_poll: int = 50) -> int:
                         cola)
             for t in textos_sueltos(updates):
                 if t["user_id"] not in permitidos:
+                    continue
+                espera_apodos = db.get_valor(conn, f"{ESPERA_APODOS}:{t['user_id']}")
+                if espera_apodos:
+                    db.borrar_valor(conn, f"{ESPERA_APODOS}:{t['user_id']}")
+                    _seguro(tg, t["chat_id"], "guardar los apodos", _guardar_apodos, conn, tg, t,
+                            espera_apodos)
                     continue
                 espera_carpeta = db.get_valor(conn, f"{ESPERA_CARPETA}:{t['user_id']}")
                 if espera_carpeta:
@@ -3396,6 +3447,7 @@ def _streamers(conn=None) -> list:
 
 
 ESPERA_CARPETA = "esperando_carpeta"   # bot_estado: <user_id> -> {"tipo": alta|mover, ...}
+ESPERA_APODOS = "esperando_apodos"     # bot_estado: <user_id> -> login
 
 
 def _carpetas_vista(conn) -> tuple[dict, dict]:
@@ -3440,11 +3492,20 @@ def _texto_grupo(grupo: str, streamers: list, pagina: int, excluidos: dict,
     return f"{linea}\nPágina {pagina + 1} de {paginas}. Elegí un streamer:"
 
 
+def _guardar_apodos(conn, tg: TelegramClient, t: dict, login: str) -> None:
+    from . import registro
+
+    lista = registro.guardar_apodos(conn, login, t["texto"], t["user_id"])
+    tg.send_message(t["chat_id"], f"🏷 <b>{html.escape(login)}</b>: busco lo que pegó como "
+                                  f"<b>{html.escape(', '.join((login,) + lista))}</b>.")
+
+
 def _texto_streamer(s, excluidos: dict) -> str:
     estado = f"\n🚫 EXCLUIDO: {html.escape(excluidos[s.login])}" if s.login in excluidos else ""
     permiso = "experimento" if s.experimento else ("cita" if s.permitido else "SIN PERMISO")
+    apodos = f"\n🏷 Apodos: {html.escape(', '.join(s.apodos))}" if s.apodos else ""
     return (f"<b>{html.escape(s.login)}</b> · {s.plataforma} · carpeta {s.grupo or '—'} · {permiso}"
-            f"{estado}\n\n¿Qué busco?")
+            f"{estado}{apodos}\n\n¿Qué busco?")
 
 
 def _menu_streamers(conn, tg: TelegramClient, chat_id: str, message_id: int | None = None) -> None:
@@ -3517,7 +3578,16 @@ def _menu_callback(conn, tg: TelegramClient, cb: dict, settings: Settings, cola:
     if d["accion"] == "s":
         tg.answer_callback(cb["callback_id"])
         return tg.edit_message(chat, msg, _texto_streamer(s, excluidos),
-                               teclado_streamer(gi, si, pagina))
+                               teclado_streamer(gi, si, pagina, s.apodos))
+    if d["accion"] == "ap":
+        db.set_valor(conn, f"{ESPERA_APODOS}:{cb['user_id']}", s.login)
+        tg.answer_callback(cb["callback_id"])
+        actuales = ", ".join(s.apodos) or "ninguno"
+        return tg.edit_message(
+            chat, msg, f"🏷 Apodos de <b>{html.escape(s.login)}</b> (para buscar lo que pegó en otros "
+                       f"canales; el login se busca siempre): <b>{html.escape(actuales)}</b>.\n\n"
+                       f"Escribime los nuevos separados por coma (ej. <code>Davo, Davo Xeneize</code>), "
+                       f"o <code>-</code> para ninguno.", {"inline_keyboard": []})
     carpetas_menu = [(n, cfg[n]["etiqueta"] or n) for n in nombres]
     if d["accion"] == "m":
         tg.answer_callback(cb["callback_id"])

@@ -44,6 +44,9 @@ class Streamer:
     # split | fullcam | fit_blur. Vacío = lo decide la detección de caras. Es para los canales cuyo
     # formato la heurística no puede ver (ej. coker: podcast multicámara, donde "el juego" no existe).
     layout_forzado: str = ""
+    # Cómo lo nombran los demás, para buscar lo que pegó en otros canales (pego.py): "Davo", no
+    # "davooxeneize". El login se busca siempre; esto se suma. Editable desde /streamers (DB).
+    apodos: tuple[str, ...] = ()
 
     @property
     def permitido(self) -> bool:
@@ -281,10 +284,11 @@ class Pego:
     """Lo que pega en otros canales → el clip original (pego.py)."""
     activo: bool = True
     busquedas_por_dia: int = 40       # la API cuesta 100 unidades por búsqueda (de 10.000 diarias)
-    dias: int = 7                     # Shorts de la última semana; originales de los 7 días antes
+    dias: int = 7                     # Shorts de la última semana
+    dias_antes: int = 3               # originales: de 3 días antes de publicado el Short a 12 h después
     min_vistas: int = 10000           # "pegó"
-    por_streamer: int = 3             # Shorts que se revisan por streamer y búsqueda
-    max_originales: int = 15          # clips del streamer que se comparan por Short
+    por_streamer: int = 5             # Shorts NUEVOS que se comparan por streamer y búsqueda
+    max_originales: int = 60          # clips del streamer que se comparan por Short (huella en caché)
     umbral: float = 0.55              # audio_huella: calibrado con clips reales (ver pego.py)
     peso: float = 3.0                 # bonus en la selección para un original que pegó
     canales_propios: tuple = ("Rots", "Pequeña Historia")
@@ -480,6 +484,7 @@ def load_streamers(path: Path = CONFIG_DIR / "streamers.yaml") -> list[Streamer]
                         str(p).strip() for p in (item.get("palabras_programa") or ()) if str(p).strip()
                     ),
                     layout_forzado=_layout_forzado(item, login),
+                    apodos=tuple(str(a).strip() for a in (item.get("apodos") or ()) if str(a).strip()),
                 )
             )
     return out

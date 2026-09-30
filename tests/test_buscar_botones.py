@@ -118,8 +118,15 @@ def test_modo_pego_usa_solo_lo_que_pego(conn, monkeypatch):
 
     st = Streamer("spreen", "kick", grupo="argentinos", experimento=True)
     llamados = []
-    monkeypatch.setattr(m, "_pegados_para", lambda s, sts, buscar_ahora, avisar=None, forzar=False: llamados.append(forzar) or [])
+    def pegados_para(s, sts, buscar_ahora, avisar=None, forzar=False, recuentos=None):
+        llamados.append(forzar)
+        rec = __import__("clips_bot.pego", fromlist=["x"]).Recuento("spreen", resultados=25, cortos=21)
+        recuentos.append(rec)
+        return []
+
+    monkeypatch.setattr(m, "_pegados_para", pegados_para)
     monkeypatch.setattr(m, "_candidatos_viejos", lambda *a: pytest.fail("no es viejos"))
     tg = TG()
     r = m._buscar(conn, tg, "1", ["spreen", "pego", "x3"], load_settings(), [st], None)
     assert llamados == [True] and "en lo que pegó en otros canales" in r   # busca aunque esté apagado
+    assert "paso por paso" in tg.mensajes[0][0] and "YouTube dio 25 Shorts" in tg.mensajes[0][0]
