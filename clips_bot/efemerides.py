@@ -901,6 +901,9 @@ def elegir_fotos(cliente, g: Guion, pool: list[Foto], candidatas: list[list[int]
         except ValueError as e:
             error = str(e)
             continue
+        # Con videos, después de las fotos van sus cuadros: Gemini a veces "descarta" esos
+        # números, que no son fotos (en la muestra del Sputnik tiró un IndexError).
+        malas = {x for x in malas if 0 <= x < len(pool)}
         for i, (f, rk) in enumerate(zip(d["frases"], rankings), 1):   # para juzgar la elección
             epoca = "" if (f or {}).get("de_epoca") is not False else " (NO es de la época)"
             avisar(f"    frase {i}: {[x + 1 for x in rk]} — se ve: "
@@ -914,8 +917,8 @@ def elegir_fotos(cliente, g: Guion, pool: list[Foto], candidatas: list[list[int]
 def video_elegido(frases: list, videos: dict, presente: list[bool], avisar=log.info) -> dict:
     """{frase: Video} de la respuesta: el que eligió Gemini, cortado en el cuadro que dijo. Afuera
     si dice que es un anacronismo en una frase del pasado, o si el número no existe."""
-    out = {}
-    for i, vs in videos.items():
+    out, usados = {}, {}     # usados: {url: momentos ya tomados por otra frase}
+    for i, vs in sorted(videos.items()):
         f = frases[i] if i < len(frases) else {}
         k, m = (f or {}).get("video"), (f or {}).get("momento")
         if not isinstance(k, int) or not 1 <= k <= len(vs):
@@ -927,7 +930,17 @@ def video_elegido(frases: list, videos: dict, presente: list[bool], avisar=log.i
             continue
         v = Video.de_dict(vs[k - 1].a_dict())   # una copia: la lista de candidatos no cambia
         cuadro = (m - 1) if isinstance(m, int) and 1 <= m <= len(v.momentos) else len(v.momentos) // 2
+        # El mismo video en dos frases: la segunda, en otro momento (en la muestra del Sputnik las
+        # frases 5 y 6 eligieron el mismo noticiero en el mismo segundo). Sin momento libre, foto.
+        tomados = usados.setdefault(v.url, set())
+        if cuadro < len(v.momentos) and v.momentos[cuadro] in tomados:
+            libres = [c for c, t in enumerate(v.momentos) if t not in tomados]
+            if not libres:
+                avisar(f"    frase {i + 1}: el video V{k} ya se usa entero en otra frase, queda la foto")
+                continue
+            cuadro = libres[0]
         v.momento = v.momentos[cuadro] if v.momentos else 0.0
+        tomados.add(v.momento)
         v.frames = [v.frames[cuadro]] if v.frames else []
         out[i] = v
         avisar(f"    frase {i + 1}: 🎬 video V{k} ({v.etiqueta()}) en {v.momento:.0f} s")
@@ -1362,7 +1375,8 @@ def proponer(wiki: Wiki, cliente, dia: date, carpeta: Path, avisar=log.info,
             fallas.append(f"{e.anio}: {err}")
             continue
         for k in g.descartadas:        # para poder juzgar si el descarte visual es razonable
-            avisar(f"    descartada {k + 1}: {pool[k].epigrafe[:90]}")
+            if 0 <= k < len(pool):
+                avisar(f"    descartada {k + 1}: {pool[k].epigrafe[:90]}")
         return Propuesta(fecha=dia.isoformat(), evento=e.a_dict(), fotos=[f.a_dict() for f in pool],
                          reserva=[], guion=g.a_dict(), fuente=fuente[:20000], descartes=descartes)
     if respaldo:

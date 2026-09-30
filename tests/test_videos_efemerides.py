@@ -228,3 +228,33 @@ def test_si_la_puntual_no_trae_nada_prueba_la_siguiente_y_corta_al_juntar():
     out = b.candidatos("1957 R-7 rocket launch pad", 1957, False, tema="Sputnik_1", cuantos=1)
     assert [v.titulo for v in out] == ["rocket launch"]
     assert ("commons", "Sputnik 1") not in b.pedidos            # ya había juntado lo que pedía
+
+
+def test_el_mismo_video_en_dos_frases_va_en_momentos_distintos():
+    vs = [_v()]
+    frases = [{}] * 4 + [{"video": 1, "momento": 2, "video_de_epoca": True}] * 3 \
+        + [{"video": 1, "momento": 2, "video_de_epoca": True}]
+    out = ef.video_elegido(frases, {4: vs, 5: vs, 6: vs, 7: vs}, [False] * 8)
+    assert [out[i].momento for i in (4, 5, 6)] == [22.5, 9.0, 36.0]
+    assert 7 not in out                                    # ya no queda momento libre: foto
+
+
+def test_los_cuadros_de_video_descartados_no_rompen_las_fotos():
+    import json as _json
+
+    class C:
+        def json(self, *a, **k):
+            return _json.dumps({"frases": [{"se_ve": "x", "fotos": [1], "de_epoca": True}],
+                                "descartadas": [2, 7]})
+
+    g = _guion(n=1)
+    pool = [ef.Foto("File:a.jpg", "u", 800, 600, "CC0", "a", "e", "p", "art", ruta="a.jpg"),
+            ef.Foto("File:b.jpg", "u", 800, 600, "CC0", "a", "e", "p", "art", ruta="b.jpg")]
+    import clips_bot.efemerides as mod
+    orig = mod._jpeg_chico
+    mod._jpeg_chico = lambda ruta, ancho=512: b"x"
+    try:
+        _, malas = ef.elegir_fotos(C(), g, pool, [[0, 1]])
+    finally:
+        mod._jpeg_chico = orig
+    assert malas == {1}                                    # el 7 era un cuadro de video
