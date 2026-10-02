@@ -517,10 +517,11 @@ def filtrar_infos(wiki: Wiki, lang: str, infos: list[dict], articulo: str,
             fotos.append(a_foto(info, articulo))
     # Solo miniaturas: a las que la API dio el original, se les pide la siguiente más chica.
     for ancho in MINIATURAS[1:] + ((MIN_ANCHO_EPOCA,) if anio_hecho is not None else ()):
-        # La de 500 es SOLO para las fotos chicas de la época (las que pasaron con menos de 800):
-        # una normal de 900 px no puede terminar en una miniatura de 500.
+        # La de 500 es SOLO para fotos FECHADAS en la época del hecho (las viejas son chicas): una
+        # moderna o sin fecha de 900 px no puede terminar en una miniatura de 500.
         faltan = [f.archivo for f in fotos if not es_miniatura(f.url) and f.ancho > ancho
-                  and (ancho != MIN_ANCHO_EPOCA or f.ancho < MIN_ANCHO)]
+                  and (ancho != MIN_ANCHO_EPOCA
+                       or (f.anio is not None and f.anio <= anio_hecho + MARGEN_EPOCA))]
         if faltan:
             urls = {i["archivo"]: i.get("thumburl") or "" for i in wiki.info(lang, faltan, ancho)}
             for f in fotos:
