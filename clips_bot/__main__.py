@@ -3916,9 +3916,11 @@ def _menu_callback(conn, tg: TelegramClient, cb: dict, settings: Settings, cola:
         actuales = ", ".join(s.apodos) or "ninguno"
         return tg.edit_message(
             chat, msg, f"🏷 Apodos de <b>{html.escape(s.login)}</b> (para buscar lo que pegó en otros "
-                       f"canales; el login se busca siempre): <b>{html.escape(actuales)}</b>.\n\n"
-                       f"Escribime los nuevos separados por coma (ej. <code>Davo, Davo Xeneize</code>), "
-                       f"o <code>-</code> para ninguno.", {"inline_keyboard": []})
+                       f"canales; el login y los de fábrica se buscan siempre): "
+                       f"<b>{html.escape(actuales)}</b>.\n\n"
+                       f"Escribime los que quieras SUMAR, separados por coma (ej. <code>Davo, Davo "
+                       f"Xeneize</code>), o <code>-</code> para borrar los que se sumaron por acá.",
+            {"inline_keyboard": []})
     carpetas_menu = [(n, cfg[n]["etiqueta"] or n) for n in nombres]
     if d["accion"] == "m":
         tg.answer_callback(cb["callback_id"])

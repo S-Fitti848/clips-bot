@@ -236,16 +236,17 @@ def test_originales_de_los_dias_cercanos_a_la_publicacion():
     assert sorted(ids) == ["cerca", "justo"] and k.pedidos == [(300, "view", "month")]
 
 
-def test_los_apodos_de_telegram_mandan_sobre_el_yaml(tmp_path):
+def test_los_apodos_de_telegram_se_suman_a_los_del_yaml(tmp_path):
     from clips_bot import registro
 
     conn = db.connect(tmp_path / "t.db")
     assert registro.combinar([DAVO], conn)[0].apodos == ("Davo", "Davo Xeneize", "Davoo")
-    assert registro.guardar_apodos(conn, "davooxeneize", " Davo ,Davo  Xeneize, davooxeneize, davo", "1") == (
-        "Davo", "Davo Xeneize")
-    assert registro.combinar([DAVO], conn)[0].apodos == ("Davo", "Davo Xeneize")
+    assert registro.guardar_apodos(conn, "davooxeneize", " Puerro ,David  quint, davooxeneize, puerro", "1") == (
+        "Puerro", "David quint")
+    # el 1/10 los de Telegram REEMPLAZABAN a los de fábrica y se perdió "Davo"
+    assert registro.combinar([DAVO], conn)[0].apodos == ("Davo", "Davo Xeneize", "Davoo", "Puerro", "David quint")
     registro.guardar_apodos(conn, "davooxeneize", "-", "1")
-    assert registro.combinar([DAVO], conn)[0].apodos == ()
+    assert registro.combinar([DAVO], conn)[0].apodos == ("Davo", "Davo Xeneize", "Davoo")
 
 
 def test_el_boton_de_apodos_entra_en_64_bytes():

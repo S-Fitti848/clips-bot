@@ -71,7 +71,10 @@ def combinar(del_yaml: list[Streamer], conn: sqlite3.Connection) -> list[Streame
             s = replace(s, grupo=d["grupo"])
         out.append(s)
     apodos = apodos_db(conn)
-    out = [replace(s, apodos=apodos[s.login]) if s.login in apodos else s for s in out]
+    # Los de Telegram SE SUMAN a los del YAML (2026-10-02: reemplazarlos borró "Davo" y 🔥 dejó de
+    # encontrar a Davo: 0 Shorts "lo nombraban"). "-" borra solo los de Telegram.
+    out = [replace(s, apodos=tuple(dict.fromkeys(s.apodos + apodos[s.login]))) if s.login in apodos else s
+           for s in out]
     por_login = {s.login for s in out}
     for login, d in sorted(extra.items()):
         if d["accion"] != ALTA or login in por_login:
