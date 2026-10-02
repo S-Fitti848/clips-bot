@@ -110,3 +110,37 @@ def test_el_voto_ya_no_sube_nada():
 
     fuente = inspect.getsource(m._votos) if hasattr(m, "_votos") else inspect.getsource(m)
     assert "_programar_subida(conn, ajustes, meta, \"rots\"" not in fuente
+
+
+def test_query_is_too_old_se_ignora_y_los_botones_pesados_se_contestan_antes():
+    from clips_bot.telegram import TelegramClient, TelegramError
+
+    class R:
+        def __init__(self, texto):
+            self.status_code, self.text = 400, texto
+
+        def json(self):
+            return {"ok": False, "description": self.text}
+
+    class S:
+        def __init__(self, texto):
+            self.texto = texto
+
+        def post(self, *a, **k):
+            return R(self.texto)
+
+    TelegramClient("T", session=S("Bad Request: query is too old and response timeout expired or "
+                                  "query ID is invalid")).answer_callback("q", "x")
+    with pytest.raises(TelegramError):
+        TelegramClient("T", session=S("Bad Request: chat not found")).answer_callback("q")
+    assert m._es_pesado("efe:ok:abc") and m._es_pesado("bu:c:tok:3") and m._es_pesado(f"sub:x:{SLUG}")
+    assert not m._es_pesado(f"sub:u:{SLUG}") and not m._es_pesado("st:g:1:0") and not m._es_pesado("ay:s:0")
+
+
+def test_subir_contesta_antes_de_subir(entorno, monkeypatch):
+    tg = TG()
+    s = replace(load_settings(), youtube_upload_enabled=True)
+    orden = []
+    monkeypatch.setattr(m, "_subir", lambda conn, settings, meta, canal: orden.append(("subir", list(tg.respuestas))) or [])
+    m._subidas_callback(entorno, tg, _cb(f"sub:u:{SLUG}"), s)
+    assert orden == [("subir", [("📤 Subiendo…", False)])]

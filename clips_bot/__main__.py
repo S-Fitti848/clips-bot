@@ -219,6 +219,16 @@ def _acceso_callback(conn, tg, cb: dict) -> None:
     tg.edit_message(cb["chat_id"], cb["message_id"], texto, {"inline_keyboard": []})
 
 
+# Botones que disparan algo que tarda (Gemini, descargas, render, YouTube): se contestan apenas
+# llegan. Los livianos contestan ellos mismos, con su texto ("👍 anotado", un cartel, etc.).
+_PESADOS = ("efe:ok:", "efe:voz:", "efe:v:", "efe:f:", "ser:", "gui:", "pas:", "ped:", "bu:c:",
+            "st:b:", "sub:x:")
+
+
+def _es_pesado(data: str) -> bool:
+    return data.startswith(_PESADOS)
+
+
 def _twitch() -> TwitchClient:
     """La ÚNICA forma de armar el cliente de Twitch.
 
@@ -2321,7 +2331,12 @@ def escuchar_telegram(settings: Settings, timeout_poll: int = 50) -> int:
             for cb in callbacks(updates):
                 if cb["user_id"] not in permitidos:
                     log.warning("Botón de %s: no autorizado", cb["user_id"])
+                    tg.answer_callback(cb["callback_id"], "No tenés acceso a este bot.")
                     continue
+                if _es_pesado(cb["data"]):
+                    # Se contesta YA, antes del trabajo pesado: si no, el botón gira y, pasados unos
+                    # segundos, Telegram ya no acepta la respuesta ("query is too old").
+                    tg.answer_callback(cb["callback_id"], "⏳ Un momento…")
                 chat_ultimo = cb["chat_id"]
                 db.ver_chat(conn, cb["chat_id"], cb.get("chat_tipo", ""),
                             cb.get("chat_nombre", ""), cb["user_id"])
@@ -3526,12 +3541,13 @@ def _subir_callback(conn, tg: TelegramClient, cb: dict, settings: Settings, d: d
             db.marcar_subida(conn, s["id"], "cancelada")
         tg.answer_callback(cb["callback_id"], "Cancelado.")
         return redibujar()
-    # 📤 Subir
+    # 📤 Subir. Si no hay nada prendido, el cartel; si hay, se contesta ANTES de subir (tarda).
     db.borrar_valor(conn, f"{NO_SUBIR}:{clip_id}")
-    avisos = _subir(conn, settings, meta, canal)
-    if not settings.youtube_upload_enabled and not avisos:
+    sube_fb = canal == "pequena_historia" and settings.facebook.activo
+    if not settings.youtube_upload_enabled and not sube_fb:
         return tg.answer_callback(cb["callback_id"], APAGADA, alerta=True)
-    tg.answer_callback(cb["callback_id"], "Listo" if _estado_subida(conn, clip_id, meta) else "")
+    tg.answer_callback(cb["callback_id"], "📤 Subiendo…")
+    avisos = _subir(conn, settings, meta, canal)
     redibujar()
     for a in avisos:
         tg.send_message(cb["chat_id"], a)

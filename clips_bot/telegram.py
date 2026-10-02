@@ -56,8 +56,14 @@ class TelegramClient:
     def answer_callback(self, callback_id: str, texto: str = "", alerta: bool = False) -> None:
         """Le saca el relojito al botón. Si no se contesta, Telegram lo deja girando. `alerta`: el
         texto sale en un cartel que hay que cerrar (para lo que no se puede pasar por alto)."""
-        self._llamar("answerCallbackQuery", {"callback_query_id": callback_id, "text": texto,
-                                             "show_alert": "true" if alerta else "false"})
+        try:
+            self._llamar("answerCallbackQuery", {"callback_query_id": callback_id, "text": texto,
+                                                 "show_alert": "true" if alerta else "false"})
+        except TelegramError as e:
+            # Ya contestado (los botones pesados se contestan apenas llegan) o pasó demasiado: no es
+            # un error de nadie, el botón ya no gira.
+            if "query is too old" not in str(e) and "query id is invalid" not in str(e).lower():
+                raise
 
     def edit_message(self, chat_id: str, message_id: int, texto_html: str,
                      teclado: dict | None = None) -> None:

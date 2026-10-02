@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-10-02 | **Versión:** v0.50.1 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 + escucha de Telegram 24/7)
+**Snapshot:** 2026-10-02 | **Versión:** v0.50.2 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 + escucha de Telegram 24/7)
 
 > **SI ESTÁS EMPEZANDO UNA SESIÓN NUEVA, LEÉ §10.** Ahí está qué está hecho, qué quedó a medias,
 > qué falta, y las trampas que ya nos mordieron.
@@ -773,6 +773,13 @@ Problemas abiertos:
 
 ## 9. CHANGELOG
 
+- v0.50.2 (2026-10-02) — **Botones contestados al toque.** Los que disparan algo que tarda
+  (`_PESADOS`: aprobar/rehacer voz/🎬/🔁 de efemérides, series, guiones, pasos, pedidos, la cantidad de
+  /buscar, buscar desde /streamers, ❌ Cancelar subida) se contestan con "⏳ Un momento…" apenas
+  llegan, antes del trabajo; 📤 contesta "📤 Subiendo…" antes de subir (con todo apagado, el cartel
+  de la auditoría, como antes). `answer_callback` ignora en silencio "query is too old" / "query ID
+  is invalid" (ya contestado o vencido), igual que `edit_message` con "message is not modified". Un
+  botón de alguien sin permiso ahora se contesta ("No tenés acceso"), no queda girando. 631 tests OK.
 - v0.50.1 (2026-10-02) — **Los apodos de Telegram se SUMAN a los de fábrica.** El 1/10 a las 14:32
   Tommy le puso a Davo "Puerro, David quint, davito, puerrul" desde /streamers y, como los de la DB
   reemplazaban a los del YAML, se perdieron "Davo" y "Davo Xeneize": desde esa vuelta 🔥 daba "0 lo
