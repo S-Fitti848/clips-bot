@@ -374,14 +374,37 @@ def bajar_tramo(v: Video, dur: float, salida: Path) -> Path:
     return salida
 
 
-def filtro_video(W: int, H: int, blur: float, fps: int = 30) -> str:
-    """fit_blur para un video: el cuadro entero al centro (sin recortar nada) sobre el mismo video
-    agrandado y borroso. Como las fotos, pero con movimiento."""
+def encuadre_video(frame: Path, alto_min: float = 0.72, W: int = 1080, H: int = 1920) -> tuple[float, bool]:
+    """(centro x del recorte 0-1, ¿mostrar el cuadro entero?) a partir del cuadro elegido: el
+    recorte se centra en las caras y, si no entran con margen, el video va entero (caras enteras)."""
+    import cv2
+
+    from .parallax import caras, zona_caras
+
+    img = cv2.imread(str(frame))
+    if img is None:
+        return 0.5, False
+    h, w = img.shape[:2]
+    zona = zona_caras(caras(img), w, h)
+    if not zona:
+        return 0.5, False
+    visible = W / (alto_min * H * w / h)          # qué fracción del ancho se ve al recortar
+    if (zona[2] - zona[0]) / w > visible:
+        return 0.5, True
+    return ((zona[0] + zona[2]) / 2) / w, False
+
+
+def filtro_video(W: int, H: int, blur: float, fps: int = 30, cx: float = 0.5, entero: bool = False) -> str:
+    """fit_blur para un video: el cuadro al centro sobre el mismo video agrandado y borroso. Ocupa
+    al menos el 72 % del alto recortando los costados hacia `cx` (las caras); con `entero`, el cuadro
+    completo (cuando recortar cortaría una cara)."""
+    frente = (f"[b]scale={W}:{H}:force_original_aspect_ratio=decrease,setsar=1[frente];" if entero else
+              f"[b]scale=-2:{int(H * 0.72) // 2 * 2},"
+              f"crop='min(iw,{W})':ih:'max(0,min(iw-ow,iw*{cx:.3f}-ow/2))':0,setsar=1[frente];")
     return (f"[0:v]fps={fps},split[a][b];"
             f"[a]scale={W}:{H}:force_original_aspect_ratio=increase,crop={W}:{H},"
             f"gblur=sigma={blur},setsar=1[fondo];"
-            # Que ocupe al menos el 72 % del alto: los costados se recortan (centro de la acción).
-            f"[b]scale=-2:{int(H * 0.72) // 2 * 2},crop='min(iw,{W})':ih,setsar=1[frente];"
+            + frente +
             f"[fondo][frente]overlay=(W-w)/2:(H-h)/2,format=yuv420p[v]")
 
 

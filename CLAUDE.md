@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-10-02 | **Versión:** v0.52.0 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 + escucha de Telegram 24/7)
+**Snapshot:** 2026-10-02 | **Versión:** v0.52.1 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 + escucha de Telegram 24/7)
 
 > **SI ESTÁS EMPEZANDO UNA SESIÓN NUEVA, LEÉ §10.** Ahí está qué está hecho, qué quedó a medias,
 > qué falta, y las trampas que ya nos mordieron.
@@ -773,6 +773,14 @@ Problemas abiertos:
 
 ## 9. CHANGELOG
 
+- v0.52.1 (2026-10-02) — **Caras siempre enteras** en Pequeña Historia. Antes de recortar o hacer
+  zoom se detectan TODAS las caras de la foto (`parallax.caras`) y la zona con margen (0,9 caras
+  arriba de la cabeza, 0,4 a los costados, 0,35 abajo; `zona_caras`) tiene que quedar a la vista
+  incluso con el zoom del parallax (`encuadre`): si no entra con la foto al 72 % del alto, la foto se
+  achica hasta que entre (antes una foto más chica que una cara cortada). El zoom se hace alrededor
+  de las caras. Videos: el recorte se centra en las caras del cuadro elegido y, si no entran, el
+  video va entero (`videos_libres.encuadre_video`, `filtro_video(cx, entero)`). Probado a ojo con un
+  retrato (estatua de Champollion) y una foto grupal: ninguna cara cortada. 643 tests OK.
 - v0.52.0 (2026-10-02) — **Imágenes de Pequeña Historia más estrictas** (regla fija 1, §1). (1)
   Relevancia dura: Gemini confirma `seguro` (requerido) de que la primera foto de cada frase muestra
   lo que dice la frase o el tema directo del hecho; si no, sale (en la de 4chan entró una página

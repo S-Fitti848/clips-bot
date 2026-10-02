@@ -1322,7 +1322,7 @@ def filtro_tramo(ancho: int, alto: int, W: int, H: int, frames: int, fx: float, 
 
 def armar_video(tramos: list[tuple[Path, float]], voz: Path, dir_subs: Path, salida: Path,
                 render, fps: int = 30, parallax: bool = False,
-                mapa: tuple[Path, float, float] | None = None) -> Path:
+                mapa: tuple[Path, float, float] | None = None, encuadres: dict | None = None) -> Path:
     """Una foto por frase (cada tramo dura lo que su frase), la voz, y los subtítulos + el año que
     ya están en `dir_subs/subs.ass`. Cada tramo se encodea aparte y al final se pegan."""
     from PIL import Image
@@ -1338,7 +1338,9 @@ def armar_video(tramos: list[tuple[Path, float]], voz: Path, dir_subs: Path, sal
             parte = dir_subs / f"tramo_{i:02d}.mp4"
             run([find_bin("ffmpeg"), "-hide_banner", "-loglevel", "error", "-y",
                  "-stream_loop", "-1", "-i", str(Path(foto).resolve()),
-                 "-filter_complex", filtro_video(W, H, render.blur_sigma, fps), "-map", "[v]", "-an",
+                 "-filter_complex", filtro_video(W, H, render.blur_sigma, fps,
+                                                 *(encuadres or {}).get(str(foto), (0.5, False))),
+                 "-map", "[v]", "-an",
                  "-frames:v", str(frames), "-c:v", "libx264", "-preset", render.x264_preset,
                  "-crf", "18", "-pix_fmt", "yuv420p", str(parte.resolve())])
             partes.append(parte)
@@ -1808,13 +1810,19 @@ def hacer_video(p: Propuesta, settings, carpeta: Path, avisar=log.info, conn=Non
     # vuelve a su foto (el video no puede tumbar la efeméride).
     from .videos_libres import Video, bajar_tramo
 
+    from .videos_libres import encuadre_video
+
     rutas_video: dict[int, Path] = {}
+    encuadres: dict[str, tuple[float, bool]] = {}
     for i, f, s in plan:
         if f != VIDEO:
             continue
         v = Video.de_dict(g.videos[str(i)])
         try:
             rutas_video[i] = bajar_tramo(v, s, carpeta / f"video_frase_{i + 1:02d}.mp4")
+            # Caras enteras: el recorte del video se centra en las caras del cuadro elegido.
+            if v.frames:
+                encuadres[str(rutas_video[i])] = encuadre_video(Path(v.frames[0]))
             avisar(f"video frase {i + 1}: {v.etiqueta()}, {s:.1f} s desde {v.momento:.0f} s")
         except (RuntimeError, OSError, subprocess.SubprocessError) as err:
             avisar(f"⚠️ video frase {i + 1} no bajó ({str(err)[:120]}): vuelve a foto")
@@ -1852,7 +1860,7 @@ def hacer_video(p: Propuesta, settings, carpeta: Path, avisar=log.info, conn=Non
     dia = date.fromisoformat(p.fecha)
     clip_id = f"efemeride_{dia:%m%d}_{e.anio}"
     salida = armar_video(tramos, audio, carpeta, carpeta / f"{clip_id}.mp4", settings.render,
-                         parallax=cfg_ef.parallax, mapa=mapa)
+                         parallax=cfg_ef.parallax, mapa=mapa, encuadres=encuadres)
     avisar(f"video: {time.time() - t0:.0f} s, {len(tramos)} tramos, "
            f"{len({f for _, f, _ in plan if f != VIDEO})} fotos distintas, {len(rutas_video)} videos")
     for problema in chequear_audio(salida):

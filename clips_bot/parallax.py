@@ -40,6 +40,58 @@ def caja(ancho: int, alto: int, W: int, H: int, alto_min: float = ALTO_MIN) -> t
     return s, min(W, int(round(ancho * s))), min(H, int(round(alto * s)))
 
 
+# Caras SIEMPRE enteras (2026-10-02): el recorte y el zoom contienen todas las caras con este
+# margen (en alturas o anchos de cara): bastante arriba de la cabeza (pelo, sombrero), algo a los
+# costados y abajo (mentón, cuello).
+MARGEN_CABEZA, MARGEN_LADO, MARGEN_ABAJO = 0.9, 0.4, 0.35
+
+
+def caras(img: np.ndarray) -> list[tuple[int, int, int, int]]:
+    """Las caras (x, y, w, h) en píxeles de `img`, detectadas en chico (Haar)."""
+    import cv2
+
+    h, w = img.shape[:2]
+    k = min(1.0, 900 / max(h, w))
+    gris = cv2.cvtColor(cv2.resize(img, (max(1, int(w * k)), max(1, int(h * k)))), cv2.COLOR_BGR2GRAY)
+    cascada = cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_frontalface_default.xml")
+    lado = max(20, int(min(gris.shape) / 25))
+    halladas = cascada.detectMultiScale(gris, 1.1, 5, minSize=(lado, lado))
+    return [tuple(int(v / k) for v in c) for c in halladas]
+
+
+def zona_caras(cs: list, ancho: int, alto: int) -> tuple[int, int, int, int] | None:
+    """El rectángulo (x0, y0, x1, y1) que tiene que quedar a la vista: todas las caras con margen."""
+    if not cs:
+        return None
+    x0 = min(x - MARGEN_LADO * w for x, y, w, h in cs)
+    y0 = min(y - MARGEN_CABEZA * h for x, y, w, h in cs)
+    x1 = max(x + w + MARGEN_LADO * w for x, y, w, h in cs)
+    y1 = max(y + h + MARGEN_ABAJO * h for x, y, w, h in cs)
+    return int(max(0, x0)), int(max(0, y0)), int(min(ancho, x1)), int(min(alto, y1))
+
+
+def encuadre(ancho: int, alto: int, W: int, H: int, zona, foco: tuple[float, float],
+             alto_min: float = ALTO_MIN, zoom: float = ZOOM_FRENTE) -> tuple[float, int, int, int, int]:
+    """(escala, ancho visible, alto visible, x0, y0 del recorte en la foto escalada). Como `caja`,
+    pero si las caras (con margen y con el zoom que viene) no entran, la foto se achica hasta que
+    entren: antes una foto más chica que una cara cortada."""
+    s, vis_w, vis_h = caja(ancho, alto, W, H, alto_min)
+    if zona:
+        zw, zh = (zona[2] - zona[0]) * zoom, (zona[3] - zona[1]) * zoom
+        s = min(s, W / max(zw, 1), H / max(zh, 1))
+        vis_w, vis_h = min(W, int(round(ancho * s))), min(H, int(round(alto * s)))
+    bw, bh = int(round(ancho * s)), int(round(alto * s))
+    cx, cy = (((zona[0] + zona[2]) / 2) / ancho, ((zona[1] + zona[3]) / 2) / alto) if zona else foco
+    x0 = cx * bw - vis_w / 2
+    y0 = cy * bh - vis_h / 2
+    if zona:     # que la zona quede adentro aunque el centro empuje para un lado
+        x0 = min(max(x0, zona[2] * s - vis_w), zona[0] * s)
+        y0 = min(max(y0, zona[3] * s - vis_h), zona[1] * s)
+    x0 = int(min(max(x0, 0), bw - vis_w))
+    y0 = int(min(max(y0, 0), bh - vis_h))
+    return s, vis_w, vis_h, x0, y0
+
+
 def capas(img: np.ndarray, foco: tuple[float, float]) -> tuple[np.ndarray, np.ndarray]:
     """(máscara del frente 0-1 suavizada, fondo con el hueco rellenado). Trabaja en chico."""
     import cv2
@@ -103,13 +155,11 @@ def renderizar(foto: Path, dur: float, salida: Path, W: int, H: int, blur: float
     img = cv2.imread(str(foto))
     if img is None:
         raise RuntimeError(f"no pude leer {foto}")
-    s, vis_w, vis_h = caja(img.shape[1], img.shape[0], W, H)
-    # Un margen para que al agrandar y correr la capa no se vean bordes.
+    zona = zona_caras(caras(img), img.shape[1], img.shape[0])
+    s, vis_w, vis_h, x0, y0 = encuadre(img.shape[1], img.shape[0], W, H, zona, foco)
     base = cv2.resize(img, (int(round(img.shape[1] * s)), int(round(img.shape[0] * s))),
                       interpolation=cv2.INTER_AREA if s < 1 else cv2.INTER_CUBIC)
     fx, fy = foco
-    x0 = int(min(max(fx * base.shape[1] - vis_w / 2, 0), base.shape[1] - vis_w))
-    y0 = int(min(max(fy * base.shape[0] - vis_h / 2, 0), base.shape[0] - vis_h))
     recorte = np.ascontiguousarray(base[y0:y0 + vis_h, x0:x0 + vis_w])
     alfa, fondo = capas(recorte, ((fx * base.shape[1] - x0) / vis_w, (fy * base.shape[0] - y0) / vis_h)) \
         if con_capas else (np.zeros(recorte.shape[:2], np.float32), recorte)
@@ -121,7 +171,12 @@ def renderizar(foto: Path, dur: float, salida: Path, W: int, H: int, blur: float
     borroso = cv2.GaussianBlur(np.ascontiguousarray(lleno[oy:oy + H, ox:ox + W]), (0, 0), blur)
     px, py = (W - vis_w) // 2, (H - vis_h) // 2
     frames = max(1, int(round(dur * fps)))
-    cx, cy = vis_w * 0.5, vis_h * 0.5
+    # El zoom se hace alrededor de las caras: así no se van del cuadro al acercarse.
+    if zona:
+        cx = min(max((zona[0] + zona[2]) / 2 * s - x0, 0), vis_w)
+        cy = min(max((zona[1] + zona[3]) / 2 * s - y0, 0), vis_h)
+    else:
+        cx, cy = vis_w * 0.5, vis_h * 0.5
     salida.parent.mkdir(parents=True, exist_ok=True)
     p = subprocess.Popen([find_bin("ffmpeg"), "-hide_banner", "-loglevel", "error", "-y",
                           "-f", "rawvideo", "-pix_fmt", "bgr24", "-s", f"{W}x{H}", "-r", str(fps),

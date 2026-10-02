@@ -97,3 +97,37 @@ def test_render_con_parallax_y_mapa_dura_lo_que_tiene_que_durar(tmp_path):
     salida = ef.armar_video([(foto, 2.5), (foto, 2.5)], voz, tmp_path, tmp_path / "out.mp4", render,
                             parallax=True, mapa=(mapa, 1.0, 3.0))
     assert _dur(salida) == pytest.approx(5.0, abs=0.1)
+
+
+def test_una_cara_en_el_borde_queda_entera_con_margen_arriba():
+    # foto horizontal 1920x1080, cara chica pegada a la izquierda y arriba
+    cara = [(40, 120, 120, 120)]
+    zona = px.zona_caras(cara, 1920, 1080)
+    assert zona[1] < 120 - 100                                     # margen arriba de la cabeza
+    s, vw, vh, x0, y0 = px.encuadre(1920, 1080, 1080, 1920, zona, (0.5, 0.5))
+    assert x0 <= zona[0] * s and x0 + vw >= zona[2] * s            # entra a lo ancho
+    assert y0 <= zona[1] * s and y0 + vh >= zona[3] * s            # y a lo alto
+
+
+def test_dos_caras_lejos_achican_la_foto_antes_que_cortar_una():
+    cs = [(100, 300, 150, 150), (1650, 300, 150, 150)]
+    zona = px.zona_caras(cs, 1920, 1080)
+    s_sin, vw_sin, _ = px.caja(1920, 1080, 1080, 1920)
+    s, vw, vh, x0, _ = px.encuadre(1920, 1080, 1080, 1920, zona, (0.5, 0.5))
+    assert s < s_sin and x0 <= zona[0] * s and x0 + vw >= zona[2] * s
+
+
+@sin_ffmpeg
+def test_el_video_se_recorta_hacia_las_caras_o_va_entero(tmp_path):
+    from clips_bot import videos_libres as vl
+
+    video = tmp_path / "v.mp4"
+    subprocess.run([find_bin("ffmpeg"), "-y", "-loglevel", "error", "-f", "lavfi", "-i",
+                    "testsrc=size=640x480:rate=25", "-t", "1", str(video)], check=True)
+    for cx, entero in ((0.2, False), (0.5, True)):
+        out = tmp_path / f"o{entero}.mp4"
+        subprocess.run([find_bin("ffmpeg"), "-y", "-loglevel", "error", "-i", str(video),
+                        "-filter_complex", vl.filtro_video(1080, 1920, 20, 30, cx, entero),
+                        "-map", "[v]", "-frames:v", "10", str(out)], check=True)
+        assert out.exists()
+    assert vl.encuadre_video(tmp_path / "no_existe.jpg") == (0.5, False)
