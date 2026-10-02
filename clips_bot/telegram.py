@@ -329,7 +329,7 @@ def videos(updates: list[dict]) -> list[dict]:
 # Todos los botones que atiende la escucha, menos los votos (esos los toma `votos`). Si un teclado
 # nuevo usa otro prefijo, va acá: hasta el 2026-09-27 la lista era ("st", "add") y los botones de
 # /ayuda, /destinos, ➕ más y ✅ del guion de /narrar se tiraban en silencio.
-PREFIJOS_BOTONES = ("st", "add", "gui", "ay", "dst", "ped", "pas", "ser", "efe", "sub", "bu")
+PREFIJOS_BOTONES = ("st", "add", "gui", "ay", "dst", "ped", "pas", "ser", "efe", "sub", "bu", "acc")
 
 
 def callbacks(updates: list[dict], prefijos: tuple[str, ...] = PREFIJOS_BOTONES) -> list[dict]:
@@ -384,6 +384,9 @@ def comandos(updates: list[dict]) -> list[dict]:
         nombre = " ".join(filter(None, [quien.get("first_name"), quien.get("last_name")]))
         if quien.get("username"):
             nombre = (nombre + f" (@{quien['username']})").strip()
+        # A quién le respondió (para /permitir y /sacar_acceso: "respondé al mensaje de esa persona").
+        otro = (msg.get("reply_to_message") or {}).get("from") or {}
+        otro_nombre = " ".join(filter(None, [otro.get("first_name"), otro.get("last_name")]))
         out.append({
             **_chat(msg),
             "update_id": u.get("update_id"),
@@ -391,6 +394,8 @@ def comandos(updates: list[dict]) -> list[dict]:
             "usuario": nombre.strip(),
             "comando": partes[0].split("@")[0].lower(),  # /reclamo@mi_bot → /reclamo
             "args": partes[1:],
+            "responde_a": ({"id": str(otro["id"]), "nombre": otro_nombre or otro.get("username") or ""}
+                           if otro.get("id") and not otro.get("is_bot") else None),
         })
     return out
 

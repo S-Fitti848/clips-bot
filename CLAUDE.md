@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-09-30 | **Versión:** v0.49.0 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 + escucha de Telegram 24/7)
+**Snapshot:** 2026-10-02 | **Versión:** v0.50.0 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 + escucha de Telegram 24/7)
 
 > **SI ESTÁS EMPEZANDO UNA SESIÓN NUEVA, LEÉ §10.** Ahí está qué está hecho, qué quedó a medias,
 > qué falta, y las trampas que ya nos mordieron.
@@ -773,6 +773,23 @@ Problemas abiertos:
 
 ## 9. CHANGELOG
 
+- v0.50.0 (2026-10-02) — **Accesos sin tocar el .env.** `/permitir` (respondiendo a un mensaje
+  de la persona, o con su id) y `/sacar_acceso` (respondiendo, con el id, o a secas: lista con
+  botones `acc:x:<id>`), solo para Santi (`DUENO` = 8668060171); quedan en `bot_estado.accesos`
+  ({sumados, sacados}) y `_permitidos()` = TELEGRAM_ALLOWED_USERS + sumados − sacados (a Santi no lo
+  saca nadie), leído en cada vuelta de la escucha. `comandos()` trae `responde_a`. Sumado Micheal
+  Lanlin (`8988378175`, el del grupo Rots clips que el 30/09 mandó /streamers y tocó botones sin
+  permiso; no hubo otro intento sin permiso en los logs) a TELEGRAM_ALLOWED_USERS en la compu y en
+  la Pi. La ayuda de /subidas ya no dice que el 👍 programa. 629 tests OK.
+- v0.49.1 (2026-09-30) — "Pegó" busca en el VOD de Kick los 2 Shorts sin original con más vistas del
+  día (`pego.vod`, APAGADO; `vod_por_dia` 2, `vod_tope_min` 25; columnas `vod_url`, `vod_segundo`,
+  `vod_intentado` en `pegados`; el resumen dice "salió del VOD: acá, en el h:mm:ss"). **Medido en la
+  Pi** con "DAVO es del MADRID?" (438.737 vistas): un VOD de 8,3 h → bajar el audio de la variante
+  160p + huella 584 s (51× tiempo real), buscar 6,7 s; coincidencia 0,17 (no estaba en ese VOD; el
+  otro VOD de esos días no se midió). Cada VOD se guarda: el segundo Short de los mismos días sale casi
+  gratis. Muestras del 30/09: efeméride con parallax y gráficos, video 384 s en la Pi (antes 432; el
+  render 240 s contra 323); 3 clips con el formato nuevo (2 cayeron en fit_blur por no tener una sola
+  persona estable, 1 en "sigue").
 - v0.49.0 (2026-09-30) — **Facebook para Pequeña Historia** (APAGADO: `facebook.activo`, hasta que
   Santi complete `docs/facebook.md`). `facebook.py`: Reels Publishing API de Meta en tres pasos
   (`video_reels` start → rupload con el archivo → finish PUBLISHED o SCHEDULED a la misma hora que

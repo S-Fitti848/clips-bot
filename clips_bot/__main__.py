@@ -138,6 +138,87 @@ def cmd_candidatos(args: argparse.Namespace) -> int:
     return 0
 
 
+DUENO = "8668060171"          # Santi: el único que da y saca accesos (/permitir, /sacar_acceso)
+ACCESOS = "accesos"           # bot_estado: {"sumados": {id: nombre}, "sacados": [ids]}
+
+
+def _accesos(conn) -> dict:
+    d = json.loads(db.get_valor(conn, ACCESOS) or "{}")
+    return {"sumados": dict(d.get("sumados") or {}), "sacados": list(d.get("sacados") or [])}
+
+
+def _permitidos(conn=None) -> set[str]:
+    """Quiénes pueden mandar comandos: los de TELEGRAM_ALLOWED_USERS, más los que sumó Santi con
+    /permitir, menos los que sacó con /sacar_acceso (a Santi no lo saca nadie). Se lee en cada
+    vuelta: dar acceso no pide editar el .env ni reiniciar."""
+    from .telegram import usuarios_permitidos
+
+    base = usuarios_permitidos(env("TELEGRAM_ALLOWED_USERS", requerido=False))
+    propia = conn is None
+    conn = conn or db.connect(DB_PATH)
+    try:
+        a = _accesos(conn)
+    finally:
+        if propia:
+            conn.close()
+    return (base | set(a["sumados"])) - (set(a["sacados"]) - {DUENO})
+
+
+def _permitir(conn, c: dict) -> str:
+    """/permitir respondiendo a un mensaje de la persona (o con su id). Solo Santi."""
+    if c["user_id"] != DUENO:
+        return "Solo Santi puede dar acceso."
+    otro = c.get("responde_a") or ({"id": c["args"][0], "nombre": ""}
+                                   if c["args"] and c["args"][0].isdigit() else None)
+    if not otro:
+        return ("Respondé con /permitir a un mensaje de la persona (o mandá <code>/permitir "
+                "&lt;id&gt;</code>).")
+    a = _accesos(conn)
+    a["sumados"][otro["id"]] = otro["nombre"] or a["sumados"].get(otro["id"], "")
+    a["sacados"] = [x for x in a["sacados"] if x != otro["id"]]
+    db.set_valor(conn, ACCESOS, json.dumps(a, ensure_ascii=False))
+    quien = html.escape(otro["nombre"] or otro["id"])
+    return f"✅ {quien} (<code>{otro['id']}</code>) ya puede usar el bot. Para sacarlo: /sacar_acceso."
+
+
+def _sacar_acceso(conn, c: dict) -> tuple[str, dict | None]:
+    """/sacar_acceso respondiendo a un mensaje, con el id, o a secas: la lista con botones."""
+    if c["user_id"] != DUENO:
+        return "Solo Santi puede sacar accesos.", None
+    otro = c.get("responde_a") or ({"id": c["args"][0], "nombre": ""}
+                                   if c["args"] and c["args"][0].isdigit() else None)
+    if otro:
+        return _sacar(conn, otro["id"]), None
+    filas = [[{"text": f"❌ {_nombre_de_usuario(conn, u) or u}", "callback_data": f"acc:x:{u}"}]
+             for u in sorted(_permitidos(conn) - {DUENO})]
+    if not filas:
+        return "Además de vos no hay nadie con acceso.", None
+    return "¿A quién le saco el acceso?", {"inline_keyboard": filas}
+
+
+def _sacar(conn, uid: str) -> str:
+    if uid == DUENO:
+        return "A vos no te puedo sacar el acceso."
+    a = _accesos(conn)
+    a["sumados"].pop(uid, None)
+    a["sacados"] = sorted(set(a["sacados"]) | {uid})
+    db.set_valor(conn, ACCESOS, json.dumps(a, ensure_ascii=False))
+    return f"🚫 <code>{uid}</code> ya no puede usar el bot."
+
+
+def _acceso_callback(conn, tg, cb: dict) -> None:
+    from .menu import parse_callback
+
+    d = parse_callback(cb["data"])
+    if not d or d["accion"] != "x" or not d["crudos"]:
+        return
+    if cb["user_id"] != DUENO:
+        return tg.answer_callback(cb["callback_id"], "Solo Santi puede sacar accesos.")
+    texto = _sacar(conn, d["crudos"][0])
+    tg.answer_callback(cb["callback_id"], "Listo")
+    tg.edit_message(cb["chat_id"], cb["message_id"], texto, {"inline_keyboard": []})
+
+
 def _twitch() -> TwitchClient:
     """La ÚNICA forma de armar el cliente de Twitch.
 
@@ -1070,9 +1151,7 @@ def atender_telegram(settings: Settings, silencioso: bool = False) -> int:
     from .telegram import comandos, usuarios_permitidos
 
     tg = TelegramClient(env("TELEGRAM_BOT_TOKEN"))
-    permitidos = usuarios_permitidos(env("TELEGRAM_ALLOWED_USERS", requerido=False))
-    if not permitidos:
-        log.warning("TELEGRAM_ALLOWED_USERS vacío: no obedezco ningún comando")
+    permitidos = _permitidos()
     conn = db.connect(DB_PATH)
     try:
         guardado = db.get_valor(conn, "telegram_offset")
@@ -2207,8 +2286,6 @@ def escuchar_telegram(settings: Settings, timeout_poll: int = 50) -> int:
                            usuarios_permitidos, videos)
 
     tg = TelegramClient(env("TELEGRAM_BOT_TOKEN"), timeout=timeout_poll + 30)
-    if not usuarios_permitidos(env("TELEGRAM_ALLOWED_USERS", requerido=False)):
-        log.warning("TELEGRAM_ALLOWED_USERS vacío: no obedezco ningún comando")
     cola: list[dict] = []
     reloj_envivo: dict[str, float] = {}   # última detección por plataforma (modo en vivo)
     chat_ultimo = env("TELEGRAM_CHAT_ID", requerido=False)
@@ -2216,7 +2293,7 @@ def escuchar_telegram(settings: Settings, timeout_poll: int = 50) -> int:
     while True:
         # Se relee en cada vuelta: sumar a alguien a la lista tiene que andar sin reiniciar el
         # servicio, porque el restart pide sudo y no siempre está a mano.
-        permitidos = usuarios_permitidos(env("TELEGRAM_ALLOWED_USERS", requerido=False))
+        permitidos = _permitidos()
         conn = db.connect(DB_PATH)
         try:
             # El modo en vivo va ANTES que la cola: un momento en vivo pierde valor por minuto.
@@ -2253,6 +2330,9 @@ def escuchar_telegram(settings: Settings, timeout_poll: int = 50) -> int:
                     continue
                 if cb["data"].startswith("pas:"):
                     _seguro(tg, cb["chat_id"], cb["data"], _pasos_callback, conn, tg, cb, settings)
+                    continue
+                if cb["data"].startswith("acc:"):
+                    _seguro(tg, cb["chat_id"], cb["data"], _acceso_callback, conn, tg, cb)
                     continue
                 if cb["data"].startswith("sub:"):
                     _seguro(tg, cb["chat_id"], cb["data"], _subidas_callback, conn, tg, cb, settings)
@@ -2489,6 +2569,13 @@ def _despachar(conn, tg: TelegramClient, c: dict, settings: Settings, cola: list
                             c["args"], c["user_id"])
     elif c["comando"] == "/quitar":
         respuesta = _seguro(tg, c["chat_id"], c["comando"], _quitar, conn, c["args"], c["user_id"])
+    elif c["comando"] == "/permitir":
+        respuesta = _seguro(tg, c["chat_id"], c["comando"], _permitir, conn, c)
+    elif c["comando"] == "/sacar_acceso":
+        r = _seguro(tg, c["chat_id"], c["comando"], _sacar_acceso, conn, c)
+        if r is not FALLO:
+            tg.send_message(c["chat_id"], r[0], teclado=r[1])
+        return
     elif c["comando"] == "/reclamo":
         respuesta = _seguro(tg, c["chat_id"], c["comando"], _reclamo, conn, c["args"])
     elif c["comando"] in ("/ayuda", "/start", "/help"):
@@ -3607,9 +3694,17 @@ SECCIONES = [
     ("⚙️ Configuración", [
         ("/subidas",
          "lo programado para subirse solo a YouTube (Rots y Pequeña Historia), con un botón para "
-         "cancelar cada uno. Hoy la subida automática está apagada hasta la auditoría: al aprobar "
-         "(✅ de una efeméride o 👍 de un clip) se va a programar sola.",
+         "cancelar cada uno. Se programa con «📤 Subir» debajo de cada video (el 👍 solo vota). "
+         "Hoy la subida a YouTube está apagada hasta la auditoría.",
          "/subidas"),
+        ("/permitir",
+         "(solo Santi) respondé con /permitir a un mensaje de alguien del grupo y ya puede usar el "
+         "bot, sin tocar el .env.",
+         "/permitir"),
+        ("/sacar_acceso",
+         "(solo Santi) respondiendo a un mensaje de esa persona, con su id, o a secas para elegir "
+         "de la lista quién deja de poder usar el bot.",
+         "/sacar_acceso"),
         ("/destinos",
          "a quiénes les llegan los Shorts de las 05:00, con botones para prender y apagar cada "
          "uno. Lo que pidas por comando se contesta siempre donde lo pediste, esté o no acá.",
@@ -4100,9 +4195,7 @@ def _nombre_de_usuario(conn, user_id: str) -> str:
 
 def _faltan_start(conn) -> list[dict]:
     """Permitidos que nunca le escribieron al bot: no se les puede mandar nada por privado."""
-    from .telegram import usuarios_permitidos
-
-    permitidos = usuarios_permitidos(env("TELEGRAM_ALLOWED_USERS", requerido=False))
+    permitidos = _permitidos(conn)
     con_privado = {c["user_id"] for c in db.chats_conocidos(conn) if c["tipo"] == "private"}
     return [{"user_id": u, "nombre": _nombre_de_usuario(conn, u)}
             for u in sorted(permitidos - con_privado)]
