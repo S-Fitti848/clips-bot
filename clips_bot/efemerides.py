@@ -427,8 +427,14 @@ def licencia_libre(corta: str) -> bool:
     return bool(re.match(r"^(public domain|pd\b|cc0|cc by( sa)?\b)", c))
 
 
-def motivo_foto(info: dict) -> str | None:
-    """Por qué la foto no sirve, o None. Las reglas fijas: lo que se ve lo mira Gemini después."""
+MIN_ANCHO_EPOCA = 500   # las fotos de la época del hecho (las viejas son chicas): ver motivo_foto
+
+
+def motivo_foto(info: dict, anio_hecho: int | None = None) -> str | None:
+    """Por qué la foto no sirve, o None. Las reglas fijas: lo que se ve lo mira Gemini después.
+    `anio_hecho`: con él, una foto FECHADA en la época del hecho (hasta MARGEN_EPOCA años después)
+    pasa desde MIN_ANCHO_EPOCA px (2026-10-02: las de Onzari de 1924 miden menos de 800 y no
+    entraba ninguna; para lo demás sigue MIN_ANCHO)."""
     em = info.get("extmetadata") or {}
 
     def meta(k: str) -> str:
@@ -439,8 +445,12 @@ def motivo_foto(info: dict) -> str | None:
     corta = meta("LicenseShortName")
     if meta("NonFree").lower() in ("true", "1") or not licencia_libre(corta):
         return f"licencia no libre ({corta or 'sin dato'})"
-    if int(info.get("width") or 0) < MIN_ANCHO:
-        return f"menos de {MIN_ANCHO} px ({info.get('width')})"
+    ancho = int(info.get("width") or 0)
+    if ancho < MIN_ANCHO:
+        anio = anio_de(meta("DateTimeOriginal")) or anio_de(info.get("archivo", ""))
+        de_epoca = anio_hecho is not None and anio is not None and anio <= anio_hecho + MARGEN_EPOCA
+        if not (de_epoca and ancho >= MIN_ANCHO_EPOCA):
+            return f"menos de {MIN_ANCHO} px ({info.get('width')})"
     # CC BY / BY-SA obligan a nombrar al autor: si Commons no lo dice en ningún campo, no se usa.
     if meta("AttributionRequired").lower() == "true" and not autor_de(em):
         return "sin autor para atribuir"
@@ -493,19 +503,20 @@ def anio_de(fecha: str) -> int | None:
     return int(m.group(1)) if m else None
 
 
-def filtrar_infos(wiki: Wiki, lang: str, infos: list[dict], articulo: str) -> tuple[list[Foto], dict]:
+def filtrar_infos(wiki: Wiki, lang: str, infos: list[dict], articulo: str,
+                  anio_hecho: int | None = None) -> tuple[list[Foto], dict]:
     """Las que pasan las reglas fijas (licencia, formato, tamaño, sin mapas ni imágenes duras) y
     tienen miniatura, en su orden, y por qué quedaron afuera las otras. Vale igual para las fotos
     del artículo y para las que se buscan en Commons."""
     fotos, descartes = [], {}
     for info in infos:
-        m = motivo_foto(info)
+        m = motivo_foto(info, anio_hecho)
         if m:
             descartes[m.split(" (")[0]] = descartes.get(m.split(" (")[0], 0) + 1
         else:
             fotos.append(a_foto(info, articulo))
     # Solo miniaturas: a las que la API dio el original, se les pide la siguiente más chica.
-    for ancho in MINIATURAS[1:]:
+    for ancho in MINIATURAS[1:] + ((MIN_ANCHO_EPOCA,) if anio_hecho is not None else ()):
         faltan = [f.archivo for f in fotos if not es_miniatura(f.url) and f.ancho > ancho]
         if faltan:
             urls = {i["archivo"]: i.get("thumburl") or "" for i in wiki.info(lang, faltan, ancho)}
@@ -524,7 +535,7 @@ def fotos_del_evento(wiki: Wiki, e: Evento) -> tuple[list[Foto], dict]:
     qué quedaron afuera las otras."""
     titulo = e.paginas[0]
     archivos = list(dict.fromkeys(wiki.archivos(e.lang, titulo)))
-    return filtrar_infos(wiki, e.lang, wiki.info(e.lang, archivos), titulo)
+    return filtrar_infos(wiki, e.lang, wiki.info(e.lang, archivos), titulo, e.anio)
 
 
 def bajar_fotos(wiki: Wiki, fotos: list[Foto], carpeta: Path, prefijo: str, cuantas: int,
@@ -539,7 +550,20 @@ def bajar_fotos(wiki: Wiki, fotos: list[Foto], carpeta: Path, prefijo: str, cuan
         if len(bajadas) >= cuantas:
             return bajadas, fotos[n:]
         try:
-            f.ruta = str(wiki.bajar(f.url, carpeta / f"foto_{prefijo}_{n:02d}.jpg"))
+            destino = carpeta / f"foto_{prefijo}_{n:02d}.jpg"
+            if es_de_otra_fuente(f):
+                from . import fuentes_fotos
+
+                try:
+                    f.ruta = str(fuentes_fotos.bajar(f.url, destino, CACHE_DIR / "otras"))
+                except (requests.RequestException, ValueError, OSError) as err:
+                    raise WikiError(f"{f.archivo}: {err}") from err
+                from PIL import Image
+
+                with Image.open(f.ruta) as im:
+                    f.ancho, f.alto = im.size
+            else:
+                f.ruta = str(wiki.bajar(f.url, destino))
         except WikiError as err:
             avisar(f"  foto salteada ({f.archivo[:60]}): {str(err)[:120]}")
             seguidos = seguidos + 1 if err.status == 429 else 0
@@ -552,9 +576,14 @@ def bajar_fotos(wiki: Wiki, fotos: list[Foto], carpeta: Path, prefijo: str, cuan
     return bajadas, []
 
 
+def es_de_otra_fuente(f: Foto) -> bool:
+    """Las que no son de Wikimedia: su `archivo` es "openverse:…", "europeana:…", etc."""
+    return not f.archivo.startswith("File:") and ":" in f.archivo.split(" ")[0]
+
+
 def creditos(fotos: list[Foto]) -> str:
     """Autor y licencia de cada foto, en el orden en que aparecen. Va al final de la descripción."""
-    lineas = ["Fotos (Wikimedia Commons):"]
+    lineas = ["Fotos:" if any(es_de_otra_fuente(f) for f in fotos) else "Fotos (Wikimedia Commons):"]
     for i, f in enumerate(fotos, 1):
         lineas.append(f"{i}. {f.autor} — {f.licencia}" + (f" — {f.pagina}" if f.pagina else ""))
     return "\n".join(lineas)
@@ -1031,7 +1060,7 @@ def buscar_videos(g: Guion, anio: int, carpeta: Path, buscador=None, avisar=log.
 def fotos_para_guion(wiki: Wiki, cliente, e: Evento, g: Guion, fotos_articulo: list[Foto],
                      carpeta: Path, avisar=log.info, pool: list[Foto] | None = None,
                      descartadas: set[int] | None = None, videos: bool = False,
-                     buscador=None) -> tuple[list[Foto], Guion]:
+                     buscador=None, fuentes=None) -> tuple[list[Foto], Guion]:
     """Busca candidatas para cada frase (las del artículo + Commons con su `mostrar`), las baja,
     Gemini elige, y arma la foto de cada frase con las reglas de `ilustrar`. Devuelve el pool (las
     fotos que se bajaron, en su numeración) y el guion con `fotos`, `ranking` y `descartadas`.
@@ -1055,11 +1084,34 @@ def fotos_para_guion(wiki: Wiki, cliente, e: Evento, g: Guion, fotos_articulo: l
 
     del_hecho = [i for i in sumar(fotos_articulo, FOTOS_ARTICULO_MAX) if i not in descartadas]
     propias, descartes = [], {}
-    for mostrar in g.mostrar:
-        halladas, desc = filtrar_infos(wiki, "commons", wiki.buscar_commons(mostrar),
-                                       f"Commons: {mostrar}")
-        for k, v in desc.items():
-            descartes[k] = descartes.get(k, 0) + v
+    from . import fuentes_fotos
+    from .videos_libres import consultas as achicar_consultas, es_de_espacio, sin_anios
+
+    argentino = fuentes_fotos.es_argentino(f"{e.texto} {' '.join(e.paginas)}")
+    otras = fuentes or fuentes_fotos.Fuentes()
+    for i, mostrar in enumerate(g.mostrar):
+        # Commons, de la búsqueda puntual a la general (2026-10-02: "1924 Onzari Argentina" pedía
+        # todas las palabras y no traía nada) y, si el hecho es argentino, las fotos PD-AR-Photo.
+        qs = achicar_consultas(mostrar)
+        # La búsqueda tal cual primero (con el año, en Commons a veces trae más que sin él).
+        consultas_commons = list(dict.fromkeys([mostrar] + qs[:3])) +             ([f'{sin_anios(mostrar)} incategory:"PD-AR-Photo"'] if argentino else [])
+        halladas: list[Foto] = []
+        for q in consultas_commons:
+            if len(halladas) >= FOTOS_BUSQUEDA_MAX:
+                break
+            nuevas, desc = filtrar_infos(wiki, "commons", wiki.buscar_commons(q), f"Commons: {mostrar}",
+                                         e.anio)
+            for k, v in desc.items():
+                descartes[k] = descartes.get(k, 0) + v
+            halladas += [f for f in nuevas if f.archivo not in {h.archivo for h in halladas}]
+        # Si Commons no alcanza: las otras fuentes, en orden (fuentes_fotos).
+        if len(halladas) < FOTOS_BUSQUEDA_MAX:
+            hoy = i < len(g.presente) and g.presente[i]
+            for h in otras.buscar(qs, hoy, es_de_espacio(mostrar), FOTOS_BUSQUEDA_MAX - len(halladas), avisar):
+                halladas.append(Foto(archivo=h["archivo"], url=h["url"], ancho=h["ancho"], alto=h["alto"],
+                                     licencia=h["licencia"], autor=h["autor"] or "autor desconocido",
+                                     epigrafe=h["epigrafe"][:160], pagina=h["pagina"],
+                                     articulo=f"{h['fuente']}: {mostrar}", anio=h["anio"]))
         propias.append([i for i in sumar(halladas, FOTOS_BUSQUEDA_MAX) if i not in descartadas])
     # Regla fija de época: las fotos sacadas más de MARGEN_EPOCA años después del hecho no son
     # candidatas de las frases del pasado. Las del artículo del hecho quedan de respaldo igual

@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-10-02 | **Versión:** v0.52.1 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 + escucha de Telegram 24/7)
+**Snapshot:** 2026-10-02 | **Versión:** v0.53.0 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 + escucha de Telegram 24/7)
 
 > **SI ESTÁS EMPEZANDO UNA SESIÓN NUEVA, LEÉ §10.** Ahí está qué está hecho, qué quedó a medias,
 > qué falta, y las trampas que ya nos mordieron.
@@ -773,6 +773,22 @@ Problemas abiertos:
 
 ## 9. CHANGELOG
 
+- v0.53.0 (2026-10-02) — **Más fuentes de fotos** (`fuentes_fotos.py`). Por frase: Commons con la
+  búsqueda tal cual y después cada vez más general (`videos_libres.consultas`), más
+  `incategory:"PD-AR-Photo"` si el hecho es argentino (`es_argentino`); si Commons no junta 4, en
+  orden: Openverse (CC0/CC BY/dominio público; incluye Flickr y museos) → Smithsonian Open Access
+  (CC0; `SMITHSONIAN_API_KEY`, si no la DEMO_KEY pública) → Europeana (reutilización abierta;
+  `EUROPEANA_API_KEY`, si no `api2demo`) → Flickr (`FLICKR_API_KEY`) → NASA (espacio) → Pexels y
+  Unsplash solo para frases de hoy (`PEXELS_API_KEY`, `UNSPLASH_ACCESS_KEY`). Autor y licencia en
+  los créditos ("Fotos:"), bajadas con tope de 15 MB y achicadas a 1280 (caché en
+  `data/cache_wiki/otras/`). **Afuera, probado desde la compu y la Pi:** Library of Congress
+  (verificación anti-bots de Cloudflare) y Gallica (403): no se esquivan. La Hemeroteca de la BNE no
+  tiene API de imágenes: Caras y Caretas entra por lo que está en Commons. **Fotos chicas de la
+  época:** una foto FECHADA hasta 10 años después del hecho pasa desde 500 px (`MIN_ANCHO_EPOCA`;
+  antes 800 para todo): con Onzari (02/10/1924) Commons daba 2 fotos y ahora 6 de 1923-1926,
+  incluidas "Gol olimpico 1924" y "Gol olímpico de Onzari". Medido sin Gemini en 4 búsquedas del
+  gol olímpico: 2/2/0/0 candidatas antes, 6/5/5/5 de Commons ahora (+4 de Openverse donde faltaba).
+  Si un hecho no junta 4 buenas entre todas, pasa al siguiente (como antes). 649 tests OK.
 - v0.52.1 (2026-10-02) — **Caras siempre enteras** en Pequeña Historia. Antes de recortar o hacer
   zoom se detectan TODAS las caras de la foto (`parallax.caras`) y la zona con margen (0,9 caras
   arriba de la cabeza, 0,4 a los costados, 0,35 abajo; `zona_caras`) tiene que quedar a la vista
