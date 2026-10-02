@@ -79,6 +79,11 @@ _SENSIBLE = re.compile(
     r"hostage\w*|rehén\w*|suicid\w*|execut\w*|ejecut\w*)\b", re.I)
 _GUERRA = re.compile(r"\b(guerra|war|invasi\w*|invade\w*|ofensiva|offensive|batalla|battle|"
                      r"bombard\w*|militar\w*|military|coup|golpe de estado)\b", re.I)
+_CAPTURA = re.compile(r"screen ?shot|captura de pantalla|screen capture|homepage|home page|"
+                      r"web ?page|website|p[aá]gina web|sitio web|facebook|twitter|instagram|reddit|"
+                      r"youtube|tiktok|\bforum\b|foro", re.I)
+_HABLA_DE_WEB = re.compile(r"p[aá]gina|sitio|web|foro|forum|internet|red(es)? social|facebook|twitter|"
+                           r"instagram|reddit|youtube|tiktok|4chan|imageboard|app\b|aplicaci[oó]n", re.I)
 _SIN_FECHA = re.compile(r"\b(durante siglos|over centuries|se construy\w*|was built|"
                         r"a lo largo de|over the course of)\b", re.I)
 
@@ -590,6 +595,8 @@ nombre, ni un número, ni una fecha que no esté ahí. Si el artículo no lo dic
   el país o el lugar, para que la foto sea de ese momento y no de hoy. BIEN: "1940 RAAF Avro
   Anson Australia", "1940 German fighter aircraft grounded", "1928 London laboratory". MAL:
   "airplane", "Avro Anson" (da fotos de aviones de exhibición de 2008).
+  DISTINTO EN CADA FRASE: cada `mostrar` busca otra cosa según lo que dice esa frase (la persona, el
+  lugar, el rival, el objeto, la multitud, la época). Nunca dos frases con el mismo `mostrar`.
 - Cada frase lleva `presente`: true SOLO si la frase habla de HOY (algo que sigue existiendo o
   pasa ahora: "hoy ese avión está en un museo"); si no, false. Con false, las fotos de mucho
   después del hecho no se usan.
@@ -749,6 +756,17 @@ def validar_guion(d: dict, anio: int, fuente: str) -> list[str]:
     sin_mostrar = [i + 1 for i, m in enumerate(mostrar) if not 1 <= len(m.split()) <= 8]
     if sin_mostrar:
         errores.append(f"frases sin `mostrar` (3 a 7 palabras en inglés): {sin_mostrar}")
+    # Regla 2026-10-02 (gol olímpico: 2 fotos repetidas en todo el video): cada frase busca otra cosa.
+    vistos: dict[str, int] = {}
+    iguales = []
+    for i, m in enumerate(mostrar):
+        k = " ".join(sorted(re.findall(r"[a-z]+", _EPOCA.sub(" ", _norm(m)))))
+        if k and k in vistos:
+            iguales.append(f"{vistos[k] + 1} y {i + 1}")
+        vistos.setdefault(k, i)
+    if iguales:
+        errores.append("estas frases buscan lo mismo en `mostrar`: " + ", ".join(iguales)
+                       + ". Cada una tiene que mostrar otra cosa (la persona, el lugar, el rival, la época)")
     # Regla fija de época (2026-09-28: en una historia de 1940 apareció un avión de 2008): lo que se
     # busca para una frase del pasado lleva el año o la década.
     presente = [bool((f or {}).get("presente")) for f in d["frases"]]
@@ -824,7 +842,10 @@ SISTEMA_FOTOS = """Elegís las fotos de un video corto narrado. Te paso las fras
 conviene mostrar en cada una, y fotos numeradas (la imagen k es la foto k).
 
 Para CADA frase, MIRÁ las imágenes y ordená de mejor a peor hasta 3 fotos que muestren lo que dice
-LA FRASE (no solo la búsqueda). Primero fijate en las de su búsqueda, pero podés elegir cualquier
+LA FRASE o el tema DIRECTO del hecho (no solo la búsqueda). Si dudás de una foto, NO la pongas. En
+`seguro` confirmá que la primera muestra eso de verdad (no algo parecido ni del mismo país ni de la
+misma época): si no estás seguro, false. Nada de capturas de pantalla de páginas web, redes sociales
+o programas (una página de Facebook no es "el hecho"), salvo que la frase hable de esa página. Primero fijate en las de su búsqueda, pero podés elegir cualquier
 foto de la lista. En `se_ve` decí en pocas palabras qué se ve de verdad en la foto que pusiste
 primera: si lo que se ve no tiene que ver con la frase, no la elijas. Si ninguna muestra lo que
 se dice, dejá la lista vacía: es mejor vacía que una foto que no tiene nada que ver (una postal,
@@ -859,10 +880,10 @@ SCHEMA_FOTOS = {
             "type": "OBJECT",
             "properties": {"se_ve": {"type": "STRING"},
                            "fotos": {"type": "ARRAY", "items": {"type": "INTEGER"}},
-                           "de_epoca": {"type": "BOOLEAN"},
+                           "de_epoca": {"type": "BOOLEAN"}, "seguro": {"type": "BOOLEAN"},
                            "video": {"type": "INTEGER"}, "momento": {"type": "INTEGER"},
                            "video_de_epoca": {"type": "BOOLEAN"}},
-            "required": ["se_ve", "fotos", "de_epoca"]}},
+            "required": ["se_ve", "fotos", "de_epoca", "seguro"]}},
         "descartadas": {"type": "ARRAY", "items": {"type": "INTEGER"}},
     },
     "required": ["frases", "descartadas"],
@@ -889,6 +910,10 @@ def rankings_de(d: dict, candidatas: list[list[int]],
         ok = [x for x in dict.fromkeys(ok) if x in cands and x not in descartadas]
         hoy = bool(presente and i < len(presente) and presente[i])
         if ok and (f or {}).get("de_epoca") is False and not hoy:
+            ok = ok[1:]
+        # Relevancia dura (2026-10-02: en la de 4chan entró una página militar de Facebook): si
+        # Gemini no está seguro de que la primera muestre lo que dice la frase, sale.
+        if ok and (f or {}).get("seguro") is False:
             ok = ok[1:]
         rankings.append(ok[:ilustrar.RANKING_MAX])
     return rankings, descartadas
@@ -1047,8 +1072,13 @@ def fotos_para_guion(wiki: Wiki, cliente, e: Evento, g: Guion, fotos_articulo: l
     # prueba del 28/09 la frase "el hongo mataba a las bacterias" solo podía elegir entre lo que
     # trajo su búsqueda (mala) y no las placas de Petri que había traído otra frase.
     todas = [i for i in range(len(pool)) if i not in descartadas]
-    candidatas = [[x for x in dict.fromkeys(p + del_hecho + todas) if hoy or x not in modernas]
-                  for p, hoy in zip(propias, presente)]
+    # Capturas de páginas web o redes: solo para las frases que hablan de una página (2026-10-02).
+    capturas = {i for i, f in enumerate(pool) if _CAPTURA.search(f"{f.archivo} {f.epigrafe}")}
+    de_web = [bool(_HABLA_DE_WEB.search(f"{g.frases[i]} {g.mostrar[i] if i < len(g.mostrar) else ''}"))
+              for i in range(len(g.frases))]
+    candidatas = [[x for x in dict.fromkeys(p + del_hecho + todas)
+                   if (hoy or x not in modernas) and (web or x not in capturas)]
+                  for p, hoy, web in zip(propias, presente, de_web)]
     candidatos_video = (buscar_videos(g, e.anio, carpeta, buscador, avisar, tema=e.paginas[0])
                         if videos else {})
     elegidos: dict = {}
@@ -1071,6 +1101,9 @@ def fotos_para_guion(wiki: Wiki, cliente, e: Evento, g: Guion, fotos_articulo: l
     g.fotos = ilustrar.completar_distintas(ilustrar.asignar(rankings, reserva), rankings, reserva,
                                            g.minimo_fotos)
     errores = ilustrar.errores_plan(plan_estimado(g, len(pool)), g.minimo_fotos)
+    if any("aparecen más de" in e for e in errores):
+        # Pocas fotos para tantas frases sin repetir más de 2 veces: como con menos de 4, al siguiente.
+        raise PocasFotos(pool, g, disponibles)
     if errores:
         raise NarrarError("las fotos no alcanzan: " + "; ".join(errores))
     if g.minimo_fotos < ilustrar.MIN_FOTOS_ABSOLUTO:

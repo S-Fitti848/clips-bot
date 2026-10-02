@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-10-02 | **Versión:** v0.51.0 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 + escucha de Telegram 24/7)
+**Snapshot:** 2026-10-02 | **Versión:** v0.52.0 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 + escucha de Telegram 24/7)
 
 > **SI ESTÁS EMPEZANDO UNA SESIÓN NUEVA, LEÉ §10.** Ahí está qué está hecho, qué quedó a medias,
 > qué falta, y las trampas que ya nos mordieron.
@@ -773,6 +773,15 @@ Problemas abiertos:
 
 ## 9. CHANGELOG
 
+- v0.52.0 (2026-10-02) — **Imágenes de Pequeña Historia más estrictas** (regla fija 1, §1). (1)
+  Relevancia dura: Gemini confirma `seguro` (requerido) de que la primera foto de cada frase muestra
+  lo que dice la frase o el tema directo del hecho; si no, sale (en la de 4chan entró una página
+  militar de Facebook). (2) Capturas de páginas web, redes o foros (`_CAPTURA`, por nombre y
+  epígrafe) solo son candidatas de frases que hablan de una página (`_HABLA_DE_WEB`). (3) Cada
+  frase busca otra cosa: dos `mostrar` iguales (sin el año ni el orden de las palabras) no pasan la
+  validación del guion. (4) Ninguna imagen aparece más de `ilustrar.MAX_APARICIONES` (2) veces (en la
+  del gol olímpico del 02/10 se repitieron 2 fotos en todo el video): `tramos` cambia a otra no
+  gastada y, si no alcanza, `PocasFotos` → el hecho siguiente, como con menos de 4. 640 tests OK.
 - v0.51.0 (2026-10-02) — **Cuota de Gemini.** (1) **Medición por función**: cada llamada anota en
   `gemini_uso` (día AR, función que llamó —sale sola del stack, ej. `textos.generar`,
   `efemerides.elegir_fotos`—, modelo, clave, tokens de entrada y salida, y si salió de la caché);

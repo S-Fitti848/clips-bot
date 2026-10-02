@@ -25,6 +25,20 @@ MIN_FOTOS_ABSOLUTO = 4
 MIN_FOTOS_RESPALDO = 2
 MAX_TRAMO_S = 6.0
 RANKING_MAX = 3          # fotos que Gemini ordena por frase
+# Una misma imagen no aparece más de esto en todo el video (2026-10-02: en la del gol olímpico se
+# repitieron 2 fotos por todo el video). Una aparición = cada vez que vuelve a verse.
+MAX_APARICIONES = 2
+
+
+def apariciones(plan: list[tuple[int, int, float]]) -> dict[int, int]:
+    """{foto: cuántas veces aparece}: dos tramos seguidos con la misma foto son una sola aparición."""
+    out: dict[int, int] = {}
+    previa = None
+    for _, f, _ in plan:
+        if f != previa:
+            out[f] = out.get(f, 0) + 1
+        previa = f
+    return out
 
 
 def asignar(rankings: list[list[int]], pool: list[int]) -> list[int]:
@@ -78,10 +92,16 @@ def _otra(ranking: list[int], pool: list[int], evitar: int | None, ya: set[int])
 
 
 def tramos(fotos: list[int], duraciones: list[float], rankings: list[list[int]],
-           pool: list[int], max_s: float = MAX_TRAMO_S) -> list[tuple[int, int, float]]:
-    """(frase, foto, segundos) en orden. Ninguna foto se ve más de `max_s` seguidos."""
+           pool: list[int], max_s: float = MAX_TRAMO_S,
+           max_apariciones: int = MAX_APARICIONES) -> list[tuple[int, int, float]]:
+    """(frase, foto, segundos) en orden. Ninguna foto se ve más de `max_s` seguidos ni aparece más
+    de `max_apariciones` veces (si hay otra que la reemplace)."""
     out: list[tuple[int, int, float]] = []
     ya = set(fotos)
+    veces: dict[int, int] = {}
+
+    def gastada(g: int) -> bool:
+        return veces.get(g, 0) >= max_apariciones
     for i, (f, dur) in enumerate(zip(fotos, duraciones)):
         partes = max(1, math.ceil(dur / max_s - 1e-9))
         seg = dur / partes
@@ -98,15 +118,25 @@ def tramos(fotos: list[int], duraciones: list[float], rankings: list[list[int]],
                 foto = _otra(rk, pool, previa, ya) if previa is not None else f
                 if foto is None:
                     foto = f
+            if foto != previa and gastada(foto):
+                # Ya apareció las veces permitidas: otra de su lista o del pool que no esté gastada.
+                otra = next((g for g in rk + pool if g != previa and not gastada(g)), None)
+                foto = otra if otra is not None else foto
+            if foto != previa:
+                veces[foto] = veces.get(foto, 0) + 1
             ya.add(foto)
             out.append((i, foto, seg))
     return out
 
 
 def errores_plan(plan: list[tuple[int, int, float]], minimo: int = MIN_FOTOS_DISTINTAS,
-                 max_s: float = MAX_TRAMO_S) -> list[str]:
+                 max_s: float = MAX_TRAMO_S, max_apariciones: int = MAX_APARICIONES) -> list[str]:
     """Lo que no cumple la regla, en castellano (vacío = cumple)."""
     errores = []
+    de_mas = {f: n for f, n in apariciones(plan).items() if n > max_apariciones}
+    if de_mas:
+        errores.append("fotos que aparecen más de " + str(max_apariciones) + " veces: "
+                       + ", ".join(f"la {f + 1} ({n})" for f, n in sorted(de_mas.items())))
     distintas = len({f for _, f, _ in plan})
     if distintas < minimo:
         errores.append(f"hay {distintas} fotos distintas: tienen que ser al menos {minimo}")
