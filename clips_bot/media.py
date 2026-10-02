@@ -108,7 +108,7 @@ def fraccion_silencio(path: Path, duracion: float, umbral_db: float, min_s: floa
     return min(parse_silencio(r.stderr, duracion) / duracion, 1.0)
 
 
-def frames_jpeg(video: Path, n: int = 4, ancho: int = 512, calidad: int = 80) -> list[bytes]:
+def frames_jpeg(video: Path, n: int = 3, ancho: int = 384, calidad: int = 80) -> list[bytes]:
     """`n` frames repartidos entre el 10 % y el 90 % del clip, como JPEG chicos.
 
     Van a Gemini junto con la transcripción. A 512 px de ancho cada uno entra en un par de tiles de

@@ -1675,7 +1675,7 @@ def voz_efemeride(frases: list[str], settings, carpeta: Path, avisar=log.info,
 
     from . import narrar
     from .config import env
-    from .gemini import GeminiError, aviso_por_telegram, claves_activas, hablar_con_claves
+    from .gemini import GeminiError, aviso_por_telegram, claves_activas, hablar_con_claves, registrar_uso
 
     cfg = settings.efemerides
     motivo = ""
@@ -1686,7 +1686,8 @@ def voz_efemeride(frases: list[str], settings, carpeta: Path, avisar=log.info,
                 raise GeminiError("sin GEMINI_API_KEY")
             kw = dict(instruccion=cfg.tts_instruccion, voz=cfg.tts_voz, modelo=cfg.tts_modelo)
             pcm, sr = (tts(claves[0][1], " ".join(frases), **kw) if tts else
-                       hablar_con_claves(claves, " ".join(frases), aviso=aviso_por_telegram, **kw))
+                       hablar_con_claves(claves, " ".join(frases), aviso=aviso_por_telegram,
+                                         uso=registrar_uso, **kw))
             wav = _escribir_wav(pcm, sr, carpeta / "voz.wav")
             dur = len(pcm) / 2 / sr
             if dur > cfg.tts_max_s:

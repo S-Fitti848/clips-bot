@@ -51,6 +51,26 @@ def connect(path: Path) -> sqlite3.Connection:
     return conn
 
 
+def anotar_gemini(conn: sqlite3.Connection, funcion: str, modelo: str, clave: str, entrada: int,
+                  salida: int, cache: bool = False) -> None:
+    from datetime import timedelta, timezone
+
+    ahora = datetime.now(timezone.utc)
+    dia = (ahora + timedelta(hours=-3)).date().isoformat()
+    conn.execute("INSERT INTO gemini_uso (ts, dia, funcion, modelo, clave, entrada, salida, cache) "
+                 "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                 (ahora.isoformat(), dia, funcion, modelo, clave, entrada, salida, int(cache)))
+    conn.commit()
+
+
+def uso_gemini(conn: sqlite3.Connection, dias: int = 7) -> list[tuple]:
+    """(día, función, llamadas, tokens de entrada, tokens de salida, de la caché) por día y función."""
+    return conn.execute(
+        """SELECT dia, funcion, SUM(cache = 0), SUM(entrada), SUM(salida), SUM(cache)
+           FROM gemini_uso WHERE dia >= date('now', ?) GROUP BY dia, funcion
+           ORDER BY dia DESC, SUM(entrada) DESC""", (f"-{dias} days",)).fetchall()
+
+
 def ids_vistos(conn: sqlite3.Connection) -> set[str]:
     """Clips que ya pasaron por el pipeline (cualquier estado) y no se reconsideran."""
     return {row[0] for row in conn.execute("SELECT clip_id FROM clips")}
@@ -219,6 +239,17 @@ CREATE TABLE IF NOT EXISTS pegados (
     coincidencia REAL,                   -- audio_huella (0-1): la mejor, aunque no pase el umbral
     fecha        TEXT NOT NULL,          -- cuándo se buscó
     comparados   INTEGER DEFAULT 0       -- contra cuántos clips originales se comparó
+);
+
+CREATE TABLE IF NOT EXISTS gemini_uso (
+    ts       TEXT NOT NULL,              -- UTC
+    dia      TEXT NOT NULL,              -- AR (AAAA-MM-DD), para el resumen por día
+    funcion  TEXT NOT NULL,              -- quién pidió: "textos.generar", "efemerides.elegir_fotos"…
+    modelo   TEXT NOT NULL,              -- "cache" si salió de la caché
+    clave    TEXT NOT NULL DEFAULT '',   -- principal | segunda
+    entrada  INTEGER NOT NULL DEFAULT 0, -- tokens
+    salida   INTEGER NOT NULL DEFAULT 0,
+    cache    INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS apodos (

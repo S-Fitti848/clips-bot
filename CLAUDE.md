@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-10-02 | **Versión:** v0.50.2 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 + escucha de Telegram 24/7)
+**Snapshot:** 2026-10-02 | **Versión:** v0.51.0 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 + escucha de Telegram 24/7)
 
 > **SI ESTÁS EMPEZANDO UNA SESIÓN NUEVA, LEÉ §10.** Ahí está qué está hecho, qué quedó a medias,
 > qué falta, y las trampas que ya nos mordieron.
@@ -773,6 +773,21 @@ Problemas abiertos:
 
 ## 9. CHANGELOG
 
+- v0.51.0 (2026-10-02) — **Cuota de Gemini.** (1) **Medición por función**: cada llamada anota en
+  `gemini_uso` (día AR, función que llamó —sale sola del stack, ej. `textos.generar`,
+  `efemerides.elegir_fotos`—, modelo, clave, tokens de entrada y salida, y si salió de la caché);
+  `/gemini [días]` muestra llamadas y tokens por función y por día. Antes de esto, del log de la
+  Pi: 1/10 = 23 llamadas de texto + 1 de voz (14 flash-lite, 7 flash con la principal, 1 con la
+  segunda), 2/10 = 17 (7 lite, 6 flash principal, 4 flash segunda); sin desglose por función.
+  (2) **Imágenes ≤ 384 px** en el cliente (`gemini.achicar`, vale para todo: clips, /narrar,
+  /serie, efemérides); `frames_jpeg` 384 px; **3 frames por clip** (`frames_para_puntaje` 4 → 3).
+  (3) **Caché de 7 días** de respuestas a pedidos IDÉNTICOS (`data/cache_gemini/`, clave = modelo +
+  sistema + prompt + schema + temperatura + imágenes + audio): reintentos de la misma efeméride o el
+  mismo desempate no gastan cuota. (4) "Puntuar solo a los 6 mejores" ya se cumplía: la corrida
+  procesa como máximo `max_procesar` (6) en orden de score por señales gratis, y Gemini corre solo
+  en los que pasan los filtros gratis. Juntar más llamadas: no hay más para juntar sin perder la
+  validación (clips: 1 por clip; efemérides: elegir + guion + fotos por hecho, que van en orden).
+  (5) La segunda clave anda (misma huella en la compu y en la Pi; 5 usos OK el 1 y 2/10). 635 tests OK.
 - v0.50.2 (2026-10-02) — **Botones contestados al toque.** Los que disparan algo que tarda
   (`_PESADOS`: aprobar/rehacer voz/🎬/🔁 de efemérides, series, guiones, pasos, pedidos, la cantidad de
   /buscar, buscar desde /streamers, ❌ Cancelar subida) se contestan con "⏳ Un momento…" apenas

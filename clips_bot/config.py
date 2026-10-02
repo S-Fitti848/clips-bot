@@ -251,7 +251,7 @@ class Textos:
     puntaje_min: int = 6     # 5 → 6 el 2026-09-29 (pedido de Santi: llegaban clips malos)
     # Ejemplos del gusto de Santi en la llamada del puntaje: los últimos N 👍 y N 👎. 0 = sin.
     ejemplos_gusto: int = 0
-    frames_para_puntaje: int = 4   # 0 = puntuar solo con la transcripción
+    frames_para_puntaje: int = 3   # 0 = puntuar solo con la transcripción (4 → 3 el 2026-10-02: cuota)
 
 
 @dataclass(frozen=True)

@@ -8,6 +8,7 @@ import hashlib
 import logging
 import time
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 import requests
 
@@ -34,6 +35,64 @@ PRINCIPAL, SEGUNDA = "principal", "segunda"
 VARIABLES = ((PRINCIPAL, "GEMINI_API_KEY"), (SEGUNDA, "GEMINI_API_KEY_2"))
 CLAVE_INVALIDA = "gemini_clave_invalida"      # bot_estado: {nombre: huella de la clave inválida}
 CLAVE_SEGUNDA_DIA = "gemini_segunda_dia"      # bot_estado: día (AR) en que ya se avisó el uso
+
+
+IMAGEN_MAX_PX = 384           # ninguna imagen a Gemini más grande que esto (pedido 2026-10-02)
+CACHE_DIAS = 7                # una respuesta a un pedido IDÉNTICO se reusa esta cantidad de días
+
+
+def achicar(img: bytes, lado: int = IMAGEN_MAX_PX) -> bytes:
+    """La imagen con su lado mayor ≤ `lado` (JPEG). Las que ya son chicas pasan igual."""
+    import io
+
+    from PIL import Image
+
+    try:
+        with Image.open(io.BytesIO(img)) as im:
+            if max(im.size) <= lado:
+                return img
+            im = im.convert("RGB")
+            im.thumbnail((lado, lado))
+            buf = io.BytesIO()
+            im.save(buf, "JPEG", quality=80)
+            return buf.getvalue()
+    except OSError:
+        return img
+
+
+def _llamador() -> str:
+    """Qué función del bot pidió la llamada ("textos.generar", "efemerides.elegir_fotos"…), para
+    medir el uso por función sin tener que pasarlo en cada llamada."""
+    import sys
+
+    f = sys._getframe(2)
+    while f is not None and f.f_globals.get("__name__") == __name__:
+        f = f.f_back
+    if f is None:
+        return "?"
+    return f"{f.f_globals.get('__name__', '?').rsplit('.', 1)[-1]}.{f.f_code.co_name}"
+
+
+def registrar_uso(funcion: str, modelo: str, clave: str, entrada: int, salida: int,
+                  cache: bool = False) -> None:
+    """Una fila por llamada en la tabla `gemini_uso`. Nunca tumba la llamada."""
+    from . import db
+    from .config import DB_PATH
+
+    try:
+        conn = db.connect(DB_PATH)
+        try:
+            db.anotar_gemini(conn, funcion, modelo, clave, entrada, salida, cache)
+        finally:
+            conn.close()
+    except Exception as e:     # medir no puede romper lo que se mide
+        log.warning("Gemini: no pude anotar el uso: %s", e)
+
+
+def _tokens(respuesta: dict) -> tuple[int, int]:
+    u = respuesta.get("usageMetadata") or {}
+    return int(u.get("promptTokenCount") or 0), int(u.get("candidatesTokenCount") or 0) + \
+        int(u.get("thoughtsTokenCount") or 0)
 
 
 def huella(clave: str) -> str:
@@ -146,11 +205,16 @@ class GeminiClient:
 
     def __init__(self, api_key, modelo: str, session: requests.Session | None = None,
                  timeout: float = 90, esperas: tuple = ESPERAS_PASAJERO, sleep=time.sleep,
-                 modelo_fallback: str = "", reloj=time.monotonic, aviso=None):
+                 modelo_fallback: str = "", reloj=time.monotonic, aviso=None, uso=None,
+                 cache_dir=None):
         # `api_key`: una clave, o [(nombre, clave)] en orden (principal, segunda).
         self.claves = [(PRINCIPAL, api_key)] if isinstance(api_key, str) else list(api_key)
         self.api_key = self.claves[0][1]
         self.aviso = aviso or (lambda *a, **k: None)
+        # `uso(funcion, modelo, clave, entrada, salida, cache)`: anota cada llamada (registrar_uso).
+        self.uso = uso
+        # Respuestas guardadas por pedido idéntico (mismo sistema, prompt, schema, imágenes y audio).
+        self.cache_dir = Path(cache_dir) if cache_dir else None
         self._sin_cuota: dict[tuple[str, str], str] = {}   # (modelo, clave) -> día del Pacífico
         self._invalidas: set[str] = set()
         self.modelo = modelo
@@ -161,6 +225,40 @@ class GeminiClient:
         self._sleep = sleep
         self._reloj = reloj
         self._caido_hasta = 0.0
+
+    def _clave_cache(self, sistema, prompt, schema, temperatura, imagenes, audio) -> str | None:
+        if not self.cache_dir:
+            return None
+        h = hashlib.sha256(json.dumps([self.modelo, sistema, prompt, schema, temperatura],
+                                      sort_keys=True, ensure_ascii=False).encode())
+        for b in list(imagenes) + ([audio] if audio else []):
+            h.update(hashlib.sha256(b).digest())
+        return h.hexdigest()
+
+    def _de_cache(self, clave: str | None) -> str | None:
+        if not clave:
+            return None
+        f = self.cache_dir / f"{clave}.json"
+        if not f.exists() or time.time() - f.stat().st_mtime > CACHE_DIAS * 86400:
+            return None
+        try:
+            return json.loads(f.read_text(encoding="utf-8"))["texto"]
+        except (OSError, ValueError, KeyError):
+            return None
+
+    def _a_cache(self, clave: str | None, texto: str) -> None:
+        if not clave:
+            return
+        try:
+            self.cache_dir.mkdir(parents=True, exist_ok=True)
+            (self.cache_dir / f"{clave}.json").write_text(json.dumps({"texto": texto}, ensure_ascii=False),
+                                                         encoding="utf-8")
+            limite = time.time() - CACHE_DIAS * 86400
+            for viejo in self.cache_dir.glob("*.json"):
+                if viejo.stat().st_mtime < limite:
+                    viejo.unlink(missing_ok=True)
+        except OSError as e:
+            log.warning("Gemini: no pude guardar en la caché: %s", e)
 
     # Después de una falla pasajera completa (los dos modelos, ~10-19 min de esperas), las llamadas
     # siguientes del mismo cliente fallan al toque durante este rato. Sin esto, una corrida diaria
@@ -178,8 +276,17 @@ class GeminiClient:
 
         `audio`: MP3 en bytes (el de /narrar, para que diga si hay música antes de poner la voz).
         """
+        funcion = _llamador()
+        imagenes = [achicar(img) for img in imagenes or []]
+        clave_cache = self._clave_cache(sistema, prompt, schema, temperatura, imagenes, audio)
+        guardado = self._de_cache(clave_cache)
+        if guardado is not None:
+            log.info("Gemini (caché) para %s", funcion)
+            if self.uso:
+                self.uso(funcion, "cache", "", 0, 0, True)
+            return guardado
         partes: list[dict] = [{"text": prompt}]
-        for img in imagenes or []:
+        for img in imagenes:
             partes.append({"inlineData": {"mimeType": "image/jpeg",
                                           "data": base64.b64encode(img).decode()}})
         if audio:
@@ -222,10 +329,17 @@ class GeminiClient:
                     else:
                         error = f"{r.status_code} {r.text[:300]}"
                     if r is not None and r.status_code == 200:
-                        log.info("Gemini %s con la clave %s", modelo, nombre)
+                        respuesta = r.json()
+                        entrada, salida = _tokens(respuesta)
+                        log.info("Gemini %s con la clave %s para %s (%d + %d tokens)", modelo, nombre,
+                                 funcion, entrada, salida)
                         if nombre != PRINCIPAL:
                             self.aviso("segunda", nombre, clave)
-                        return _texto(r.json())
+                        if self.uso:
+                            self.uso(funcion, modelo, nombre, entrada, salida, False)
+                        texto = _texto(respuesta)
+                        self._a_cache(clave_cache, texto)
+                        return texto
                     # 429 por cuota agotada (la del día) no se arregla reintentando: otra clave
                     # y, si no hay, el otro modelo.
                     if r is not None and es_sin_cuota(r.status_code, r.text):
@@ -258,7 +372,7 @@ class GeminiClient:
 
 def hablar(api_key: str, texto: str, instruccion: str = "", voz: str = "Puck",
            modelo: str = "gemini-3.8-flash-tts", session: requests.Session | None = None,
-           timeout: float = 180) -> tuple[bytes, int]:
+           timeout: float = 180, tokens: list | None = None) -> tuple[bytes, int]:
     """Gemini TTS: texto → PCM 16 bits mono y su frecuencia de muestreo. GASTA una request de la
     cuota diaria (por eso /narrar usa Piper; ver la comparación en settings.yaml → voz). La
     instrucción de tono va en el mismo texto ("Decilo con entusiasmo: …"), así lo pide la API."""
@@ -281,6 +395,8 @@ def hablar(api_key: str, texto: str, instruccion: str = "", voz: str = "Puck",
         raise GeminiError(f"Gemini TTS ({modelo}): {e}", pasajero=True) from e
     if r.status_code != 200:
         raise GeminiError(f"Gemini TTS ({modelo}): {r.status_code} {r.text[:300]}")
+    if tokens is not None:
+        tokens.extend(_tokens(r.json()))
     try:
         parte = r.json()["candidates"][0]["content"]["parts"][0]["inlineData"]
     except (KeyError, IndexError, ValueError) as e:
@@ -289,13 +405,15 @@ def hablar(api_key: str, texto: str, instruccion: str = "", voz: str = "Puck",
     return base64.b64decode(parte["data"]), int(m.group(1)) if m else 24000
 
 
-def hablar_con_claves(claves_: list[tuple[str, str]], texto: str, aviso=None, **kw) -> tuple[bytes, int]:
+def hablar_con_claves(claves_: list[tuple[str, str]], texto: str, aviso=None, uso=None,
+                      **kw) -> tuple[bytes, int]:
     """`hablar` con la principal y, solo si se quedó sin cuota del día, con la segunda."""
     aviso = aviso or (lambda *a, **k: None)
     ultimo: GeminiError | None = None
     for nombre, clave in claves_:
+        tokens: list = []
         try:
-            r = hablar(clave, texto, **kw)
+            r = hablar(clave, texto, tokens=tokens, **kw)
         except GeminiError as e:
             ultimo, t = e, str(e)
             codigo = int(t.split(": ", 1)[1][:3]) if ": " in t and t.split(": ", 1)[1][:3].isdigit() else 0
@@ -306,9 +424,12 @@ def hablar_con_claves(claves_: list[tuple[str, str]], texto: str, aviso=None, **
                 aviso("invalida", nombre, clave, t)
                 continue
             raise
-        log.info("Gemini TTS con la clave %s", nombre)
+        log.info("Gemini TTS con la clave %s (%s tokens)", nombre, sum(tokens) if tokens else "?")
         if nombre != PRINCIPAL:
             aviso("segunda", nombre, clave)
+        if uso:
+            uso("efemerides.voz", kw.get("modelo", "tts"), nombre,
+                tokens[0] if tokens else 0, tokens[1] if len(tokens) > 1 else 0, False)
         return r
     raise ultimo or GeminiError("sin GEMINI_API_KEY")
 

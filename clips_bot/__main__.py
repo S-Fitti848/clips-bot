@@ -164,6 +164,23 @@ def _permitidos(conn=None) -> set[str]:
     return (base | set(a["sumados"])) - (set(a["sacados"]) - {DUENO})
 
 
+def _texto_uso_gemini(conn, dias: int = 3) -> str:
+    """/gemini: llamadas y tokens por función y por día (tabla gemini_uso)."""
+    filas = db.uso_gemini(conn, dias)
+    if not filas:
+        return "Todavía no hay llamadas anotadas (se miden desde el 2026-10-02)."
+    lineas, dia_actual = ["🧮 <b>Gemini por función</b> (llamadas · tokens entrada/salida · caché)"], None
+    for dia, funcion, llamadas, ent, sal, cache in filas:
+        if dia != dia_actual:
+            dia_actual = dia
+            tot = [f for f in filas if f[0] == dia]
+            lineas.append(f"\n<b>{dia}</b>: {sum(f[2] for f in tot)} llamadas, "
+                          f"{sum(f[3] for f in tot):,} + {sum(f[4] for f in tot):,} tokens".replace(",", "."))
+        lineas.append(f"• {html.escape(funcion)}: {llamadas} · {ent:,}/{sal:,}".replace(",", ".")
+                      + (f" · {cache} de caché" if cache else ""))
+    return "\n".join(lineas)[:4000]
+
+
 def _permitir(conn, c: dict) -> str:
     """/permitir respondiendo a un mensaje de la persona (o con su id). Solo Santi."""
     if c["user_id"] != DUENO:
@@ -249,8 +266,11 @@ def _gemini(settings: Settings) -> GeminiClient | None:
     claves = claves_activas()
     if not claves or claves[0][0] != "principal":
         return None
+    from .gemini import registrar_uso
+
     return GeminiClient(claves, settings.textos.modelo, modelo_fallback=settings.textos.modelo_fallback,
-                        aviso=aviso_por_telegram)
+                        aviso=aviso_por_telegram, uso=registrar_uso,
+                        cache_dir=DATA_DIR / "cache_gemini")
 
 
 class ErrorPasajero(str):
@@ -2584,6 +2604,9 @@ def _despachar(conn, tg: TelegramClient, c: dict, settings: Settings, cola: list
                             c["args"], c["user_id"])
     elif c["comando"] == "/quitar":
         respuesta = _seguro(tg, c["chat_id"], c["comando"], _quitar, conn, c["args"], c["user_id"])
+    elif c["comando"] == "/gemini":
+        respuesta = _seguro(tg, c["chat_id"], c["comando"], _texto_uso_gemini, conn,
+                            int(c["args"][0]) if c["args"] and c["args"][0].isdigit() else 3)
     elif c["comando"] == "/permitir":
         respuesta = _seguro(tg, c["chat_id"], c["comando"], _permitir, conn, c)
     elif c["comando"] == "/sacar_acceso":
@@ -3713,6 +3736,9 @@ SECCIONES = [
          "cancelar cada uno. Se programa con «📤 Subir» debajo de cada video (el 👍 solo vota). "
          "Hoy la subida a YouTube está apagada hasta la auditoría.",
          "/subidas"),
+        ("/gemini [días]",
+         "cuántas llamadas a Gemini hizo cada función por día y cuántos tokens gastó (default 3 días).",
+         "/gemini 7"),
         ("/permitir",
          "(solo Santi) respondé con /permitir a un mensaje de alguien del grupo y ya puede usar el "
          "bot, sin tocar el .env.",
