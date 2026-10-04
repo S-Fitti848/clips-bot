@@ -358,43 +358,54 @@ def sin_original(conn: sqlite3.Connection, streamers: list[Streamer], desde: dat
     por_login = {s.login: s for s in streamers}
     filas = conn.execute(
         """SELECT short_id, streamer, vistas, canal, titulo, coincidencia, comparados, vod_url,
-                  vod_segundo FROM pegados
+                  vod_segundo, vod_programa, vod_clip_id, vod_resultado FROM pegados
            WHERE clip_id IS NULL AND fecha >= ? AND vistas >= ? ORDER BY vistas DESC""",
         (desde.isoformat(), min_vistas)).fetchall()
     out = []
-    for sid, login, vistas, canal, titulo, valor, comparados, vod_url, vod_seg in filas:
+    for (sid, login, vistas, canal, titulo, valor, comparados, vod_url, vod_seg, vod_programa,
+         vod_clip, vod_res) in filas:
         s = por_login.get(login)
         if s is None or not nombra(s, titulo or "", canal or ""):
             continue
         out.append({"url": f"https://www.youtube.com/shorts/{sid}", "streamer": login,
                     "vistas": int(vistas or 0), "canal": canal or "", "titulo": titulo or "",
                     "coincidencia": float(valor or 0), "comparados": int(comparados or 0),
-                    "vod_url": vod_url or "", "vod_segundo": float(vod_seg or 0)})
+                    "vod_url": vod_url or "", "vod_segundo": float(vod_seg or 0),
+                    "vod_programa": vod_programa or "", "vod_clip_id": vod_clip or "",
+                    "vod_resultado": vod_res or ""})
     return out
 
 
 def buscar_en_vod_del_dia(conn: sqlite3.Connection, streamers: list[Streamer], cfg, carpeta: Path,
                           kick=None, avisar=log.info, hasta: float | None = None,
-                          reloj=time.monotonic) -> int:
+                          reloj=time.monotonic, twitch=None, procesar_tramo=None,
+                          carpeta_tramos: Path | None = None) -> int:
     """Los `cfg.vod_por_dia` Shorts sin original con más vistas (de las últimas 24 h, sin probar en
-    el VOD) se buscan en los VODs del streamer de los días antes de publicado. Solo Kick por ahora
-    (el VOD de Twitch va por otro camino). Devuelve cuántos encontró."""
+    el VOD) se buscan en los VODs del streamer (Kick o Twitch) de los `dias_antes` días antes de
+    publicado. Si aparece: si el stream es de un programa de terceros excluido, se anota y NO se
+    procesa (el resumen lo dice); si es de uno en experimento (el 412), se procesa con "⚠️ 412";
+    si no, el tramo se corta del VOD y `procesar_tramo(descarga, aviso, pego)` lo procesa como un
+    clip normal, con todos los filtros. Devuelve cuántos encontró."""
     import shutil
 
     from . import vod as vd
+    from .candidates import AVISO_PROGRAMA, es_programa_de_terceros
+    from .download import Descarga
+    from .media import probe
 
     por_login = {s.login: s for s in streamers}
     desde = (datetime.now(timezone.utc) - timedelta(days=1)).isoformat()
     filas = conn.execute(
-        """SELECT short_id, streamer, titulo, vistas, publicado FROM pegados
+        """SELECT short_id, streamer, titulo, vistas, publicado, canal FROM pegados
            WHERE clip_id IS NULL AND COALESCE(vod_intentado, 0) = 0 AND fecha >= ?
            ORDER BY vistas DESC""", (desde,)).fetchall()
     hallados = intentados = 0
-    for sid, login, titulo, vistas, publicado in filas:
+    for sid, login, titulo, vistas, publicado, canal in filas:
         if intentados >= cfg.vod_por_dia or (hasta is not None and reloj() >= hasta):
             break
         s = por_login.get(login)
-        if s is None or s.plataforma != "kick" or kick is None or not nombra(s, titulo or "", ""):
+        cliente = kick if s is not None and s.plataforma == "kick" else twitch
+        if s is None or cliente is None or not nombra(s, titulo or "", ""):
             continue
         intentados += 1
         conn.execute("UPDATE pegados SET vod_intentado = 1 WHERE short_id = ?", (sid,))
@@ -402,23 +413,56 @@ def buscar_en_vod_del_dia(conn: sqlite3.Connection, streamers: list[Streamer], c
         tmp = carpeta / f"vod_{sid}"
         try:
             audio, fecha = bajar_audio_short(ShortAjeno(sid, titulo or "", "", vistas, 0), tmp)
+            try:
+                dur_short = probe(audio).duracion or 30.0
+            except Exception:
+                dur_short = 30.0
             cuando = (datetime.fromisoformat(publicado.replace("Z", "+00:00")) if publicado
                       else fecha or datetime.now(timezone.utc))
-            vods = vd.vods_kick(kick, s.login, cuando - timedelta(days=cfg.dias_antes), cuando)
+            buscar = vd.vods_kick if s.plataforma == "kick" else vd.vods_twitch
+            vods = buscar(cliente, s.login, cuando - timedelta(days=cfg.dias_antes), cuando)
             mejor = vd.buscar_en_vods(audio, vods, carpeta / "huellas", cfg.umbral, avisar, hasta, reloj)
         except Exception as e:
             avisar(f"pegó (VOD): {sid}: {str(e)[:150]}")
             continue
         finally:
             shutil.rmtree(tmp, ignore_errors=True)
-        if mejor:
-            v, seg, valor = mejor
-            conn.execute("UPDATE pegados SET vod_url = ?, vod_segundo = ?, coincidencia = ? WHERE short_id = ?",
-                         (v.pagina, seg, valor, sid))
+        if not mejor:
+            continue
+        v, seg, valor = mejor
+        hallados += 1
+        # ¿Stream de un programa de terceros? Excluido: no se procesa; en experimento: con aviso.
+        bloqueado = next((p for p in s.palabras_programa if es_programa_de_terceros(v.titulo, (p,))), "")
+        experimento = next((p for p in s.programa_aviso if es_programa_de_terceros(v.titulo, (p,))), "")
+        programa = bloqueado or experimento
+        conn.execute("""UPDATE pegados SET vod_url = ?, vod_segundo = ?, coincidencia = ?, vod_programa = ?
+                        WHERE short_id = ?""", (v.pagina, seg, valor, programa or None, sid))
+        conn.commit()
+        avisar(f"pegó (VOD): «{(titulo or '')[:50]}» está en {v.pagina} a los {seg / 60:.1f} min "
+               f"({valor:.2f})" + (f" — stream del {programa}" if programa else ""))
+        if bloqueado:
+            conn.execute("UPDATE pegados SET vod_resultado = ? WHERE short_id = ?",
+                         (f"no lo procesé: el {bloqueado} está excluido", sid))
             conn.commit()
-            hallados += 1
-            avisar(f"pegó (VOD): «{(titulo or '')[:50]}» está en {v.pagina} a los {seg / 60:.1f} min "
-                   f"({valor:.2f})")
+            continue
+        if procesar_tramo is None or (hasta is not None and reloj() >= hasta):
+            continue
+        inicio, dur = vd.tramo(seg, dur_short)
+        clip_id = f"vod_{v.plataforma}_{v.id}_{int(inicio)}"
+        try:
+            ruta = vd.cortar(v, inicio, dur, (carpeta_tramos or carpeta / "tramos") / f"{clip_id}.mp4")
+            d = Descarga(ruta, clip_id, f"{v.pagina}?t={int(inicio)}s", v.titulo, v.plataforma, s.login,
+                         s.login, dur, 0, v.inicio + timedelta(seconds=inicio), "", de_streamer=True)
+            aviso = (AVISO_PROGRAMA.format(experimento) + " (stream del programa: revisalo con más cuidado)"
+                     if experimento else "")
+            r = procesar_tramo(d, aviso, {"vistas": int(vistas or 0), "canal": canal or ""})
+            resultado = f"se descartó: {r.descartado}" if r.descartado else "listo"
+        except Exception as e:
+            avisar(f"pegó (VOD): no pude cortar o procesar {clip_id}: {str(e)[:150]}")
+            clip_id, resultado = None, f"no pude cortarlo: {str(e)[:80]}"
+        conn.execute("UPDATE pegados SET vod_clip_id = ?, vod_resultado = ? WHERE short_id = ?",
+                     (clip_id, resultado, sid))
+        conn.commit()
     return hallados
 
 
@@ -437,6 +481,14 @@ def texto_sin_original(filas: list[dict]) -> str:
             h, m = divmod(m, 60)
             donde = (f"No hay clip, pero salió del VOD: <a href=\"{f['vod_url']}\">acá</a>, en el "
                      f"{h}:{m:02d}:{s:02d}.")
+            if f.get("vod_programa"):   # el 412: se avisa, no se descarta en silencio
+                donde += f" ⚠️ Pegó, pero es del {html.escape(f['vod_programa'])}."
+            res = f.get("vod_resultado") or ""
+            if res == "listo":
+                donde += (f" Lo corté del VOD y lo procesé: compite en la próxima entrega "
+                          f"(<code>{html.escape(f['vod_clip_id'])}</code>).")
+            elif res:
+                donde += f" {html.escape(res[0].upper() + res[1:])}."
         else:
             donde = "No encontré el original."
         lineas.append(f"• <a href=\"{f['url']}\">{html.escape(f['titulo'][:70])}</a> — "

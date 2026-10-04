@@ -37,6 +37,9 @@ class Descarga:
     vistas: int
     creado: datetime | None
     categoria: str
+    # Un tramo cortado del VOD del streamer (pegó, 2026-10-04): es un clip de streamer, así que pasa
+    # por TODOS los filtros (los de canal también), no como /editar o /narrar.
+    de_streamer: bool = False
 
 
 def parse_clip_url(url: str) -> tuple[str, str | None, str]:

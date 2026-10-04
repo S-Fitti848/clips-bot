@@ -10,8 +10,12 @@ variante de solo audio: da 403); se lee la de 160p (230 kbps) con ffmpeg y se sa
 guarda (float16) y la búsqueda del Short en todas las posiciones va por FFT
 (`audio_huella.coincidencia_rapida`: 7 h en ~1 s en Windows).
 
-Si coincide, el momento queda anotado con el link del VOD y el segundo exacto: el clip no existe,
-así que no se procesa solo; se avisa en el resumen de "🔥 Pegó en otros canales" para cortarlo a mano.
+Twitch (2026-10-04): los VODs salen de Helix (/videos, type=archive) y el audio de la variante
+"audio_only" que resuelve yt-dlp (sin bajar video).
+
+Si coincide (2026-10-04, pedido de Santi): se corta ese tramo del VOD en buena calidad (`cortar`,
+la variante más alta hasta 1080p, solo el tramo) y se procesa como un clip normal, con todos los
+filtros. Si no se pudo procesar, el resumen de "🔥 Pegó en otros canales" lleva el link y el minuto.
 """
 
 from __future__ import annotations
@@ -44,6 +48,7 @@ class Vod:
     inicio: datetime
     duracion_s: float
     titulo: str = ""
+    maestra: str = ""    # Kick: la playlist con todas las variantes (para cortar en buena calidad)
 
 
 def vods_kick(kick, slug: str, desde: datetime, hasta: datetime) -> list[Vod]:
@@ -60,8 +65,96 @@ def vods_kick(kick, slug: str, desde: datetime, hasta: datetime) -> list[Vod]:
         uuid = (v.get("video") or {}).get("uuid") or v.get("id")
         out.append(Vod(str(v.get("id")), "kick", f"{base}/{VARIANTE}/playlist.m3u8",
                        f"https://kick.com/{slug}/videos/{uuid}", inicio, dur,
-                       str(v.get("session_title") or "")))
+                       str(v.get("session_title") or ""), str(v["source"])))
     return sorted(out, key=lambda x: x.inicio, reverse=True)
+
+
+def _duracion_twitch(texto: str) -> float:
+    """ "3h2m1s" → segundos."""
+    import re
+
+    return float(sum(int(n) * {"h": 3600, "m": 60, "s": 1}[u] for n, u in re.findall(r"(\d+)([hms])", texto or "")))
+
+
+def vods_twitch(tw, login: str, desde: datetime, hasta: datetime) -> list[Vod]:
+    """Los VODs (archivos de streams pasados) del canal que se superponen con [desde, hasta]."""
+    uid = tw.get_user_ids([login]).get(login)
+    if not uid:
+        return []
+    out = []
+    for v in (tw._get("/videos", [("user_id", uid), ("type", "archive"), ("first", "20")]) or {}).get("data", []):
+        try:
+            inicio = datetime.fromisoformat(v["created_at"].replace("Z", "+00:00"))
+        except (KeyError, ValueError, AttributeError):
+            continue
+        dur = _duracion_twitch(v.get("duration", ""))
+        if inicio > hasta or inicio + timedelta(seconds=dur) < desde:
+            continue
+        out.append(Vod(str(v["id"]), "twitch", "", v.get("url") or f"https://www.twitch.tv/videos/{v['id']}",
+                       inicio, dur, str(v.get("title") or "")))
+    return sorted(out, key=lambda x: x.inicio, reverse=True)
+
+
+def _ytdlp_url(pagina: str, formato: str) -> str:
+    from yt_dlp import YoutubeDL
+
+    with YoutubeDL({"quiet": True, "no_warnings": True, "format": formato}) as y:
+        info = y.extract_info(pagina, download=False)
+    return info.get("url") or (info.get("requested_formats") or [{}])[0].get("url", "")
+
+
+def url_audio(v: Vod) -> str:
+    """Lo que lee ffmpeg para el audio: Kick, la variante de 160p; Twitch, "audio_only"."""
+    return v.url or _ytdlp_url(v.pagina, "audio_only/worst")
+
+
+def mejor_variante(maestra_txt: str, base: str, alto_max: int = 1080) -> str:
+    """De una playlist maestra HLS, la variante más alta que no pase `alto_max`."""
+    import re
+
+    mejor, alto_mejor, alto = "", -1, None
+    for linea in maestra_txt.splitlines():
+        linea = linea.strip()
+        if linea.startswith("#EXT-X-STREAM-INF"):
+            m = re.search(r"RESOLUTION=\d+x(\d+)", linea)
+            alto = int(m.group(1)) if m else 0
+        elif linea and not linea.startswith("#") and alto is not None:
+            if alto_mejor < alto <= alto_max:
+                mejor, alto_mejor = (linea if linea.startswith("http") else f"{base}/{linea}"), alto
+            alto = None
+    return mejor
+
+
+def url_video(v: Vod) -> str:
+    if v.plataforma == "kick" and v.maestra:
+        import requests
+
+        r = requests.get(v.maestra, timeout=30)
+        r.raise_for_status()
+        url = mejor_variante(r.text, v.maestra.rsplit("/", 1)[0])
+        if url:
+            return url
+    return _ytdlp_url(v.pagina, "best[height<=1080]/best")
+
+
+def tramo(segundo: float, dur_short: float, max_s: float = 59.0, margen: float = 1.5) -> tuple[float, float]:
+    """(inicio, duración) del tramo a cortar: lo que dura el Short con un margen, hasta `max_s`."""
+    inicio = max(0.0, segundo - margen)
+    return round(inicio, 2), round(min(dur_short + 2 * margen, max_s), 2)
+
+
+def cortar(v: Vod, inicio: float, duracion: float, destino: Path) -> Path:
+    """Baja SOLO ese tramo del VOD (sin re-codificar si se puede)."""
+    destino.parent.mkdir(parents=True, exist_ok=True)
+    url = url_video(v)
+    base = [find_bin("ffmpeg"), "-hide_banner", "-loglevel", "error", "-y", "-rw_timeout", "30000000",
+            "-ss", f"{inicio:.2f}", "-i", url, "-t", f"{duracion:.2f}"]
+    r = subprocess.run(base + ["-c", "copy", "-bsf:a", "aac_adtstoasc", "-movflags", "+faststart", str(destino)],
+                       capture_output=True, text=True)
+    if r.returncode != 0 or not destino.exists() or destino.stat().st_size < 10_000:
+        subprocess.run(base + ["-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-c:a", "aac",
+                               "-movflags", "+faststart", str(destino)], check=True, capture_output=True)
+    return destino
 
 
 def huella_vod(v: Vod, cache: Path, reloj=time.monotonic, hasta: float | None = None) -> np.ndarray:
@@ -72,7 +165,7 @@ def huella_vod(v: Vod, cache: Path, reloj=time.monotonic, hasta: float | None = 
     if archivo.exists():
         return np.load(archivo).astype(np.float32)
     p = subprocess.Popen([find_bin("ffmpeg"), "-hide_banner", "-loglevel", "error",
-                          "-rw_timeout", "30000000", "-i", v.url, "-vn", "-ac", "1", "-ar", str(ah.SR),
+                          "-rw_timeout", "30000000", "-i", url_audio(v), "-vn", "-ac", "1", "-ar", str(ah.SR),
                           "-f", "s16le", "-"], stdout=subprocess.PIPE)
     por_bloque = BLOQUE_S * ah.SR
     partes, resto = [], np.zeros(0, dtype=np.float32)

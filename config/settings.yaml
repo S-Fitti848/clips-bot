@@ -476,9 +476,12 @@ pego:
   # corre en la escucha a esta hora, con este tope total; la de las 05:00 usa lo ya encontrado.
   hora: "02:00"
   tope_min: 15
-  # El Short sin original, buscado en el VOD de Kick: SOLO el que más pegó en el día, dentro de la
-  # vuelta de las 02:00, con tope propio (prendido por Santi el 2026-10-04). Medido el 30/09: un VOD
-  # de 8,3 h son ~10 min la primera vez (después queda guardado) + 7 s de búsqueda.
+  # El Short sin original, buscado en el STREAM (2026-10-04, Santi): los 2 que más pegaron por día,
+  # en los VODs del streamer (Kick y Twitch) de los `dias_antes` días antes de publicado; solo el
+  # audio en baja calidad. Si aparece, el tramo se corta del VOD y se procesa como un clip normal
+  # (todos los filtros); compite en la entrega siguiente. Medido el 30/09: un VOD de 8,3 h son ~10
+  # min de audio la primera vez (después queda guardado) + 7 s de búsqueda; procesar el tramo, ~5
+  # min. Por eso el tope pasó de 25 a 75 min (02:00 + 15 + 75 = 03:30, antes de la corrida de las 05:00).
   vod: true
-  vod_por_dia: 1
-  vod_tope_min: 25
+  vod_por_dia: 2
+  vod_tope_min: 75

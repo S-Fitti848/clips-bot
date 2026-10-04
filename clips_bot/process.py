@@ -123,9 +123,9 @@ def procesar(url: str, cfg: Settings, streamers: list[Streamer], forzar: bool = 
                     aviso=aviso, pego=pego, chat_pico=chat_pico)
     crono = Cronometro(res, avisar)
     fa = cfg.filtro_audio
-    aporte = descarga is not None
+    aporte = descarga is not None and not getattr(descarga, "de_streamer", False)
 
-    if aporte:
+    if descarga is not None:
         d = descarga
     else:
         with crono.etapa("descarga"):

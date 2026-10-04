@@ -772,12 +772,24 @@ def _pego_tick(conn, settings: Settings, ahora=None) -> None:
         log.info("pegó: vuelta de las %s (tope %d min)", cfg.hora, cfg.tope_min)
         _pegados_para(settings, streamers, buscar_ahora=True, avisar=log.info,
                       tope_s=cfg.tope_min * 60)
-        if cfg.vod:   # los que no tienen clip, buscados en el VOD (apagado hasta medir)
+        if cfg.vod:   # los que no tienen clip, buscados en el stream (Kick y Twitch) y procesados
             from . import pego
+            from .process import RAW_DIR, procesar
+
+            gemini = _gemini(settings)
+            todos = _streamers(conn)
+
+            def procesar_tramo(d, aviso, pego_dato):
+                r = procesar(d.url, settings, todos, gemini=gemini, avisar=log.info, fuente="reciente",
+                             descarga=d, aviso=aviso, pego=pego_dato)
+                log.info("pegó (VOD): %s → %s", d.clip_id, r.descartado or "listo")
+                return r
 
             pego.buscar_en_vod_del_dia(conn, streamers, cfg, DATA_DIR / "pego_tmp",
                                        kick=KickClient(pausa_s=settings.kick.pausa_s), avisar=log.info,
-                                       hasta=time.monotonic() + cfg.vod_tope_min * 60)
+                                       hasta=time.monotonic() + cfg.vod_tope_min * 60,
+                                       twitch=_twitch(), procesar_tramo=procesar_tramo,
+                                       carpeta_tramos=RAW_DIR)
     finally:
         db.soltar_turno(conn, db.RECURSO_PESADO, turno, VENCIMIENTO_PESADO_S)
 

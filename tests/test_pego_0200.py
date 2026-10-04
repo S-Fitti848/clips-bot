@@ -145,9 +145,9 @@ def test_en_el_vod_se_prueban_solo_los_2_con_mas_vistas_y_se_avisa_donde(tmp_pat
     assert "salió del VOD" in t and "1:02:05" in t and "No encontré el original" in t
 
 
-def test_el_vod_prendido_solo_para_el_que_mas_pego():
+def test_el_vod_prendido_para_los_2_que_mas_pegaron():
     cfg = load_settings().pego
-    assert cfg.vod is True and cfg.vod_por_dia == 1
+    assert cfg.vod is True and cfg.vod_por_dia == 2 and cfg.vod_tope_min == 75
 
 
 def test_el_vod_va_dentro_de_la_vuelta_de_las_02(tmp_path, monkeypatch):
@@ -178,3 +178,92 @@ def test_los_datos_de_shorts_ajenos_se_borran_a_los_30_dias(tmp_path):
     conn.commit()
     assert pego.purgar_viejos(conn) == 1
     assert [r[0] for r in conn.execute("SELECT short_id FROM pegados")] == ["nuevo"]
+
+
+def _vod_hallado(monkeypatch, titulo_stream):
+    from clips_bot import vod as vd
+
+    monkeypatch.setattr(pego, "bajar_audio_short", lambda short, d: (d / "a", AHORA))
+    monkeypatch.setattr(vd, "vods_kick", lambda k, slug, a, b: ["vod"])
+    monkeypatch.setattr(vd, "vods_twitch", lambda t, login, a, b: ["vod"])
+    monkeypatch.setattr(vd, "buscar_en_vods", lambda *a, **k: (
+        vd.Vod("7", "kick", "u", "https://kick.com/davooxeneize/videos/x", AHORA, 3600, titulo_stream), 600.0, 0.8))
+    monkeypatch.setattr(vd, "cortar", lambda v, inicio, dur, destino: destino)
+
+
+def test_el_tramo_del_stream_se_procesa_como_clip_con_todos_los_filtros(tmp_path, monkeypatch):
+    conn = db.connect(tmp_path / "t.db")
+    davo = Streamer("davooxeneize", plataforma="kick", experimento=True, apodos=("Davo",))
+    pego.guardar(conn, pego.ShortAjeno("s0", "DAVO grita", "Otro", 900000, 30, AHORA.isoformat()),
+                 "davooxeneize", None, 40)
+    _vod_hallado(monkeypatch, "charla con el chat")
+    llamados = []
+
+    class R:
+        descartado = ""
+
+    def procesar_tramo(d, aviso, dato):
+        llamados.append((d, aviso, dato))
+        return R()
+
+    assert pego.buscar_en_vod_del_dia(conn, [davo], Pego(vod_por_dia=2), tmp_path, kick=object(),
+                                      procesar_tramo=procesar_tramo) == 1
+    d, aviso, dato = llamados[0]
+    assert d.de_streamer and d.streamer == "davooxeneize" and d.titulo == "charla con el chat"
+    assert 15 <= d.duracion <= 59 and aviso == "" and dato["vistas"] == 900000
+    t = pego.texto_sin_original(pego.sin_original(conn, [davo], AHORA - timedelta(days=2)))
+    assert "Lo corté del VOD y lo procesé" in t
+
+
+def test_del_412_en_experimento_se_procesa_con_aviso_y_el_resumen_lo_dice(tmp_path, monkeypatch):
+    conn = db.connect(tmp_path / "t.db")
+    davo = Streamer("davooxeneize", plataforma="kick", experimento=True, apodos=("Davo",),
+                    programa_aviso=("412",))
+    pego.guardar(conn, pego.ShortAjeno("s0", "DAVO grita", "Otro", 900000, 30, AHORA.isoformat()),
+                 "davooxeneize", None, 40)
+    _vod_hallado(monkeypatch, "412 con LA COBRA y DAVO")
+    avisos = []
+
+    class R:
+        descartado = ""
+
+    pego.buscar_en_vod_del_dia(conn, [davo], Pego(), tmp_path, kick=object(),
+                               procesar_tramo=lambda d, a, x: avisos.append(a) or R())
+    assert avisos and avisos[0].startswith("⚠️ 412")
+    t = pego.texto_sin_original(pego.sin_original(conn, [davo], AHORA - timedelta(days=2)))
+    assert "Pegó, pero es del 412" in t
+
+
+def test_del_412_excluido_no_se_procesa_y_se_avisa(tmp_path, monkeypatch):
+    conn = db.connect(tmp_path / "t.db")
+    davo = Streamer("davooxeneize", plataforma="kick", experimento=True, apodos=("Davo",),
+                    palabras_programa=("412",))
+    pego.guardar(conn, pego.ShortAjeno("s0", "DAVO grita", "Otro", 900000, 30, AHORA.isoformat()),
+                 "davooxeneize", None, 40)
+    _vod_hallado(monkeypatch, "412 con LA COBRA y DAVO")
+    llamados = []
+    pego.buscar_en_vod_del_dia(conn, [davo], Pego(), tmp_path, kick=object(),
+                               procesar_tramo=lambda *a: llamados.append(a))
+    assert llamados == []
+    t = pego.texto_sin_original(pego.sin_original(conn, [davo], AHORA - timedelta(days=2)))
+    assert "Pegó, pero es del 412" in t and "está excluido" in t
+
+
+def test_twitch_tambien(tmp_path, monkeypatch):
+    conn = db.connect(tmp_path / "t.db")
+    auron = Streamer("auronplay", plataforma="twitch", experimento=True, apodos=("Auron",))
+    pego.guardar(conn, pego.ShortAjeno("s0", "AURON se ríe", "Otro", 900000, 30, AHORA.isoformat()),
+                 "auronplay", None, 40)
+    _vod_hallado(monkeypatch, "jugando")
+    assert pego.buscar_en_vod_del_dia(conn, [auron], Pego(), tmp_path, twitch=object()) == 1
+
+
+def test_duracion_y_variante_de_vod():
+    from clips_bot import vod as vd
+
+    assert vd._duracion_twitch("3h2m1s") == 10921
+    maestra = ("#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=1,RESOLUTION=1920x1080\n1080p60/playlist.m3u8\n"
+               "#EXT-X-STREAM-INF:BANDWIDTH=1,RESOLUTION=2560x1440\n1440p/playlist.m3u8\n"
+               "#EXT-X-STREAM-INF:BANDWIDTH=1,RESOLUTION=284x160\n160p30/playlist.m3u8\n")
+    assert vd.mejor_variante(maestra, "https://x/y") == "https://x/y/1080p60/playlist.m3u8"
+    assert vd.tramo(600.0, 30.0) == (598.5, 33.0) and vd.tramo(1.0, 80.0)[1] == 59.0
