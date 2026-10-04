@@ -94,3 +94,15 @@ def test_titulo_solo_los_primeros_3_s_con_fundido(tmp_path):
     dialogos = [l for l in texto.splitlines() if l.startswith("Dialogue")]
     assert len(dialogos) == 2
     assert all(",0:00:03.00," in l and r"\fad(0,300)" in l for l in dialogos)
+
+
+def test_picos_en_la_linea_del_mensaje_sin_tocar_la_seleccion():
+    from clips_bot.telegram import por_que
+    base = {"vistas": 100, "mediana_vistas": 50, "puntaje": 7}
+    assert por_que({**base, "picos_volumen": 2}).endswith("Gemini 7/10 · 2 picos")
+    assert "1 pico" in por_que({**base, "picos_volumen": 1})
+    assert "0 picos" in por_que({**base, "picos_volumen": 0})
+    assert "pico" not in por_que(base)          # clips viejos, sin el dato
+    import inspect
+    from clips_bot import seleccion
+    assert "picos_volumen" not in inspect.getsource(seleccion)

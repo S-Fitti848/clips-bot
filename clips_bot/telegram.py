@@ -209,6 +209,9 @@ def por_que(meta: dict) -> str:
         partes.append(f"chat ×{float(meta['chat_pico']):.1f}".replace(".", ","))
     if meta.get("puntaje"):
         partes.append(f"Gemini {meta['puntaje']}/10")
+    if meta.get("picos_volumen") is not None:   # solo un dato: no cambia qué clip se elige
+        n = int(meta["picos_volumen"])
+        partes.append("1 pico" if n == 1 else f"{n} picos")
     linea = "📊 " + " · ".join(partes)
     pego = meta.get("pego") or {}
     if pego.get("vistas"):   # pego.py: el mismo momento pegó en otro canal
