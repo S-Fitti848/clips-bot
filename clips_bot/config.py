@@ -124,6 +124,11 @@ class Render:
     # El título del clip grande arriba y el streamer chiquito encima (2026-09-30). Apagado hasta
     # que Santi vea 3 muestras.
     titulo_arriba: bool = False
+    # Zooms suaves en los picos de volumen sobre el fit_blur (2026-10-04). Apagado hasta que Santi
+    # vea 2 muestras.
+    zoom_picos: bool = False
+    zoom_max: float = 1.12
+    zoom_max_n: int = 3
     x264_preset: str = "medium"
     crf: int = 20
     maxrate_kbps: int = 5000

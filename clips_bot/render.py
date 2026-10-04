@@ -14,6 +14,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from . import zooms
 from .config import Render
 from .layout import Layout
 from .media import cola_audio, find_bin, probe, run
@@ -45,11 +46,17 @@ def filtro(layout: Layout, render: Render, con_subs: bool, con_titulo: bool = Fa
     if layout.tipo == "fit_blur":
         # Fondo: el mismo video agrandado hasta tapar los 1080x1920 y desenfocado.
         # Frente: el 16:9 entero a 1080 de ancho, centrado. No se recorta nada.
+        # Con zooms (zooms.py): unos pocos acercamientos suaves en los picos de volumen, hacia las caras.
+        frente = f"scale={W}:-2:flags=lanczos,setsar=1"
+        if layout.zooms:
+            p = layout.principal
+            h = int(round(W * p.h / p.w / 2)) * 2
+            frente = zooms.filtro_frente(W, h, render.fps, list(layout.zooms), layout.zoom, *layout.zoom_centro)
         return (
             "[0:v]split=2[bg][fg];"
             f"[bg]scale={W}:{H}:force_original_aspect_ratio=increase,crop={W}:{H},"
             f"gblur=sigma={render.blur_sigma}[fondo];"
-            f"[fg]scale={W}:-2:flags=lanczos,setsar=1[frente];"
+            f"[fg]{frente}[frente];"
             f"[fondo][frente]overlay=0:(H-h)/2,{final}[v]"
         )
     return f"[0:v]{layout.principal.ffmpeg_crop()},{escalar.format(w=W, h=H)},{final}[v]"

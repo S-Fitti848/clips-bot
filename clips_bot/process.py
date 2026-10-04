@@ -64,6 +64,7 @@ class Resultado:
     layout_forzado: str = ""  # el de streamers.yaml, si el streamer lo tiene fijado
     presencia_cara: float = 0.0
     rerender_fit_blur: str = ""  # motivo, si el chequeo post-render detectó una cara cortada
+    zooms: list = field(default_factory=list)  # [(inicio, fin)] de los zooms en los picos (zooms.py)
     subtitulos_quemados: bool = True
     textos: dict | None = None
     textos_pendientes: bool = False  # el render está hecho; `seleccionar` reintenta los textos
@@ -279,7 +280,9 @@ def procesar(url: str, cfg: Settings, streamers: list[Streamer], forzar: bool = 
                                     charla=charla, puntos=puntos)
         if imagenes:
             lay.guardar_debug(imagenes[len(imagenes) // 2], layout, DEBUG_DIR / f"{d.clip_id}_layout.jpg")
+    layout = _con_zooms(layout, d.path, info.duracion, frames, W, H, cfg)
     res.layout, res.presencia_cara = layout.tipo, round(layout.presencia, 2)
+    res.zooms = list(layout.zooms)
     res.layout_forzado = forzado
     avisar(f"  layout {layout.tipo}" + (f" (forzado en streamers.yaml)" if forzado else "")
            + f" (cara estable en {layout.presencia:.0%} de los frames)")
@@ -306,7 +309,8 @@ def procesar(url: str, cfg: Settings, streamers: list[Streamer], forzar: bool = 
             avisar(f"  ⚠ {detalle} → re-render con fit_blur")
             res.rerender_fit_blur = detalle
             layout = lay.layout_fit_blur(W, H, cfg.render, layout.presencia, layout.cara)
-            res.layout = layout.tipo
+            layout = _con_zooms(layout, d.path, info.duracion, frames, W, H, cfg)
+            res.layout, res.zooms = layout.tipo, list(layout.zooms)
             if titulo_dir:   # en fit_blur el título va arriba, no en la línea del split
                 sub.escribir_titulo_ass(work / "titulo.ass", res.textos["titulo"], d.canal or d.streamer,
                                         cfg.subtitulos, cfg.render)
@@ -319,6 +323,23 @@ def procesar(url: str, cfg: Settings, streamers: list[Streamer], forzar: bool = 
 
     _registrar(res, "procesado", tx.MOTIVO_SIN_REMATE if res.relleno else None)
     return _cerrar(res)
+
+
+def _con_zooms(layout, video, duracion: float, frames, W: int, H: int, cfg: Settings):
+    """fit_blur + `render.zoom_picos`: unos pocos zooms suaves en los picos de volumen (zooms.py)."""
+    if layout.tipo != "fit_blur" or not cfg.render.zoom_picos or not duracion:
+        return layout
+    from dataclasses import replace
+
+    from . import multipov, zooms
+
+    rms = multipov.envolvente_rms(video, duracion)
+    tr, z, cx, cy = zooms.planear(rms, multipov.VENTANA_RMS_S, min(duracion, cfg.render.duracion_max_s),
+                                  frames, W, H, cfg.render.zoom_max, cfg.render.zoom_max_n)
+    if not tr:
+        return layout
+    log.info("zooms en %s (×%.2f hacia %.2f, %.2f)", tr, z, cx, cy)
+    return replace(layout, zooms=tuple(tr), zoom=z, zoom_centro=(cx, cy))
 
 
 def _transcribir(res: Resultado, d, info, cfg: Settings, crono: Cronometro, descartar, aporte: bool,

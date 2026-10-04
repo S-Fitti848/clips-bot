@@ -50,6 +50,10 @@ class Layout:
     cara: Deteccion | None
     # "sigue": el recorte se mueve con la cara. ((t, x, y) de la esquina del recorte, en segundos).
     camino: tuple = ()
+    # fit_blur con zooms en los picos de volumen (zooms.py): ((inicio, fin), ...), cuánto y hacia dónde.
+    zooms: tuple = ()
+    zoom: float = 1.0
+    zoom_centro: tuple = (0.5, 0.5)
 
     def ffmpeg_crop_movil(self) -> str:
         """crop con x e y que cambian con el tiempo: interpolación lineal entre los puntos."""
