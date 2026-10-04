@@ -204,6 +204,24 @@ def aviso_futbol(textos: list[str], filtros: Filtros) -> str:
             "mirá que no se vea el partido")
 
 
+AVISO_PROGRAMA = "⚠️ {}"
+
+
+def aviso_programa(clip: Clip, palabras: tuple[str, ...]) -> str:
+    """Stream de un programa en experimento (el 412): no se descarta, se avisa."""
+    for p in palabras:
+        if es_programa_de_terceros(clip.stream_title, (p,)):
+            return AVISO_PROGRAMA.format(p) + " (stream del programa: revisalo con más cuidado)"
+    return ""
+
+
+def con_aviso_programa(clip: Clip, palabras: tuple[str, ...]) -> Clip:
+    a = aviso_programa(clip, palabras)
+    if not a:
+        return clip
+    return replace(clip, aviso=" · ".join(x for x in (a, clip.aviso) if x))
+
+
 def tiene_palabras(clip: Clip, palabras: tuple[str, ...]) -> bool:
     """Alguna de las palabras aparece en el título del clip o en el del stream (palabra completa,
     sin tildes ni mayúsculas). Sin palabras pedidas, pasan todos."""
@@ -467,11 +485,18 @@ def _vistas_relativas(todos: list[Clip], motivos: dict[str, str | None], filtros
     return aplicar_vistas_relativas(todos, motivos, filtros.vistas_top)
 
 
-def _con_aviso_futbol(clips: list[Clip], filtros: Filtros, mira_deportes) -> list[Clip]:
+def _con_aviso_futbol(clips: list[Clip], filtros: Filtros, mira_deportes, aviso_de=lambda login: ()) -> list[Clip]:
     """A los de los streamers con detectar_marcador que hablan de fútbol, el aviso (no se descartan:
-    lo que descarta es ver el partido, y eso lo mira `procesar` en la pantalla)."""
-    return [replace(c, aviso=aviso_futbol([c.title, c.stream_title], filtros))
-            if mira_deportes(c.broadcaster_login) else c for c in clips]
+    lo que descarta es ver el partido, y eso lo mira `procesar` en la pantalla). Y a los de un
+    programa en experimento (el 412), el suyo (`aviso_de(login)`: Streamer.programa_aviso)."""
+    out = [replace(c, aviso=aviso_futbol([c.title, c.stream_title], filtros))
+           if mira_deportes(c.broadcaster_login) else c for c in clips]
+    return [con_aviso_programa(c, aviso_de(c.broadcaster_login)) for c in out]
+
+
+def _aviso_de(por_login: dict[str, Streamer], login: str) -> tuple[str, ...]:
+    s = por_login.get(login)
+    return s.programa_aviso if s else ()
 
 
 def con_picos_de_chat(clips: list[Clip], client, chat, cuantos: int) -> list[Clip]:
@@ -515,6 +540,7 @@ def buscar_kick(
     todos: list[Clip] = []
     deportes_de: dict[str, bool] = {}  # las palabras de fútbol son por streamer
     programa_de: dict[str, tuple[str, ...]] = {}  # y las marcas de programa también
+    aviso_de: dict[str, tuple[str, ...]] = {}     # y las que están en experimento (el 412)
     for s in habilitados(streamers, "kick", "reciente", res, incluir_sin_permiso, excluidos):
         try:
             crudos = client.get_clips(s.login, cfg.max_clips, cfg.orden, cfg.ventana)
@@ -525,6 +551,7 @@ def buscar_kick(
         res.total_por_streamer[f"{s.login} (kick)"] = len(crudos)
         deportes_de[s.login] = s.detectar_marcador
         programa_de[s.login] = s.palabras_programa
+        aviso_de[s.login] = s.programa_aviso
         # El clip de Kick no trae el título del stream, solo livestream_id: se resuelve con
         # /videos del canal (una llamada por canal). Sin esto, los filtros que miran el título del
         # stream no existen en Kick.
@@ -552,7 +579,8 @@ def buscar_kick(
                 res.costream.append(c)
 
     pasan = _con_mediana(_elegir_por_momento(todos, motivos, filtros, res, res.descartes), umbrales)
-    pasan = _con_aviso_futbol(pasan, filtros, lambda login: deportes_de.get(login, False))
+    pasan = _con_aviso_futbol(pasan, filtros, lambda login: deportes_de.get(login, False),
+                              lambda login: aviso_de.get(login, ()))
     pasan.sort(key=lambda c: score_reciente(c.view_count, c.clips_mismo_momento, seleccion.peso_momento),
                reverse=True)
     nuevos = pasan[: filtros.n_candidatos]
@@ -608,7 +636,8 @@ def buscar_candidatos(
                 res.costream.append(c)
 
     pasan = _con_mediana(_elegir_por_momento(todos, motivos, filtros, res, res.descartes), umbrales)
-    pasan = _con_aviso_futbol(pasan, filtros, lambda login: _mira_deportes(por_login, login))
+    pasan = _con_aviso_futbol(pasan, filtros, lambda login: _mira_deportes(por_login, login),
+                              lambda login: _aviso_de(por_login, login))
 
     def sc(c: Clip) -> float:
         return (score_reciente(c.view_count, c.clips_mismo_momento, seleccion.peso_momento)
@@ -696,7 +725,8 @@ def buscar_catalogo(
                         res.costream.append(c)
                 else:
                     propios += _con_aviso_futbol([replace(c, mediana_vistas=mediana)], filtros,
-                                                 lambda login: _mira_deportes(por_login, login))
+                                                 lambda login: _mira_deportes(por_login, login),
+                                                 lambda login: _aviso_de(por_login, login))
             cursor = siguiente
             if not cursor or len(propios) >= cat.n_candidatos:
                 break

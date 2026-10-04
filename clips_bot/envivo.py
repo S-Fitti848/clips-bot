@@ -26,7 +26,7 @@ from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta, timezone
 
 from . import db
-from .candidates import Clip, creadores_de, motivo_descarte
+from .candidates import Clip, con_aviso_programa, creadores_de, motivo_descarte
 from .config import EnVivo, Filtros, Streamer
 from .kick import KickClient, KickError, a_clip
 from .twitch import TwitchClient, TwitchError
@@ -159,7 +159,7 @@ def elegir(m: Momento, filtros: Filtros, vistos: set[str],
         motivo = motivo_descarte(c, sin_espera, vistos,
                                  palabras_programa=streamer.palabras_programa if streamer else ())
         if motivo is None:
-            return c, descartes
+            return (con_aviso_programa(c, streamer.programa_aviso) if streamer else c), descartes
         descartes[motivo] += 1
     return None, descartes
 

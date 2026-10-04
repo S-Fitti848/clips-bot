@@ -41,6 +41,9 @@ class Streamer:
     # afuera aunque el clip no diga nada. Es por streamer porque una marca ajena en otro canal no
     # significa lo mismo. Motivo de descarte: programa_terceros.
     palabras_programa: tuple[str, ...] = ()
+    # Marcas de programa en EXPERIMENTO (2026-10-04, el 412): no descartan, el mensaje lleva "⚠️ 412".
+    # Las pone registro.combinar: sale de palabras_programa si el programa no está re-excluido.
+    programa_aviso: tuple[str, ...] = ()
     # split | fullcam | fit_blur. Vacío = lo decide la detección de caras. Es para los canales cuyo
     # formato la heurística no puede ver (ej. coker: podcast multicámara, donde "el juego" no existe).
     layout_forzado: str = ""

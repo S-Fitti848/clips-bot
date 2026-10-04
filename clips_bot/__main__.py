@@ -4068,7 +4068,7 @@ def _candidatos_viejos(st, settings: Settings, vistos: set, descartes) -> list:
     3 años), los más vistos primero, con los filtros de siempre menos la antigüedad y las vistas."""
     from dataclasses import replace as _replace
 
-    from .candidates import Clip, motivo_descarte, umbrales_vistas
+    from .candidates import Clip, con_aviso_programa, motivo_descarte, umbrales_vistas
     from .kick import a_clip
 
     ahora = datetime.now(timezone.utc)
@@ -4093,7 +4093,8 @@ def _candidatos_viejos(st, settings: Settings, vistos: set, descartes) -> list:
         if m:
             descartes[m] += 1
         else:
-            out.append(_replace(c, mediana_vistas=mediana, grupo=st.grupo_de("catalogo")))
+            out.append(_replace(con_aviso_programa(c, st.programa_aviso), mediana_vistas=mediana,
+                                grupo=st.grupo_de("catalogo")))
     return sorted(out, key=lambda c: -c.view_count)[:20]
 
 
@@ -4396,10 +4397,20 @@ def _reclamo(conn, args: list[str]) -> str:
     streamer, _url = fila
     nuevo = db.excluir_streamer(conn, streamer, f"reclamo de copyright ({' '.join(args[1:]) or 'manual'})", clip_id)
     db.registrar_clip(conn, clip_id, streamer, "descartado", "reclamo")
+    # Un clip de un programa en experimento (el 412): vuelve a quedar afuera TODO el programa.
+    from . import registro
+    from .candidates import AVISO_PROGRAMA
+
+    programa = ""
+    for p in registro.PROGRAMAS_EXPERIMENTO:
+        if AVISO_PROGRAMA.format(p) in (meta.get("aviso") or ""):
+            programa = p if registro.excluir_programa(conn, p) else ""
+    extra = (f"\n<b>El {html.escape(programa)} vuelve a quedar EXCLUIDO</b>: sus streams se descartan otra vez."
+             if programa else "")
     if nuevo:
-        return (f"Anotado. <b>{streamer} queda EXCLUIDO</b>: no se vuelve a usar en las corridas.\n"
+        return (f"Anotado. <b>{streamer} queda EXCLUIDO</b>: no se vuelve a usar en las corridas.{extra}\n"
                 f"Acordate de sacar el video de YouTube si el reclamo bloquea el contenido.")
-    return f"{streamer} ya estaba excluido. Anoté el reclamo sobre <code>{clip_id}</code>."
+    return f"{streamer} ya estaba excluido. Anoté el reclamo sobre <code>{clip_id}</code>.{extra}"
 
 
 def cmd_atender_telegram(args: argparse.Namespace) -> int:

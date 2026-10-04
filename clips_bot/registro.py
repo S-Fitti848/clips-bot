@@ -53,6 +53,50 @@ def anotados(conn: sqlite3.Connection) -> dict[str, dict]:
             for f in filas}
 
 
+# Programas de terceros habilitados COMO EXPERIMENTO (Santi, 2026-10-04): sus streams ya no se
+# descartan por `programa_terceros`; el clip sale con "⚠️ 412" para mirarlo con más cuidado. Un
+# /reclamo sobre un clip de uno de estos programas lo vuelve a excluir entero (DB, PROGRAMAS_EXCLUIDOS).
+PROGRAMAS_EXPERIMENTO = ("412",)
+PROGRAMAS_EXCLUIDOS = "programas_excluidos"
+
+
+def _norm(t: str) -> str:
+    return " ".join(t.lower().split())
+
+
+def programas_excluidos(conn: sqlite3.Connection) -> set[str]:
+    import json
+
+    from . import db
+
+    return {_norm(p) for p in json.loads(db.get_valor(conn, PROGRAMAS_EXCLUIDOS) or "[]")}
+
+
+def excluir_programa(conn: sqlite3.Connection, programa: str) -> bool:
+    """Vuelve a descartar todo ese programa. True si no estaba excluido."""
+    import json
+
+    from . import db
+
+    ya = programas_excluidos(conn)
+    if _norm(programa) in ya:
+        return False
+    db.set_valor(conn, PROGRAMAS_EXCLUIDOS, json.dumps(sorted(ya | {_norm(programa)})))
+    return True
+
+
+def aplicar_experimento(s: Streamer, excluidos: set[str]) -> Streamer:
+    """Las marcas en experimento (y no re-excluidas) pasan de descartar a avisar."""
+    from dataclasses import replace
+
+    exp = {_norm(p) for p in PROGRAMAS_EXPERIMENTO} - excluidos
+    aviso = tuple(p for p in s.palabras_programa if _norm(p) in exp)
+    if not aviso:
+        return s
+    return replace(s, palabras_programa=tuple(p for p in s.palabras_programa if p not in aviso),
+                   programa_aviso=aviso)
+
+
 def combinar(del_yaml: list[Streamer], conn: sqlite3.Connection) -> list[Streamer]:
     """La lista efectiva: el YAML más las altas de la DB, menos las bajas.
 
@@ -75,6 +119,8 @@ def combinar(del_yaml: list[Streamer], conn: sqlite3.Connection) -> list[Streame
     # encontrar a Davo: 0 Shorts "lo nombraban"). "-" borra solo los de Telegram.
     out = [replace(s, apodos=tuple(dict.fromkeys(s.apodos + apodos[s.login]))) if s.login in apodos else s
            for s in out]
+    excluidos = programas_excluidos(conn)
+    out = [aplicar_experimento(s, excluidos) for s in out]
     por_login = {s.login for s in out}
     for login, d in sorted(extra.items()):
         if d["accion"] != ALTA or login in por_login:
