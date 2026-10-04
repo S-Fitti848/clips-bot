@@ -334,6 +334,19 @@ def guardar(conn: sqlite3.Connection, short: ShortAjeno, streamer: str,
     conn.commit()
 
 
+DIAS_DATOS_AJENOS = 30   # datos públicos de Shorts de OTROS canales (título, canal, vistas): se borran a los 30 días
+
+
+def purgar_viejos(conn: sqlite3.Connection, ahora: datetime | None = None, dias: int = DIAS_DATOS_AJENOS) -> int:
+    """Regla de los 30 días de las Políticas para Desarrolladores de YouTube: lo que se guardó de
+    Shorts de otros canales se borra a los `dias`. Solo se usa unas dos semanas (como_candidatos mira
+    14 días y la búsqueda, los Shorts de la última semana), así que no se pierde nada útil."""
+    limite = ((ahora or datetime.now(timezone.utc)) - timedelta(days=dias)).isoformat()
+    n = conn.execute("DELETE FROM pegados WHERE fecha < ?", (limite,)).rowcount
+    conn.commit()
+    return n
+
+
 def ya_visto(conn: sqlite3.Connection, short_id: str) -> bool:
     return conn.execute("SELECT 1 FROM pegados WHERE short_id = ?", (short_id,)).fetchone() is not None
 

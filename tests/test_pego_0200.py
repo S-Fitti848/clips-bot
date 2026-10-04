@@ -167,3 +167,14 @@ def test_el_vod_va_dentro_de_la_vuelta_de_las_02(tmp_path, monkeypatch):
     orden.clear()
     m._pego_tick(conn, replace(s, pego=replace(s.pego, vod=False)), ahora=datetime(2026, 10, 6, 2, 1, tzinfo=m.AR))
     assert orden == ["pego"]
+
+
+def test_los_datos_de_shorts_ajenos_se_borran_a_los_30_dias(tmp_path):
+    conn = db.connect(tmp_path / "t.db")
+    for sid, dias in (("viejo", 31), ("nuevo", 5)):
+        pego.guardar(conn, pego.ShortAjeno(sid, "DAVO", "Otro", 9000, 30), "davooxeneize", None, 10)
+        conn.execute("UPDATE pegados SET fecha = ? WHERE short_id = ?",
+                     ((datetime.now(timezone.utc) - timedelta(days=dias)).isoformat(), sid))
+    conn.commit()
+    assert pego.purgar_viejos(conn) == 1
+    assert [r[0] for r in conn.execute("SELECT short_id FROM pegados")] == ["nuevo"]

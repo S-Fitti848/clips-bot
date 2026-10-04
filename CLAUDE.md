@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-10-04 | **Versión:** v0.54.1 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 + escucha de Telegram 24/7)
+**Snapshot:** 2026-10-04 | **Versión:** v0.55.0 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 + escucha de Telegram 24/7)
 
 > **SI ESTÁS EMPEZANDO UNA SESIÓN NUEVA, LEÉ §10.** Ahí está qué está hecho, qué quedó a medias,
 > qué falta, y las trampas que ya nos mordieron.
@@ -773,6 +773,19 @@ Problemas abiertos:
 
 ## 9. CHANGELOG
 
+- v0.55.0 (2026-10-04) — **Regla de los 30 días de YouTube, actualizando y sin borrar** (Santi: "no
+  quiero que se borren las métricas"). `metricas.actualizar` (05:00): pide la lista COMPLETA de
+  videos del canal; borra los datos de un video SOLO si ya no está en el canal; vuelve a pedir las
+  estadísticas de los Shorts nuevos, de los de los últimos 60 días (todos los días) y de TODOS los que
+  no se actualizan hace `REFRESCO_DIAS` (25), con las vistas de toda la vida del video (antes: solo los
+  últimos 60 días y con las vistas de esa ventana; los viejos no se actualizaban nunca). Si se revoca
+  el acceso (Google contesta `invalid_grant`), `borrar_por_revocacion` borra las métricas y los ids de
+  subida de ese canal. Lo que el bot concluye (mediana, n y log2 por streamer, duración, layout y
+  cámara) se guarda SIEMPRE en `bot_estado.metricas_conclusiones` y los pesos salen de ahí si no hay
+  métricas. Datos de Shorts de OTROS canales (los de "pegó": título, canal y vistas públicos) se
+  borran a los 30 días (`pego.purgar_viejos`, en la vuelta de las 02:00). Comando nuevo
+  **`/metricas [n]`**: vistas, % visto, % que llega al final y duración vista de los últimos Shorts
+  medidos (de la DB, sin gastar cuota). 658 tests OK.
 - v0.54.1 (2026-10-04) — **Búsqueda en el VOD prendida** (Santi): `pego.vod: true`, `vod_por_dia: 1`
   — solo el Short sin original que más pegó en las últimas 24 h, dentro de la vuelta de las 02:00,
   después de la búsqueda normal y con su propio tope (`vod_tope_min` 25). Solo Kick (el VOD de Twitch

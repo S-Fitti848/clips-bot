@@ -164,6 +164,41 @@ def _permitidos(conn=None) -> set[str]:
     return (base | set(a["sumados"])) - (set(a["sacados"]) - {DUENO})
 
 
+def _texto_metricas(conn, n: int = 10) -> str:
+    """/metricas: vistas y retención de los últimos `n` Shorts del canal que el bot tiene medidos
+    (de la tabla `metricas`, que se actualiza en la corrida de las 05:00: no gasta cuota)."""
+    from .process import READY_DIR
+
+    filas = conn.execute(
+        """SELECT clip_id, video_id, publicado, actualizado, vistas, duracion_media_s, pct_visto_medio,
+                  pct_entero, streamer FROM metricas ORDER BY publicado DESC LIMIT ?""",
+        (max(1, min(n, 30)),)).fetchall()
+    if not filas:
+        return ("Todavía no hay métricas: se leen en la corrida de las 05:00, de los Shorts de Rots "
+                "que coinciden por título con un clip que te mandé.")
+    lineas = ["📈 <b>Tus últimos Shorts</b> (vistas · % visto en promedio · % que llega al final · "
+              "duración vista)"]
+    for cid, vid, publicado, actualizado, vistas, dur, pct, entero, streamer in filas:
+        titulo = cid
+        try:
+            titulo = json.loads((READY_DIR / f"{cid}.json").read_text(encoding="utf-8"))["textos"]["titulo"]
+        except (OSError, ValueError, KeyError, TypeError):
+            pass
+        dia = (publicado or "")[:10]
+        partes = [f"{vistas:,}".replace(",", ".") + " vistas"]
+        if pct is not None:
+            partes.append(f"{pct:.0f} % visto")
+        if entero is not None:
+            partes.append(f"{entero:.0f} % al final")
+        if dur is not None:
+            partes.append(f"{dur:.0f} s")
+        lineas.append(f"• <a href=\"https://youtube.com/shorts/{vid}\">{html.escape(titulo[:60])}</a> "
+                      f"({html.escape(streamer or '?')}, {dia}): " + " · ".join(partes))
+    ultima = max((f[3] or "") for f in filas)[:16].replace("T", " ")
+    lineas.append(f"\nActualizado: {ultima} UTC. /metricas 20 para ver más.")
+    return "\n".join(lineas)[:4000]
+
+
 def _texto_uso_gemini(conn, dias: int = 3) -> str:
     """/gemini: llamadas y tokens por función y por día (tabla gemini_uso)."""
     filas = db.uso_gemini(conn, dias)
@@ -728,6 +763,11 @@ def _pego_tick(conn, settings: Settings, ahora=None) -> None:
         return
     db.set_valor(conn, PEGO_DIA, hoy)     # antes de correr: una falla no lo deja en loop
     try:
+        from . import pego as _pego
+
+        borrados = _pego.purgar_viejos(conn)
+        if borrados:
+            log.info("pegó: borrados %d Shorts de otros canales con más de 30 días", borrados)
         streamers = registro.filtrar(_streamers(conn), conn, "diarios")
         log.info("pegó: vuelta de las %s (tope %d min)", cfg.hora, cfg.tope_min)
         _pegados_para(settings, streamers, buscar_ahora=True, avisar=log.info,
@@ -840,9 +880,21 @@ def actualizar_metricas() -> int:
     print("\n=== Métricas del canal")
     conn = db.connect(DB_PATH)
     try:
-        n = metricas.actualizar(conn, youtube.Cliente("rots"), READY_DIR)
-        print(f"  {n} clips con métricas (sus Shorts, emparejados por título)")
-        return n
+        r = metricas.actualizar(conn, youtube.Cliente("rots"), READY_DIR)
+        total = conn.execute("SELECT COUNT(*) FROM metricas").fetchone()[0]
+        print(f"  {r['nuevos']} nuevos, {r['actualizados']} actualizados, {r['borrados']} borrados "
+              f"(ya no están en el canal); {total} clips con métricas")
+        return total
+    except youtube.YouTubeError as e:
+        if "invalid_grant" in str(e):
+            # Revocaron el acceso: se borran los datos de la API; las conclusiones quedan.
+            n = metricas.borrar_por_revocacion(conn, "rots")
+            log.warning("acceso a YouTube revocado: borrados %d registros de la API", n)
+            print(f"  el acceso a YouTube está revocado: borrados {n} registros (las conclusiones quedan)")
+            return 0
+        log.exception("no pude leer las métricas")
+        print(f"  no pude leer las métricas: {e}")
+        return 0
     except Exception as e:
         log.exception("no pude leer las métricas")
         print(f"  no pude leer las métricas: {e}")
@@ -2604,6 +2656,9 @@ def _despachar(conn, tg: TelegramClient, c: dict, settings: Settings, cola: list
                             c["args"], c["user_id"])
     elif c["comando"] == "/quitar":
         respuesta = _seguro(tg, c["chat_id"], c["comando"], _quitar, conn, c["args"], c["user_id"])
+    elif c["comando"] == "/metricas":
+        respuesta = _seguro(tg, c["chat_id"], c["comando"], _texto_metricas, conn,
+                            int(c["args"][0]) if c["args"] and c["args"][0].isdigit() else 10)
     elif c["comando"] == "/gemini":
         respuesta = _seguro(tg, c["chat_id"], c["comando"], _texto_uso_gemini, conn,
                             int(c["args"][0]) if c["args"] and c["args"][0].isdigit() else 3)
@@ -3736,6 +3791,10 @@ SECCIONES = [
          "cancelar cada uno. Se programa con «📤 Subir» debajo de cada video (el 👍 solo vota). "
          "Hoy la subida a YouTube está apagada hasta la auditoría.",
          "/subidas"),
+        ("/metricas [cantidad]",
+         "vistas y retención (% visto, % que llega al final, duración vista) de tus últimos Shorts "
+         "de Rots (default 10). Se actualizan solas a las 05:00.",
+         "/metricas 20"),
         ("/gemini [días]",
          "cuántas llamadas a Gemini hizo cada función por día y cuántos tokens gastó (default 3 días).",
          "/gemini 7"),
