@@ -87,14 +87,13 @@ def actualizar(conn: sqlite3.Connection, cliente, ready: Path, dias: int = RECIE
     Devuelve {"nuevos", "actualizados", "borrados"}."""
     ahora = ahora or datetime.now(timezone.utc)
     desde = ahora - timedelta(days=dias)
+    # Primero TODO lo que viene de YouTube (sin escribir en la DB: pedir puede llevar minutos y una
+    # escritura abierta bloquea a la escucha); al final se escribe todo junto.
     todos = cliente.mis_videos(DESDE_SIEMPRE, maximo=10000)
     en_canal = {v["id"]: v for v in todos}
-    borrados = 0
-    if en_canal:     # con la lista vacía (un error raro de la API) no se borra nada
-        for clip_id, video_id in conn.execute("SELECT clip_id, video_id FROM metricas").fetchall():
-            if video_id not in en_canal:
-                conn.execute("DELETE FROM metricas WHERE clip_id = ?", (clip_id,))
-                borrados += 1
+    guardadas = conn.execute("SELECT clip_id, video_id, publicado, actualizado FROM metricas").fetchall()
+    # con la lista vacía (un error raro de la API) no se borra nada
+    a_borrar = [cid for cid, vid, _, _ in guardadas if en_canal and vid not in en_canal]
     clips = entregados(ready, desde)
     ya = {r[0] for r in conn.execute("SELECT clip_id FROM metricas")}
     recientes = [v for v in todos if datetime.fromisoformat(v["publicado"]) >= desde]
@@ -102,10 +101,12 @@ def actualizar(conn: sqlite3.Connection, cliente, ready: Path, dias: int = RECIE
     por_id = {m["clip_id"]: m for m in clips}
     a_pedir: dict[str, tuple[str, str]] = {cid: (v["id"], v["publicado"]) for cid, v in pares.items()}
     vencen = (ahora - timedelta(days=REFRESCO_DIAS)).isoformat()
-    for clip_id, video_id, publicado, actualizado in conn.execute(
-            "SELECT clip_id, video_id, publicado, actualizado FROM metricas").fetchall():
+    for clip_id, video_id, publicado, actualizado in guardadas:
+        if clip_id in a_borrar:
+            continue
         if (publicado or "") >= desde.isoformat() or (actualizado or "") <= vencen:
             a_pedir.setdefault(clip_id, (video_id, publicado))
+    filas = []
     if a_pedir:
         inicio = min((datetime.fromisoformat(p) for _, p in a_pedir.values() if p), default=DESDE_SIEMPRE)
         datos = cliente.metricas([v for v, _ in a_pedir.values()], inicio, ahora)
@@ -117,20 +118,23 @@ def actualizar(conn: sqlite3.Connection, cliente, ready: Path, dias: int = RECIE
             except Exception as e:     # la curva de retención es un extra: sin ella se guarda el resto
                 log.warning("retención de %s: %s", video_id, e)
                 entero = None
-            meta = por_id.get(clip_id, {})
-            conn.execute(
-                """INSERT INTO metricas (clip_id, video_id, publicado, actualizado, vistas,
-                       duracion_media_s, pct_visto_medio, pct_entero, streamer, duracion_s, layout, camara)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                   ON CONFLICT(clip_id) DO UPDATE SET actualizado = excluded.actualizado,
-                       vistas = excluded.vistas, duracion_media_s = excluded.duracion_media_s,
-                       pct_visto_medio = excluded.pct_visto_medio, pct_entero = excluded.pct_entero""",
-                (clip_id, video_id, publicado, ahora.isoformat(), d.get("vistas", 0),
-                 d.get("duracion_media_s"), d.get("pct_visto_medio"), entero, meta.get("streamer"),
-                 meta.get("duracion_s"), meta.get("layout"), 1 if tiene_camara(meta) else 0))
+            filas.append((clip_id, video_id, publicado, d, entero, por_id.get(clip_id, {})))
+    for clip_id in a_borrar:
+        conn.execute("DELETE FROM metricas WHERE clip_id = ?", (clip_id,))
+    for clip_id, video_id, publicado, d, entero, meta in filas:
+        conn.execute(
+            """INSERT INTO metricas (clip_id, video_id, publicado, actualizado, vistas,
+                   duracion_media_s, pct_visto_medio, pct_entero, streamer, duracion_s, layout, camara)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+               ON CONFLICT(clip_id) DO UPDATE SET actualizado = excluded.actualizado,
+                   vistas = excluded.vistas, duracion_media_s = excluded.duracion_media_s,
+                   pct_visto_medio = excluded.pct_visto_medio, pct_entero = excluded.pct_entero""",
+            (clip_id, video_id, publicado, ahora.isoformat(), d.get("vistas", 0),
+             d.get("duracion_media_s"), d.get("pct_visto_medio"), entero, meta.get("streamer"),
+             meta.get("duracion_s"), meta.get("layout"), 1 if tiene_camara(meta) else 0))
     conn.commit()
     guardar_conclusiones(conn, ahora)
-    return {"nuevos": len(pares), "actualizados": len(a_pedir) - len(pares), "borrados": borrados}
+    return {"nuevos": len(pares), "actualizados": len(a_pedir) - len(pares), "borrados": len(a_borrar)}
 
 
 def borrar_por_revocacion(conn: sqlite3.Connection, canal: str) -> int:

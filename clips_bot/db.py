@@ -36,7 +36,9 @@ CREATE TABLE IF NOT EXISTS posts (
 
 def connect(path: Path) -> sqlite3.Connection:
     path.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(path)
+    # 30 s de espera si otro proceso está escribiendo (la escucha escribe seguido): con los 5 s de
+    # fábrica, la actualización de métricas del 2026-10-04 cortó con "database is locked".
+    conn = sqlite3.connect(path, timeout=30)
     conn.execute("PRAGMA foreign_keys = ON")
     conn.executescript(SCHEMA)
     conn.executescript(SCHEMA_CURSOR)
