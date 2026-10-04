@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-10-04 | **Versión:** v0.55.1 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 + escucha de Telegram 24/7)
+**Snapshot:** 2026-10-04 | **Versión:** v0.56.0 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 + escucha de Telegram 24/7)
 
 > **SI ESTÁS EMPEZANDO UNA SESIÓN NUEVA, LEÉ §10.** Ahí está qué está hecho, qué quedó a medias,
 > qué falta, y las trampas que ya nos mordieron.
@@ -773,6 +773,19 @@ Problemas abiertos:
 
 ## 9. CHANGELOG
 
+- v0.56.0 (2026-10-04) — **Feedback de las muestras, por defecto** (Santi). (1) Pequeña Historia:
+  `efemerides.videos: true` todos los días (aprobó la muestra del Apolo 11), con las mismas reglas:
+  2-3 frases con video, revisado por Gemini, nada de IA, dibujos ni recreaciones. (2) Clips de Rots:
+  formato por defecto = la muestra 3 (fit_blur: el video entero y atrás el mismo difuminado, con
+  `render.titulo_arriba: true`); el recorte que sigue la cara (muestra 2, `camara.seguir_cara`) queda
+  apagado. De la muestra 2 solo unos **zooms** (`zooms.py`, `render.zoom_picos`, APAGADO hasta que
+  Santi apruebe 2 clips de prueba): en los picos de volumen (RMS ≥ 1,6× la mediana y el p90; un
+  clip parejo no lleva), 1 cada 20 s y máx. 3, separados 8 s; subida 0,3 s, quieto 1 s, bajada
+  0,6 s (coseno); hasta ×1,12 hacia las caras, bajado hasta que la zona de TODAS las caras (con el
+  margen de `parallax.zona_caras`) entre; si no entra ni con ×1,06, sin zooms. Con zoompan sobre el
+  frente agrandado al doble (a tamaño normal tiembla). Decidido por Claude: el split (facecam +
+  juego) sigue para los juegos; los zooms solo en fit_blur. Probado en la compu: render 23 s para
+  un clip de 24 s, la cara entera en el pico. 669 tests OK.
 - v0.55.1 (2026-10-04) — Métricas: "database is locked" en la primera actualización real (la
   escritura quedaba abierta mientras se pedía a YouTube). Ahora se pide todo primero y se escribe
   junto al final; `db.connect` espera 30 s. En la Pi: 24 actualizados, 0 borrados, conclusiones
