@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-10-04 | **Versión:** v0.55.0 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 + escucha de Telegram 24/7)
+**Snapshot:** 2026-10-04 | **Versión:** v0.55.1 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 + escucha de Telegram 24/7)
 
 > **SI ESTÁS EMPEZANDO UNA SESIÓN NUEVA, LEÉ §10.** Ahí está qué está hecho, qué quedó a medias,
 > qué falta, y las trampas que ya nos mordieron.
@@ -773,6 +773,12 @@ Problemas abiertos:
 
 ## 9. CHANGELOG
 
+- v0.55.1 (2026-10-04) — Métricas: "database is locked" en la primera actualización real (la
+  escritura quedaba abierta mientras se pedía a YouTube). Ahora se pide todo primero y se escribe
+  junto al final; `db.connect` espera 30 s. En la Pi: 24 actualizados, 0 borrados, conclusiones
+  guardadas. Política de privacidad reescrita: actualización antes de 30 días, borrado solo si el
+  video no existe o se revoca, conclusiones guardadas siempre, y los datos públicos de Shorts de
+  otros canales (pegó) borrados a los 30 días.
 - v0.55.0 (2026-10-04) — **Regla de los 30 días de YouTube, actualizando y sin borrar** (Santi: "no
   quiero que se borren las métricas"). `metricas.actualizar` (05:00): pide la lista COMPLETA de
   videos del canal; borra los datos de un video SOLO si ya no está en el canal; vuelve a pedir las
