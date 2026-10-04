@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-10-04 | **Versión:** v0.57.0 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 + escucha de Telegram 24/7)
+**Snapshot:** 2026-10-04 | **Versión:** v0.58.0 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 + escucha de Telegram 24/7)
 
 > **SI ESTÁS EMPEZANDO UNA SESIÓN NUEVA, LEÉ §10.** Ahí está qué está hecho, qué quedó a medias,
 > qué falta, y las trampas que ya nos mordieron.
@@ -773,6 +773,32 @@ Problemas abiertos:
 
 ## 9. CHANGELOG
 
+- v0.58.0 (2026-10-04) — **Picos, 412, el stream y el gameplay** (pedidos de Santi).
+  (1) Picos de volumen como DATO en la línea 📊 ("2 picos", `Resultado.picos_volumen`, de
+  `zooms.picos` sobre todos los clips con audio): no tocan la selección (un test lo exige).
+  (2) **El 412 como experimento**: `registro.PROGRAMAS_EXPERIMENTO = ("412",)`; al combinar, esa
+  marca sale de `palabras_programa` y pasa a `Streamer.programa_aviso` → el clip ya no se descarta
+  por `programa_terceros`, lleva "⚠️ 412 (stream del programa: revisalo con más cuidado)" en el
+  mensaje (diario, catálogo, /buscar viejos, en vivo). "ANALIZAMOS" sigue descartando. El detector de
+  partido en pantalla no cambia. Un /reclamo sobre un clip con ese aviso vuelve a excluir TODO el
+  412 (`bot_estado.programas_excluidos`), además de excluir al streamer como siempre.
+  (3) **"Pegó" busca en el stream**: los `vod_por_dia` (2) Shorts sin original que más pegaron, en
+  los VODs de Kick (como antes) y ahora también de Twitch (Helix /videos type=archive; audio con la
+  variante "audio_only" de yt-dlp) de los 3 días antes de publicado. Si aparece, se corta el tramo
+  (lo que dura el Short ± 1,5 s, tope 59 s; la variante más alta hasta 1080p, `vod.cortar`) y se
+  procesa como clip NORMAL con todos los filtros (`Descarga.de_streamer`: no es un aporte), con el
+  dato de "pegó"; queda `procesado` y compite en la entrega de las 05:00. Stream del 412: con el
+  experimento se procesa con el aviso; si está re-excluido, no se procesa. En los dos casos el
+  resumen dice "⚠️ Pegó, pero es del 412" (nunca en silencio). Columnas nuevas en `pegados`:
+  `vod_programa`, `vod_clip_id`, `vod_resultado`. `vod_tope_min` 25 → 75. Probado en la Pi con VODs
+  reales: Davo (Kick, 2 VODs de 6,3 y 8,3 h) y Auron (Twitch, 4,2 h): audio y corte de 20 s en
+  1080p en 4-6 s.
+  (4) **🎮 Versión con gameplay** (`gameplay.py`, opcional, nunca por defecto): botón debajo de los
+  clips de charla (`camara.categorias_charla`) si hay videos en `gameplay/` (fuera de git; en la Pi,
+  `~/clips/gameplay/`, vacía todavía). Arma OTRA versión: el clip arriba (1080x960, recortado hacia
+  las caras; si no entran, el clip entero sobre su fondo difuminado) y un tramo al azar del gameplay
+  abajo, sin audio del juego; subtítulos y título del original. Va por el turno pesado y la cola.
+  683 tests OK.
 - v0.57.0 (2026-10-04) — **Zoom de reacción y título corto** (Santi, después de las 2 muestras).
   (1) "Punch in" PRENDIDO por defecto (`render.zoom_picos: true`): en los picos de volumen la imagen
   salta a la cara en 0,1 s a ×1,35 (`zoom_max`; o lo máximo que deje entera la zona de todas las
