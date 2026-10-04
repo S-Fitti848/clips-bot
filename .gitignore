@@ -35,3 +35,5 @@ venv/
 # Música de fondo de Pequeña Historia (docs/musica.md): NADA de musica/ va al repo. Los temas de
 # la Biblioteca de YouTube los pone Santi; el resto lo baja `python -m clips_bot musica --llenar`.
 musica/
+# videos de gameplay que graba Santi (versión 🎮, gameplay.py)
+gameplay/

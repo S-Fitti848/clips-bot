@@ -274,7 +274,7 @@ def _acceso_callback(conn, tg, cb: dict) -> None:
 # Botones que disparan algo que tarda (Gemini, descargas, render, YouTube): se contestan apenas
 # llegan. Los livianos contestan ellos mismos, con su texto ("👍 anotado", un cartel, etc.).
 _PESADOS = ("efe:ok:", "efe:voz:", "efe:v:", "efe:f:", "ser:", "gui:", "pas:", "ped:", "bu:c:",
-            "st:b:", "sub:x:")
+            "st:b:", "sub:x:", "gp:")
 
 
 def _es_pesado(data: str) -> bool:
@@ -618,7 +618,7 @@ def enviar_clip(tg: TelegramClient, chat_id, conn, clip_id: str, meta: dict, num
                                     duration=round(info.duracion), thumbnail=thumb, file_id=file_id)
             file_id = file_id or (enviado or {}).get("video", {}).get("file_id")
             teclado = teclado_voto(clip_id, pedido=pedido, ultimo=ultimo, cuantos_mas=cuantos_mas,
-                                   subida=_estado_subida(conn, clip_id, meta))
+                                   subida=_estado_subida(conn, clip_id, meta), gameplay=_con_gameplay(meta))
             teclado["inline_keyboard"] += list(extra_filas or [])
             tg.send_message(destino, cuerpo, teclado=teclado)
             llegaron += 1
@@ -2436,6 +2436,10 @@ def escuchar_telegram(settings: Settings, timeout_poll: int = 50) -> int:
                 if cb["data"].startswith("sub:"):
                     _seguro(tg, cb["chat_id"], cb["data"], _subidas_callback, conn, tg, cb, settings)
                     continue
+                if cb["data"].startswith("gp:"):
+                    _seguro(tg, cb["chat_id"], cb["data"], _gameplay_callback, conn, tg, cb, settings,
+                            cola)
+                    continue
                 if cb["data"].startswith("efe:"):
                     _seguro(tg, cb["chat_id"], cb["data"], _efe_callback, conn, tg, cb, settings,
                             cola)
@@ -2719,7 +2723,7 @@ def _atender_votos(conn, tg: TelegramClient, updates: list[dict], permitidos: se
             tg.edit_reply_markup(
                 v["chat_id"], v["message_id"],
                 teclado_voto(v["clip_id"], v["voto"], pedido=str(meta.get("pedido") or ""),
-                             subida=_estado_subida(conn, v["clip_id"], meta)))
+                             subida=_estado_subida(conn, v["clip_id"], meta), gameplay=_con_gameplay(meta)))
         except TelegramError as e:
             log.warning("No pude marcar el botón votado: %s", e)
         tg.answer_callback(v["callback_id"], "👍 anotado" if v["voto"] > 0 else "👎 anotado")
@@ -2797,6 +2801,8 @@ def _pesado(conn, tg: TelegramClient, chat_id: str, comando: str, args: list[str
         return _efemeride(conn, tg, chat_id, args, settings)
     if comando == "efe:video":      # ✅ de la efeméride
         return _efe_video(conn, tg, chat_id, args[0], settings)
+    if comando == "gp:video":       # 🎮 Versión con gameplay
+        return _gameplay_video(conn, tg, chat_id, args[0], settings)
     return _buscar(conn, tg, chat_id, args, settings, _streamers(conn), _gemini(settings))
 
 
@@ -3576,6 +3582,70 @@ def _hora_de(settings: Settings, canal: str, meta: dict) -> str:
     return (meta.get("entregado") or {}).get("horario") or settings.publicacion.horarios[0]
 
 
+def _con_gameplay(meta: dict) -> bool:
+    """¿Va el botón 🎮? Clips de charla, con el original guardado y videos en gameplay/."""
+    from . import gameplay
+
+    try:
+        return gameplay.disponible(meta, load_settings().camara.categorias_charla)
+    except Exception:    # un botón opcional nunca puede trabar la entrega
+        return False
+
+
+def _gameplay_callback(conn, tg: TelegramClient, cb: dict, settings: Settings, cola: list) -> None:
+    clip_id = cb["data"].split(":", 1)[1]
+    r = _pesado(conn, tg, cb["chat_id"], "gp:video", [clip_id], settings, cb["user_id"])
+    if r is OCUPADO:
+        cola.append({"chat_id": cb["chat_id"], "comando": "gp:video", "args": [clip_id],
+                     "user_id": cb["user_id"]})
+        tg.send_message(cb["chat_id"], f"🎮 En cola ({len(cola)}º), arranco cuando se libere.")
+    elif r:
+        tg.send_message(cb["chat_id"], r)
+
+
+def _gameplay_video(conn, tg: TelegramClient, chat_id: str, clip_id: str, settings: Settings):
+    """🎮: la otra versión del clip, con el streamer arriba y gameplay al azar abajo (sin su audio)."""
+    import secrets
+
+    from . import gameplay, layout as lay, zooms
+    from . import subtitles as sub
+    from .process import READY_DIR, WORK_DIR
+
+    meta = _meta_de(clip_id)
+    raw = Path(meta.get("raw") or "")
+    lista = gameplay.videos()
+    if not meta or not raw.exists():
+        return "Ese clip ya no tiene el video original guardado."
+    if not lista:
+        return "No hay videos en la carpeta <code>gameplay/</code> de la Pi."
+    turno = f"gameplay:{secrets.token_hex(3)}"
+    if not db.tomar_turno(conn, db.RECURSO_PESADO, turno, maximo=1, vencimiento_s=VENCIMIENTO_PESADO_S):
+        return OCUPADO
+    try:
+        tg.send_message(chat_id, "🎮 Armando la versión con gameplay. En la Pi son unos minutos.")
+        R = settings.render
+        W, H, frames, _ = lay.detectar_caras(raw, settings.camara.frames_muestra)
+        juego, desde = gameplay.elegir_tramo(lista, min(probe(raw).duracion or R.duracion_max_s, R.duracion_max_s))
+        work = WORK_DIR / clip_id
+        work.mkdir(parents=True, exist_ok=True)
+        con_subs = (work / "subs.ass").exists() and meta.get("subtitulos_quemados", True)
+        titulo = (meta.get("textos") or {}).get("titulo")
+        if R.titulo_arriba and titulo:
+            sub.escribir_titulo_ass(work / "titulo.ass", titulo, meta.get("canal") or meta["streamer"],
+                                    settings.subtitulos, R)
+        salida = READY_DIR / f"{clip_id}_gameplay.mp4"
+        gameplay.renderizar(raw, juego, desde, salida, R, zooms.zona(frames, W, H), work, con_subs,
+                            bool(R.titulo_arriba and titulo))
+        info = probe(salida)
+        m, s_ = divmod(int(desde), 60)
+        tg.send_video(chat_id, salida, f"🎮 Versión con gameplay · {meta['streamer']} · {titulo or clip_id}"
+                                       f" (gameplay: {juego.name}, desde {m}:{s_:02d}). Mismos textos que el original.",
+                      width=info.ancho, height=info.alto, duration=round(info.duracion))
+        return None
+    finally:
+        db.soltar_turno(conn, db.RECURSO_PESADO, turno, VENCIMIENTO_PESADO_S)
+
+
 def _meta_de(clip_id: str) -> dict:
     from .process import READY_DIR
 
@@ -3599,7 +3669,8 @@ def _subir_callback(conn, tg: TelegramClient, cb: dict, settings: Settings, d: d
     def redibujar() -> None:
         tg.edit_reply_markup(cb["chat_id"], cb["message_id"],
                              teclado_voto(clip_id, voto, pedido=str(meta.get("pedido") or ""),
-                                          subida=_estado_subida(conn, clip_id, meta)))
+                                          subida=_estado_subida(conn, clip_id, meta),
+                                          gameplay=_con_gameplay(meta)))
 
     if canal is None or not meta:
         return tg.answer_callback(cb["callback_id"], "Ese video ya no está.")

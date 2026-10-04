@@ -261,7 +261,7 @@ def fila_subida(clip_id: str, estado: str | None) -> list[list[dict]]:
 
 
 def teclado_voto(clip_id: str, elegido: int = 0, pedido: str = "", ultimo: bool = False,
-                 cuantos_mas: int = 0, subida: str | None = None) -> dict:
+                 cuantos_mas: int = 0, subida: str | None = None, gameplay: bool = False) -> dict:
     """Los botones debajo de un clip: 👍/👎 y, según el caso, "más" o "reemplazar".
 
     - `ultimo` + `pedido`: debajo del ÚLTIMO clip de la entrega va "➕ N más", que trae los
@@ -279,6 +279,8 @@ def teclado_voto(clip_id: str, elegido: int = 0, pedido: str = "", ultimo: bool 
         filas.append([{"text": "🔁 Reemplazar", "callback_data": f"ped:r:{pedido}:{clip_id}"}])
     if pedido and ultimo and cuantos_mas:
         filas.append([{"text": f"➕ {cuantos_mas} más", "callback_data": f"ped:m:{pedido}"}])
+    if gameplay:   # opcional, nunca por defecto: arma otra versión con gameplay abajo (gameplay.py)
+        filas.append([{"text": "🎮 Versión con gameplay", "callback_data": f"gp:{clip_id}"}])
     filas += fila_subida(clip_id, subida)
     return {"inline_keyboard": filas}
 
@@ -338,7 +340,7 @@ def videos(updates: list[dict]) -> list[dict]:
 # Todos los botones que atiende la escucha, menos los votos (esos los toma `votos`). Si un teclado
 # nuevo usa otro prefijo, va acá: hasta el 2026-09-27 la lista era ("st", "add") y los botones de
 # /ayuda, /destinos, ➕ más y ✅ del guion de /narrar se tiraban en silencio.
-PREFIJOS_BOTONES = ("st", "add", "gui", "ay", "dst", "ped", "pas", "ser", "efe", "sub", "bu", "acc")
+PREFIJOS_BOTONES = ("st", "add", "gui", "ay", "dst", "ped", "pas", "ser", "efe", "sub", "bu", "acc", "gp")
 
 
 def callbacks(updates: list[dict], prefijos: tuple[str, ...] = PREFIJOS_BOTONES) -> list[dict]:
