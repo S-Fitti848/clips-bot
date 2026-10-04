@@ -42,3 +42,29 @@ def test_reclamo_lo_vuelve_a_excluir(tmp_path):
     assert "412" in s.palabras_programa and s.programa_aviso == ()
     assert cand.motivo_descarte(_clip(), cand.Filtros(), set(),
                                 palabras_programa=s.palabras_programa) == cand.MOTIVO_PROGRAMA
+
+
+def _reclamo_con(tmp_path, monkeypatch, aviso, clip_id):
+    import json
+
+    from clips_bot import __main__ as m
+    from clips_bot import process
+
+    conn = db.connect(tmp_path / "c.db")
+    monkeypatch.setattr(process, "READY_DIR", tmp_path)
+    (tmp_path / f"{clip_id}.json").write_text(json.dumps({"clip_id": clip_id, "streamer": "davooxeneize",
+                                                          "aviso": aviso}), encoding="utf-8")
+    db.registrar_clip(conn, clip_id, "davooxeneize", "entregado", None)
+    return conn, m._reclamo(conn, [clip_id])
+
+
+def test_reclamo_del_412_excluye_solo_el_412(tmp_path, monkeypatch):
+    conn, texto = _reclamo_con(tmp_path, monkeypatch, "⚠️ 412 (stream del programa: revisalo con más cuidado)", "c412")
+    assert "412" in registro.programas_excluidos(conn)
+    assert "davooxeneize" not in db.excluidos(conn)
+    assert "sigue en las corridas" in texto and "\n" in texto
+
+
+def test_reclamo_comun_sigue_excluyendo_al_streamer(tmp_path, monkeypatch):
+    conn, texto = _reclamo_con(tmp_path, monkeypatch, "", "c1")
+    assert "davooxeneize" in db.excluidos(conn) and registro.programas_excluidos(conn) == set()

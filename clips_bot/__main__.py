@@ -4478,22 +4478,26 @@ def _reclamo(conn, args: list[str]) -> str:
     if not fila:
         return f"No tengo el clip <code>{clip_id}</code> en la base. ¿Copiaste bien el id?"
     streamer, _url = fila
-    nuevo = db.excluir_streamer(conn, streamer, f"reclamo de copyright ({' '.join(args[1:]) or 'manual'})", clip_id)
     db.registrar_clip(conn, clip_id, streamer, "descartado", "reclamo")
-    # Un clip de un programa en experimento (el 412): vuelve a quedar afuera TODO el programa.
+    # Un clip de un programa en experimento (el 412): se excluye SOLO el programa, no al streamer
+    # (Santi, 2026-10-04: un reclamo del 412 no puede sacar a Davo ni a La Cobra).
     from . import registro
     from .candidates import AVISO_PROGRAMA
 
-    programa = ""
-    for p in registro.PROGRAMAS_EXPERIMENTO:
-        if AVISO_PROGRAMA.format(p) in (meta.get("aviso") or ""):
-            programa = p if registro.excluir_programa(conn, p) else ""
-    extra = (f"\n<b>El {html.escape(programa)} vuelve a quedar EXCLUIDO</b>: sus streams se descartan otra vez."
-             if programa else "")
+    programa = next((p for p in registro.PROGRAMAS_EXPERIMENTO
+                     if AVISO_PROGRAMA.format(p) in (meta.get("aviso") or "")), "")
+    if programa:
+        nuevo = registro.excluir_programa(conn, programa)
+        p = html.escape(programa)
+        return ((f"Anotado. <b>El {p} vuelve a quedar EXCLUIDO</b>: sus streams se descartan otra vez. "
+                 if nuevo else f"El {p} ya estaba excluido. Anoté el reclamo. ")
+                + f"{html.escape(streamer)} sigue en las corridas.\n"
+                  "Acordate de sacar el video de YouTube si el reclamo bloquea el contenido.")
+    nuevo = db.excluir_streamer(conn, streamer, f"reclamo de copyright ({' '.join(args[1:]) or 'manual'})", clip_id)
     if nuevo:
-        return (f"Anotado. <b>{streamer} queda EXCLUIDO</b>: no se vuelve a usar en las corridas.{extra}\n"
+        return (f"Anotado. <b>{streamer} queda EXCLUIDO</b>: no se vuelve a usar en las corridas.\n"
                 f"Acordate de sacar el video de YouTube si el reclamo bloquea el contenido.")
-    return f"{streamer} ya estaba excluido. Anoté el reclamo sobre <code>{clip_id}</code>.{extra}"
+    return f"{streamer} ya estaba excluido. Anoté el reclamo sobre <code>{clip_id}</code>."
 
 
 def cmd_atender_telegram(args: argparse.Namespace) -> int:

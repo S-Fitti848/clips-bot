@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-10-04 | **Versión:** v0.58.0 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 + escucha de Telegram 24/7)
+**Snapshot:** 2026-10-04 | **Versión:** v0.58.1 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 + escucha de Telegram 24/7)
 
 > **SI ESTÁS EMPEZANDO UNA SESIÓN NUEVA, LEÉ §10.** Ahí está qué está hecho, qué quedó a medias,
 > qué falta, y las trampas que ya nos mordieron.
@@ -773,6 +773,9 @@ Problemas abiertos:
 
 ## 9. CHANGELOG
 
+- v0.58.1 (2026-10-04) — Un /reclamo sobre un clip del 412 excluye SOLO el 412 (Santi: no a Davo
+  ni a La Cobra); el streamer sigue en las corridas. Un reclamo común sigue excluyendo al streamer.
+  685 tests OK.
 - v0.58.0 (2026-10-04) — **Picos, 412, el stream y el gameplay** (pedidos de Santi).
   (1) Picos de volumen como DATO en la línea 📊 ("2 picos", `Resultado.picos_volumen`, de
   `zooms.picos` sobre todos los clips con audio): no tocan la selección (un test lo exige).
@@ -781,7 +784,7 @@ Problemas abiertos:
   por `programa_terceros`, lleva "⚠️ 412 (stream del programa: revisalo con más cuidado)" en el
   mensaje (diario, catálogo, /buscar viejos, en vivo). "ANALIZAMOS" sigue descartando. El detector de
   partido en pantalla no cambia. Un /reclamo sobre un clip con ese aviso vuelve a excluir TODO el
-  412 (`bot_estado.programas_excluidos`), además de excluir al streamer como siempre.
+  412 (`bot_estado.programas_excluidos`); desde v0.58.1, sin excluir al streamer.
   (3) **"Pegó" busca en el stream**: los `vod_por_dia` (2) Shorts sin original que más pegaron, en
   los VODs de Kick (como antes) y ahora también de Twitch (Helix /videos type=archive; audio con la
   variante "audio_only" de yt-dlp) de los 3 días antes de publicado. Si aparece, se corta el tramo
