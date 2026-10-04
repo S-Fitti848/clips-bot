@@ -320,6 +320,8 @@ class Wiki:
                                               "redirects": 1, "titles": titulo})
         for p in (d.get("query") or {}).get("pages", {}).values():
             for c in p.get("coordinates") or []:
+                if str(c.get("globe") or "earth").lower() != "earth":   # la Luna, Marte: no van al mapa
+                    continue
                 return float(c["lat"]), float(c["lon"])
         return None
 

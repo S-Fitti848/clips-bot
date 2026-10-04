@@ -161,3 +161,15 @@ def test_la_foto_fija_no_se_mueve_y_dura_exacto(tmp_path):
 
 def test_de_fabrica_las_fotos_son_fijas():
     assert load_settings().efemerides.efecto_fotos == "fija"
+
+
+def test_las_coordenadas_de_la_luna_no_van_al_mapa():
+    class W(ef.Wiki):
+        def __init__(self, coords):
+            self.coords = coords
+
+        def _get(self, url, params=None):
+            return {"query": {"pages": {"1": {"coordinates": self.coords}}}}
+
+    assert W([{"lat": 0.67, "lon": 23.47, "globe": "moon"}]).coordenadas("en", "Apollo 11") is None
+    assert W([{"lat": -34.6, "lon": -58.4, "globe": "earth"}]).coordenadas("es", "x") == (-34.6, -58.4)
