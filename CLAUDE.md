@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-10-04 | **Versión:** v0.56.0 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 + escucha de Telegram 24/7)
+**Snapshot:** 2026-10-04 | **Versión:** v0.57.0 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 + escucha de Telegram 24/7)
 
 > **SI ESTÁS EMPEZANDO UNA SESIÓN NUEVA, LEÉ §10.** Ahí está qué está hecho, qué quedó a medias,
 > qué falta, y las trampas que ya nos mordieron.
@@ -773,6 +773,13 @@ Problemas abiertos:
 
 ## 9. CHANGELOG
 
+- v0.57.0 (2026-10-04) — **Zoom de reacción y título corto** (Santi, después de las 2 muestras).
+  (1) "Punch in" PRENDIDO por defecto (`render.zoom_picos: true`): en los picos de volumen la imagen
+  salta a la cara en 0,1 s a ×1,35 (`zoom_max`; o lo máximo que deje entera la zona de todas las
+  caras), se queda 0,8 s y vuelve en 0,3 s; máx. 3 por clip y 6 s entre uno y otro (antes: suave,
+  ×1,12, 1 cada 20 s). Arranca 0,1 s antes del pico. (2) El título grande se ve solo los primeros
+  `render.titulo_segundos` (3) y se va con un fundido de `titulo_fundido_s` (0,3 s, `ad` del ASS).
+  670 tests OK.
 - v0.56.0 (2026-10-04) — **Feedback de las muestras, por defecto** (Santi). (1) Pequeña Historia:
   `efemerides.videos: true` todos los días (aprobó la muestra del Apolo 11), con las mismas reglas:
   2-3 frases con video, revisado por Gemini, nada de IA, dibujos ni recreaciones. (2) Clips de Rots:
