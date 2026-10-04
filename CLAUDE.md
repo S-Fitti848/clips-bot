@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-10-04 | **Versión:** v0.54.0 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 + escucha de Telegram 24/7)
+**Snapshot:** 2026-10-04 | **Versión:** v0.54.1 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 + escucha de Telegram 24/7)
 
 > **SI ESTÁS EMPEZANDO UNA SESIÓN NUEVA, LEÉ §10.** Ahí está qué está hecho, qué quedó a medias,
 > qué falta, y las trampas que ya nos mordieron.
@@ -773,6 +773,11 @@ Problemas abiertos:
 
 ## 9. CHANGELOG
 
+- v0.54.1 (2026-10-04) — **Búsqueda en el VOD prendida** (Santi): `pego.vod: true`, `vod_por_dia: 1`
+  — solo el Short sin original que más pegó en las últimas 24 h, dentro de la vuelta de las 02:00,
+  después de la búsqueda normal y con su propio tope (`vod_tope_min` 25). Solo Kick (el VOD de Twitch
+  va por otro camino, no está). Si aparece, el resumen "🔥 Pegó en otros canales" lleva el link al
+  VOD y el minuto. 653 tests OK.
 - v0.54.0 (2026-10-04) — **Fotos quietas en Pequeña Historia** (pedido de Santi: "el movimiento sale
   de los cortes, los videos y los gráficos"). `efemerides.efecto_fotos: fija` (opciones fija | zoom |
   parallax): `parallax.cuadro_fijo` arma UN cuadro con el mismo encuadre (al menos 72 % del alto,

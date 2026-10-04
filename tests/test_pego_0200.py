@@ -143,3 +143,27 @@ def test_en_el_vod_se_prueban_solo_los_2_con_mas_vistas_y_se_avisa_donde(tmp_pat
     assert probados == ["s0", "s1"] and n == 1
     t = pego.texto_sin_original(pego.sin_original(conn, [davo], AHORA - timedelta(days=2)))
     assert "salió del VOD" in t and "1:02:05" in t and "No encontré el original" in t
+
+
+def test_el_vod_prendido_solo_para_el_que_mas_pego():
+    cfg = load_settings().pego
+    assert cfg.vod is True and cfg.vod_por_dia == 1
+
+
+def test_el_vod_va_dentro_de_la_vuelta_de_las_02(tmp_path, monkeypatch):
+    from dataclasses import replace
+
+    from clips_bot import pego as pg
+
+    conn = db.connect(tmp_path / "t.db")
+    monkeypatch.setattr(m, "DB_PATH", tmp_path / "t.db")
+    monkeypatch.setattr(m, "_streamers", lambda c=None: _streamers(1))
+    orden = []
+    monkeypatch.setattr(m, "_pegados_para", lambda *a, **k: orden.append("pego") or [])
+    monkeypatch.setattr(pg, "buscar_en_vod_del_dia", lambda *a, **k: orden.append("vod") or 0)
+    s = load_settings()
+    m._pego_tick(conn, s, ahora=datetime(2026, 10, 5, 2, 1, tzinfo=m.AR))
+    assert orden == ["pego", "vod"]
+    orden.clear()
+    m._pego_tick(conn, replace(s, pego=replace(s.pego, vod=False)), ahora=datetime(2026, 10, 6, 2, 1, tzinfo=m.AR))
+    assert orden == ["pego"]

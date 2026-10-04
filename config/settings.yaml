@@ -463,8 +463,9 @@ pego:
   # corre en la escucha a esta hora, con este tope total; la de las 05:00 usa lo ya encontrado.
   hora: "02:00"
   tope_min: 15
-  # El Short sin original, buscado en el VOD de Kick (los 2 con más vistas del día, tope propio).
-  # APAGADO hasta medir en la Pi cuánto tarda con uno de Davo (VODs de 7-9 h).
-  vod: false
-  vod_por_dia: 2
+  # El Short sin original, buscado en el VOD de Kick: SOLO el que más pegó en el día, dentro de la
+  # vuelta de las 02:00, con tope propio (prendido por Santi el 2026-10-04). Medido el 30/09: un VOD
+  # de 8,3 h son ~10 min la primera vez (después queda guardado) + 7 s de búsqueda.
+  vod: true
+  vod_por_dia: 1
   vod_tope_min: 25
