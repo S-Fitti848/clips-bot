@@ -99,6 +99,16 @@ render:
   recorte_inferior_camara_px: 50  # px del video original que se sacan del pie del cuadro de cámara (UI del juego)
   zoom_sin_camara: 1.08      # (ya no se usa: el recorte sin cara pasó a ser fit_blur)
   blur_sigma: 30             # fondo borroso del layout fit_blur
+  # Formato por defecto de los clips de Rots (Santi, 2026-10-04, "el de la muestra 3"): fit_blur con
+  # el título grande arriba y el streamer chiquito encima. El recorte que sigue la cara (muestra 2,
+  # camara.seguir_cara) queda apagado.
+  titulo_arriba: true
+  # De la muestra 2, solo unos zooms: pocos (1 cada 20 s, máx. 3), suaves (hasta ×1,12) y en los
+  # picos de volumen (grito, risa, remate), hacia las caras y sin cortar ninguna (zooms.py).
+  # APAGADO hasta que Santi apruebe 2 clips de prueba.
+  zoom_picos: false
+  zoom_max: 1.12
+  zoom_max_n: 3
   # veryfast, medido en la Pi el 2026-09-23 sobre un clip de 60 s: 111 s contra 197 s de `medium`
   # (43 % menos) con SSIM 0,994 entre los dos, o sea indistinguible, y encima el archivo sale más
   # chico (2609 contra 2928 kbps). `superfast` baja a 96 s pero se va a 4738 kbps, casi el tope de
@@ -291,8 +301,9 @@ efemerides:
   chat: ""
   # Video en 2 o 3 frases de acción (las marca Gemini en el guion): filmación de la época de
   # Commons/archive.org; si no hay, stock libre (Pexels/Pixabay con su clave en el .env) o NASA;
-  # si no, la foto. APAGADO hasta que Santi apruebe una muestra (pedido 2026-09-29).
-  videos: false
+  # si no, la foto. PRENDIDO todos los días desde el 2026-10-04 (Santi aprobó la muestra del Apolo
+  # 11): 2-3 frases con video, revisado por Gemini, nada de IA, dibujos ni recreaciones.
+  videos: true
   # Más dinámico (2026-09-30): fotos con parallax 3D (medido en Windows: 5,5 s por foto de 5 s, más
   # rápido que el zoom de antes, 7,3 s) y gráficos: año contando, mapa con el punto, palabras clave
   # grandes cuando la voz las dice y un whoosh suave en cada cambio.

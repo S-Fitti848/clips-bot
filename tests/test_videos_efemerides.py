@@ -217,8 +217,8 @@ def test_commons_solo_licencias_libres_y_el_derivado_chico():
     assert out[0].anio == 1957 and out[0].autor == "Universal Newsreel"
 
 
-def test_apagado_de_fabrica_hasta_la_muestra():
-    assert load_settings().efemerides.videos is False
+def test_prendido_desde_que_santi_aprobo_la_muestra():
+    assert load_settings().efemerides.videos is True    # Apolo 11, 2026-10-04
 
 
 def test_sin_anios_y_espacio():
