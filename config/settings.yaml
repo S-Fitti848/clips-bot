@@ -285,13 +285,11 @@ voz:
   motor: piper
   modelo: voces/es_AR-daniela-high.onnx
   volumen_original: 0.15
-  # Ajustes de Piper. Los valores de acá son los del modelo (la voz de siempre). La muestra (A) del
-  # 2026-09-27 fue: length_scale 0.88 (más rápido), noise_w_scale 1.0 (más variación de ritmo) y
-  # semitonos 1.5. Se cambian acá cuando Santi elija entre las muestras.
+  # Ajustes de Piper. Los valores de acá son los del modelo (la voz de siempre). Nada de cambiar el
+  # tono: el +1,5 semitonos de la muestra A se sacó el 2026-10-04 (dejaba la voz cortada a 9,8 kHz).
   length_scale: 1.0
   noise_scale: 0.667
   noise_w_scale: 0.8
-  semitonos: 0.0
 
 # Pequeña Historia (§3c). Música de fondo: una pista al azar de `carpeta_musica` por video, al volumen
 # indicado, bajando cuando habla la voz. Con la carpeta vacía no hay música.
@@ -325,8 +323,10 @@ efemerides:
   musica_volumen: 0.12
   musica_por_fuente: 10      # musica/kevin y musica/openverse se completan solos hasta esto
   # Voz (elegida por Santi el 2026-09-28: la muestra C). Gemini TTS con Laomedeia; si falla o no hay
-  # cuota, Piper daniela ajustada (la muestra A). Gemini lee a ~2,3 palabras/s (medido): si el audio
-  # pasa de tts_max_s se acelera con atempo, hasta ×1,25.
+  # cuota, Piper daniela ajustada (la muestra A, SIN el cambio de tono). Gemini lee a ~2,3 palabras/s
+  # (medido). La voz se procesa a 48 kHz en todos los pasos. Si pasa de tts_max_s: atempo (cambia la
+  # velocidad sin tocar el tono) hasta ×1,1; si con eso no entra, se ACORTA EL GUION (Gemini, mismas
+  # frases y todo respaldado por el artículo) y se vuelve a sintetizar, en vez de acelerar más.
   # SIN instrucción de tono: este modelo la LEE en voz alta (probado larga, en inglés y "Say
   # cheerfully:"), y no acepta systemInstruction. Ver config.EfemeridesCfg.tts_instruccion.
   tts_instruccion: ""
@@ -334,11 +334,10 @@ efemerides:
   tts_modelo: gemini-3.8-flash-tts
   tts_voz: Laomedeia
   tts_max_s: 45
-  tts_acelerar_max: 1.25
+  tts_acelerar_max: 1.1
   piper_length_scale: 0.88
   piper_noise_scale: 0.8      # más variación de entonación que la de fábrica (0,667)
   piper_noise_w_scale: 1.0    # más variación de ritmo (0,8)
-  piper_semitonos: 1.5
 
 # §3 paso 7: textos con Gemini.
 textos:

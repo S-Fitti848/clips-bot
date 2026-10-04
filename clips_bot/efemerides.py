@@ -1765,10 +1765,11 @@ def _escribir_wav(pcm: bytes, sr: int, salida: Path) -> Path:
 
 
 def acelerar(wav: Path, factor: float) -> Path:
-    """atempo: más rápido sin cambiar el tono. En el mismo archivo."""
+    """atempo: más rápido SIN cambiar el tono, a 48 kHz (la voz ya viene a 48 kHz). En el mismo
+    archivo. Como mucho `efemerides.tts_acelerar_max` (×1,1): si no entra, se acorta el guion."""
     tmp = wav.with_name(wav.stem + ".rapido.wav")
     run([find_bin("ffmpeg"), "-hide_banner", "-loglevel", "error", "-y", "-i", str(wav.resolve()),
-         "-af", f"atempo={factor:.4f}", str(tmp.resolve())])
+         "-af", f"atempo={factor:.4f}", "-ar", "48000", "-c:a", "pcm_s16le", str(tmp.resolve())])
     tmp.replace(wav)
     return wav
 
@@ -1797,19 +1798,13 @@ def voz_efemeride(frases: list[str], settings, carpeta: Path, avisar=log.info,
             pcm, sr = (tts(claves[0][1], " ".join(frases), **kw) if tts else
                        hablar_con_claves(claves, " ".join(frases), aviso=aviso_por_telegram,
                                          uso=registrar_uso, **kw))
-            wav = _escribir_wav(pcm, sr, carpeta / "voz.wav")
-            dur = len(pcm) / 2 / sr
-            if dur > cfg.tts_max_s:
-                factor = min(dur / cfg.tts_max_s, cfg.tts_acelerar_max)
-                acelerar(wav, factor)
-                avisar(f"voz Gemini de {dur:.1f} s: acelerada ×{factor:.2f}")
+            wav = narrar.a_48k(_escribir_wav(pcm, sr, carpeta / "voz.wav"))
             return wav, None, f"gemini:{cfg.tts_voz}"
         except GeminiError as e:
             avisar(f"Gemini TTS no anduvo ({str(e)[:120]}): sigo con Piper")
             motivo = "sin cuota" if "quota" in str(e).lower() or "429" in str(e) else "Gemini no respondió"
     ajustes = replace(settings.voz, length_scale=cfg.piper_length_scale,
-                      noise_scale=cfg.piper_noise_scale, noise_w_scale=cfg.piper_noise_w_scale,
-                      semitonos=cfg.piper_semitonos)
+                      noise_scale=cfg.piper_noise_scale, noise_w_scale=cfg.piper_noise_w_scale)
     modelo = Path(settings.voz.modelo)
     if not modelo.exists():
         raise NarrarError(f"Falta la voz en {modelo}")
@@ -1830,7 +1825,77 @@ def es_piper(motor: str) -> bool:
     return motor.startswith("piper:")
 
 
-def hacer_video(p: Propuesta, settings, carpeta: Path, avisar=log.info, conn=None) -> dict:
+SISTEMA_ACORTAR = (
+    "Acortás el guion de un Short de historia para que entre en el tiempo. Devolvés EXACTAMENTE la "
+    "misma cantidad de frases, en el mismo orden, cada una más corta, diciendo lo mismo con menos "
+    "palabras. Mantené la primera frase empezando igual (\"Un día como hoy, en <año>,\"), el cierre "
+    "con gancho y que se entienda paso a paso. No agregues nombres, cifras ni datos que no estén en "
+    "el guion original. Español rioplatense neutro.")
+SCHEMA_ACORTAR = {"type": "OBJECT", "properties": {"frases": {"type": "ARRAY", "items": {"type": "STRING"}}},
+                  "required": ["frases"]}
+
+
+def palabras_objetivo(n_palabras: int, dur_s: float, max_s: float) -> int:
+    """Cuántas palabras tiene que tener el guion para durar `max_s` (con un 5 % de margen)."""
+    return max(int(n_palabras * max_s / max(dur_s, 0.1) * 0.95), 1)
+
+
+def validar_acortado(frases, originales: list[str], objetivo: int, fuente: str) -> list[str]:
+    if not isinstance(frases, list) or len(frases) != len(originales):
+        return [f"tienen que ser {len(originales)} frases, en el mismo orden"]
+    frases = [str(f).strip() for f in frases]
+    errores = []
+    if any(len(f.split()) < 3 for f in frases):
+        errores.append("hay frases vacías o de menos de 3 palabras")
+    n = sum(len(f.split()) for f in frases)
+    if n > objetivo:
+        errores.append(f"tiene {n} palabras y tienen que ser como mucho {objetivo}")
+    inicio = " ".join(originales[0].split()[:6])
+    if originales[0].startswith("Un día como hoy") and not frases[0].startswith(inicio):
+        errores.append(f"la primera frase tiene que empezar con «{inicio}»")
+    sin = no_respaldados(" ".join(frases), fuente)
+    if sin:
+        errores.append("esto no está en el artículo: " + ", ".join(sin[:6]))
+    return errores
+
+
+def acortar_guion(cliente, g: Guion, fuente: str, objetivo: int, reintentos: int = 2) -> Guion | None:
+    """El mismo guion, frase por frase más corto (para no acelerar la voz más de ×1,1). Valida lo de
+    siempre: mismas frases, todo respaldado por el artículo. None si no sale."""
+    from dataclasses import replace
+
+    prompt = (f"Guion (una frase por línea, {len(g.frases)} frases, {len(g.texto.split())} palabras):\n"
+              + "\n".join(g.frases)
+              + f"\n\nTiene que quedar en {objetivo} palabras o menos, con las mismas {len(g.frases)} frases.")
+    errores: list[str] = []
+    for _ in range(reintentos + 1):
+        extra = f"\n\nTu respuesta anterior tenía estos errores: {'; '.join(errores)}" if errores else ""
+        d = json.loads(cliente.json(SISTEMA_ACORTAR, prompt + extra, SCHEMA_ACORTAR, temperatura=0.3))
+        errores = validar_acortado(d.get("frases"), g.frases, objetivo, fuente)
+        if not errores:
+            frases = [str(f).strip() for f in d["frases"]]
+            return replace(g, frases=frases, claves=claves_del_guion(g.claves, frases))
+    log.warning("no pude acortar el guion: %s", "; ".join(errores))
+    return None
+
+
+def ajustar_duracion(wav: Path, duraciones: list[float] | None, max_s: float, max_factor: float,
+                     avisar=log.info) -> tuple[list[float] | None, float]:
+    """Si la voz pasa de `max_s`, atempo hasta `max_factor` (sin tocar el tono). Devuelve las
+    duraciones de cada frase ajustadas y el factor usado (1.0 = nada)."""
+    from . import narrar
+
+    dur = narrar.duracion_wav(wav)
+    if dur <= max_s:
+        return duraciones, 1.0
+    factor = min(dur / max_s, max_factor)
+    acelerar(wav, factor)
+    avisar(f"voz de {dur:.1f} s: atempo ×{factor:.2f} (sin cambiar el tono)")
+    return ([d / factor for d in duraciones] if duraciones else duraciones), factor
+
+
+def hacer_video(p: Propuesta, settings, carpeta: Path, avisar=log.info, conn=None,
+                cliente=None) -> dict:
     """Propuesta aprobada → mp4 + meta listo para `enviar_clip`. Esto es lo que gasta la Pi:
     Piper, Whisper sobre la voz y un encode por foto.
 
@@ -1838,9 +1903,26 @@ def hacer_video(p: Propuesta, settings, carpeta: Path, avisar=log.info, conn=Non
     /reclamo, y anotar cuál se usó. Sin DB se elige igual, sin esas dos reglas."""
     from . import musica, narrar, subtitles as sub
 
+    from dataclasses import replace as _replace
+
     g, e = Guion.de_dict(p.guion), Evento(**p.evento)
     t0 = time.time()
+    cfg_v = settings.efemerides
     wav, duraciones, motor = voz_efemeride(g.frases, settings, carpeta, avisar)
+    # Duración (2026-10-04): atempo hasta ×1,1 y nada más. Si no entra ni así, se acorta el GUION
+    # (`cliente`: Gemini) y se vuelve a sintetizar; la voz nunca se acelera más ni cambia de tono.
+    dur = narrar.duracion_wav(wav)
+    tope = cfg_v.tts_max_s * cfg_v.tts_acelerar_max
+    if dur > tope and cliente is not None:
+        objetivo = palabras_objetivo(len(g.texto.split()), dur, tope)
+        avisar(f"voz de {dur:.1f} s: no entra ni con ×{cfg_v.tts_acelerar_max}; acorto el guion a "
+               f"{objetivo} palabras")
+        corto = acortar_guion(cliente, g, p.fuente + "\n" + e.texto + f" {e.anio}", objetivo)
+        if corto is not None:
+            g = corto
+            p = _replace(p, guion=g.a_dict())
+            wav, duraciones, motor = voz_efemeride(g.frases, settings, carpeta, avisar)
+    duraciones, _ = ajustar_duracion(wav, duraciones, cfg_v.tts_max_s, cfg_v.tts_acelerar_max, avisar)
     fin = narrar.duracion_wav(wav)
     avisar(f"voz ({motor}): {fin:.1f} s en {time.time() - t0:.0f} s")
     t0 = time.time()

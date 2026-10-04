@@ -356,14 +356,17 @@ def _cfg_voz(tmp_path, motor="gemini"):
     return replace(s, efemerides=replace(s.efemerides, voz_motor=motor))
 
 
-def test_voz_con_gemini_no_devuelve_duraciones_y_acelera_si_se_pasa(tmp_path, monkeypatch):
+def test_voz_con_gemini_no_devuelve_duraciones_y_sale_a_48k_sin_acelerar(tmp_path, monkeypatch):
+    import wave
     monkeypatch.setenv("GEMINI_API_KEY", "x")
     acelerados = []
     monkeypatch.setattr(ef, "acelerar", lambda wav, f: acelerados.append(round(f, 3)) or wav)
     pcm = b"\x00\x00" * 24000 * 50                     # 50 s a 24 kHz
     wav, dur, motor = ef.voz_efemeride(["hola"], _cfg_voz(tmp_path), tmp_path,
                                        tts=lambda *a, **k: (pcm, 24000))
-    assert dur is None and motor == "gemini:Laomedeia" and acelerados == [round(50 / 45, 3)]
+    assert dur is None and motor == "gemini:Laomedeia" and acelerados == []   # lo decide hacer_video
+    with wave.open(str(wav)) as w:
+        assert w.getframerate() == 48000
 
 
 def test_sin_cuota_de_gemini_va_piper_ajustado(tmp_path, monkeypatch):
@@ -389,7 +392,7 @@ def test_sin_cuota_de_gemini_va_piper_ajustado(tmp_path, monkeypatch):
     wav, dur, motor = ef.voz_efemeride(["a", "b"], s, tmp_path, tts=sin_cuota)
     assert motor.startswith("piper:") and dur == [1.0, 1.0]
     aj = usados[0]
-    assert (aj.length_scale, aj.noise_w_scale, aj.semitonos) == (0.88, 1.0, 1.5)
+    assert (aj.length_scale, aj.noise_w_scale) == (0.88, 1.0) and not hasattr(aj, "semitonos")
 
 
 def test_si_la_voz_lee_algo_antes_del_guion_se_recorta(tmp_path, monkeypatch):

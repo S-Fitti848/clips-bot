@@ -169,14 +169,22 @@ def _config_piper(ajustes):
                            noise_w_scale=ajustes.noise_w_scale)
 
 
-def subir_tono(wav: Path, semitonos: float) -> Path:
-    """Cambia el tono sin tocar la velocidad (rubberband de ffmpeg), en el mismo archivo. Los
-    tiempos de cada frase no cambian: por eso se puede hacer después de medirlas."""
-    if not semitonos:
-        return wav
-    tmp = wav.with_name(wav.stem + ".tono.wav")
+VOZ_SR = 48000   # la voz se procesa SIEMPRE a 48 kHz (Santi, 2026-10-04)
+
+
+def a_48k(wav: Path) -> Path:
+    """La voz a 48 kHz, UNA vez y con el mejor re-muestreo (soxr, 28 bits), en el mismo archivo.
+    Nada de cambiar el tono (2026-10-04: el +1,5 semitonos sobre los 22 kHz de Piper dejaba la voz
+    cortada a 9,8 kHz y sonaba horrible): de acá en más ningún paso baja la calidad. Ojo: arriba de
+    lo que da el motor no aparece nada (Piper llega a ~11 kHz, Gemini TTS a ~12 kHz)."""
+    import wave as _wave
+
+    with _wave.open(str(wav)) as w:
+        if w.getframerate() == VOZ_SR:
+            return wav
+    tmp = wav.with_name(wav.stem + ".48k.wav")
     run([find_bin("ffmpeg"), "-hide_banner", "-loglevel", "error", "-y", "-i", str(wav.resolve()),
-         "-af", f"rubberband=pitch={2 ** (semitonos / 12):.5f}:formant=preserved",
+         "-af", f"aresample={VOZ_SR}:resampler=soxr:precision=28", "-c:a", "pcm_s16le",
          str(tmp.resolve())])
     tmp.replace(wav)
     return wav
@@ -190,7 +198,7 @@ def sintetizar(texto: str, modelo: Path, salida: Path, ajustes=None) -> Path:
     voz = PiperVoice.load(str(modelo))
     with wave.open(str(salida), "wb") as w:
         voz.synthesize_wav(texto, w, syn_config=_config_piper(ajustes))
-    return subir_tono(salida, ajustes.semitonos if ajustes else 0)
+    return a_48k(salida)
 
 
 def sintetizar_frases(frases: list[str], modelo: Path, salida: Path,
@@ -221,7 +229,7 @@ def sintetizar_frases(frases: list[str], modelo: Path, salida: Path,
         w.setsampwidth(formato[1])
         w.setframerate(formato[2])
         w.writeframes(b"".join(partes))
-    subir_tono(salida, ajustes.semitonos if ajustes else 0)
+    a_48k(salida)
     return salida, duraciones
 
 

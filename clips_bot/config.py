@@ -222,12 +222,10 @@ class Voz:
     volumen_original: float = 0.15   # el audio del video queda de fondo, abajo de la voz
     # Ajustes de Piper (los default son los del .onnx.json de daniela). length_scale < 1 = más
     # rápido; noise_scale = variación del audio; noise_w_scale = variación de la duración de
-    # los fonemas (el ritmo). `semitonos` sube el tono DESPUÉS de sintetizar (rubberband de ffmpeg:
-    # cambia el tono sin cambiar la velocidad).
+    # los fonemas (el ritmo). Nada de cambiar el tono (2026-10-04: el +1,5 semitonos la arruinaba).
     length_scale: float = 1.0
     noise_scale: float = 0.667
     noise_w_scale: float = 0.8
-    semitonos: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -298,11 +296,10 @@ class EfemeridesCfg:
     # Gemini lee a ~2,3 palabras/s (medido sin la instrucción leída). Si se pasa de esto, se
     # acelera con atempo hasta tts_acelerar_max (más que 1,25 ya se nota).
     tts_max_s: float = 45.0
-    tts_acelerar_max: float = 1.25
+    tts_acelerar_max: float = 1.1   # atempo como mucho ×1,1; si no entra, se acorta el guion
     piper_length_scale: float = 0.88
     piper_noise_scale: float = 0.8
     piper_noise_w_scale: float = 1.0
-    piper_semitonos: float = 1.5
 
 
 @dataclass(frozen=True)

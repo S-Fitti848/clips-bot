@@ -3385,7 +3385,8 @@ def _efe_video(conn, tg: TelegramClient, chat_id: str, token: str, settings: Set
         tg.send_message(chat_id, "Poniendo la voz y armando el video. En la Pi son unos 3 minutos.")
         try:
             meta = ef.hacer_video(ef.Propuesta(**estado["propuesta"]), settings,
-                                  Path(estado["carpeta"]), avisar=log.info, conn=conn)
+                                  Path(estado["carpeta"]), avisar=log.info, conn=conn,
+                                  cliente=_gemini(settings))
         except NarrarError as e:
             return f"No pude armar el video: {html.escape(str(e)[:300])}"
         motor = meta.get("efemeride", {}).get("voz", "")
@@ -3471,7 +3472,7 @@ def cmd_efemeride(args: argparse.Namespace) -> int:
         print(f"Hay algo pesado andando ({db.hay_trabajo_pesado(conn)}): probá después.", file=sys.stderr)
         return 3
     try:
-        meta = ef.hacer_video(p, settings, carpeta, avisar=print, conn=conn)
+        meta = ef.hacer_video(p, settings, carpeta, avisar=print, conn=conn, cliente=_gemini(settings))
     finally:
         db.soltar_turno(conn, db.RECURSO_PESADO, token, VENCIMIENTO_PESADO_S)
         conn.close()
