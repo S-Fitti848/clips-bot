@@ -1,6 +1,6 @@
-"""Zooms en los momentos fuertes de un clip (pedido de Santi, 2026-10-04): sobre el formato de
-siempre (fit_blur: el video entero y atrás el mismo video difuminado), unos pocos acercamientos
-suaves cuando el volumen pega un pico (un grito, una risa, el remate). Nunca todo el tiempo y nunca
+"""Zoom de reacción ("punch in", pedido de Santi, 2026-10-04): sobre el formato de siempre (fit_blur:
+el video entero y atrás el mismo video difuminado), cuando el volumen pega un pico (un grito, una
+risa, el remate) la imagen salta a la cara en 0,1 s, se queda 0,8 s y vuelve en 0,3 s. Nunca todo el tiempo y nunca
 cortando una cara: la zona de TODAS las caras detectadas (con margen) tiene que entrar en el cuadro
 con el zoom puesto; si no entra ni con un zoom mínimo, ese clip va sin zooms.
 """
@@ -9,24 +9,24 @@ from __future__ import annotations
 
 import statistics
 
-SUBIDA_S = 0.3     # cuánto tarda en acercarse
-QUIETO_S = 1.0     # cuánto se queda cerca
-BAJADA_S = 0.6     # cuánto tarda en volver
-ANTES_S = 0.25     # arranca un poco antes del pico, así el acercamiento llega con el grito
+SUBIDA_S = 0.1     # salta a la cara (punch in)
+QUIETO_S = 0.8     # cuánto se queda cerca
+BAJADA_S = 0.3     # cuánto tarda en volver
+ANTES_S = 0.1      # arranca apenas antes del pico, así el salto llega con el grito
 ZOOM_MIN = 1.06    # menos que esto no se nota: mejor no hacer nada
 CARA_MIN = 0.04    # caras más angostas que esto (fracción del ancho) son ruido del detector
 
 
 def picos(rms: list[float], ventana_s: float, duracion: float, max_n: int = 3,
-          separacion_s: float = 8.0, cada_s: float = 20.0) -> list[float]:
-    """Segundos de los picos de volumen más fuertes: como mucho 1 cada `cada_s` del clip (y
-    `max_n`), separados `separacion_s`, lejos del principio y del final. Un pico tiene que pasar
+          separacion_s: float = 6.0) -> list[float]:
+    """Segundos de los picos de volumen más fuertes: como mucho `max_n`, separados
+    `separacion_s`, lejos del principio y del final. Un pico tiene que pasar
     1,6 veces la mediana y el percentil 90: un clip parejo no tiene momentos fuertes y no lleva."""
     if len(rms) < 4:
         return []
     med = statistics.median(rms) or 1e-9
     umbral = max(1.6 * med, sorted(rms)[int(0.9 * (len(rms) - 1))])
-    n = min(max_n, 1 + int(duracion // cada_s))
+    n = max_n
     candidatos = sorted(range(len(rms)), key=lambda i: rms[i], reverse=True)
     out: list[float] = []
     for i in candidatos:

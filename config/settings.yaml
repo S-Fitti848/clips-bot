@@ -103,11 +103,13 @@ render:
   # el título grande arriba y el streamer chiquito encima. El recorte que sigue la cara (muestra 2,
   # camara.seguir_cara) queda apagado.
   titulo_arriba: true
-  # De la muestra 2, solo unos zooms: pocos (1 cada 20 s, máx. 3), suaves (hasta ×1,12) y en los
-  # picos de volumen (grito, risa, remate), hacia las caras y sin cortar ninguna (zooms.py).
-  # APAGADO hasta que Santi apruebe 2 clips de prueba.
-  zoom_picos: false
-  zoom_max: 1.12
+  titulo_segundos: 3         # el título se ve solo al principio y se va con un fundido corto
+  titulo_fundido_s: 0.3
+  # Zoom de reacción ("punch in", Santi 2026-10-04): en los picos de volumen (grito, risa, remate)
+  # la imagen salta a la cara en 0,1 s a ×1,35 (o lo máximo que deje la cara entera), se queda
+  # 0,8 s y vuelve en 0,3 s; máx. 3 por clip, 6 s entre uno y otro (zooms.py). Prendido.
+  zoom_picos: true
+  zoom_max: 1.35
   zoom_max_n: 3
   # veryfast, medido en la Pi el 2026-09-23 sobre un clip de 60 s: 111 s contra 197 s de `medium`
   # (43 % menos) con SSIM 0,994 entre los dos, o sea indistinguible, y encima el archivo sale más

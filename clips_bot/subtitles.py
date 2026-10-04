@@ -161,10 +161,13 @@ def lineas_titulo(titulo: str) -> tuple[int, list[str]]:
 
 
 def escribir_titulo_ass(path: Path, titulo: str, streamer: str, cfg: Subtitulos, render: Render,
-                        y_centro: int | None = None, duracion: float = 600) -> None:
+                        y_centro: int | None = None, duracion: float | None = None) -> None:
     """El título del clip grande (letra gruesa blanca con borde negro, 2 líneas como máximo) y el
     nombre del streamer chiquito encima (pedido 2026-09-30). Arriba; o, en el split, centrado en
-    `y_centro` (la línea entre la cámara y el juego), para no taparle la cara al streamer."""
+    `y_centro` (la línea entre la cámara y el juego), para no taparle la cara al streamer.
+    Se ve solo los primeros `render.titulo_segundos` (3) y se va con un fundido corto (2026-10-04)."""
+    duracion = render.titulo_segundos if duracion is None else duracion
+    fad = f"\\fad(0,{int(render.titulo_fundido_s * 1000)})"
     tamano, lineas = lineas_titulo(titulo)
     W = render.ancho
     y_titulo = y_centro if y_centro is not None else int(render.alto * 0.075) + 50 + tamano * len(lineas) // 2
@@ -186,8 +189,8 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 """
     texto = "\\N".join(_escapar_ass(l) for l in lineas)
     eventos = [
-        f"Dialogue: 3,{_t_ass(0)},{_t_ass(duracion)},Titulo,,0,0,0,,{{\\an5\\pos({W // 2},{y_titulo})}}{texto}",
-        f"Dialogue: 3,{_t_ass(0)},{_t_ass(duracion)},Nombre,,0,0,0,,{{\\an5\\pos({W // 2},{y_nombre})}}"
+        f"Dialogue: 3,{_t_ass(0)},{_t_ass(duracion)},Titulo,,0,0,0,,{{\\an5\\pos({W // 2},{y_titulo}){fad}}}{texto}",
+        f"Dialogue: 3,{_t_ass(0)},{_t_ass(duracion)},Nombre,,0,0,0,,{{\\an5\\pos({W // 2},{y_nombre}){fad}}}"
         f"{_escapar_ass(streamer)}",
     ]
     path.write_text(cabecera + "\n".join(eventos) + "\n", encoding="utf-8")

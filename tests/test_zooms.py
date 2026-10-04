@@ -26,9 +26,14 @@ def test_clip_parejo_no_lleva_zooms():
     assert zooms.picos([1.0] * 60, 0.5, 30.0) == []
 
 
-def test_tope_de_uno_cada_20_s():
-    rms = _rms(60, picos=(5, 25, 45))      # 30 s, 3 picos
-    assert len(zooms.picos(rms, 0.5, 30.0, max_n=3)) == 2
+def test_maximo_3_y_6_s_entre_uno_y_otro():
+    rms = _rms(80, picos=(5, 15, 30, 50, 70))   # 40 s, picos en 2,75 / 7,75 / 15,25 / 25,25 / 35,25 s
+    p = zooms.picos(rms, 0.5, 40.0, max_n=3)
+    assert len(p) == 3 and all(b - a >= 6 for a, b in zip(p, p[1:]))
+
+
+def test_punch_in_salta_rapido_y_vuelve():
+    assert (zooms.SUBIDA_S, zooms.QUIETO_S, zooms.BAJADA_S) == (0.1, 0.8, 0.3)
 
 
 def test_tramo_suave_alrededor_del_pico():
@@ -73,8 +78,19 @@ def test_filtro_fit_blur_con_y_sin_zooms():
     assert "zoompan" in f and "s=1080x608" in f and "9.75" in f and "[frente]" in f
 
 
-def test_formato_por_defecto_titulo_arriba_y_zooms_apagados_hasta_las_muestras():
+def test_formato_por_defecto_titulo_arriba_y_punch_in_prendido():
     from clips_bot.config import load_settings
     s = load_settings()
     assert s.render.titulo_arriba is True and s.camara.seguir_cara is False
-    assert s.render.zoom_picos is False
+    assert s.render.zoom_picos is True and s.render.zoom_max == 1.35 and s.render.zoom_max_n == 3
+
+
+def test_titulo_solo_los_primeros_3_s_con_fundido(tmp_path):
+    from clips_bot import subtitles as sub
+    from clips_bot.config import load_settings
+    s = load_settings()
+    sub.escribir_titulo_ass(tmp_path / "t.ass", "Un título de prueba", "spreen", s.subtitulos, s.render)
+    texto = (tmp_path / "t.ass").read_text(encoding="utf-8")
+    dialogos = [l for l in texto.splitlines() if l.startswith("Dialogue")]
+    assert len(dialogos) == 2
+    assert all(",0:00:03.00," in l and r"\fad(0,300)" in l for l in dialogos)
