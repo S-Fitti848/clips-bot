@@ -450,10 +450,11 @@ publicacion:
 youtube_upload_enabled: false
 
 # Reels de Pequeña Historia a la página de Facebook (Reels Publishing API de Meta): con el mismo
-# "📤 Subir" de la efeméride, además de programarse en YouTube. APAGADO hasta completar
-# docs/facebook.md (FACEBOOK_PAGE_ID y FACEBOOK_PAGE_TOKEN en el .env, nunca en git).
+# "📤 Subir" de la efeméride, además de programarse en YouTube. PRENDIDO desde el 2026-10-04: token
+# de la página "Pequeña historia" que no vence (FACEBOOK_PAGE_ID y FACEBOOK_PAGE_TOKEN en el .env,
+# nunca en git); probado con un Reel de prueba publicado y borrado.
 facebook:
-  activo: false
+  activo: true
   version: "v23.0"         # la que muestre el Graph API Explorer
 
 # Lo que pega en otros canales → el clip original (pego.py, 2026-09-29). Una vez por día (y en

@@ -66,8 +66,8 @@ def test_sin_credenciales_lo_dice(monkeypatch):
         facebook.credenciales()
 
 
-def test_apagado_de_fabrica():
-    assert load_settings().facebook.activo is False
+def test_prendido():
+    assert load_settings().facebook.activo is True   # prendido 2026-10-04, Reel de prueba OK
 
 
 def test_subir_de_una_efemeride_va_a_facebook_aunque_youtube_este_apagado(tmp_path, monkeypatch):
