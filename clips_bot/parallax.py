@@ -147,6 +147,29 @@ def _mover(capa: np.ndarray, escala: float, dx: float, cx: float, cy: float) -> 
     return cv2.warpAffine(capa, M, (w, h), flags=cv2.INTER_LINEAR, borderMode=cv2.BORDER_REFLECT)
 
 
+def cuadro_fijo(foto: Path, W: int, H: int, blur: float, foco: tuple[float, float]) -> np.ndarray:
+    """La foto QUIETA en la pantalla (2026-10-04, Santi: "imágenes fijas; el movimiento sale de los
+    cortes, los videos y los gráficos"): el mismo encuadre que el parallax (al menos 72 % del alto,
+    caras enteras con margen) sobre el fondo borroso, sin zoom ni desplazamiento."""
+    import cv2
+
+    img = cv2.imread(str(foto))
+    if img is None:
+        raise RuntimeError(f"no pude leer {foto}")
+    zona = zona_caras(caras(img), img.shape[1], img.shape[0])
+    s, vis_w, vis_h, x0, y0 = encuadre(img.shape[1], img.shape[0], W, H, zona, foco, zoom=1.0)
+    base = cv2.resize(img, (int(round(img.shape[1] * s)), int(round(img.shape[0] * s))),
+                      interpolation=cv2.INTER_AREA if s < 1 else cv2.INTER_CUBIC)
+    recorte = base[y0:y0 + vis_h, x0:x0 + vis_w]
+    ks = max(W / img.shape[1], H / img.shape[0])
+    lleno = cv2.resize(img, (int(img.shape[1] * ks) + 2, int(img.shape[0] * ks) + 2))
+    oy, ox = (lleno.shape[0] - H) // 2, (lleno.shape[1] - W) // 2
+    cuadro = cv2.GaussianBlur(np.ascontiguousarray(lleno[oy:oy + H, ox:ox + W]), (0, 0), blur)
+    px, py = (W - vis_w) // 2, (H - vis_h) // 2
+    cuadro[py:py + recorte.shape[0], px:px + recorte.shape[1]] = recorte
+    return cuadro
+
+
 def renderizar(foto: Path, dur: float, salida: Path, W: int, H: int, blur: float, foco: tuple[float, float],
                fps: int = 30, preset: str = "veryfast", crf: int = 18, con_capas: bool = True) -> Path:
     """Un tramo de parallax de `dur` segundos, 1080x1920 (W×H), directo a mp4."""

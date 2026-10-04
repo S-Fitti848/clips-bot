@@ -1378,7 +1378,8 @@ def filtro_tramo(ancho: int, alto: int, W: int, H: int, frames: int, fx: float, 
 
 def armar_video(tramos: list[tuple[Path, float]], voz: Path, dir_subs: Path, salida: Path,
                 render, fps: int = 30, parallax: bool = False,
-                mapa: tuple[Path, float, float] | None = None, encuadres: dict | None = None) -> Path:
+                mapa: tuple[Path, float, float] | None = None, encuadres: dict | None = None,
+                efecto: str = "") -> Path:
     """Una foto por frase (cada tramo dura lo que su frase), la voz, y los subtítulos + el año que
     ya están en `dir_subs/subs.ass`. Cada tramo se encodea aparte y al final se pegan."""
     from PIL import Image
@@ -1403,7 +1404,22 @@ def armar_video(tramos: list[tuple[Path, float]], voz: Path, dir_subs: Path, sal
             continue
         fx, fy = foco(foto)
         parte = dir_subs / f"tramo_{i:02d}.mp4"
-        if parallax:
+        efecto = efecto or ("parallax" if parallax else "zoom")
+        if efecto == "fija":
+            # Foto quieta: un solo cuadro (encuadre con caras enteras) repetido lo que dura el tramo.
+            import cv2
+
+            from . import parallax as px
+
+            fija = dir_subs / f"fija_{i:02d}.png"
+            cv2.imwrite(str(fija), px.cuadro_fijo(Path(foto).resolve(), W, H, render.blur_sigma, (fx, fy)))
+            run([find_bin("ffmpeg"), "-hide_banner", "-loglevel", "error", "-y",
+                 "-loop", "1", "-framerate", str(fps), "-i", str(fija.resolve()),
+                 "-frames:v", str(frames), "-c:v", "libx264", "-preset", render.x264_preset,
+                 "-tune", "stillimage", "-crf", "18", "-pix_fmt", "yuv420p", str(parte.resolve())])
+            partes.append(parte)
+            continue
+        if efecto == "parallax":
             from . import parallax as px
 
             try:
@@ -1916,7 +1932,8 @@ def hacer_video(p: Propuesta, settings, carpeta: Path, avisar=log.info, conn=Non
     dia = date.fromisoformat(p.fecha)
     clip_id = f"efemeride_{dia:%m%d}_{e.anio}"
     salida = armar_video(tramos, audio, carpeta, carpeta / f"{clip_id}.mp4", settings.render,
-                         parallax=cfg_ef.parallax, mapa=mapa, encuadres=encuadres)
+                         parallax=cfg_ef.parallax, mapa=mapa, encuadres=encuadres,
+                         efecto=cfg_ef.efecto_fotos)
     avisar(f"video: {time.time() - t0:.0f} s, {len(tramos)} tramos, "
            f"{len({f for _, f, _ in plan if f != VIDEO})} fotos distintas, {len(rutas_video)} videos")
     for problema in chequear_audio(salida):

@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-10-02 | **Versión:** v0.53.0 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 + escucha de Telegram 24/7)
+**Snapshot:** 2026-10-04 | **Versión:** v0.54.0 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 + escucha de Telegram 24/7)
 
 > **SI ESTÁS EMPEZANDO UNA SESIÓN NUEVA, LEÉ §10.** Ahí está qué está hecho, qué quedó a medias,
 > qué falta, y las trampas que ya nos mordieron.
@@ -773,6 +773,12 @@ Problemas abiertos:
 
 ## 9. CHANGELOG
 
+- v0.54.0 (2026-10-04) — **Fotos quietas en Pequeña Historia** (pedido de Santi: "el movimiento sale
+  de los cortes, los videos y los gráficos"). `efemerides.efecto_fotos: fija` (opciones fija | zoom |
+  parallax): `parallax.cuadro_fijo` arma UN cuadro con el mismo encuadre (al menos 72 % del alto,
+  caras enteras con margen) sobre el fondo borroso, y se repite lo que dura el tramo (`-tune
+  stillimage`: más rápido que cualquiera de los dos efectos). El parallax y el zoom quedan en el
+  código por si se vuelven a pedir. 651 tests OK.
 - v0.53.0 (2026-10-02) — **Más fuentes de fotos** (`fuentes_fotos.py`). Por frase: Commons con la
   búsqueda tal cual y después cada vez más general (`videos_libres.consultas`), más
   `incategory:"PD-AR-Photo"` si el hecho es argentino (`es_argentino`); si Commons no junta 4, en

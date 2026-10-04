@@ -131,3 +131,33 @@ def test_el_video_se_recorta_hacia_las_caras_o_va_entero(tmp_path):
                         "-map", "[v]", "-frames:v", "10", str(out)], check=True)
         assert out.exists()
     assert vl.encuadre_video(tmp_path / "no_existe.jpg") == (0.5, False)
+
+
+@sin_ffmpeg
+def test_la_foto_fija_no_se_mueve_y_dura_exacto(tmp_path):
+    from PIL import Image, ImageDraw
+
+    foto = tmp_path / "f.jpg"
+    im = Image.new("RGB", (1600, 1000), (180, 170, 150))
+    ImageDraw.Draw(im).ellipse((650, 250, 950, 1000), fill=(40, 40, 60))
+    im.save(foto)
+    voz = tmp_path / "voz.wav"
+    subprocess.run([find_bin("ffmpeg"), "-y", "-loglevel", "error", "-f", "lavfi", "-i", "sine=f=300:d=3",
+                    str(voz)], check=True)
+    (tmp_path / "subs.ass").write_text("[Script Info]\nScriptType: v4.00+\nPlayResX: 1080\nPlayResY: 1920\n\n"
+                                       "[V4+ Styles]\nFormat: Name, Fontname, Fontsize\nStyle: Default,Arial,20\n\n"
+                                       "[Events]\nFormat: Layer, Start, End, Style, Name, MarginL, MarginR, "
+                                       "MarginV, Effect, Text\n", encoding="utf-8")
+    ef.armar_video([(foto, 3.0)], voz, tmp_path, tmp_path / "out.mp4", load_settings().render, efecto="fija")
+    assert _dur(tmp_path / "out.mp4") == pytest.approx(3.0, abs=0.1)
+    cuadros = []
+    for n in (0, 80):
+        destino = tmp_path / f"c{n}.png"
+        subprocess.run([find_bin("ffmpeg"), "-y", "-loglevel", "error", "-i", str(tmp_path / "tramo_00.mp4"),
+                        "-vf", f"select=eq(n\,{n})", "-frames:v", "1", str(destino)], check=True)
+        cuadros.append(np.asarray(Image.open(destino).convert("L"), dtype=float))
+    assert abs(cuadros[0] - cuadros[1]).mean() < 1.0            # quieta: el primero = el último
+
+
+def test_de_fabrica_las_fotos_son_fijas():
+    assert load_settings().efemerides.efecto_fotos == "fija"

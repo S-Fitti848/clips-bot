@@ -267,6 +267,9 @@ class EfemeridesCfg:
     # 2 o 3 frases de acción con video libre (videos_libres.py). Apagado hasta que Santi vea la muestra.
     videos: bool = False
     parallax: bool = True       # fotos con parallax 3D (parallax.py) en vez del zoom
+    # fija | zoom | parallax. "fija" desde el 2026-10-04 (Santi): el movimiento sale de los cortes,
+    # los videos y los gráficos. Vacío = lo que diga `parallax`.
+    efecto_fotos: str = "fija"
     graficos: bool = True       # año contando, mapa, palabras clave grandes y whoosh (graficos.py)
     carpeta_musica: str = "musica"
     musica_volumen: float = 0.12
