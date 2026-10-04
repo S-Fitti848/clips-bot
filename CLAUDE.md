@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-10-04 | **Versión:** v0.58.1 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 + escucha de Telegram 24/7)
+**Snapshot:** 2026-10-04 | **Versión:** v0.59.0 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 + escucha de Telegram 24/7)
 
 > **SI ESTÁS EMPEZANDO UNA SESIÓN NUEVA, LEÉ §10.** Ahí está qué está hecho, qué quedó a medias,
 > qué falta, y las trampas que ya nos mordieron.
@@ -773,6 +773,23 @@ Problemas abiertos:
 
 ## 9. CHANGELOG
 
+- v0.59.0 (2026-10-04) — **Facebook prendido y la voz sin degradar.** (1) Facebook: con la app
+  nueva de Santi, el token de usuario se canjeó por uno largo y de ahí salió el de la página
+  "Pequeña historia" (tipo PAGE, no vence, pages_manage_posts + pages_read_engagement +
+  pages_show_list). FACEBOOK_PAGE_ID y FACEBOOK_PAGE_TOKEN en el .env de la compu y de la Pi
+  (huellas comparadas, sin mostrarlos); FB_USER_TOKEN borrado de los dos. Reel de prueba publicado
+  desde la Pi (9 s, "ready/complete") y borrado. `facebook.activo: true`: el 📤 de la efeméride
+  sube también a Facebook. (2) **La voz del 04/10 (Sputnik) sonaba horrible**: salió con Piper
+  (Gemini TTS dio timeout) y medido paso a paso, `voz.wav` ya venía a 22 kHz y cortada a 9,8 kHz por
+  el +1,5 semitonos (rubberband) sobre los 22 kHz de Piper; no hubo atempo. Arreglos: nada de
+  cambiar el tono (`subir_tono`, `voz.semitonos` y `piper_semitonos` afuera; un test prohíbe
+  rubberband/asetrate); la voz pasa a 48 kHz UNA vez con soxr (precisión 28) apenas se sintetiza
+  (`narrar.a_48k`) y todos los pasos siguen a 48 kHz; duración: atempo hasta ×1,1
+  (`tts_acelerar_max` 1,25 → 1,1, en `hacer_video`) y, si ni así entra, se ACORTA EL GUION
+  (`acortar_guion`: Gemini, mismas frases, todo respaldado por el artículo) y se vuelve a
+  sintetizar. (3) Un timeout suelto de Gemini TTS se reintenta una vez antes de caer en Piper. La del
+  04/10 se rehízo con Laomedeia (34,8 s, sin atempo): voz a 48 kHz, el video final con contenido
+  hasta 16,6 kHz (antes 9,8). 693 tests OK.
 - v0.58.1 (2026-10-04) — Un /reclamo sobre un clip del 412 excluye SOLO el 412 (Santi: no a Davo
   ni a La Cobra); el streamer sigue en las corridas. Un reclamo común sigue excluyendo al streamer.
   685 tests OK.
