@@ -91,3 +91,20 @@ def test_acortar_guion_que_no_sale_devuelve_none():
 
 def test_palabras_objetivo():
     assert ef.palabras_objetivo(110, 60.0, 49.5) == int(110 * 49.5 / 60 * 0.95)
+
+
+def test_un_timeout_suelto_de_gemini_se_reintenta_antes_de_piper(tmp_path, monkeypatch):
+    from clips_bot.gemini import GeminiError
+    from test_efemerides import _cfg_voz
+
+    monkeypatch.setenv("GEMINI_API_KEY", "x")
+    llamadas = []
+
+    def tts(*a, **k):
+        llamadas.append(1)
+        if len(llamadas) == 1:
+            raise GeminiError("Read timed out. (read timeout=180)")
+        return b"\x00\x00" * 24000, 24000
+
+    wav, dur, motor = ef.voz_efemeride(["hola"], _cfg_voz(tmp_path), tmp_path, tts=tts)
+    assert motor == "gemini:Laomedeia" and len(llamadas) == 2

@@ -1795,9 +1795,18 @@ def voz_efemeride(frases: list[str], settings, carpeta: Path, avisar=log.info,
             if not claves:
                 raise GeminiError("sin GEMINI_API_KEY")
             kw = dict(instruccion=cfg.tts_instruccion, voz=cfg.tts_voz, modelo=cfg.tts_modelo)
-            pcm, sr = (tts(claves[0][1], " ".join(frases), **kw) if tts else
-                       hablar_con_claves(claves, " ".join(frases), aviso=aviso_por_telegram,
-                                         uso=registrar_uso, **kw))
+            for intento in range(2):
+                # Un timeout suelto no alcanza para caer en Piper (2026-10-04: a las 20:51 tardó más
+                # de 180 s y dos minutos después contestaba en 5 s): se prueba una vez más.
+                try:
+                    pcm, sr = (tts(claves[0][1], " ".join(frases), **kw) if tts else
+                               hablar_con_claves(claves, " ".join(frases), aviso=aviso_por_telegram,
+                                                 uso=registrar_uso, **kw))
+                    break
+                except GeminiError as e:
+                    if intento or "timed out" not in str(e).lower():
+                        raise
+                    avisar("Gemini TTS tardó demasiado: pruebo una vez más")
             wav = narrar.a_48k(_escribir_wav(pcm, sr, carpeta / "voz.wav"))
             return wav, None, f"gemini:{cfg.tts_voz}"
         except GeminiError as e:
