@@ -9,6 +9,8 @@ from pathlib import Path
 
 import requests
 
+from .idioma import L
+
 API = "https://api.telegram.org/bot{token}/{metodo}"
 MAX_ARCHIVO_BYTES = 50 * 1024 * 1024  # límite de subida de la Bot API
 MAX_CAPTION = 1024
@@ -16,6 +18,7 @@ MAX_CAPTION = 1024
 # Va en todos los mensajes de entrega: con streamers que entran por experimento, Studio es el único
 # chequeo de copyright real que tenemos antes de publicar.
 RECORDATORIO = "Subir en PRIVADO → esperar Chequeos de copyright en Studio → si sale limpio, publicar"
+RECORDATORIO_EN = "Upload as PRIVATE → wait for the copyright checks in Studio → if clean, publish"
 
 
 class TelegramError(RuntimeError):
@@ -227,22 +230,25 @@ def mensaje_textos(numero: int, streamer: str, clip_id: str, horario: str | None
     e = html.escape
     cabecera = f"<b>#{numero} · {e(streamer)}</b>"
     if horario:
-        cabecera += f" · sugerido {e(horario)} AR"
+        cabecera += L(f" · sugerido {e(horario)} AR", f" · suggested {e(horario)} (Argentina)")
     partes = [cabecera, f"id: <code>{e(clip_id)}</code>"]
     if por_que:
         partes.append(f"<i>{e(por_que)}</i>")
     if youtube_url:
         partes.append(f"YouTube: {e(youtube_url)}")
     for etiqueta, valor in [
-        ("Título", textos["titulo"]),
-        ("Descripción", textos["descripcion"]),
+        (L("Título", "Title"), textos["titulo"]),
+        (L("Descripción", "Description"), textos["descripcion"]),
         ("Hashtags", " ".join(textos["hashtags"])),
-        ("Crédito", textos["credito"]),
+        (L("Crédito", "Credit"), textos.get("credito") or ""),
     ]:
-        partes.append(f"\n<b>{etiqueta}:</b>\n<pre>{e(valor)}</pre>")
-    partes.append(f"\n⚠️ <b>{e(RECORDATORIO)}</b>")
-    partes.append(f"Si recibe un reclamo o strike: <code>/reclamo {e(clip_id)}</code> "
-                  "(excluye al streamer de las próximas corridas).")
+        if valor:
+            partes.append(f"\n<b>{etiqueta}:</b>\n<pre>{e(valor)}</pre>")
+    partes.append(f"\n⚠️ <b>{e(L(RECORDATORIO, RECORDATORIO_EN))}</b>")
+    partes.append(L(f"Si recibe un reclamo o strike: <code>/reclamo {e(clip_id)}</code> "
+                    "(excluye al streamer de las próximas corridas).",
+                    f"If it gets a copyright claim or strike: <code>/reclamo {e(clip_id)}</code> "
+                    "(excludes that streamer from future runs)."))
     return "\n".join(partes)
 
 
@@ -252,12 +258,13 @@ def fila_subida(clip_id: str, estado: str | None) -> list[list[dict]]:
     if estado is None:
         return []
     if estado == "no":
-        return [[{"text": "🚫 No se sube", "callback_data": f"sub:r:{clip_id}"}]]
+        return [[{"text": L("🚫 No se sube", "🚫 Not uploading"), "callback_data": f"sub:r:{clip_id}"}]]
     if estado:
-        return [[{"text": f"📤 Programado para las {estado}", "callback_data": f"sub:i:{clip_id}"},
-                 {"text": "❌ Cancelar", "callback_data": f"sub:x:{clip_id}"}]]
-    return [[{"text": "📤 Subir", "callback_data": f"sub:u:{clip_id}"},
-             {"text": "🚫 No subir", "callback_data": f"sub:n:{clip_id}"}]]
+        return [[{"text": L(f"📤 Programado para las {estado}", f"📤 Scheduled for {estado}"),
+                  "callback_data": f"sub:i:{clip_id}"},
+                 {"text": L("❌ Cancelar", "❌ Cancel"), "callback_data": f"sub:x:{clip_id}"}]]
+    return [[{"text": L("📤 Subir", "📤 Upload to YouTube"), "callback_data": f"sub:u:{clip_id}"},
+             {"text": L("🚫 No subir", "🚫 Don't upload"), "callback_data": f"sub:n:{clip_id}"}]]
 
 
 def teclado_voto(clip_id: str, elegido: int = 0, pedido: str = "", ultimo: bool = False,

@@ -31,6 +31,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from . import __version__, db, metricas
+from .idioma import L
 from .candidates import (MOTIVO_COSTREAM, Resultado, buscar_candidatos, buscar_catalogo, buscar_kick,
                          consolidar_evento)
 from .chat import Chat, factor_pico
@@ -174,10 +175,13 @@ def _texto_metricas(conn, n: int = 10) -> str:
                   pct_entero, streamer FROM metricas ORDER BY publicado DESC LIMIT ?""",
         (max(1, min(n, 30)),)).fetchall()
     if not filas:
-        return ("Todavía no hay métricas: se leen en la corrida de las 05:00, de los Shorts de Rots "
-                "que coinciden por título con un clip que te mandé.")
-    lineas = ["📈 <b>Tus últimos Shorts</b> (vistas · % visto en promedio · % que llega al final · "
-              "duración vista)"]
+        return L("Todavía no hay métricas: se leen en la corrida de las 05:00, de los Shorts de Rots "
+                 "que coinciden por título con un clip que te mandé.",
+                 "No metrics yet: they are read in the 05:00 run (YouTube Analytics API).")
+    lineas = [L("📈 <b>Tus últimos Shorts</b> (vistas · % visto en promedio · % que llega al final · "
+                "duración vista)",
+                "📈 <b>Your latest Shorts</b> — YouTube Analytics (views · average % viewed · "
+                "% still watching at the end · average view duration)")]
     for cid, vid, publicado, actualizado, vistas, dur, pct, entero, streamer in filas:
         titulo = cid
         try:
@@ -185,17 +189,18 @@ def _texto_metricas(conn, n: int = 10) -> str:
         except (OSError, ValueError, KeyError, TypeError):
             pass
         dia = (publicado or "")[:10]
-        partes = [f"{vistas:,}".replace(",", ".") + " vistas"]
+        partes = [L(f"{vistas:,}".replace(",", ".") + " vistas", f"{vistas:,} views")]
         if pct is not None:
-            partes.append(f"{pct:.0f} % visto")
+            partes.append(L(f"{pct:.0f} % visto", f"{pct:.0f}% viewed"))
         if entero is not None:
-            partes.append(f"{entero:.0f} % al final")
+            partes.append(L(f"{entero:.0f} % al final", f"{entero:.0f}% at the end"))
         if dur is not None:
             partes.append(f"{dur:.0f} s")
         lineas.append(f"• <a href=\"https://youtube.com/shorts/{vid}\">{html.escape(titulo[:60])}</a> "
                       f"({html.escape(streamer or '?')}, {dia}): " + " · ".join(partes))
     ultima = max((f[3] or "") for f in filas)[:16].replace("T", " ")
-    lineas.append(f"\nActualizado: {ultima} UTC. /metricas 20 para ver más.")
+    lineas.append(L(f"\nActualizado: {ultima} UTC. /metricas 20 para ver más.",
+                    f"\nUpdated: {ultima} UTC. /metricas 20 to see more, /metricas refresh to update now."))
     return "\n".join(lineas)[:4000]
 
 
@@ -1393,21 +1398,30 @@ def _buscar(conn, tg: TelegramClient, chat_id: str, args: list[str], settings: S
             pasos = "\n".join("• " + html.escape(r.texto(settings.pego.min_vistas))
                                for r in recuentos_pego)
             if pasos:
-                tg.send_message(chat_id, "🔥 <b>Lo que pegó en otros canales</b>, paso por paso:\n" + pasos)
+                tg.send_message(chat_id, L("🔥 <b>Lo que pegó en otros canales</b>, paso por paso:\n",
+                                           "🔥 <b>Public YouTube search: what went viral on other "
+                                           "channels</b>, step by step:\n") + pasos)
+            publicos = _pego.texto_publicos(recuentos_pego)
+            if publicos:
+                tg.send_message(chat_id, publicos)
             sin = _pego.texto_sin_original(_pego.sin_original(
                 conn, elegidos_st, datetime.now(timezone.utc) - timedelta(days=settings.pego.dias + 1),
                 settings.pego.min_vistas))
             if sin:
                 tg.send_message(chat_id, sin)
         if not total:
+            if modo == "pego" and L("es", "en") == "en":
+                return f"Searched {quienes}: no original clip to process this time."
             return (f"Busqué en {quienes}{que} {periodo} y no quedó ninguno."
                     + _resumen(descartes) + _problemas(problemas))
 
         cupos = repartir(cupo, [len(c) for _, c in por_streamer])
         detalle = ", ".join(f"{st.login} {len(c)}" for st, c in por_streamer)
-        tg.send_message(chat_id, f"Buscando{html.escape(que)} {periodo}: "
-                                 f"<b>{total} candidatos</b> ({html.escape(detalle)}). "
-                                 f"Proceso {sum(cupos)}, tarda unos minutos.")
+        tg.send_message(chat_id, L(f"Buscando{html.escape(que)} {periodo}: "
+                                   f"<b>{total} candidatos</b> ({html.escape(detalle)}). "
+                                   f"Proceso {sum(cupos)}, tarda unos minutos.",
+                                   f"Found <b>{total} original clip(s)</b> ({html.escape(detalle)}). "
+                                   f"Processing {sum(cupos)}; this takes a few minutes."))
 
         enviados, fallados = 0, []
         for (st, candidatos), cupo in zip(por_streamer, cupos):
@@ -2390,6 +2404,9 @@ def escuchar_telegram(settings: Settings, timeout_poll: int = 50) -> int:
         permitidos = _permitidos()
         conn = db.connect(DB_PATH)
         try:
+            from . import idioma
+
+            idioma.cargar(conn)   # /lang en|es (la demo de la auditoría), sin reiniciar
             # El modo en vivo va ANTES que la cola: un momento en vivo pierde valor por minuto.
             _seguro(tg, str(db.envivo_chat(conn) or chat_ultimo or ""), "el modo en vivo",
                     _envivo_tick, conn, tg, settings, reloj_envivo)
@@ -2420,7 +2437,7 @@ def escuchar_telegram(settings: Settings, timeout_poll: int = 50) -> int:
                 if _es_pesado(cb["data"]):
                     # Se contesta YA, antes del trabajo pesado: si no, el botón gira y, pasados unos
                     # segundos, Telegram ya no acepta la respuesta ("query is too old").
-                    tg.answer_callback(cb["callback_id"], "⏳ Un momento…")
+                    tg.answer_callback(cb["callback_id"], L("⏳ Un momento…", "⏳ One moment…"))
                 chat_ultimo = cb["chat_id"]
                 db.ver_chat(conn, cb["chat_id"], cb.get("chat_tipo", ""),
                             cb.get("chat_nombre", ""), cb["user_id"])
@@ -2652,6 +2669,12 @@ def _despachar(conn, tg: TelegramClient, c: dict, settings: Settings, cola: list
         texto, teclado = _subidas_texto(conn, settings)
         tg.send_message(c["chat_id"], texto, teclado=teclado)
         return
+    if c["comando"] == "/lang":
+        tg.send_message(c["chat_id"], _lang(conn, c["args"]))
+        return
+    if c["comando"] == "/demo":
+        _seguro(tg, c["chat_id"], c["comando"], _demo, conn, tg, c["chat_id"], settings)
+        return
     if c["comando"] == "/envivo":
         respuesta = _seguro(tg, c["chat_id"], c["comando"], _envivo, conn, c["chat_id"], c["args"],
                             settings)
@@ -2673,6 +2696,12 @@ def _despachar(conn, tg: TelegramClient, c: dict, settings: Settings, cola: list
     elif c["comando"] == "/quitar":
         respuesta = _seguro(tg, c["chat_id"], c["comando"], _quitar, conn, c["args"], c["user_id"])
     elif c["comando"] == "/metricas":
+        if c["args"] and c["args"][0].lower() in ("refresh", "actualizar"):
+            # En el momento (la demo de la auditoría): channels.list + playlistItems.list y
+            # YouTube Analytics (reports.query); después, la lista de siempre.
+            tg.send_message(c["chat_id"], L("Pidiendo las métricas a YouTube…",
+                                            "Requesting the latest metrics from YouTube…"))
+            _seguro(tg, c["chat_id"], "/metricas refresh", actualizar_metricas)
         respuesta = _seguro(tg, c["chat_id"], c["comando"], _texto_metricas, conn,
                             int(c["args"][0]) if c["args"] and c["args"][0].isdigit() else 10)
     elif c["comando"] == "/gemini":
@@ -3491,11 +3520,12 @@ CATEGORIA = {"rots": "20", "pequena_historia": "27"}   # 20 = Gaming, 27 = Educa
 
 
 def _programar_subida(conn, settings: Settings, meta: dict, canal: str, hora: str,
-                      ahora: datetime | None = None) -> str:
-    """Sube y programa. Devuelve el mensaje para Telegram ("" si la subida está apagada o ya estaba)."""
+                      ahora: datetime | None = None, demo: bool = False) -> str:
+    """Sube y programa. Devuelve el mensaje para Telegram ("" si la subida está apagada o ya estaba).
+    `demo` (/demo, para la auditoría): sube aunque esté apagada, programado para MAÑANA a `hora`."""
     from . import youtube
 
-    if not settings.youtube_upload_enabled:
+    if not settings.youtube_upload_enabled and not demo:
         return ""
     clip_id = meta["clip_id"]
     if db.subidas(conn, ("programada",), clip_id=clip_id):
@@ -3506,7 +3536,10 @@ def _programar_subida(conn, settings: Settings, meta: dict, canal: str, hora: st
         cuando = youtube.proximo_horario(hora, ahora=hoy, ocupados=ocupados,
                                          horarios=list(settings.publicacion.horarios)
                                          if canal == "rots" else None)
-        if canal == "pequena_historia" and cuando.date() != hoy.date():
+        if demo:
+            hh, mm = (int(x) for x in hora.split(":"))
+            cuando = (hoy + timedelta(days=1)).replace(hour=hh, minute=mm, second=0, microsecond=0)
+        elif canal == "pequena_historia" and cuando.date() != hoy.date():
             # "Un día como hoy" publicado mañana está mal: si ya pasó la hora, sale hoy en 30 min,
             # y nunca después de las 23:55 (a las 23:32 "en 30 min" caía al día siguiente: lo
             # encontró el test corriendo en la Pi a esa hora). Mínimo 5 min para que YouTube lo tome.
@@ -3519,12 +3552,17 @@ def _programar_subida(conn, settings: Settings, meta: dict, canal: str, hora: st
                                                 CATEGORIA.get(canal, "24"))
     except youtube.YouTubeError as e:
         db.crear_subida(conn, clip_id, canal, "error", error=str(e)[:500])
-        return f"⚠️ No pude subirlo a YouTube ({html.escape(youtube.CANALES[canal])}): {html.escape(str(e)[:300])}"
+        return L(f"⚠️ No pude subirlo a YouTube ({html.escape(youtube.CANALES[canal])}): ",
+                 f"⚠️ The YouTube upload failed ({html.escape(youtube.CANALES[canal])}): ") + html.escape(str(e)[:300])
     iso = cuando.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     db.crear_subida(conn, clip_id, canal, "programada", video_id=video_id, publish_at=iso)
-    return (f"📤 Programado en <b>{html.escape(youtube.CANALES[canal])}</b> para el "
-            f"{cuando:%d/%m a las %H:%M} (AR). Se ve en Studio como privado hasta esa hora. "
-            f"<code>/subidas</code> para cancelarlo.")
+    return L(f"📤 Programado en <b>{html.escape(youtube.CANALES[canal])}</b> para el "
+             f"{cuando:%d/%m a las %H:%M} (AR). Se ve en Studio como privado hasta esa hora. "
+             f"<code>/subidas</code> para cancelarlo.",
+             f"📤 Uploaded with videos.insert to <b>{html.escape(youtube.CANALES[canal])}</b> as PRIVATE, "
+             f"scheduled (publishAt) for {cuando:%Y-%m-%d %H:%M} Argentina time ({iso}). "
+             f"Video id: <code>{html.escape(video_id)}</code> — https://studio.youtube.com/video/{video_id}/edit\n"
+             f"Use <code>/subidas</code> to see it and cancel the schedule.")
 
 
 def _subidas_texto(conn, settings: Settings) -> tuple[str, dict | None]:
@@ -3535,20 +3573,25 @@ def _subidas_texto(conn, settings: Settings) -> tuple[str, dict | None]:
     errores = db.subidas(conn, ("error",))[-3:]
     partes = []
     if not settings.youtube_upload_enabled:
-        partes.append("La subida automática está <b>apagada</b> (<code>youtube_upload_enabled: "
-                      "false</code>) hasta que se apruebe la auditoría: docs/auditoria-youtube.md.")
+        partes.append(L("La subida automática está <b>apagada</b> (<code>youtube_upload_enabled: "
+                        "false</code>) hasta que se apruebe la auditoría: docs/auditoria-youtube.md.",
+                        "Automatic uploading is <b>off</b> until the API audit is approved; only the "
+                        "test upload from <code>/demo</code> goes through."))
     if not prog:
-        partes.append("No hay nada programado.")
+        partes.append(L("No hay nada programado.", "Nothing scheduled."))
     filas = []
     for s in prog:
         cuando = datetime.fromisoformat(s["publish_at"].replace("Z", "+00:00")).astimezone(AR)
-        partes.append(f"#{s['id']} · {html.escape(youtube.CANALES.get(s['canal'], s['canal']))} · "
-                      f"{cuando:%d/%m %H:%M} · <code>{html.escape(s['clip_id'])}</code>")
-        filas.append([{"text": f"❌ Cancelar #{s['id']}", "callback_data": f"sub:c:{s['id']}"}])
+        canal_txt = html.escape(youtube.CANALES.get(s["canal"], s["canal"]))
+        partes.append(L(f"#{s['id']} · {canal_txt} · {cuando:%d/%m %H:%M} · <code>{html.escape(s['clip_id'])}</code>",
+                        f"#{s['id']} · {canal_txt} · private, publishes {cuando:%Y-%m-%d %H:%M} (Argentina) · "
+                        f"video <code>{html.escape(s['video_id'] or '')}</code>"))
+        filas.append([{"text": L(f"❌ Cancelar #{s['id']}", f"❌ Cancel #{s['id']}"),
+                       "callback_data": f"sub:c:{s['id']}"}])
     if errores:
-        partes.append("\nÚltimos errores:\n" + "\n".join(
+        partes.append(L("\nÚltimos errores:\n", "\nLatest errors:\n") + "\n".join(
             f"· {html.escape(e['clip_id'])}: {html.escape((e['error'] or '')[:120])}" for e in errores))
-    return "📤 <b>Subidas a YouTube</b>\n\n" + "\n".join(partes), (
+    return L("📤 <b>Subidas a YouTube</b>\n\n", "📤 <b>Scheduled YouTube uploads</b>\n\n") + "\n".join(partes), (
         {"inline_keyboard": filas} if filas else None)
 
 
@@ -3556,9 +3599,79 @@ NO_SUBIR = "no_subir"   # bot_estado "no_subir:<clip_id>" = "1": tocaron 🚫 No
 APAGADA = "La subida a YouTube todavía está apagada (esperando la auditoría)"
 
 
+PREFIJO_DEMO = "demo_"
+
+
+def _lang(conn, args: list[str]) -> str:
+    from . import idioma
+
+    pedido = (args[0].lower() if args else "")
+    if pedido not in idioma.IDIOMAS:
+        return L(f"Idioma actual: {idioma.actual()}. Usá <code>/lang en</code> o <code>/lang es</code>.",
+                 f"Current language: {idioma.actual()}. Use <code>/lang en</code> or <code>/lang es</code>.")
+    idioma.guardar(conn, pedido)
+    return L("Listo: el bot habla en castellano.", "Done: the bot now replies in English.")
+
+
+def video_demo(salida: Path, render, segundos: float = 12.0) -> Path:
+    """Un video corto de prueba (barras de color con un cartel y un tono suave): nada de terceros,
+    así la subida de la demo no tiene ningún riesgo de derechos."""
+    from .media import cola_audio, find_bin, run
+
+    salida.parent.mkdir(parents=True, exist_ok=True)
+    ass = salida.with_suffix(".ass")
+    ass.write_text(f"""[Script Info]
+ScriptType: v4.00+
+PlayResX: {render.ancho}
+PlayResY: {render.alto}
+
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+Style: D,DejaVu Sans,78,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,6,2,5,60,60,0,1
+
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+Dialogue: 0,0:00:00.00,0:00:{segundos:05.2f},D,,0,0,0,,Clips Bot\\NYouTube API demo\\N(test upload)
+""", encoding="utf-8")
+    run([find_bin("ffmpeg"), "-hide_banner", "-loglevel", "error", "-y",
+         "-f", "lavfi", "-i", f"testsrc2=s={render.ancho}x{render.alto}:r={render.fps}:d={segundos}",
+         "-f", "lavfi", "-i", f"sine=frequency=440:sample_rate=48000:duration={segundos}",
+         "-filter_complex", f"[0:v]ass={ass.name}[v];[1:a]volume=0.15,{cola_audio(segundos)}[a]",
+         "-map", "[v]", "-map", "[a]", "-c:v", "libx264", "-preset", "veryfast", "-pix_fmt", "yuv420p",
+         "-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart", salida.name], cwd=salida.parent)
+    return salida
+
+
+def _demo(conn, tg: TelegramClient, chat_id: str, settings: Settings) -> None:
+    """/demo (auditoría de YouTube): un video de prueba con el mensaje de siempre y «📤 Subir».
+    Al tocarlo sube a Rots por la API (videos.insert), privado y programado para mañana, aunque la
+    subida esté apagada para todo lo demás; /subidas lo lista y ❌ le saca la programación."""
+    from .process import READY_DIR, guardar_meta
+
+    ahora = datetime.now(AR)
+    clip_id = f"{PREFIJO_DEMO}{ahora:%Y%m%d%H%M%S}"
+    video = video_demo(READY_DIR / f"{clip_id}.mp4", settings.render)
+    meta = {"clip_id": clip_id, "streamer": "Clips Bot", "canal": "Clips Bot", "plataforma": "demo",
+            "salida": str(video), "duracion_s": 12.0,
+            "textos": {"titulo": "Clips Bot – YouTube API demo (test upload)",
+                       "descripcion": "Test video uploaded with the YouTube Data API (videos.insert) to "
+                                      "demonstrate scheduled publishing (publishAt). Not for publication.",
+                       "hashtags": ["#Shorts"], "credito": ""}}
+    guardar_meta(READY_DIR / f"{clip_id}.json", meta)
+    db.registrar_clip(conn, clip_id, "clips_bot_demo", "demo", None)   # nunca entra en la selección
+    tg.send_message(chat_id, L("🧪 Video de prueba para la demo de la auditoría. Tocá «📤 Subir» para "
+                               "subirlo a Rots por la API, privado y programado para mañana.",
+                               "🧪 Test video for the YouTube API audit demo. Press «📤 Upload to "
+                               "YouTube» to approve it: the bot uploads it to the channel with "
+                               "videos.insert, private and scheduled (publishAt) for tomorrow."))
+    enviar_clip(tg, chat_id, conn, clip_id, meta, 1, settings.publicacion.horarios[0])
+
+
 def _canal_de(clip_id: str, meta: dict) -> str | None:
     """A qué canal va: los clips de streamers a Rots, las efemérides a Pequeña Historia; los videos
     propios (/editar, /narrar, /serie) no tienen canal fijo: sin botón de subida."""
+    if clip_id.startswith(PREFIJO_DEMO):
+        return "rots"          # /demo: el video de prueba para la auditoría
     if clip_id.startswith("efemeride_") or meta.get("efemeride"):
         return "pequena_historia"
     if meta.get("plataforma") in ("twitch", "kick") or clip_id.startswith(db.PREFIJO_MULTIPOV):
@@ -3674,12 +3787,13 @@ def _subir_callback(conn, tg: TelegramClient, cb: dict, settings: Settings, d: d
                                           gameplay=_con_gameplay(meta)))
 
     if canal is None or not meta:
-        return tg.answer_callback(cb["callback_id"], "Ese video ya no está.")
+        return tg.answer_callback(cb["callback_id"], L("Ese video ya no está.", "That video is gone."))
     if d["accion"] == "i":
-        return tg.answer_callback(cb["callback_id"], "Ya está programado. ❌ Cancelar para sacarlo.")
+        return tg.answer_callback(cb["callback_id"], L("Ya está programado. ❌ Cancelar para sacarlo.",
+                                                       "Already scheduled. ❌ Cancel to unschedule it."))
     if d["accion"] == "n":
         db.set_valor(conn, f"{NO_SUBIR}:{clip_id}", "1")
-        tg.answer_callback(cb["callback_id"], "No se sube.")
+        tg.answer_callback(cb["callback_id"], L("No se sube.", "Won't be uploaded."))
         return redibujar()
     if d["accion"] == "r":
         db.borrar_valor(conn, f"{NO_SUBIR}:{clip_id}")
@@ -3690,7 +3804,7 @@ def _subir_callback(conn, tg: TelegramClient, cb: dict, settings: Settings, d: d
 
         programadas = db.subidas(conn, ("programada",), clip_id=clip_id)
         if not programadas:
-            tg.answer_callback(cb["callback_id"], "Ya no estaba programado.")
+            tg.answer_callback(cb["callback_id"], L("Ya no estaba programado.", "It was no longer scheduled."))
             return redibujar()
         for s in programadas:
             try:
@@ -3701,10 +3815,21 @@ def _subir_callback(conn, tg: TelegramClient, cb: dict, settings: Settings, d: d
             except (youtube.YouTubeError, facebook.FacebookError) as e:
                 return tg.answer_callback(cb["callback_id"], f"No pude: {str(e)[:150]}", alerta=True)
             db.marcar_subida(conn, s["id"], "cancelada")
-        tg.answer_callback(cb["callback_id"], "Cancelado.")
+        tg.answer_callback(cb["callback_id"], L("Cancelado.", "Schedule cancelled (videos.update)."))
+        tg.send_message(cb["chat_id"], L("❌ Cancelado: queda privado en Studio, sin fecha.",
+                                         "❌ Cancelled with videos.update: the video stays private in "
+                                         "YouTube Studio, with no scheduled date."))
         return redibujar()
     # 📤 Subir. Si no hay nada prendido, el cartel; si hay, se contesta ANTES de subir (tarda).
     db.borrar_valor(conn, f"{NO_SUBIR}:{clip_id}")
+    if clip_id.startswith(PREFIJO_DEMO):
+        # /demo: sube aunque la subida esté apagada para todo lo demás, programado para mañana.
+        tg.answer_callback(cb["callback_id"], L("📤 Subiendo…", "📤 Uploading…"))
+        aviso = _programar_subida(conn, settings, meta, canal, _hora_de(settings, canal, meta), demo=True)
+        redibujar()
+        if aviso:
+            tg.send_message(cb["chat_id"], aviso)
+        return
     sube_fb = canal == "pequena_historia" and settings.facebook.activo
     if not settings.youtube_upload_enabled and not sube_fb:
         return tg.answer_callback(cb["callback_id"], APAGADA, alerta=True)
@@ -3772,13 +3897,17 @@ def _subidas_callback(conn, tg: TelegramClient, cb: dict, settings: Settings) ->
     sid = int(d["crudos"][0]) if d["crudos"][0].isdigit() else -1
     s = next((x for x in db.subidas(conn, ("programada",)) if x["id"] == sid), None)
     if not s:
-        return tg.answer_callback(cb["callback_id"], "Esa ya no está programada.")
+        return tg.answer_callback(cb["callback_id"], L("Esa ya no está programada.", "That one is no longer scheduled."))
     try:
         youtube.Cliente(s["canal"]).cancelar(s["video_id"])
     except youtube.YouTubeError as e:
         return tg.answer_callback(cb["callback_id"], f"No pude: {str(e)[:150]}")
     db.marcar_subida(conn, sid, "cancelada")
-    tg.answer_callback(cb["callback_id"], "Cancelada: queda privado en Studio.")
+    tg.answer_callback(cb["callback_id"], L("Cancelada: queda privado en Studio.",
+                                            "Cancelled (videos.update): it stays private in Studio."))
+    tg.send_message(cb["chat_id"], L(f"❌ Cancelada la #{sid}: queda privado en Studio, sin fecha.",
+                                     f"❌ Schedule #{sid} cancelled with videos.update: the video stays "
+                                     f"private in YouTube Studio, with no publish date."))
     texto, teclado = _subidas_texto(conn, settings)
     tg.edit_message(cb["chat_id"], cb["message_id"], texto, teclado or {"inline_keyboard": []})
 
@@ -3875,6 +4004,14 @@ SECCIONES = [
          "cancelar cada uno. Se programa con «📤 Subir» debajo de cada video (el 👍 solo vota). "
          "Hoy la subida a YouTube está apagada hasta la auditoría.",
          "/subidas"),
+        ("/demo",
+         "(auditoría de YouTube) arma un video corto de prueba y lo manda con «📤 Subir»: sube a "
+         "Rots por la API, privado y programado para mañana, aunque la subida esté apagada. Después "
+         "se ve en /subidas y se cancela con ❌.",
+         "/demo"),
+        ("/lang en|es",
+         "los mensajes del bot en inglés (para grabar la demo de la auditoría) o en castellano.",
+         "/lang en"),
         ("/metricas [cantidad]",
          "vistas y retención (% visto, % que llega al final, duración vista) de tus últimos Shorts "
          "de Rots (default 10). Se actualizan solas a las 05:00.",

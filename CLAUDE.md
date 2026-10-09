@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-10-04 | **Versión:** v0.59.0 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 + escucha de Telegram 24/7)
+**Snapshot:** 2026-10-08 | **Versión:** v0.60.0 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 + escucha de Telegram 24/7)
 
 > **SI ESTÁS EMPEZANDO UNA SESIÓN NUEVA, LEÉ §10.** Ahí está qué está hecho, qué quedó a medias,
 > qué falta, y las trampas que ya nos mordieron.
@@ -773,6 +773,23 @@ Problemas abiertos:
 
 ## 9. CHANGELOG
 
+- v0.60.0 (2026-10-08) — **Demo para la auditoría de YouTube** (YouTube pidió "an English
+  screencast or step-by-step script… upload, schedule, manage, analytics, public searches"; plazo 7
+  días hábiles). (1) `/lang en|es` (`idioma.py`, `L(es, en)`, en `bot_estado.idioma`, la escucha lo
+  relee en cada vuelta): en inglés el mensaje del clip (Title/Description/…, recordatorio), los
+  botones 📤/🚫/❌, las respuestas de la subida, `/subidas`, la cancelación, `/metricas`, la búsqueda
+  🔥 y /demo. (2) `/demo`: un video de prueba propio (barras de color + cartel + tono; nada de
+  terceros, `video_demo`) con el mensaje de siempre; «📤» lo sube a Rots con `videos.insert`,
+  privado y con `publishAt` MAÑANA a 13:00 aunque `youtube_upload_enabled` esté apagado (solo los
+  `demo_*`); queda en `subidas`, `/subidas` lo lista y ❌ usa `videos.update`. El clip demo queda
+  `entregado` (nunca `procesado`: no entra a las 05:00) y `metricas.entregados` lo ignora.
+  (3) `/metricas refresh`: pide las métricas en el momento (channels.list + playlistItems.list +
+  Analytics reports.query). (4) `/buscar <x> pego x1` muestra los Shorts PÚBLICOS encontrados
+  (`Recuento.publicos`, `pego.texto_publicos`: título, canal, vistas, link). (5) En
+  `docs/auditoria-demo/`: el PDF "Clips Bot – API usage walkthrough" (6 pasos, un lugar por
+  captura y el método de la API en cada uno; sale de `walkthrough.html` impreso con Edge), el
+  borrador del mail en inglés (`respuesta-email.md`) y el orden de grabación (`orden-grabacion.md`).
+  NO probado contra YouTube (la subida la hace Santi al grabar): tests con cliente falso. 701 tests OK.
 - v0.59.0 (2026-10-04) — **Facebook prendido y la voz sin degradar.** (1) Facebook: con la app
   nueva de Santi, el token de usuario se canjeó por uno largo y de ahí salió el de la página
   "Pequeña historia" (tipo PAGE, no vence, pages_manage_posts + pages_read_engagement +

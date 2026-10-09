@@ -169,6 +169,9 @@ def test_subidas_lista_y_cancela(conn, prendida):
         def edit_message(self, *a):
             pass
 
+        def send_message(self, *a, **k):
+            pass
+
     m._subidas_callback(conn, TG(), {"data": f"sub:c:{sid}", "chat_id": "1", "message_id": 2,
                                      "callback_id": "q"}, prendida)
     assert db.subidas(conn)[0]["estado"] == "cancelada" and ("cancelado", "VID") in ClienteFalso.subidos

@@ -85,8 +85,13 @@ class Recuento:
     encontrados: int = 0
     sin_original: list[ShortAjeno] = field(default_factory=list)
     error: str = ""
+    publicos: list[ShortAjeno] = field(default_factory=list)   # los Shorts públicos que pasaron el filtro
 
     def texto(self, min_vistas: int) -> str:
+        from .idioma import L
+
+        if L("es", "en") == "en":
+            return self.texto_en(min_vistas)
         if self.error:
             return f"{self.streamer}: la búsqueda falló ({self.error})"
         partes = [f"{self.streamer}: YouTube dio {self.resultados} Shorts",
@@ -97,6 +102,19 @@ class Recuento:
         if self.comparados:
             partes.append(f"comparé {self.comparados} contra {'/'.join(map(str, self.clips))} clips suyos")
         partes.append(f"encontré {self.encontrados} original" + ("" if self.encontrados == 1 else "es"))
+        return " → ".join(partes)
+
+    def texto_en(self, min_vistas: int) -> str:
+        if self.error:
+            return f"{self.streamer}: the search failed ({self.error})"
+        partes = [f"{self.streamer}: YouTube search returned {self.resultados} videos",
+                  f"{self.cortos} up to 61 s", f"{self.con_vistas} with {min_vistas:,}+ views",
+                  f"{self.nombran} actually mention the creator"]
+        if self.ya_vistos:
+            partes.append(f"{self.ya_vistos} already compared before")
+        if self.comparados:
+            partes.append(f"compared {self.comparados} against {'/'.join(map(str, self.clips))} of their clips")
+        partes.append(f"found {self.encontrados} original clip" + ("" if self.encontrados == 1 else "s"))
         return " → ".join(partes)
 
 
@@ -206,10 +224,12 @@ def filtrar(shorts: list[ShortAjeno], s: Streamer, min_vistas: int,
     cortos = [x for x in shorts if 0 < x.duracion <= 61]
     con_vistas = [x for x in cortos if x.vistas >= min_vistas]
     ok = [x for x in con_vistas if _norm(x.canal) not in propios_n and nombra(s, x.titulo, x.canal)]
+    ok = sorted(ok, key=lambda x: -x.vistas)
     if rec is not None:
         rec.resultados, rec.cortos, rec.con_vistas, rec.nombran = (
             len(shorts), len(cortos), len(con_vistas), len(ok))
-    return sorted(ok, key=lambda x: -x.vistas)
+        rec.publicos = ok[:10]
+    return ok
 
 
 def relevantes(shorts: list[ShortAjeno], s: Streamer, min_vistas: int, cuantos: int,
@@ -464,6 +484,26 @@ def buscar_en_vod_del_dia(conn: sqlite3.Connection, streamers: list[Streamer], c
                      (clip_id, resultado, sid))
         conn.commit()
     return hallados
+
+
+def texto_publicos(recuentos: list) -> str:
+    """Los Shorts PÚBLICOS que encontró la búsqueda (search.list + videos.list), con sus vistas y
+    el link, en el idioma del bot. Es lo que la auditoría de YouTube pide ver de la búsqueda."""
+    import html
+
+    from .idioma import L
+
+    lineas = []
+    for r in recuentos:
+        for x in r.publicos:
+            vistas = f"{x.vistas:,}" if L("es", "en") == "en" else f"{x.vistas:,}".replace(",", ".")
+            lineas.append(f"• <a href=\"{x.url}\">{html.escape(x.titulo[:70])}</a> — "
+                          f"{html.escape(x.canal)} · {vistas} " + L("vistas", "views"))
+    if not lineas:
+        return ""
+    return (L("🔎 <b>Shorts públicos encontrados en YouTube</b> (search.list + videos.list):",
+              "🔎 <b>Public Shorts found on YouTube</b> (search.list + videos.list):")
+            + "\n" + "\n".join(lineas[:15]))
 
 
 def texto_sin_original(filas: list[dict]) -> str:

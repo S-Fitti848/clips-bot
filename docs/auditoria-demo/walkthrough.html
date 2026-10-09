@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Clips Bot – API usage walkthrough</title>
+<style>
+  @page { size: A4; margin: 18mm 16mm; }
+  body { font-family: "Segoe UI", Roboto, Arial, sans-serif; color: #1f2328; line-height: 1.5; font-size: 10.5pt; }
+  h1 { font-size: 20pt; margin: 0 0 4px; }
+  .sub { color: #59636e; margin: 0 0 18px; }
+  h2 { font-size: 13pt; margin: 22px 0 6px; border-bottom: 1px solid #d1d9e0; padding-bottom: 3px; }
+  h3 { font-size: 11pt; margin: 14px 0 4px; }
+  table { border-collapse: collapse; width: 100%; margin: 6px 0 10px; font-size: 9.5pt; }
+  th, td { border: 1px solid #d1d9e0; padding: 4px 6px; text-align: left; vertical-align: top; }
+  th { background: #f6f8fa; }
+  code { font-family: Consolas, "Courier New", monospace; font-size: 9.5pt; background: #f6f8fa; padding: 0 3px; border-radius: 3px; }
+  .api { background: #eef6ff; border-left: 3px solid #0969da; padding: 6px 10px; margin: 6px 0; font-size: 9.5pt; }
+  .shot { border: 2px dashed #8c959f; border-radius: 6px; height: 62mm; display: flex; align-items: center;
+          justify-content: center; color: #59636e; margin: 8px 0 4px; text-align: center; padding: 0 10px; }
+  .step { page-break-inside: avoid; }
+  .note { color: #59636e; font-size: 9pt; }
+  ol, ul { margin: 4px 0 8px 18px; padding: 0; }
+</style>
+</head>
+<body>
+
+<h1>Clips Bot – API usage walkthrough</h1>
+<p class="sub">Step-by-step script for the YouTube API Services audit · Channel: <b>Roty</b>
+(<code>UCz0-X39ylB_BAO_yFCLMS8w</code>) · Project contact: rotypro8@gmail.com</p>
+
+<h2>What Clips Bot is</h2>
+<p>Clips Bot is a personal tool, used only by the channel owner, that prepares short vertical videos
+(Shorts) for the owner's own YouTube channel. The owner controls it from a private Telegram chat.
+Every video has to be approved there by the owner first. Nothing is uploaded automatically without approval. It uses the YouTube API Services to:</p>
+<ul>
+  <li><b>upload and schedule</b> approved videos on the owner's channel;</li>
+  <li><b>manage</b> those uploads (list them and cancel a scheduled publication);</li>
+  <li><b>track analytics</b> of the owner's own videos (views, average view duration, retention);</li>
+  <li><b>perform public searches</b> for public Shorts that mention the creators the channel works with, to find which moments became popular.</li>
+</ul>
+
+<table>
+  <tr><th>Access</th><th>Used for</th></tr>
+  <tr><td>OAuth 2.0 (installed app), scope <code>youtube.upload</code></td><td>videos.insert</td></tr>
+  <tr><td>OAuth 2.0, scope <code>youtube</code></td><td>videos.update (cancel a schedule), channels.list, playlistItems.list</td></tr>
+  <tr><td>OAuth 2.0, scope <code>yt-analytics.readonly</code></td><td>YouTube Analytics API reports.query (own channel only)</td></tr>
+  <tr><td>API key</td><td>search.list and videos.list for public data (public search)</td></tr>
+</table>
+<p class="note">The interface language was switched to English for this demo with the bot command <code>/lang en</code>.</p>
+
+<div class="step">
+<h2>Step 1 — Approval in Telegram</h2>
+<p>The owner sends <code>/demo</code>. The bot creates a short test video (color bars, no third-party content) and
+sends it to the private chat with the title, description and hashtags it will use, and the buttons
+<b>📤 Upload to YouTube</b> / <b>🚫 Don't upload</b>. Nothing reaches YouTube until the owner presses 📤.</p>
+<div class="api">API: none in this step (approval happens in Telegram).</div>
+<div class="shot">[Screenshot 1 — Telegram: the test video with Title / Description / Hashtags and the “📤 Upload to YouTube” button]</div>
+</div>
+
+<div class="step">
+<h2>Step 2 — Upload and schedule</h2>
+<p>The owner presses <b>📤 Upload to YouTube</b>. The bot uploads the file to the owner's channel as
+<b>private</b> with a scheduled publication time (tomorrow at 13:00, Argentina time). It replies with the
+video id and a direct link to YouTube Studio, and the button changes to <b>📤 Scheduled for 13:00</b> / <b>❌ Cancel</b>.</p>
+<div class="api">API: <code>videos.insert</code> (resumable upload, <code>part=snippet,status</code>) with
+<code>status.privacyStatus = "private"</code> and <code>status.publishAt</code> = tomorrow 16:00 UTC;
+snippet: title, description, tags, <code>categoryId</code>.</div>
+<div class="shot">[Screenshot 2 — Telegram: “Uploaded with videos.insert … scheduled (publishAt) for …”, with the video id and the Studio link]</div>
+</div>
+
+<div class="step">
+<h2>Step 3 — End result in YouTube Studio</h2>
+<p>In YouTube Studio → Content, the uploaded video appears in the channel as <b>Private</b>, with the title,
+description and the publish time (publishAt) sent by the bot. Because the API project has not been audited yet,
+YouTube keeps videos uploaded through the API locked as private, so the scheduled publication cannot happen
+yet. That is expected, and it is why we are requesting this audit.</p>
+<div class="api">API: none (YouTube Studio shows the result of the videos.insert call).</div>
+<div class="shot">[Screenshot 3 — YouTube Studio → Content: the test video, visibility “Private” (open its details to show the schedule)]</div>
+</div>
+
+<div class="step">
+<h2>Step 4 — Manage: list and cancel the schedule</h2>
+<p>The owner sends <code>/subidas</code>: the bot lists every scheduled upload (channel, publish time, video id)
+with a <b>❌ Cancel</b> button. Pressing it removes the scheduled publication. The video is not deleted: it stays private,
+with no publish date. Studio shows the change.</p>
+<div class="api">API: <code>videos.update</code> (<code>part=status</code>) with <code>privacyStatus = "private"</code> and no
+<code>publishAt</code>, which removes the schedule. The list itself comes from the bot's own database of the uploads it made.</div>
+<div class="shot">[Screenshot 4 — Telegram: /subidas listing the scheduled test video with “❌ Cancel #N”]</div>
+<div class="shot">[Screenshot 5 — Telegram “Schedule #N cancelled with videos.update” + YouTube Studio: the video private, without a scheduled date]</div>
+</div>
+
+<div class="step">
+<h2>Step 5 — Track analytics</h2>
+<p>The owner sends <code>/metricas refresh</code>. The bot requests the latest statistics of the owner's own Shorts and
+shows, per video: views, average % viewed, % of viewers still watching at the end, and average view duration.
+The same refresh runs automatically once a day. Every stored statistic is re-requested before 30 days.
+Stored data is deleted only if the video no longer exists on the channel, or if the owner revokes access.</p>
+<div class="api">API: <code>channels.list</code> (<code>mine=true</code>, <code>part=contentDetails</code>) →
+<code>playlistItems.list</code> (uploads playlist) to list the channel's videos; YouTube Analytics API
+<code>reports.query</code> with <code>ids=channel==MINE</code>, metrics <code>views, averageViewDuration,
+averageViewPercentage</code> (dimension <code>video</code>) and <code>audienceWatchRatio</code>
+(dimension <code>elapsedVideoTimeRatio</code>).</div>
+<div class="shot">[Screenshot 6 — Telegram: “Your latest Shorts — YouTube Analytics” with views, % viewed, % at the end, duration]</div>
+</div>
+
+<div class="step">
+<h2>Step 6 — Public search</h2>
+<p>The owner sends <code>/buscar &lt;creator&gt; pego x1</code> (for example <code>/buscar davooxeneize pego x1</code>). The bot searches
+YouTube for <b>public</b> Shorts from other channels that mention that creator. It shows them with their
+titles, channels and view counts, step by step. Only public data is used: title, channel name and view count.
+It is used only to find which moments of the creator became popular, and it is deleted after 30 days.</p>
+<div class="api">API (API key): <code>search.list</code> (<code>q</code> = creator names, <code>type=video</code>,
+<code>videoDuration=short</code>, <code>order=viewCount</code>, <code>publishedAfter</code>) →
+<code>videos.list</code> (<code>part=snippet,statistics,contentDetails</code>) for exact view counts and durations.</div>
+<div class="shot">[Screenshot 7 — Telegram: “Public YouTube search … step by step” and “Public Shorts found on YouTube” with titles and views]</div>
+</div>
+
+<h2>Data handling</h2>
+<ul>
+  <li>Only the owner's own channel is accessed with OAuth. Other channels: public data only, through the API key.</li>
+  <li>Stored: video id, scheduled date and the statistics listed above. Statistics are refreshed before 30 days. They are deleted if the video
+      no longer exists or access is revoked, and on request within 7 days (rotypro8@gmail.com).</li>
+  <li>Privacy policy: https://s-fitti848.github.io/privacidad.html · Terms: https://s-fitti848.github.io/terminos.html</li>
+</ul>
+
+</body>
+</html>

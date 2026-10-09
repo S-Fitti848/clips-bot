@@ -49,7 +49,8 @@ def entregados(ready: Path, desde: datetime) -> list[dict]:
         except (OSError, ValueError):
             continue
         ent = (meta.get("entregado") or {}).get("fecha")
-        if not ent or meta.get("efemeride") or not (meta.get("textos") or {}).get("titulo"):
+        if (not ent or meta.get("efemeride") or str(meta.get("clip_id", "")).startswith("demo_")
+                or not (meta.get("textos") or {}).get("titulo")):
             continue
         if datetime.fromisoformat(ent) >= desde:
             out.append(meta)
