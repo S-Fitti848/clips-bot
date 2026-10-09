@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-10-08 | **Versión:** v0.62.0 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 + escucha de Telegram 24/7)
+**Snapshot:** 2026-10-08 | **Versión:** v0.62.1 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 + escucha de Telegram 24/7)
 
 > **SI ESTÁS EMPEZANDO UNA SESIÓN NUEVA, LEÉ §10.** Ahí está qué está hecho, qué quedó a medias,
 > qué falta, y las trampas que ya nos mordieron.
@@ -773,6 +773,11 @@ Problemas abiertos:
 
 ## 9. CHANGELOG
 
+- v0.62.1 (2026-10-08) — **Un comando cortado por un reinicio se repetía solo.** La escucha guardaba
+  el offset de Telegram DESPUÉS de atender los mensajes: al reiniciarla para frenar el `/buscar
+  davooxeneize pego x1` colgado, lo volvió a leer y arrancó de nuevo (22:41:54). Ahora el offset se
+  guarda apenas llegan los mensajes, antes de atenderlos: un comando cortado se pierde en vez de
+  repetirse. El repetido se frenó salteando ese mensaje (offset +1) y reiniciando. 709 tests OK.
 - v0.62.0 (2026-10-08) — **`/publicos <streamer>`** para la demo de la auditoría: `/buscar davooxeneize
   pego x1` se quedó muchos minutos mientras Santi grababa (compara el audio de cada Short contra hasta
   60 clips bajados de Kick); se frenó reiniciando la escucha (el turno pesado se soltó solo).

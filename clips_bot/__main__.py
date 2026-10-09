@@ -2427,6 +2427,10 @@ def escuchar_telegram(settings: Settings, timeout_poll: int = 50) -> int:
                 log.warning("getUpdates falló (%s); reintento en 30 s", e)
                 time.sleep(30)
                 continue
+            if updates:
+                # Leído = anotado ANTES de atender (2026-10-08): si se reinicia la escucha a mitad de
+                # un comando largo, ese comando no se vuelve a correr solo (un /buscar se repitió así).
+                db.set_valor(conn, "telegram_offset", str(max(u["update_id"] for u in updates) + 1))
             _seguro(tg, str(chat_ultimo or ""), "votos", _atender_votos, conn, tg, updates,
                     permitidos)
             for cb in callbacks(updates):
@@ -2576,8 +2580,6 @@ def escuchar_telegram(settings: Settings, timeout_poll: int = 50) -> int:
                                 c["comando"], c["usuario"], c["user_id"], c["chat_id"])
                     continue
                 _seguro(tg, c["chat_id"], c["comando"], _despachar, conn, tg, c, settings, cola)
-            if updates:
-                db.set_valor(conn, "telegram_offset", str(max(u["update_id"] for u in updates) + 1))
         finally:
             conn.close()
 
