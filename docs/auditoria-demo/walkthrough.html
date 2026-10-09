@@ -18,6 +18,12 @@
   .shot { border: 2px dashed #8c959f; border-radius: 6px; height: 62mm; display: flex; align-items: center;
           justify-content: center; color: #59636e; margin: 8px 0 4px; text-align: center; padding: 0 10px; }
   .step { page-break-inside: avoid; }
+  figure { margin: 8px 0 4px; text-align: center; }
+  figure img { max-width: 100%; max-height: 118mm; border: 1px solid #d1d9e0; border-radius: 4px; }
+  figcaption { color: #59636e; font-size: 8.5pt; margin-top: 3px; }
+  .dos { display: flex; gap: 8px; align-items: flex-start; }
+  .dos figure { flex: 1; }
+  .dos figure img { max-height: 95mm; }
   .note { color: #59636e; font-size: 9pt; }
   ol, ul { margin: 4px 0 8px 18px; padding: 0; }
 </style>
@@ -55,7 +61,7 @@ Every video has to be approved there by the owner first. Nothing is uploaded aut
 sends it to the private chat with the title, description and hashtags it will use, and the buttons
 <b>📤 Upload to YouTube</b> / <b>🚫 Don't upload</b>. Nothing reaches YouTube until the owner presses 📤.</p>
 <div class="api">API: none in this step (approval happens in Telegram).</div>
-<div class="shot">[Screenshot 1 — Telegram: the test video with Title / Description / Hashtags and the “📤 Upload to YouTube” button]</div>
+<figure><img src="capturas/1_demo.jpg" alt="Screenshot 1"><figcaption>Screenshot 1 — the test video awaiting approval in Telegram, with “📤 Upload to YouTube”.</figcaption></figure>
 </div>
 
 <div class="step">
@@ -66,7 +72,7 @@ video id and a direct link to YouTube Studio, and the button changes to <b>📤 
 <div class="api">API: <code>videos.insert</code> (resumable upload, <code>part=snippet,status</code>) with
 <code>status.privacyStatus = "private"</code> and <code>status.publishAt</code> = tomorrow 16:00 UTC;
 snippet: title, description, tags, <code>categoryId</code>.</div>
-<div class="shot">[Screenshot 2 — Telegram: “Uploaded with videos.insert … scheduled (publishAt) for …”, with the video id and the Studio link]</div>
+<figure><img src="capturas/2_upload.jpg" alt="Screenshot 2"><figcaption>Screenshot 2 — after pressing 📤: “Uploaded with videos.insert … scheduled (publishAt)”, video id and Studio link.</figcaption></figure>
 </div>
 
 <div class="step">
@@ -76,7 +82,7 @@ description and the publish time (publishAt) sent by the bot. Because the API pr
 YouTube keeps videos uploaded through the API locked as private, so the scheduled publication cannot happen
 yet. That is expected, and it is why we are requesting this audit.</p>
 <div class="api">API: none (YouTube Studio shows the result of the videos.insert call).</div>
-<div class="shot">[Screenshot 3 — YouTube Studio → Content: the test video, visibility “Private” (open its details to show the schedule)]</div>
+<figure><img src="capturas/3_studio_programado.jpg" alt="Screenshot 3"><figcaption>Screenshot 3 — YouTube Studio → Content: the test video, marked “Programado” (scheduled).</figcaption></figure>
 </div>
 
 <div class="step">
@@ -86,8 +92,11 @@ with a <b>❌ Cancel</b> button. Pressing it removes the scheduled publication w
 the bot never deletes videos. In the recording, Studio is refreshed after the cancellation.</p>
 <div class="api">API: <code>videos.update</code> (<code>part=status</code>) with <code>privacyStatus = "private"</code> and no
 <code>publishAt</code>, which removes the schedule. The list itself comes from the bot's own database of the uploads it made.</div>
-<div class="shot">[Screenshot 4 — Telegram: /subidas listing the scheduled test video with “❌ Cancel #N”]</div>
-<div class="shot">[Screenshot 5 — Telegram “Schedule #N cancelled with videos.update” + YouTube Studio after the cancellation]</div>
+<figure><img src="capturas/4_subidas.jpg" alt="Screenshot 4"><figcaption>Screenshot 4 — /subidas: scheduled uploads with “❌ Cancel #N”.</figcaption></figure>
+<div class="dos">
+<figure><img src="capturas/5_cancel.jpg" alt="Screenshot 5a"><figcaption>Screenshot 5a — ❌ Cancel: “Schedule #5 cancelled with videos.update”.</figcaption></figure>
+<figure><img src="capturas/6_studio_sin_fecha.jpg" alt="Screenshot 5b"><figcaption>Screenshot 5b — YouTube Studio after the cancellation: no longer “Programado”.</figcaption></figure>
+</div>
 </div>
 
 <div class="step">
@@ -101,7 +110,7 @@ Stored data is deleted only if the video no longer exists on the channel, or if 
 <code>reports.query</code> with <code>ids=channel==MINE</code>, metrics <code>views, averageViewDuration,
 averageViewPercentage</code> (dimension <code>video</code>) and <code>audienceWatchRatio</code>
 (dimension <code>elapsedVideoTimeRatio</code>).</div>
-<div class="shot">[Screenshot 6 — Telegram: “Your latest Shorts — YouTube Analytics” with views, % viewed, % at the end, duration]</div>
+<figure><img src="capturas/7_metricas.jpg" alt="Screenshot 6"><figcaption>Screenshot 6 — /metricas refresh: “Your latest Shorts — YouTube Analytics”.</figcaption></figure>
 </div>
 
 <div class="step">

@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-10-09 | **Versión:** v0.63.0 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 + escucha de Telegram 24/7)
+**Snapshot:** 2026-10-09 | **Versión:** v0.63.1 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 + escucha de Telegram 24/7)
 
 > **SI ESTÁS EMPEZANDO UNA SESIÓN NUEVA, LEÉ §10.** Ahí está qué está hecho, qué quedó a medias,
 > qué falta, y las trampas que ya nos mordieron.
@@ -773,6 +773,12 @@ Problemas abiertos:
 
 ## 9. CHANGELOG
 
+- v0.63.1 (2026-10-09) — PDF de la auditoría con las capturas sacadas del screencast
+  (zlLOnuSHzQc, bajado en la Pi): /demo, Upload, Studio "Programado", /subidas, Cancel, Studio después
+  de cancelar y /metricas refresh (`docs/auditoria-demo/capturas/`, las de Telegram recortadas al chat
+  del bot para no mostrar otros chats). **La grabación NO tiene /publicos** (termina en `/buscar
+  davooxeneize` con el menú "¿de cuándo?"): el paso 6 del PDF queda esperando una captura de Santi; el
+  mail ya no dice que el video muestra la búsqueda pública.
 - v0.63.0 (2026-10-09) — **Las respuestas de YouTube se guardan.** Los dos videos de /demo
   (`bocYs7_5N3I` 22:33 y `4JaPlvbWgZ0` 23:00 del 08/10) no están en Studio. Investigado: subieron
   al canal correcto (el token de la Pi es Roty, `UCz0-X39ylB_BAO_yFCLMS8w`); YouTube los aceptó al
