@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-10-08 | **Versión:** v0.62.1 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 + escucha de Telegram 24/7)
+**Snapshot:** 2026-10-08 | **Versión:** v0.62.2 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 + escucha de Telegram 24/7)
 
 > **SI ESTÁS EMPEZANDO UNA SESIÓN NUEVA, LEÉ §10.** Ahí está qué está hecho, qué quedó a medias,
 > qué falta, y las trampas que ya nos mordieron.
@@ -773,6 +773,17 @@ Problemas abiertos:
 
 ## 9. CHANGELOG
 
+- v0.62.2 (2026-10-08) — **Demo grabada y vuelta a la normalidad.** Screencast (oculto):
+  https://youtu.be/zlLOnuSHzQc, ya en el borrador del mail y en el PDF. Bot en castellano
+  (`idioma` = es), `youtube_upload_enabled: false`, la excepción solo para `demo_*`. Revisión para el
+  09/10: settings en la Pi OK (título 3 s, zooms ×1,35, videos en efemérides, Laomedeia, atempo
+  ×1,1, Facebook prendido); zooms y picos aparecen en los clips reales (1-3 por clip); los Reels de
+  Facebook del 05 y 06/10 salieron publicados (en la DB seguían "programada": marcados
+  "publicada" a mano; el bot no pasa solo un Reel programado a publicado). La efeméride del 08/10 no
+  salió (el TimeoutExpired, arreglado en v0.61.0); propuesta de prueba del 09/10 en la Pi, sin
+  Telegram: OK (Google compra YouTube, 2006; la frase de acción sin video libre de época → foto).
+  Los dos videos de prueba de /demo (`bocYs7_5N3I`, `4JaPlvbWgZ0`) no aparecen ni en
+  `videos.list` ni en los uploads del canal: hay que mirarlos en Studio.
 - v0.62.1 (2026-10-08) — **Un comando cortado por un reinicio se repetía solo.** La escucha guardaba
   el offset de Telegram DESPUÉS de atender los mensajes: al reiniciarla para frenar el `/buscar
   davooxeneize pego x1` colgado, lo volvió a leer y arrancó de nuevo (22:41:54). Ahora el offset se
