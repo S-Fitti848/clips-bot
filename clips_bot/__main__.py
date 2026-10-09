@@ -2672,6 +2672,11 @@ def _despachar(conn, tg: TelegramClient, c: dict, settings: Settings, cola: list
     if c["comando"] == "/lang":
         tg.send_message(c["chat_id"], _lang(conn, c["args"]))
         return
+    if c["comando"] == "/publicos":
+        respuesta = _seguro(tg, c["chat_id"], c["comando"], _publicos, conn, c["args"], settings)
+        if respuesta is not FALLO and respuesta:
+            tg.send_message(c["chat_id"], respuesta)
+        return
     if c["comando"] == "/demo":
         _seguro(tg, c["chat_id"], c["comando"], _demo, conn, tg, c["chat_id"], settings)
         return
@@ -3613,6 +3618,39 @@ def _lang(conn, args: list[str]) -> str:
     return L("Listo: el bot habla en castellano.", "Done: the bot now replies in English.")
 
 
+def _publicos(conn, args: list[str], settings: Settings, buscar=None, ahora=None) -> str:
+    """/publicos <streamer> (demo de la auditoría): SOLO la búsqueda pública en YouTube
+    (search.list + videos.list) y la lista de Shorts que lo nombran, con canal, vistas y link. Sin
+    bajar ni comparar nada: contesta en segundos. No toca el turno pesado."""
+    from . import pego
+
+    if not args:
+        return L("Uso: <code>/publicos davooxeneize</code>", "Usage: <code>/publicos davooxeneize</code>")
+    nombre = args[0].lower().lstrip("@")
+    streamers = _streamers(conn)
+    st = next((x for x in streamers if x.login.lower() == nombre
+               or nombre in (a.lower() for a in x.apodos)), None)
+    if st is None:
+        return L(f"No tengo a <code>{html.escape(nombre)}</code>.", f"Unknown creator <code>{html.escape(nombre)}</code>.")
+    ahora = ahora or datetime.now(timezone.utc)
+    desde = ahora - timedelta(days=settings.pego.dias)
+    consulta = pego.consulta(st)
+    try:
+        hallados = (buscar or _buscador_pego())(consulta, desde)
+    except Exception as e:     # la API caída no puede trabar la escucha
+        return L(f"La búsqueda en YouTube falló: {html.escape(str(e)[:200])}",
+                 f"The YouTube search failed: {html.escape(str(e)[:200])}")
+    rec = pego.Recuento(st.login, consulta)
+    pego.filtrar(hallados, st, 0, settings.pego.canales_propios, rec=rec)
+    cabecera = L(f"🔎 Búsqueda pública en YouTube: <code>{html.escape(consulta)}</code>, Shorts de los últimos "
+                 f"{settings.pego.dias} días — {rec.resultados} resultados, {rec.nombran} lo nombran.",
+                 f"🔎 Public YouTube search (search.list + videos.list): <code>{html.escape(consulta)}</code>, "
+                 f"Shorts from the last {settings.pego.dias} days — {rec.resultados} results, "
+                 f"{rec.nombran} mention {html.escape(st.login)}.")
+    lista = pego.texto_publicos([rec])
+    return cabecera + "\n\n" + (lista or L("No apareció ninguno.", "No public Shorts found."))
+
+
 def video_demo(salida: Path, render, segundos: float = 12.0) -> Path:
     """Un video corto de prueba (barras de color con un cartel y un tono suave): nada de terceros,
     así la subida de la demo no tiene ningún riesgo de derechos."""
@@ -4009,6 +4047,10 @@ SECCIONES = [
          "Rots por la API, privado y programado para mañana, aunque la subida esté apagada. Después "
          "se ve en /subidas y se cancela con ❌.",
          "/demo"),
+        ("/publicos <streamer>",
+         "(auditoría de YouTube) solo la búsqueda pública: los Shorts de YouTube que lo nombran, con "
+         "canal, vistas y link, al toque y sin bajar nada.",
+         "/publicos davooxeneize"),
         ("/lang en|es",
          "los mensajes del bot en inglés (para grabar la demo de la auditoría) o en castellano.",
          "/lang en"),

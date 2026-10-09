@@ -158,3 +158,28 @@ def test_el_video_de_demo_se_arma(tmp_path):
     v = m.video_demo(tmp_path / "demo.mp4", load_settings().render, segundos=2.0)
     i = probe(v)
     assert (i.ancho, i.alto) == (1080, 1920) and i.tiene_audio and abs(i.duracion - 2.0) < 0.2
+
+
+def test_publicos_contesta_con_la_lista_sin_bajar_nada(tmp_path, monkeypatch):
+    from clips_bot.config import Streamer
+    conn = db.connect(tmp_path / "t.db")
+    davo = Streamer("davooxeneize", plataforma="kick", experimento=True, apodos=("Davo",))
+    monkeypatch.setattr(m, "_streamers", lambda c=None: [davo])
+    monkeypatch.setattr(pego, "bajar_audio_short", lambda *a, **k: (_ for _ in ()).throw(AssertionError("no baja")))
+    pedidos = []
+
+    def buscar(consulta, desde):
+        pedidos.append(consulta)
+        return [pego.ShortAjeno("a1", "DAVO se enoja", "ClipsAR", 1200, 30),
+                pego.ShortAjeno("a2", "Davo y el chat", "Otro", 50, 25),
+                pego.ShortAjeno("a3", "nada que ver", "X", 90000, 30)]
+
+    idioma.poner("en")
+    t = m._publicos(conn, ["davo"], load_settings(), buscar=buscar)
+    assert pedidos == ["davooxeneize|Davo"]
+    assert "Public YouTube search" in t and "1,200 views" in t and "50 views" in t and "a3" not in t
+    assert t.index("a1") < t.index("a2")                      # más vistos primero
+    idioma.poner("es")
+    assert "No tengo a" in m._publicos(conn, ["nadie"], load_settings(), buscar=buscar)
+    assert "falló" in m._publicos(conn, ["davooxeneize"], load_settings(),
+                                  buscar=lambda *a: (_ for _ in ()).throw(RuntimeError("403")))

@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-10-08 | **Versión:** v0.61.1 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 + escucha de Telegram 24/7)
+**Snapshot:** 2026-10-08 | **Versión:** v0.62.0 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 + escucha de Telegram 24/7)
 
 > **SI ESTÁS EMPEZANDO UNA SESIÓN NUEVA, LEÉ §10.** Ahí está qué está hecho, qué quedó a medias,
 > qué falta, y las trampas que ya nos mordieron.
@@ -773,6 +773,13 @@ Problemas abiertos:
 
 ## 9. CHANGELOG
 
+- v0.62.0 (2026-10-08) — **`/publicos <streamer>`** para la demo de la auditoría: `/buscar davooxeneize
+  pego x1` se quedó muchos minutos mientras Santi grababa (compara el audio de cada Short contra hasta
+  60 clips bajados de Kick); se frenó reiniciando la escucha (el turno pesado se soltó solo).
+  `/publicos` hace SOLO `search.list` + `videos.list` (101 unidades de la API key), filtra los Shorts
+  que lo nombran (sin mínimo de vistas, los más vistos primero, hasta 10) y contesta al toque con
+  título, canal, vistas y link, en el idioma de `/lang`. No baja ni compara nada, ni toma el turno
+  pesado. El PDF y el orden de grabación usan `/publicos` en el paso 6. 709 tests OK.
 - v0.61.1 (2026-10-08) — **Excepción "Universal Newsreel"** en la lista negra (Santi: los
   noticieros de Universal de 1929–1967 están en dominio público vía el Archivo Nacional de EE.UU.).
   Por item (`es_universal_newsreel`): colección `universal_newsreels` de archive.org (o "Universal

@@ -105,14 +105,14 @@ averageViewPercentage</code> (dimension <code>video</code>) and <code>audienceWa
 
 <div class="step">
 <h2>Step 6 — Public search</h2>
-<p>The owner sends <code>/buscar &lt;creator&gt; pego x1</code> (for example <code>/buscar davooxeneize pego x1</code>). The bot searches
-YouTube for <b>public</b> Shorts from other channels that mention that creator. It shows them with their
-titles, channels and view counts, step by step. Only public data is used: title, channel name and view count.
+<p>The owner sends <code>/publicos &lt;creator&gt;</code> (for example <code>/publicos davooxeneize</code>). The bot
+searches YouTube for <b>public</b> Shorts that mention that creator, and replies right away with each Short's title,
+channel, view count and link. Only public data is used: title, channel name and view count.
 It is used only to find which moments of the creator became popular, and it is deleted after 30 days.</p>
 <div class="api">API (API key): <code>search.list</code> (<code>q</code> = creator names, <code>type=video</code>,
 <code>videoDuration=short</code>, <code>order=viewCount</code>, <code>publishedAfter</code>) →
 <code>videos.list</code> (<code>part=snippet,statistics,contentDetails</code>) for exact view counts and durations.</div>
-<div class="shot">[Screenshot 7 — Telegram: “Public YouTube search … step by step” and “Public Shorts found on YouTube” with titles and views]</div>
+<div class="shot">[Screenshot 7 — Telegram: “Public YouTube search (search.list + videos.list)” and the list of public Shorts with channel, views and link]</div>
 </div>
 
 <h2>Data handling</h2>

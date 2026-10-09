@@ -19,13 +19,13 @@ dos ventanas. Grabá la pantalla entera, en inglés y sin cortes si se puede.
    *(Captura 5, segunda mitad)*
 8. **Telegram:** `/metricas refresh` → "Requesting the latest metrics from YouTube…" y después
    "Your latest Shorts — YouTube Analytics" con vistas, % visto, % al final y duración. *(Captura 6)*
-9. **Telegram:** `/buscar davooxeneize pego x1` → "Public YouTube search … step by step" y
-   "Public Shorts found on YouTube" con títulos, canales y vistas. *(Captura 7)* Después el bot
-   sigue procesando clips: ya podés cortar la grabación.
+9. **Telegram:** `/publicos davooxeneize` → en segundos, "Public YouTube search (search.list +
+   videos.list)…" y la lista de Shorts públicos con canal, vistas y link. *(Captura 7)*
 10. **Telegram:** `/lang es` para volver al castellano (fuera de la grabación).
 
 Notas:
 - El `/demo` sube aunque la subida esté apagada para todo lo demás: es solo ese video.
 - El video de prueba es de barras de color con un cartel: no tiene nada de terceros.
-- La búsqueda gasta 100 unidades de la API key; la subida, 1 del balde de subidas.
+- `/publicos` gasta 101 unidades de la API key (search.list + videos.list); la subida, 1 del balde de subidas.
+- NO uses `/buscar … pego` para la demo: compara audio contra decenas de clips y tarda muchos minutos.
 - Si querés repetir la toma, mandá `/demo` de nuevo: cada vez es un video nuevo.
