@@ -1056,7 +1056,13 @@ def buscar_videos(g: Guion, anio: int, carpeta: Path, buscador=None, avisar=log.
             continue
         hoy = i < len(g.presente) and g.presente[i]
         vs = buscador.candidatos(g.mostrar[i], anio, hoy, avisar, tema=tema)[:4]
-        vs = [vl.sacar_frames(v, carpeta / "videos", f"f{i:02d}_v{k}") for k, v in enumerate(vs)]
+        listos = []
+        for k, v in enumerate(vs):
+            try:
+                listos.append(vl.sacar_frames(v, carpeta / "videos", f"f{i:02d}_v{k}"))
+            except (OSError, subprocess.SubprocessError) as err:   # un video nunca tumba la efeméride
+                avisar(f"    frase {i + 1}: video {v.pagina} salteado ({str(err)[:80]})")
+        vs = listos
         out[i] = [v for v in vs if v.frames]
         avisar(f"    frase {i + 1} (acción): {len(out[i])} videos candidatos "
                f"({', '.join(v.etiqueta() for v in out[i]) or 'ninguno'})")

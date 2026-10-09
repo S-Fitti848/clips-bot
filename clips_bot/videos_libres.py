@@ -53,6 +53,66 @@ _ESPACIO = re.compile(r"\b(space|rocket|satellite|moon|lunar|orbit\w*|astronaut\
 _ANIOS = re.compile(r"\b(1[4-9]\d\d|20\d\d)s?\b|\b\d{1,2}(st|nd|rd|th) century\b", re.I)
 ARCHIVO = ("commons", "archive")          # filmación de archivo (etapa 1)
 
+# Estudios y marcas que no se usan NUNCA, venga de donde venga el video (Santi, 2026-10-08: una
+# efeméride intentó bajar un "disne…" de archive.org). Se mira título, autor, links y, en archive.org,
+# también la colección, los temas y la descripción del item.
+MARCAS_PROHIBIDAS = ("disney", "pixar", "warner", "universal", "paramount", "fox", "sony",
+                     "dreamworks", "marvel", "nintendo")
+_MARCAS = re.compile(r"(?<![a-z])(" + "|".join(MARCAS_PROHIBIDAS) + r")", re.I)
+
+# Tope de cada llamada a ffmpeg/ffprobe sobre un video remoto, y un reintento: un servidor lento
+# (archive.org) no puede tumbar la efeméride (2026-10-08: TimeoutExpired bajando un video).
+TOPE_FRAME_S = 60
+TOPE_TRAMO_S = 180
+TOPE_PROBE_S = 45
+
+
+def marca_prohibida(*textos) -> str:
+    """La marca prohibida que aparece en alguno de los textos ("" si ninguna)."""
+    for t in textos:
+        for x in (t if isinstance(t, (list, tuple)) else [t]):
+            m = _MARCAS.search(str(x or ""))
+            if m:
+                return m.group(1).lower()
+    return ""
+
+
+def licencia_archive(meta: dict) -> str:
+    """La licencia de un item de archive.org SEGÚN SUS METADATOS (`licenseurl` o `rights`), solo si
+    dice explícitamente dominio público, CC0 o CC BY (sin NC, ND ni SA). "" = no sirve."""
+    url = str(meta.get("licenseurl") or "").lower()
+    if url:
+        if "publicdomain/zero" in url:
+            return "CC0"
+        if "publicdomain" in url:
+            return "Dominio público"
+        m = re.search(r"creativecommons\.org/licenses/by/(\d\.\d)", url)
+        if m:
+            return f"CC BY {m.group(1)}"
+        return ""                       # by-sa, by-nc, by-nd y cualquier otra: afuera
+    derechos = meta.get("rights") or ""
+    derechos = " ".join(derechos) if isinstance(derechos, list) else str(derechos)
+    d = derechos.lower()
+    if re.search(r"\b(non-?commercial|no ?deriv|share ?alike|all rights reserved|copyright ©|\bnc\b|\bnd\b|\bsa\b)", d):
+        return ""
+    if "public domain" in d or "dominio público" in d:
+        return "Dominio público"
+    if re.search(r"\bcc0\b", d):
+        return "CC0"
+    if re.search(r"\bcc[ -]by\b", d):
+        return "CC BY"
+    return ""
+
+
+def _ejecutar(args: list[str], tope_s: float, intentos: int = 2, **kw):
+    """subprocess.run con tope de tiempo y UN reintento. None si se pasó del tope las dos veces."""
+    for _ in range(intentos):
+        try:
+            return subprocess.run(args, capture_output=True, timeout=tope_s, **kw)
+        except subprocess.TimeoutExpired:
+            log.warning("ffmpeg tardó más de %.0f s (%s): %s", tope_s, args[0], args[-1][:120])
+    return None
+
 
 @dataclass
 class Video:
@@ -178,9 +238,11 @@ class Buscador:
         return out
 
     def archive(self, q: str, anio: int | None = None, n: int = POR_FUENTE) -> list[Video]:
-        """Solo dominio público (Public Domain Mark, CC0 o la vieja "publicdomain"). Con `anio`,
-        solo los de ese año a 10 después (una frase del pasado)."""
-        consulta = f"({q}) AND mediatype:movies AND licenseurl:*publicdomain*"
+        """Solo items cuyos METADATOS dicen explícitamente dominio público, CC0 o CC BY
+        (`licenseurl` o `rights`, `licencia_archive`); si no lo dicen, afuera. Nunca de las marcas
+        prohibidas. Con `anio`, solo los de ese año a 10 después (una frase del pasado)."""
+        consulta = (f"({q}) AND mediatype:movies AND (licenseurl:*publicdomain* OR "
+                    f"licenseurl:*licenses/by/* OR rights:\"public domain\")")
         if anio:
             consulta += f" AND year:[{anio - 2} TO {anio + 10}]"
         d = self._json(ARCHIVE_BUSCAR, params={"q": consulta, "fl[]": ["identifier", "title", "year",
@@ -193,6 +255,16 @@ class Buscador:
                 m = self._json(f"https://archive.org/metadata/{ident}")
             except (requests.RequestException, ValueError):
                 continue
+            md = m.get("metadata") or {}
+            lic = licencia_archive(md)
+            if not lic:
+                log.info("archive.org %s: sin licencia libre explícita en los metadatos, afuera", ident)
+                continue
+            marca = marca_prohibida(ident, md.get("title"), md.get("creator"), md.get("collection"),
+                                    md.get("subject"), md.get("description"), md.get("publisher"))
+            if marca:
+                log.info("archive.org %s: %s (marca prohibida), afuera", ident, marca)
+                continue
             mp4s = [f for f in m.get("files", []) if str(f.get("name", "")).lower().endswith(".mp4")]
             # El más liviano que no sea una miniatura animada: "512Kb MPEG4" o "h.264".
             mp4s.sort(key=lambda f: int(f.get("size") or 0))
@@ -202,9 +274,8 @@ class Buscador:
             dur = _segundos(elegido.get("length") or 0)
             if dur < DURACION_MIN_S:
                 continue
-            creador = doc.get("creator")
+            creador = md.get("creator") or doc.get("creator")
             creador = ", ".join(creador) if isinstance(creador, list) else str(creador or "archive.org")
-            lic = "Dominio público" if "zero" not in str(doc.get("licenseurl")) else "CC0"
             out.append(Video("archive", str(doc.get("title") or ident),
                              f"https://archive.org/download/{ident}/{elegido['name']}",
                              f"https://archive.org/details/{ident}", lic, creador,
@@ -302,6 +373,9 @@ class Buscador:
                         if v.url in urls:
                             continue
                         urls.add(v.url)
+                        if marca_prohibida(v.titulo, v.autor, v.url, v.pagina):
+                            avisar(f"    video: «{v.titulo[:50]}» es de una marca prohibida, afuera")
+                            continue
                         if epoca_ok(v):
                             out.append(v)
                         else:
@@ -328,11 +402,10 @@ def _pausa(url: str) -> None:
 
 
 def duracion_url(url: str) -> float:
-    r = subprocess.run([find_bin("ffprobe"), "-v", "error", *_ffmpeg_url(url), "-show_entries",
-                        "format=duration", "-of", "default=nw=1:nk=1", url],
-                       capture_output=True, text=True, timeout=60)
+    r = _ejecutar([find_bin("ffprobe"), "-v", "error", *_ffmpeg_url(url), "-show_entries",
+                   "format=duration", "-of", "default=nw=1:nk=1", url], TOPE_PROBE_S, text=True)
     try:
-        return float(r.stdout.strip())
+        return float(r.stdout.strip()) if r else 0.0
     except ValueError:
         return 0.0
 
@@ -347,9 +420,13 @@ def sacar_frames(v: Video, carpeta: Path, nombre: str) -> Video:
         salida = carpeta / f"{nombre}_{k}.jpg"
         if not salida.exists():
             _pausa(v.url)
-            r = subprocess.run([find_bin("ffmpeg"), "-hide_banner", "-loglevel", "error", "-y",
-                                "-ss", str(t), *_ffmpeg_url(v.url), "-i", v.url, "-frames:v", "1",
-                                "-vf", "scale=512:-2", str(salida)], capture_output=True, timeout=120)
+            r = _ejecutar([find_bin("ffmpeg"), "-hide_banner", "-loglevel", "error", "-y",
+                           "-ss", str(t), *_ffmpeg_url(v.url), "-i", v.url, "-frames:v", "1",
+                           "-vf", "scale=512:-2", str(salida)], TOPE_FRAME_S)
+            if r is None:     # servidor lento: este video se saltea entero (no se insiste cuadro por cuadro)
+                log.warning("video %s: no bajó ni un cuadro a tiempo, se saltea", v.pagina)
+                v.momentos, v.frames = [], []
+                return v
             if r.returncode != 0 or not salida.exists():
                 continue
         v.momentos.append(t)
@@ -364,10 +441,14 @@ def bajar_tramo(v: Video, dur: float, salida: Path) -> Path:
     largo = min(dur + 0.5, v.duracion - inicio) if v.duracion else dur + 0.5
     salida.parent.mkdir(parents=True, exist_ok=True)
     _pausa(v.url)
-    r = subprocess.run([find_bin("ffmpeg"), "-hide_banner", "-loglevel", "error", "-y",
-                        "-ss", f"{inicio:.2f}", *_ffmpeg_url(v.url), "-i", v.url, "-t", f"{largo:.2f}",
-                        "-an", "-c:v", "libx264", "-preset", "veryfast", "-crf", "18",
-                        "-pix_fmt", "yuv420p", str(salida)], capture_output=True, timeout=600)
+    # Al archivo local, con tope y un reintento; si no baja, RuntimeError y esa frase vuelve a su foto.
+    r = _ejecutar([find_bin("ffmpeg"), "-hide_banner", "-loglevel", "error", "-y",
+                   "-ss", f"{inicio:.2f}", *_ffmpeg_url(v.url), "-i", v.url, "-t", f"{largo:.2f}",
+                   "-an", "-c:v", "libx264", "-preset", "veryfast", "-crf", "18",
+                   "-pix_fmt", "yuv420p", str(salida)], TOPE_TRAMO_S)
+    if r is None:
+        salida.unlink(missing_ok=True)
+        raise RuntimeError(f"el tramo de {v.pagina} no bajó en {TOPE_TRAMO_S} s (dos intentos)")
     if r.returncode != 0 or not salida.exists():
         raise RuntimeError(f"no pude bajar el tramo de {v.pagina}: {r.stderr[-200:]!r}")
     v.ruta = str(salida)

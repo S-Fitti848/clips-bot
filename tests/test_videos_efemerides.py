@@ -13,7 +13,7 @@ from clips_bot.media import find_bin
 
 def _v(fuente="archive", anio=1957, dur=45.0, titulo="New Moon", frames=None):
     return vl.Video(fuente, titulo, "https://x/v.mp4", "https://archive.org/details/x", "Dominio público",
-                    "Universal", anio, dur, momentos=[9.0, 22.5, 36.0], frames=frames or ["a", "b", "c"])
+                    "British Pathé", anio, dur, momentos=[9.0, 22.5, 36.0], frames=frames or ["a", "b", "c"])
 
 
 def test_gemini_marca_hasta_3_frases_de_accion_y_nunca_la_primera():
@@ -142,7 +142,7 @@ def test_la_aprobacion_marca_los_videos_y_sus_creditos():
                             [ef.Foto.de_dict(f) for f in p.fotos])
     assert "🎬 3. [video: archive.org, 1957 — New Moon] frase 2" in t
     assert "5. [5 (1957)] frase 4 (acción: sin video libre, va con foto)" in t
-    assert "1 con video" in t and "Videos:\n1. New Moon — Universal — Dominio público" in t
+    assert "1 con video" in t and "Videos:\n1. New Moon — British Pathé — Dominio público" in t
 
 
 def test_la_hoja_dibuja_el_cuadro_del_video(tmp_path):

@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-10-08 | **Versión:** v0.60.0 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 + escucha de Telegram 24/7)
+**Snapshot:** 2026-10-08 | **Versión:** v0.61.0 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 + escucha de Telegram 24/7)
 
 > **SI ESTÁS EMPEZANDO UNA SESIÓN NUEVA, LEÉ §10.** Ahí está qué está hecho, qué quedó a medias,
 > qué falta, y las trampas que ya nos mordieron.
@@ -773,6 +773,22 @@ Problemas abiertos:
 
 ## 9. CHANGELOG
 
+- v0.61.0 (2026-10-08) — **Videos de archive.org en efemérides.** La de hoy (reintento de las
+  07:00) cayó con `TimeoutExpired`: `sacar_frames` sobre
+  `archive.org/download/disneys-animal-kingdom-full-opening-day-broadcast/…` (el `subprocess.run`
+  con timeout no lo atrapaba nadie). Arreglos (`videos_libres.py`): (1) todo ffmpeg/ffprobe sobre un
+  video remoto va por `_ejecutar` (tope + UN reintento: cuadros 60 s, tramo 180 s, probe 45 s); un
+  video que no baja ni un cuadro se saltea entero, `bajar_tramo` baja a archivo local y si no llega
+  da RuntimeError → esa frase vuelve a su foto; `buscar_videos` atrapa lo que quede. (2) archive.org:
+  solo items cuyos METADATOS (`licenseurl` o `rights`, `licencia_archive`) dicen explícitamente
+  dominio público, CC0 o CC BY (nada de NC/ND/SA); si no lo dicen, afuera. (3) Lista negra
+  `MARCAS_PROHIBIDAS` (Disney, Pixar, Warner, Universal, Paramount, Fox, Sony, DreamWorks, Marvel,
+  Nintendo) en TODAS las fuentes de video (título, autor, links; en archive.org también colección,
+  temas, descripción, editor). **Revisión de lo que ya salió:** 6 videos en 4 efemérides; todos con
+  licencia libre en sus metadatos, pero **dos son noticieros de Universal** (Universal Newsreel, que
+  archive.org marca como dominio público): "New Moon. Reds Launch First Space Satellite, 1957/10/07"
+  en la del 04/10 (Sputnik) y "Florida, 1960/10/06" en la del 05/10. El de Disney estaba marcado
+  "Public Domain Mark" por quien lo subió: solo la lista negra lo frena. 706 tests OK.
 - v0.60.0 (2026-10-08) — **Demo para la auditoría de YouTube** (YouTube pidió "an English
   screencast or step-by-step script… upload, schedule, manage, analytics, public searches"; plazo 7
   días hábiles). (1) `/lang en|es` (`idioma.py`, `L(es, en)`, en `bot_estado.idioma`, la escucha lo
