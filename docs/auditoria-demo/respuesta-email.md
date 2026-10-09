@@ -1,6 +1,6 @@
 # Borrador de la respuesta a YouTube (en inglés)
 
-**Asunto:** Re: YouTube API Services audit – Clips Bot – screencast and step-by-step script
+**Asunto:** Re: YouTube API Services audit – Clips Bot – screencasts and step-by-step script
 
 ---
 
@@ -8,12 +8,15 @@ Hello,
 
 Thank you for reviewing our application. As requested, here are:
 
-1. **An English screencast** (unlisted on YouTube): https://youtu.be/zlLOnuSHzQc — recorded on our
-   channel (Roty, channel ID UCz0-X39ylB_BAO_yFCLMS8w). It shows a video being approved in Telegram,
-   uploaded and scheduled, the result in YouTube Studio, the list of scheduled uploads, the
-   cancellation of the schedule and YouTube Studio after it, and the analytics of our own Shorts.
+1. **Two English screencasts** (unlisted on YouTube), recorded on our channel (Roty, channel ID
+   UCz0-X39ylB_BAO_yFCLMS8w):
+   - https://youtu.be/zlLOnuSHzQc — a video being approved in Telegram, uploaded and scheduled, the
+     result in YouTube Studio, the list of scheduled uploads, the cancellation of the schedule and
+     YouTube Studio after it, and the analytics of our own Shorts.
+   - https://youtu.be/g78FhNRCGuw — the public search: the public Shorts found on YouTube, with their
+     channels and view counts.
 2. **A step-by-step script** ("Clips Bot – API usage walkthrough", attached PDF) with a screenshot of
-   each step, including the public search, and the exact API method used in each step.
+   each step and the exact API method used in each step.
 
 Summary of how Clips Bot uses the YouTube API Services:
 

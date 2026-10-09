@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-10-09 | **Versión:** v0.63.1 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 + escucha de Telegram 24/7)
+**Snapshot:** 2026-10-09 | **Versión:** v0.63.2 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 + escucha de Telegram 24/7)
 
 > **SI ESTÁS EMPEZANDO UNA SESIÓN NUEVA, LEÉ §10.** Ahí está qué está hecho, qué quedó a medias,
 > qué falta, y las trampas que ya nos mordieron.
@@ -773,6 +773,9 @@ Problemas abiertos:
 
 ## 9. CHANGELOG
 
+- v0.63.2 (2026-10-09) — Segundo screencast (oculto) con la búsqueda pública: https://youtu.be/g78FhNRCGuw
+  (/lang en + /publicos davooxeneize). Su captura completa el paso 6 del PDF; los dos links van en el
+  encabezado del PDF y en el mail. PDF final: 7 páginas, 8 capturas.
 - v0.63.1 (2026-10-09) — PDF de la auditoría con las capturas sacadas del screencast
   (zlLOnuSHzQc, bajado en la Pi): /demo, Upload, Studio "Programado", /subidas, Cancel, Studio después
   de cancelar y /metricas refresh (`docs/auditoria-demo/capturas/`, las de Telegram recortadas al chat
