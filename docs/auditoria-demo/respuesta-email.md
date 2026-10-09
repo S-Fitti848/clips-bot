@@ -33,6 +33,10 @@ Summary of how Clips Bot uses the YouTube API Services:
   mention the creators we work with and their view counts. Only public data is used (title, channel
   name, view count), only to find which moments became popular, and it is deleted after 30 days.
 
+Note: in addition to the endpoints selected in the audit form, Clips Bot also uses
+`playlistItems.list` (1 unit per call) to list the uploads of our own channel for analytics. We would
+like to include it in this review.
+
 Clips Bot is a personal tool used only by the channel owner. It only accesses the owner's own channel
 through OAuth. Statistics are refreshed before 30 days and deleted if a video no longer exists or
 access is revoked. Our privacy policy and terms are at https://s-fitti848.github.io/privacidad.html
