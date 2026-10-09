@@ -23,7 +23,7 @@ def test_licencia_explicita_en_los_metadatos():
 
 def test_marcas_prohibidas():
     for t in ("Walt Disney's Steamboat Willie", "disneyland_1955", "Warner Bros. cartoon",
-              "Universal Newsreel 1957", "20th Century Fox Movietone", "Paramount News",
+              "Universal Pictures", "Universal Studios", "20th Century Fox Movietone", "Paramount News",
               "Sony Pictures", "DreamWorks trailer", "Marvel comics", "Nintendo commercial", "pixar short"):
         assert vl.marca_prohibida(t), t
     assert vl.marca_prohibida("Sputnik launch newsreel", "British Pathé") == ""
@@ -110,3 +110,34 @@ def test_buscar_videos_sigue_si_un_video_explota(tmp_path, monkeypatch):
                  mostrar=["1957 rocket launch"], accion=[0])
     out = ef.buscar_videos(g, 1957, tmp_path, buscador=B())
     assert out[0] == [v2]
+
+
+def test_universal_newsreel_es_la_unica_excepcion():
+    # escrito así no cuenta como Universal; el resto de Universal sí
+    assert vl.marca_prohibida("Universal Newsreel: Sputnik") == ""
+    assert vl.marca_prohibida("universal_newsreels") == ""
+    assert vl.marca_prohibida("Universal Newsreel", "Universal Pictures") == "universal"
+    assert vl.marca_prohibida("Universal Newsreel", "Disney") == "disney"
+    # el item real de archive.org (publisher "Universal Studios"): pasa solo si es de la serie y de 1929–1967
+    nr = {"collection": ["universal_newsreels", "newsandpublicaffairs"], "publisher": "Universal Studios",
+          "date": "1957"}
+    assert vl.es_universal_newsreel(nr)
+    assert not vl.es_universal_newsreel(dict(nr, date="1975"))
+    assert not vl.es_universal_newsreel(dict(nr, date=""))
+    assert not vl.es_universal_newsreel({"publisher": "Universal Studios", "date": "1957"})
+
+
+def test_archive_deja_pasar_el_noticiero_de_universal_y_no_lo_demas():
+    pd = "http://creativecommons.org/licenses/publicdomain/"
+    b = vl.Buscador(session=Sesion({
+        "1957-10-07_New_Moon": {"title": "New Moon. Reds Launch First Space Satellite", "publisher": "Universal Studios",
+                                "collection": ["universal_newsreels"], "date": "1957", "licenseurl": pd},
+        "universal_feature_1957": {"title": "Space film", "publisher": "Universal Studios", "date": "1957",
+                                   "licenseurl": pd},
+        "newsreel_1975": {"title": "Late newsreel", "publisher": "Universal Studios",
+                          "collection": ["universal_newsreels"], "date": "1975", "licenseurl": pd},
+        "newsreel_disney": {"title": "Disney visits", "collection": ["universal_newsreels"], "date": "1957",
+                            "licenseurl": pd},
+    }), sleep=lambda s: None)
+    vs = b.archive("sputnik", None, n=5)
+    assert [v.pagina.rsplit("/", 1)[1] for v in vs] == ["1957-10-07_New_Moon"]

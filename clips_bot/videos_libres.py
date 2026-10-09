@@ -67,14 +67,35 @@ TOPE_TRAMO_S = 180
 TOPE_PROBE_S = 45
 
 
-def marca_prohibida(*textos) -> str:
-    """La marca prohibida que aparece en alguno de los textos ("" si ninguna)."""
+# Excepción (Santi, 2026-10-08): los noticieros "Universal Newsreel" de 1929–1967 están en dominio
+# público vía el Archivo Nacional de EE.UU. Solo esos: el resto de Universal sigue bloqueado.
+NEWSREEL_DESDE, NEWSREEL_HASTA = 1929, 1967
+_NEWSREEL = re.compile(r"universal[\s_-]*newsreels?", re.I)
+
+
+def marca_prohibida(*textos, permitir: tuple[str, ...] = ()) -> str:
+    """La marca prohibida que aparece en alguno de los textos ("" si ninguna). "Universal Newsreel"
+    escrito así no cuenta como Universal; `permitir`: marcas que ya se habilitaron para este item."""
     for t in textos:
         for x in (t if isinstance(t, (list, tuple)) else [t]):
-            m = _MARCAS.search(str(x or ""))
-            if m:
-                return m.group(1).lower()
+            texto = _NEWSREEL.sub(" ", str(x or ""))
+            for m in _MARCAS.finditer(texto):
+                if m.group(1).lower() not in permitir:
+                    return m.group(1).lower()
     return ""
+
+
+def es_universal_newsreel(md: dict) -> bool:
+    """Un item de archive.org de la serie Universal Newsreel (colección `universal_newsreels` o el
+    nombre en el título/descripción) fechado entre 1929 y 1967. Sin fecha, no."""
+    def texto(k):
+        v = md.get(k)
+        return " ".join(map(str, v)) if isinstance(v, list) else str(v or "")
+
+    serie = "universal_newsreels" in texto("collection").lower() or any(
+        _NEWSREEL.search(texto(k)) for k in ("title", "description", "subject"))
+    anio = _anio(md.get("year") or md.get("date"))
+    return serie and anio is not None and NEWSREEL_DESDE <= anio <= NEWSREEL_HASTA
 
 
 def licencia_archive(meta: dict) -> str:
@@ -261,7 +282,8 @@ class Buscador:
                 log.info("archive.org %s: sin licencia libre explícita en los metadatos, afuera", ident)
                 continue
             marca = marca_prohibida(ident, md.get("title"), md.get("creator"), md.get("collection"),
-                                    md.get("subject"), md.get("description"), md.get("publisher"))
+                                    md.get("subject"), md.get("description"), md.get("publisher"),
+                                    permitir=("universal",) if es_universal_newsreel(md) else ())
             if marca:
                 log.info("archive.org %s: %s (marca prohibida), afuera", ident, marca)
                 continue
@@ -373,7 +395,9 @@ class Buscador:
                         if v.url in urls:
                             continue
                         urls.add(v.url)
-                        if marca_prohibida(v.titulo, v.autor, v.url, v.pagina):
+                        # Los de archive.org ya se miraron con todos sus metadatos (y la excepción
+                        # de Universal Newsreel) en `archive`.
+                        if v.fuente != "archive" and marca_prohibida(v.titulo, v.autor, v.url, v.pagina):
                             avisar(f"    video: «{v.titulo[:50]}» es de una marca prohibida, afuera")
                             continue
                         if epoca_ok(v):

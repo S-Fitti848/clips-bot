@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-10-08 | **Versión:** v0.61.0 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 + escucha de Telegram 24/7)
+**Snapshot:** 2026-10-08 | **Versión:** v0.61.1 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 + escucha de Telegram 24/7)
 
 > **SI ESTÁS EMPEZANDO UNA SESIÓN NUEVA, LEÉ §10.** Ahí está qué está hecho, qué quedó a medias,
 > qué falta, y las trampas que ya nos mordieron.
@@ -773,6 +773,14 @@ Problemas abiertos:
 
 ## 9. CHANGELOG
 
+- v0.61.1 (2026-10-08) — **Excepción "Universal Newsreel"** en la lista negra (Santi: los
+  noticieros de Universal de 1929–1967 están en dominio público vía el Archivo Nacional de EE.UU.).
+  Por item (`es_universal_newsreel`): colección `universal_newsreels` de archive.org (o "Universal
+  Newsreel" en título/descripción/temas) Y fecha entre 1929 y 1967 (sin fecha, no) → para ese item
+  "Universal" no cuenta (sus metadatos dicen además publisher "Universal Studios"). En texto suelto,
+  "Universal Newsreel" escrito así no cuenta como Universal. El resto de Universal y las otras marcas
+  siguen bloqueados igual. Probado con los metadatos reales: "New Moon" (1957) y "Florida" (1960)
+  vuelven a pasar. 708 tests OK.
 - v0.61.0 (2026-10-08) — **Videos de archive.org en efemérides.** La de hoy (reintento de las
   07:00) cayó con `TimeoutExpired`: `sacar_frames` sobre
   `archive.org/download/disneys-animal-kingdom-full-opening-day-broadcast/…` (el `subprocess.run`
