@@ -82,12 +82,12 @@ yet. That is expected, and it is why we are requesting this audit.</p>
 <div class="step">
 <h2>Step 4 — Manage: list and cancel the schedule</h2>
 <p>The owner sends <code>/subidas</code>: the bot lists every scheduled upload (channel, publish time, video id)
-with a <b>❌ Cancel</b> button. Pressing it removes the scheduled publication. The video is not deleted: it stays private,
-with no publish date. Studio shows the change.</p>
+with a <b>❌ Cancel</b> button. Pressing it removes the scheduled publication with <code>videos.update</code>;
+the bot never deletes videos. In the recording, Studio is refreshed after the cancellation.</p>
 <div class="api">API: <code>videos.update</code> (<code>part=status</code>) with <code>privacyStatus = "private"</code> and no
 <code>publishAt</code>, which removes the schedule. The list itself comes from the bot's own database of the uploads it made.</div>
 <div class="shot">[Screenshot 4 — Telegram: /subidas listing the scheduled test video with “❌ Cancel #N”]</div>
-<div class="shot">[Screenshot 5 — Telegram “Schedule #N cancelled with videos.update” + YouTube Studio: the video private, without a scheduled date]</div>
+<div class="shot">[Screenshot 5 — Telegram “Schedule #N cancelled with videos.update” + YouTube Studio after the cancellation]</div>
 </div>
 
 <div class="step">

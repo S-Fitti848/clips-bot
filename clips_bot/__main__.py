@@ -2416,6 +2416,7 @@ def escuchar_telegram(settings: Settings, timeout_poll: int = 50) -> int:
                     _clips_reintento_tick, conn, settings)
             _seguro(tg, str(chat_ultimo or ""), "la búsqueda de lo que pegó",
                     _pego_tick, conn, settings)
+            _seguro(tg, str(chat_ultimo or ""), "el chequeo de las subidas", _chequeo_subidas_tick, conn, tg)
             _seguro(tg, str(chat_ultimo or ""), "la cola", _drenar_cola, conn, tg, cola, settings)
             guardado = db.get_valor(conn, "telegram_offset")
             pendientes = db.alertas(conn, estados=("pendiente",)) if db.envivo_chat(conn) else []
@@ -3554,15 +3555,16 @@ def _programar_subida(conn, settings: Settings, meta: dict, canal: str, hora: st
             cuando = max(min(hoy + timedelta(minutes=30), limite), hoy + timedelta(minutes=5))
             cuando = cuando.replace(second=0, microsecond=0)
         t = meta["textos"]
-        video_id = youtube.Cliente(canal).subir(Path(meta["salida"]), t["titulo"], t["descripcion"],
-                                                t.get("hashtags") or [], cuando,
-                                                CATEGORIA.get(canal, "24"))
+        cliente = youtube.Cliente(canal)
+        video_id = cliente.subir(Path(meta["salida"]), t["titulo"], t["descripcion"],
+                                 t.get("hashtags") or [], cuando, CATEGORIA.get(canal, "24"))
     except youtube.YouTubeError as e:
         db.crear_subida(conn, clip_id, canal, "error", error=str(e)[:500])
         return L(f"⚠️ No pude subirlo a YouTube ({html.escape(youtube.CANALES[canal])}): ",
                  f"⚠️ The YouTube upload failed ({html.escape(youtube.CANALES[canal])}): ") + html.escape(str(e)[:300])
     iso = cuando.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    db.crear_subida(conn, clip_id, canal, "programada", video_id=video_id, publish_at=iso)
+    db.crear_subida(conn, clip_id, canal, "programada", video_id=video_id, publish_at=iso,
+                    respuesta=json.dumps(getattr(cliente, "respuesta_subida", {}), ensure_ascii=False))
     return L(f"📤 Programado en <b>{html.escape(youtube.CANALES[canal])}</b> para el "
              f"{cuando:%d/%m a las %H:%M} (AR). Se ve en Studio como privado hasta esa hora. "
              f"<code>/subidas</code> para cancelarlo.",
@@ -3570,6 +3572,51 @@ def _programar_subida(conn, settings: Settings, meta: dict, canal: str, hora: st
              f"scheduled (publishAt) for {cuando:%Y-%m-%d %H:%M} Argentina time ({iso}). "
              f"Video id: <code>{html.escape(video_id)}</code> — https://studio.youtube.com/video/{video_id}/edit\n"
              f"Use <code>/subidas</code> to see it and cancel the schedule.")
+
+
+def _cancelar_youtube(conn, s: dict) -> None:
+    """❌: videos.update (nunca delete) y la respuesta completa de YouTube a la DB, salga bien o mal."""
+    from . import youtube
+
+    cliente = youtube.Cliente(s["canal"])
+    try:
+        cliente.cancelar(s["video_id"])
+    finally:
+        if getattr(cliente, "respuesta_cancelar", None) is not None:
+            db.anotar_respuesta_subida(conn, s["id"], "respuesta_cancelar",
+                                       json.dumps(cliente.respuesta_cancelar, ensure_ascii=False))
+
+
+def _chequeo_subidas_tick(conn, tg, cliente_de=None) -> int:
+    """2 minutos después de cada subida a YouTube: videos.list del video y la respuesta a la DB (y al
+    log). Si no existe, o quedó rechazado o fallido, aviso a Santi con lo que dijo YouTube."""
+    from . import youtube
+
+    cliente_de = cliente_de or youtube.Cliente
+    hechos = 0
+    for s in db.subidas_sin_chequear(conn, minutos=2):
+        try:
+            e = cliente_de(s["canal"]).estado_video(s["video_id"])
+        except Exception as err:      # sin red o sin token: se reintenta en la vuelta siguiente
+            log.warning("chequeo de la subida %s: %s", s["video_id"], err)
+            continue
+        db.anotar_respuesta_subida(conn, s["id"], "chequeo", json.dumps(e, ensure_ascii=False))
+        log.info("chequeo de la subida #%s %s: existe=%s uploadStatus=%s failureReason=%s "
+                 "rejectionReason=%s privacy=%s publishAt=%s", s["id"], s["video_id"], e.get("existe"),
+                 e.get("uploadStatus"), e.get("failureReason"), e.get("rejectionReason"),
+                 e.get("privacyStatus"), e.get("publishAt"))
+        hechos += 1
+        mal = e.get("existe") is False or e.get("uploadStatus") in ("rejected", "failed", "deleted")
+        if mal and tg is not None:
+            que = ("YouTube ya no lo devuelve (no existe para el dueño del canal)" if e.get("existe") is False
+                   else f"uploadStatus {e.get('uploadStatus')}, failureReason {e.get('failureReason')}, "
+                        f"rejectionReason {e.get('rejectionReason')}")
+            try:
+                tg.send_message(DUENO, f"⚠️ La subida #{s['id']} (<code>{html.escape(s['video_id'])}</code>, "
+                                       f"{html.escape(s['clip_id'])}) a los 2 minutos: {html.escape(que)}.")
+            except TelegramError as err:
+                log.warning("no pude avisar del chequeo: %s", err)
+    return hechos
 
 
 def _subidas_texto(conn, settings: Settings) -> tuple[str, dict | None]:
@@ -3851,7 +3898,7 @@ def _subir_callback(conn, tg: TelegramClient, cb: dict, settings: Settings, d: d
                 if s["canal"] == "facebook":
                     facebook.cancelar(s["video_id"], settings.facebook.version)
                 else:
-                    youtube.Cliente(s["canal"]).cancelar(s["video_id"])
+                    _cancelar_youtube(conn, s)
             except (youtube.YouTubeError, facebook.FacebookError) as e:
                 return tg.answer_callback(cb["callback_id"], f"No pude: {str(e)[:150]}", alerta=True)
             db.marcar_subida(conn, s["id"], "cancelada")
@@ -3939,7 +3986,7 @@ def _subidas_callback(conn, tg: TelegramClient, cb: dict, settings: Settings) ->
     if not s:
         return tg.answer_callback(cb["callback_id"], L("Esa ya no está programada.", "That one is no longer scheduled."))
     try:
-        youtube.Cliente(s["canal"]).cancelar(s["video_id"])
+        _cancelar_youtube(conn, s)
     except youtube.YouTubeError as e:
         return tg.answer_callback(cb["callback_id"], f"No pude: {str(e)[:150]}")
     db.marcar_subida(conn, sid, "cancelada")

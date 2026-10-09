@@ -51,6 +51,13 @@ def connect(path: Path) -> sqlite3.Connection:
             conn.execute(f"ALTER TABLE pegados ADD COLUMN {columna}")
         except sqlite3.OperationalError:
             pass
+    # Las respuestas COMPLETAS de YouTube (2026-10-09: los dos videos de /demo desaparecieron y no
+    # había forma de saber qué había contestado la API): al subir, al cancelar y el chequeo de 2 min.
+    for columna in ("respuesta TEXT", "respuesta_cancelar TEXT", "chequeo TEXT", "chequeado TEXT"):
+        try:
+            conn.execute(f"ALTER TABLE subidas ADD COLUMN {columna}")
+        except sqlite3.OperationalError:
+            pass
     return conn
 
 
@@ -796,9 +803,10 @@ def _fila_subida(f) -> dict:
 
 
 def crear_subida(conn: sqlite3.Connection, clip_id: str, canal: str, estado: str,
-                 video_id: str = "", publish_at: str = "", error: str = "") -> int:
-    cur = conn.execute("INSERT INTO subidas (clip_id, canal, video_id, publish_at, estado, error) "
-                       "VALUES (?, ?, ?, ?, ?, ?)", (clip_id, canal, video_id, publish_at, estado, error))
+                 video_id: str = "", publish_at: str = "", error: str = "", respuesta: str = "") -> int:
+    cur = conn.execute("INSERT INTO subidas (clip_id, canal, video_id, publish_at, estado, error, respuesta) "
+                       "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                       (clip_id, canal, video_id, publish_at, estado, error, respuesta or None))
     conn.commit()
     return int(cur.lastrowid)
 
@@ -813,6 +821,24 @@ def subidas(conn: sqlite3.Connection, estados: tuple[str, ...] | None = None,
         sql += " AND clip_id = ?"
         args.append(clip_id)
     return [_fila_subida(f) for f in conn.execute(sql + " ORDER BY publish_at, id", args)]
+
+
+def anotar_respuesta_subida(conn: sqlite3.Connection, subida_id: int, campo: str, valor: str) -> None:
+    """Guarda una respuesta de YouTube en la fila (`respuesta_cancelar` o `chequeo`)."""
+    assert campo in ("respuesta_cancelar", "chequeo")
+    extra = ", chequeado = datetime('now')" if campo == "chequeo" else ""
+    conn.execute(f"UPDATE subidas SET {campo} = ?{extra} WHERE id = ?", (valor, subida_id))
+    conn.commit()
+
+
+def subidas_sin_chequear(conn: sqlite3.Connection, minutos: int = 2) -> list[dict]:
+    """Las subidas a YouTube que tienen video y todavía no se chequearon, de hace más de `minutos`."""
+    filas = conn.execute(
+        "SELECT id, clip_id, canal, video_id, publish_at, estado, error, creada FROM subidas "
+        "WHERE canal != 'facebook' AND video_id IS NOT NULL AND video_id != '' AND chequeo IS NULL "
+        "AND creada <= datetime('now', ?) AND creada >= datetime('now', '-1 day')",
+        (f"-{int(minutos)} minutes",)).fetchall()
+    return [_fila_subida(f) for f in filas]
 
 
 def marcar_subida(conn: sqlite3.Connection, subida_id: int, estado: str, error: str = "") -> None:

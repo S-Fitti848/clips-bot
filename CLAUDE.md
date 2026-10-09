@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-10-08 | **Versión:** v0.62.2 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 + escucha de Telegram 24/7)
+**Snapshot:** 2026-10-09 | **Versión:** v0.63.0 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 + escucha de Telegram 24/7)
 
 > **SI ESTÁS EMPEZANDO UNA SESIÓN NUEVA, LEÉ §10.** Ahí está qué está hecho, qué quedó a medias,
 > qué falta, y las trampas que ya nos mordieron.
@@ -773,6 +773,21 @@ Problemas abiertos:
 
 ## 9. CHANGELOG
 
+- v0.63.0 (2026-10-09) — **Las respuestas de YouTube se guardan.** Los dos videos de /demo
+  (`bocYs7_5N3I` 22:33 y `4JaPlvbWgZ0` 23:00 del 08/10) no están en Studio. Investigado: subieron
+  al canal correcto (el token de la Pi es Roty, `UCz0-X39ylB_BAO_yFCLMS8w`); YouTube los aceptó al
+  subir (el bot solo guarda el id si no hubo error); ❌ es `videos.update` (en el código no existe
+  ningún `videos.delete`) y solo se usó en el segundo, pero desaparecieron los dos; hoy `videos.list`
+  con el token del dueño devuelve 0 resultados (un rechazo se seguiría viendo con su motivo) → los
+  sacaron DESPUÉS de subirlos, YouTube o desde la cuenta, no el bot. El motivo no se puede saber: no
+  se había guardado la respuesta de la API. Ahora: (1) `Cliente.subir` guarda la respuesta COMPLETA de
+  `videos.insert` (`subidas.respuesta` + log); (2) ❌ (`_cancelar_youtube`) guarda la de
+  `videos.update` aunque falle (`subidas.respuesta_cancelar`); (3) la escucha, 2 minutos después de
+  cada subida a YouTube de las últimas 24 h, pide `videos.list` (status, processingDetails) y guarda
+  existe/uploadStatus/failureReason/rejectionReason/privacy/publishAt (`subidas.chequeo`); si no
+  existe o quedó rechazado/fallido, avisa a Santi. En el mail y el PDF ya no se dice que el video de
+  prueba "sigue privado": se describe lo que muestra la grabación (subido, programado, cancelado).
+  714 tests OK.
 - v0.62.2 (2026-10-08) — **Demo grabada y vuelta a la normalidad.** Screencast (oculto):
   https://youtu.be/zlLOnuSHzQc, ya en el borrador del mail y en el PDF. Bot en castellano
   (`idioma` = es), `youtube_upload_enabled: false`, la excepción solo para `demo_*`. Revisión para el

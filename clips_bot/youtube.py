@@ -197,7 +197,9 @@ class Cliente:
                                   headers={"Content-Type": "video/mp4", "Content-Length": str(tam)})
         if r2.status_code not in (200, 201):
             raise YouTubeError(f"La subida se cortó: {r2.status_code} {r2.text[:300]}")
-        return r2.json()["id"]
+        self.respuesta_subida = r2.json()       # COMPLETA: uploadStatus, privacyStatus, publishAt…
+        log.info("videos.insert %s: %s", self.canal, json.dumps(self.respuesta_subida, ensure_ascii=False)[:2000])
+        return self.respuesta_subida["id"]
 
     def mis_videos(self, desde: datetime, maximo: int = 200) -> list[dict]:
         """Los videos subidos al canal desde `desde`, más nuevos primero: [{id, titulo, publicado}].
@@ -267,8 +269,38 @@ class Cliente:
                              data=json.dumps({"id": video_id, "status": {
                                  "privacyStatus": "private", "selfDeclaredMadeForKids": False}}),
                              timeout=30)
+        self.respuesta_cancelar = {"http": r.status_code, "cuerpo": _json_o_texto(r)}
+        log.info("videos.update (cancelar) %s %s: %s", self.canal, video_id,
+                 json.dumps(self.respuesta_cancelar, ensure_ascii=False)[:2000])
         if r.status_code != 200:
             raise YouTubeError(f"No pude cancelar {video_id}: {r.status_code} {r.text[:200]}")
+
+    def estado_video(self, video_id: str) -> dict:
+        """videos.list del video (status, processingDetails, snippet). {"existe": False, …} si YouTube
+        no lo devuelve (borrado o sacado); con uploadStatus, failureReason y rejectionReason si existe."""
+        r = self.session.get(f"{API}/videos", params={"part": "status,processingDetails,snippet",
+                                                      "id": video_id}, headers=self._headers(), timeout=30)
+        cuerpo = _json_o_texto(r)
+        items = (cuerpo.get("items") or []) if isinstance(cuerpo, dict) else []
+        if r.status_code != 200:
+            return {"existe": None, "http": r.status_code, "cuerpo": cuerpo}
+        if not items:
+            return {"existe": False, "http": 200, "cuerpo": cuerpo}
+        it = items[0]
+        st = it.get("status") or {}
+        return {"existe": True, "http": 200, "uploadStatus": st.get("uploadStatus"),
+                "failureReason": st.get("failureReason"), "rejectionReason": st.get("rejectionReason"),
+                "privacyStatus": st.get("privacyStatus"), "publishAt": st.get("publishAt"),
+                "canal": (it.get("snippet") or {}).get("channelId"),
+                "procesamiento": (it.get("processingDetails") or {}).get("processingStatus"),
+                "item": it}
+
+
+def _json_o_texto(r):
+    try:
+        return r.json()
+    except ValueError:
+        return r.text[:2000]
 
 
 def metadatos(titulo: str, descripcion: str, tags: list[str], publicar: datetime,

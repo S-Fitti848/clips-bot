@@ -21,7 +21,7 @@ Summary of how Clips Bot uses the YouTube API Services:
   bot calls `videos.insert` (resumable upload) with `privacyStatus=private` and a `publishAt` time.
   Nothing is uploaded without the owner's approval.
 - **Manage:** the bot lists the uploads it scheduled and can cancel a scheduled publication with
-  `videos.update` (`part=status`, private, no `publishAt`). The video stays private in Studio.
+  `videos.update` (`part=status`, private, no `publishAt`). The bot never deletes videos.
 - **Analytics (own channel only):** `channels.list` (mine=true) and `playlistItems.list` to list the
   channel's uploads, and the YouTube Analytics API `reports.query` (views, averageViewDuration,
   averageViewPercentage, audienceWatchRatio) to see how each Short performs.
@@ -35,8 +35,9 @@ through OAuth. Statistics are refreshed before 30 days and deleted if a video no
 access is revoked. Our privacy policy and terms are at https://s-fitti848.github.io/privacidad.html
 and https://s-fitti848.github.io/terminos.html.
 
-Note: since the project is not yet audited, the test video uploaded in the screencast remains private,
-as expected.
+In the screencast, a test video (color bars, no third-party content) is uploaded with `videos.insert`
+as private with a `publishAt` time, shown in YouTube Studio, and then its scheduled publication is
+cancelled with `videos.update`.
 
 Please let us know if you need anything else.
 
