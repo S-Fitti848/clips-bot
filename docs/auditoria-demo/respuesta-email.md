@@ -6,13 +6,13 @@
 
 Hello,
 
-Thank you for reviewing our application. As requested, attached are:
+Thank you for reviewing our application. As requested, here are:
 
-1. **An English screencast** showing the full flow on our channel (Roty, channel ID
-   UCz0-X39ylB_BAO_yFCLMS8w): how a video is approved, uploaded and scheduled, how we manage it
+1. **An English screencast** (unlisted on YouTube): https://youtu.be/zlLOnuSHzQc — it shows the full
+   flow on our channel (Roty, channel ID UCz0-X39ylB_BAO_yFCLMS8w): how a video is approved, uploaded and scheduled, how we manage it
    (list and cancel the scheduled publication), how we track analytics, and how we perform public
    searches, including the end results in YouTube Studio.
-2. **A step-by-step script** ("Clips Bot – API usage walkthrough", PDF) with one screenshot per step
+2. **A step-by-step script** ("Clips Bot – API usage walkthrough", attached PDF) with one screenshot per step
    and the exact API method used in each step.
 
 Summary of how Clips Bot uses the YouTube API Services:
