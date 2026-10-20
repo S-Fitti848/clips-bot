@@ -72,7 +72,7 @@ def _entregar(tmp_path, monkeypatch, motor):
     monkeypatch.setattr(ef, "Propuesta", lambda **k: None)
     monkeypatch.setattr(ef, "hacer_video", lambda *a, **k: _meta(tmp_path, motor))
     monkeypatch.setattr(m, "probe", lambda v: type("I", (), {"ancho": 1080, "alto": 1920, "duracion": 40})())
-    monkeypatch.setattr(m, "miniatura", lambda v, s: None)
+    monkeypatch.setattr(m, "miniatura", lambda v, s, *a: None)
     monkeypatch.setattr(m, "chequear_audio", lambda v: [])
     monkeypatch.setattr(m, "_programar_subida", lambda *a, **k: None)
     import clips_bot.process as proc

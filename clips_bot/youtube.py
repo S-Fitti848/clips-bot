@@ -41,6 +41,7 @@ AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 TOKEN_URL = "https://oauth2.googleapis.com/token"
 API = "https://www.googleapis.com/youtube/v3"
 UPLOAD = "https://www.googleapis.com/upload/youtube/v3/videos"
+THUMBNAILS = "https://www.googleapis.com/upload/youtube/v3/thumbnails/set"
 AR = timezone(timedelta(hours=-3), "AR")
 MAX_TITULO, MAX_DESCRIPCION, MAX_TAGS = 100, 5000, 500   # límites de YouTube
 
@@ -274,6 +275,16 @@ class Cliente:
                  json.dumps(self.respuesta_cancelar, ensure_ascii=False)[:2000])
         if r.status_code != 200:
             raise YouTubeError(f"No pude cancelar {video_id}: {r.status_code} {r.text[:200]}")
+
+    def poner_portada(self, video_id: str, imagen: Path) -> dict:
+        """thumbnails.set (JPEG < 2 MB). Necesita el canal verificado; si YouTube la rechaza, YouTubeError."""
+        r = self.session.post(THUMBNAILS, params={"videoId": video_id}, data=imagen.read_bytes(),
+                              headers={**self._headers(), "Content-Type": "image/jpeg"}, timeout=60)
+        self.respuesta_portada = {"http": r.status_code, "cuerpo": _json_o_texto(r)}
+        log.info("thumbnails.set %s: %s", video_id, json.dumps(self.respuesta_portada, ensure_ascii=False)[:1000])
+        if r.status_code != 200:
+            raise YouTubeError(f"thumbnails.set {video_id}: {r.status_code} {r.text[:200]}")
+        return self.respuesta_portada
 
     def estado_video(self, video_id: str) -> dict:
         """videos.list del video (status, processingDetails, snippet). {"existe": False, …} si YouTube

@@ -77,6 +77,13 @@ def miniatura(video: Path, destino: Path, segundo: float = 1.0) -> Path:
     return destino
 
 
+def portada(video: Path, destino: Path, segundo: float, alto: int = 1280) -> Path:
+    """Un cuadro del video como portada (JPEG vertical de `alto` px, < 2 MB: YouTube no acepta más)."""
+    run([find_bin("ffmpeg"), "-hide_banner", "-loglevel", "error", "-y", "-ss", f"{segundo:.2f}", "-i", str(video),
+         "-frames:v", "1", "-vf", f"scale=-2:{alto}", "-q:v", "3", str(destino)])
+    return destino
+
+
 _SIL_START = re.compile(r"silence_start: (-?[\d.]+)")
 _SIL_END = re.compile(r"silence_end: ([\d.]+)")
 

@@ -81,6 +81,18 @@ def subir_reel(video: Path, descripcion: str, cuando: datetime | None, version: 
     return str(video_id)
 
 
+def poner_portada(video_id: str, imagen: Path, version: str, token: str | None = None,
+                  session: requests.Session | None = None) -> dict:
+    """La portada del Reel: POST /{video_id}/thumbnails con la imagen y is_preferred."""
+    if token is None:
+        _, token = credenciales()
+    with imagen.open("rb") as f:
+        return _ok((session or requests.Session()).post(
+            f"{GRAPH.format(version=version)}/{video_id}/thumbnails", timeout=60,
+            data={"is_preferred": "true", "access_token": token},
+            files={"source": (imagen.name, f, "image/jpeg")}), "portada")
+
+
 def cancelar(video_id: str, version: str, token: str | None = None,
              session: requests.Session | None = None) -> None:
     if token is None:

@@ -341,7 +341,7 @@ def test_la_entrega_avisa_si_el_audio_esta_mal(monkeypatch, tmp_path):
     from clips_bot import db
 
     monkeypatch.setattr(m, "probe", lambda v: media.Info(1080, 1920, 30.0, 30, True))
-    monkeypatch.setattr(m, "miniatura", lambda v, d: d)
+    monkeypatch.setattr(m, "miniatura", lambda v, d, *a: d)
     monkeypatch.setattr(m, "chequear_audio", lambda v: ["pico de -1.0 dB en el último segundo"])
     monkeypatch.setattr("clips_bot.process.READY_DIR", tmp_path)
     tg = TG()

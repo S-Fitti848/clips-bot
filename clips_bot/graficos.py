@@ -25,6 +25,9 @@ log = logging.getLogger(__name__)
 MAPA_BASE = "File:Blue Marble 2002.png"     # NASA, dominio público, equirrectangular
 MAPA_CREDITO = "Mapa: NASA Blue Marble (dominio público)"
 CONTAR_S, AÑO_HASTA_S = 1.4, 2.4
+# La portada de Pequeña Historia (2026-10-20: la del Al Capone mostraba "1880" a mitad de la cuenta):
+# un cuadro con el año FINAL quieto, después del saltito (0,26 s) y antes del fundido (0,25 s).
+PORTADA_S = CONTAR_S + 0.5
 CLAVE_S = 1.1
 
 

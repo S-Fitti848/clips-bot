@@ -598,7 +598,10 @@ def enviar_clip(tg: TelegramClient, chat_id, conn, clip_id: str, meta: dict, num
         return
     video = Path(meta["salida"])
     info = probe(video)  # dimensiones reales del archivo: sin esto Telegram lo muestra angosto
-    thumb = miniatura(video, video.with_suffix(".thumb.jpg"))
+    from .graficos import PORTADA_S
+
+    # En una efeméride, la miniatura de Telegram también con el año final (no a mitad de la cuenta).
+    thumb = miniatura(video, video.with_suffix(".thumb.jpg"), PORTADA_S if meta.get("efemeride") else 1.0)
     marca = f" · RELLENO (puntaje {meta.get('puntaje', 0)})" if meta.get("relleno") else ""
     linea = " · ".join(x for x in (por_que(meta), meta.get("aviso") or "") if x)
     cuerpo = mensaje_textos(numero, meta["streamer"], clip_id, horario, meta["textos"],
@@ -3558,6 +3561,12 @@ def _programar_subida(conn, settings: Settings, meta: dict, canal: str, hora: st
         cliente = youtube.Cliente(canal)
         video_id = cliente.subir(Path(meta["salida"]), t["titulo"], t["descripcion"],
                                  t.get("hashtags") or [], cuando, CATEGORIA.get(canal, "24"))
+        img = _portada_de(meta)
+        if img is not None:
+            try:
+                cliente.poner_portada(video_id, img)
+            except (youtube.YouTubeError, OSError) as e:   # la portada nunca frena la subida
+                log.warning("YouTube: %s salió sin la portada del año: %s", video_id, e)
     except youtube.YouTubeError as e:
         db.crear_subida(conn, clip_id, canal, "error", error=str(e)[:500])
         return L(f"⚠️ No pude subirlo a YouTube ({html.escape(youtube.CANALES[canal])}): ",
@@ -3944,6 +3953,22 @@ def _subir(conn, settings: Settings, meta: dict, canal: str) -> list[str]:
     return avisos
 
 
+def _portada_de(meta: dict) -> Path | None:
+    """La portada de una efeméride: el cuadro con el año final (no a mitad de la cuenta). None si no
+    es una efeméride o no se pudo sacar (la subida sigue igual)."""
+    from .graficos import PORTADA_S
+    from .media import portada
+
+    if not meta.get("efemeride"):
+        return None
+    video = Path(meta["salida"])
+    try:
+        return portada(video, video.with_name(video.stem + ".portada.jpg"), PORTADA_S)
+    except Exception as e:      # una portada nunca frena una subida
+        log.warning("no pude sacar la portada de %s: %s", meta.get("clip_id"), e)
+        return None
+
+
 def _subir_facebook(conn, settings: Settings, meta: dict, ahora: datetime | None = None) -> str:
     """El Reel a la página de Facebook, a la misma hora que YouTube (o ya, si esa hora pasó)."""
     import requests
@@ -3964,6 +3989,12 @@ def _subir_facebook(conn, settings: Settings, meta: dict, ahora: datetime | None
     except (facebook.FacebookError, OSError, requests.RequestException) as e:
         db.crear_subida(conn, clip_id, "facebook", "error", error=str(e)[:500])
         return f"⚠️ No pude subirlo a Facebook: {html.escape(str(e)[:300])}"
+    img = _portada_de(meta)
+    if img is not None:
+        try:
+            facebook.poner_portada(vid, img, settings.facebook.version)
+        except (facebook.FacebookError, OSError, requests.RequestException) as e:
+            log.warning("Facebook: el Reel %s salió sin la portada del año: %s", vid, e)
     if cuando is None or (cuando - hoy).total_seconds() < facebook.MIN_PROGRAMAR_S:
         db.crear_subida(conn, clip_id, "facebook", "publicada", video_id=vid)
         return "📘 Publicado en Facebook (Reels de la página)."

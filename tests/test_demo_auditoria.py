@@ -71,7 +71,7 @@ def entorno(tmp_path, monkeypatch):
     monkeypatch.setattr(process, "READY_DIR", tmp_path)
     monkeypatch.setattr(m, "video_demo", lambda salida, render, segundos=12.0: salida.write_bytes(b"x") or salida)
     monkeypatch.setattr(m, "probe", lambda p: type("I", (), {"ancho": 1080, "alto": 1920, "duracion": 12.0})())
-    monkeypatch.setattr(m, "miniatura", lambda v, d: None)
+    monkeypatch.setattr(m, "miniatura", lambda v, d, *a: None)
     monkeypatch.setattr(m, "chequear_audio", lambda v: [])
     monkeypatch.setattr(m, "_meta_de", lambda cid: __import__("json").loads((tmp_path / f"{cid}.json").read_text(encoding="utf-8")))
     subidos, cancelados = [], []
