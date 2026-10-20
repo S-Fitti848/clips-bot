@@ -111,14 +111,16 @@ render:
   zoom_picos: true
   zoom_max: 1.35
   zoom_max_n: 3
-  # veryfast, medido en la Pi el 2026-09-23 sobre un clip de 60 s: 111 s contra 197 s de `medium`
-  # (43 % menos) con SSIM 0,994 entre los dos, o sea indistinguible, y encima el archivo sale más
-  # chico (2609 contra 2928 kbps). `superfast` baja a 96 s pero se va a 4738 kbps, casi el tope de
-  # 5 Mbps: un clip de 59 s quedaría en ~35 MB, demasiado cerca del límite de 50 MB de Telegram.
-  # En la Pi el render es la etapa más cara del pipeline, no Whisper: 107-197 s por clip con medium.
-  x264_preset: veryfast
-  crf: 20
-  maxrate_kbps: 5000         # tope: 59 s × 5 Mbps ≈ 38 MB < 50 MB (límite de la Bot API de Telegram)
+  # 2026-10-20 (Santi: "los videos tardan en cargar en Telegram"): medium + crf 22 + tope 3500 kbps.
+  # Medido con VMAF (modelo de celular) contra una referencia casi sin pérdida, sobre los clips más
+  # pesados de las entregas: 33,6 → 26,7 MB (VMAF 96,7 → 96,6) y 36,5 → 26,9 MB (93,3 → 92,7). Con
+  # veryfast al mismo tope el peso era igual pero se perdían 2-3 puntos (90,3), con fast 1,6 y con
+  # faster 1,9. Costo: el render tarda +63 % en la Pi (58 s de clip: 359 → 585 s). Antes (desde el
+  # 2026-09-23): veryfast, crf 20, tope 5000 (clips de hasta 37 MB). Subida Pi → Telegram ~5 MB/s
+  # (37 MB en 8,0 s, 26,9 MB en 5,1 s): el cuello es la descarga en el celular, no la subida.
+  x264_preset: medium
+  crf: 22
+  maxrate_kbps: 3500         # tope: 59 s × 3,5 Mbps ≈ 26 MB (el límite de la Bot API es 50 MB)
 
 # Detección de cámara (OpenCV, caras en frames muestreados).
 camara:

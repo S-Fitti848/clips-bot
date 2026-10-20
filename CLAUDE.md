@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-10-09 | **Versión:** v0.63.2 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 + escucha de Telegram 24/7)
+**Snapshot:** 2026-10-20 | **Versión:** v0.64.0 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 + escucha de Telegram 24/7)
 
 > **SI ESTÁS EMPEZANDO UNA SESIÓN NUEVA, LEÉ §10.** Ahí está qué está hecho, qué quedó a medias,
 > qué falta, y las trampas que ya nos mordieron.
@@ -773,6 +773,17 @@ Problemas abiertos:
 
 ## 9. CHANGELOG
 
+- v0.64.0 (2026-10-20) — **Videos más livianos** (Santi: "tardan mucho en cargar en Telegram").
+  Medido: 44 entregados en 10 días, mediana 9 MB, máx. 28 MB (antes hasta 37), video a 2,4 Mbps de
+  mediana y picos de 5,2. Faststart ya estaba en todos (44/44) y `sendVideo` ya mandaba
+  `supports_streaming=true`. Subida de la Pi: ~110 Mbps a Cloudflare; a Telegram ~5 MB/s (37 MB en
+  8,0 s): el cuello es la descarga en el celular. Comparado con VMAF (modelo de celular) y SSIM
+  contra una referencia crf 10, con el render real (fit_blur, zooms, subtítulos y título) de los 3
+  clips más pesados: `medium` + crf 22 + tope 3500 kbps = −20 a −26 % de peso con −0,1/−0,6 de VMAF
+  (crf 23-26 con veryfast: −35/−55 % pero −2,5 a −11 de VMAF; veryfast/faster/fast al tope 3500:
+  −1,6 a −3). En la Pi el render tarda +63 % (58 s de clip: 359 → 585 s). Antes/después del mismo
+  clip mandado al privado de Santi (37,0 → 26,9 MB). `tests/test_peso_videos.py` fija los ajustes,
+  el faststart en todo render final y el streaming. 717 tests OK.
 - v0.63.2 (2026-10-09) — Segundo screencast (oculto) con la búsqueda pública: https://youtu.be/g78FhNRCGuw
   (/lang en + /publicos davooxeneize). Su captura completa el paso 6 del PDF; los dos links van en el
   encabezado del PDF y en el mail. PDF final: 7 páginas, 8 capturas.
