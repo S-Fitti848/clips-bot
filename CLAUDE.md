@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-10-20 | **Versión:** v0.64.0 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 + escucha de Telegram 24/7)
+**Snapshot:** 2026-10-20 | **Versión:** v0.65.0 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 + escucha de Telegram 24/7)
 
 > **SI ESTÁS EMPEZANDO UNA SESIÓN NUEVA, LEÉ §10.** Ahí está qué está hecho, qué quedó a medias,
 > qué falta, y las trampas que ya nos mordieron.
@@ -773,6 +773,21 @@ Problemas abiertos:
 
 ## 9. CHANGELOG
 
+- v0.65.0 (2026-10-20) — **Facebook: por qué el público no ve los Reels, y la portada.**
+  (1) Por la API los 8 Reels están `published: true`, `ready`/`complete`, privacidad `EVERYONE`
+  ("Público"), sin revisión ni restricción; la página está publicada (`is_published: true`), sin
+  restricciones de país ni de edad. Lo que falla es la APP de Meta que publica ("clips-bot", la de
+  FB_APP_ID): no tiene URL de política de privacidad ni categoría, requisitos para pasar a modo
+  Live, así que está en MODO DESARROLLO, donde lo que publica solo lo ven quienes tienen un rol en la
+  app (solo Santi, administrador). Eso explica "No reels yet" desde otra cuenta y el anuncio con 0
+  alcance. El modo no se cambia por la API: Santi lo tiene que pasar a Live en el panel de la app.
+  (2) **Portada con el año final** (la del Al Capone mostraba "1880" a mitad de la cuenta):
+  `graficos.PORTADA_S` = 1,9 s (cuenta hasta 1,4 s, saltito hasta 1,66, fundido desde 2,15; sin
+  gráficos, el cartel del año dura 2 s), `media.portada` (JPEG vertical 720x1280), y al subir una
+  efeméride: Facebook `POST /{video}/thumbnails` con `is_preferred` y YouTube `thumbnails.set`
+  (cuando se active la subida; si falla, la subida sigue). También la miniatura de Telegram de las
+  efemérides. Aplicado a los 8 Reels ya publicados (success y verificado: la portada preferida y la
+  `picture` del Reel del Al Capone muestran 1931). 723 tests OK.
 - v0.64.0 (2026-10-20) — **Videos más livianos** (Santi: "tardan mucho en cargar en Telegram").
   Medido: 44 entregados en 10 días, mediana 9 MB, máx. 28 MB (antes hasta 37), video a 2,4 Mbps de
   mediana y picos de 5,2. Faststart ya estaba en todos (44/44) y `sendVideo` ya mandaba
