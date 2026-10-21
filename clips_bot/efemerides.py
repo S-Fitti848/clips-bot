@@ -741,6 +741,8 @@ class Guion:
     videos: dict = field(default_factory=dict)
     con_video: list[int] = field(default_factory=list)
     con_videos: bool = False
+    fotos_respaldo: bool = False      # las fotos las eligió el modelo de respaldo: revisarlas (2026-10-21)
+    tarjetas: list[int] = field(default_factory=list)   # frases que van con la tarjeta del año o una clave
 
     @property
     def texto(self) -> str:
@@ -902,6 +904,19 @@ frase: un cohete moderno no sirve para 1957; el cielo, el mar o el espacio puede
 Nada de dibujos animados, animaciones ni ilustraciones (0), salvo que la frase hable justamente de
 eso; tampoco videos con texto encima tapando la imagen, ni recreaciones hechas por computadora.
 
+TIPO DE CADA FOTO (en `tipos`, una entrada por CADA foto de la lista, con su número): decí qué es:
+"foto" (una fotografía o una pintura/grabado de algo real), "captura" (captura de pantalla de una
+página o de un programa), "interfaz" (la pantalla de una app o de un celular), "documento" (una
+hoja escrita, un diario, una carta, una placa con mucho texto), "planilla" (una tabla o grilla),
+"grafico" (un gráfico de precios, barras o curvas), "diagrama", "mapa", "logo" u "otro". En
+`otro_idioma` decí si se lee texto en un idioma que NO es castellano ni inglés (otro alfabeto, o
+filipino, ruso, chino…). Una captura, una app, un documento o una planilla solo sirven si la frase
+habla justo de eso.
+
+QUE NO CONTRADIGA: en `contradice` decí si la primera foto que pusiste muestra lo CONTRARIO de lo
+que dice la frase: si la frase dice que algo sube, un gráfico que baja o una flecha para abajo la
+contradice; si dice que ganó, una foto de la derrota. Si contradice, true.
+
 `descartadas`: MIRÁ las fotos y descartá las que no sirven para nada: mapas, gráficos, diagramas,
 banderas, escudos, firmas, logos, capturas de pantalla, retratos de alguien que NO protagoniza el
 hecho, fotos de otro tema, y cualquier imagen violenta o con muertos o heridos. Nunca las pongas en
@@ -917,13 +932,82 @@ SCHEMA_FOTOS = {
                            "fotos": {"type": "ARRAY", "items": {"type": "INTEGER"}},
                            "de_epoca": {"type": "BOOLEAN"}, "seguro": {"type": "BOOLEAN"},
                            "video": {"type": "INTEGER"}, "momento": {"type": "INTEGER"},
-                           "video_de_epoca": {"type": "BOOLEAN"}},
-            "required": ["se_ve", "fotos", "de_epoca", "seguro"]}},
+                           "video_de_epoca": {"type": "BOOLEAN"}, "contradice": {"type": "BOOLEAN"}},
+            "required": ["se_ve", "fotos", "de_epoca", "seguro", "contradice"]}},
         "descartadas": {"type": "ARRAY", "items": {"type": "INTEGER"}},
+        "tipos": {"type": "ARRAY", "items": {
+            "type": "OBJECT",
+            "properties": {"foto": {"type": "INTEGER"},
+                           "tipo": {"type": "STRING", "enum": ["foto", "captura", "interfaz", "documento",
+                                                              "planilla", "grafico", "diagrama", "mapa",
+                                                              "logo", "otro"]},
+                           "otro_idioma": {"type": "BOOLEAN"}},
+            "required": ["foto", "tipo", "otro_idioma"]}},
     },
-    "required": ["frases", "descartadas"],
+    "required": ["frases", "descartadas", "tipos"],
 }
 
+# Lo que NO es una foto del hecho (2026-10-21, la de bitcoin: una app con "Something went wrong", una
+# planilla de frase semilla, un gráfico en picada y placas con texto en filipino). Cada tipo sirve solo
+# para una frase que hable de eso.
+_HABLA_DE_APP = re.compile(r"\bapp\b|aplicaci[oó]n|pantalla|programa|software|celular|billetera|"
+                           r"wallet|interfaz|computadora|p[aá]gina|sitio|web|internet|red(es)? social", re.I)
+_HABLA_DE_DOC = re.compile(r"documento|carta|acta|tratado|\bley\b|decreto|constituci[oó]n|manuscrito|"
+                           r"peri[oó]dico|diario|libro|placa|planilla|tabla|white ?paper|art[ií]culo|"
+                           r"firm[oó]|publica", re.I)
+_HABLA_DE_GRAFICO = re.compile(r"gr[aá]fico|curva|cotiza|precio|vale|valor|estad[ií]stic|diagrama|"
+                               r"esquema|sub(e|i[oó])|baj(a|[oó])|r[eé]cord|m[aá]ximo|m[ií]nimo|super[oó]|d[oó]lar", re.I)
+_HABLA_DE_MAPA = re.compile(r"\bmapa|territorio|frontera|ruta|recorrido", re.I)
+PERMITE_TIPO = {"captura": _HABLA_DE_APP, "interfaz": _HABLA_DE_APP, "documento": _HABLA_DE_DOC,
+                "planilla": _HABLA_DE_DOC, "grafico": _HABLA_DE_GRAFICO, "diagrama": _HABLA_DE_GRAFICO,
+                "mapa": _HABLA_DE_MAPA, "logo": _HABLA_DE_APP}
+UMBRAL_TEXTO_OCR = 0.07    # calibrado con las 40 de bitcoin: app 8,5 %, documentos 13-15 %, placas
+                           # 8-11 %, diagrama 8,4 %; las fotos de verdad, ≤ 6 % (un congreso con carteles)
+
+
+def fraccion_texto(ruta: Path) -> float:
+    """Qué parte de la imagen es texto legible (cajas de palabras de tesseract). 0 si no hay OCR."""
+    try:
+        import pytesseract
+        from PIL import Image
+
+        from .pantalla import find_tesseract
+
+        pytesseract.pytesseract.tesseract_cmd = find_tesseract()
+        im = Image.open(ruta).convert("L")
+        im.thumbnail((1000, 1000))
+        d = pytesseract.image_to_data(im, lang="eng", output_type=pytesseract.Output.DICT, config="--psm 11")
+    except Exception as e:      # sin tesseract (o una imagen rota) no se frena nada: queda Gemini
+        log.debug("OCR de %s: %s", ruta, e)
+        return 0.0
+    area = sum(w * h for t, c, w, h in zip(d["text"], d["conf"], d["width"], d["height"])
+               if len((t or "").strip()) >= 2 and float(c) >= 60 and sum(ch.isalnum() for ch in t) >= 2)
+    return area / float(im.width * im.height or 1)
+
+
+def sirve_para(frase: str, tipo: str, mucho_texto: bool, otro_idioma: bool) -> bool:
+    """¿Esta imagen puede ir en esta frase? Nunca con texto en otro idioma; un tipo que no es foto
+    (o con mucho texto) solo si la frase habla justo de eso."""
+    if otro_idioma:
+        return False
+    if tipo in PERMITE_TIPO and not PERMITE_TIPO[tipo].search(frase):
+        return False
+    if mucho_texto and not (_HABLA_DE_DOC.search(frase) or _HABLA_DE_APP.search(frase)):
+        return False
+    return True
+
+
+def tipos_de(d: dict, n_pool: int) -> dict[int, tuple[str, bool]]:
+    """{foto (desde 0): (tipo, otro_idioma)} de la respuesta de Gemini."""
+    out = {}
+    for t in (d.get("tipos") or []) if isinstance(d, dict) else []:
+        k = (t or {}).get("foto")
+        if isinstance(k, int) and 1 <= k <= n_pool:
+            out[k - 1] = (str(t.get("tipo") or "foto"), bool(t.get("otro_idioma")))
+    return out
+
+ANIO_MODERNO = 2000        # desde acá, primero fotos de stock (Pexels/Unsplash) antes que Commons
+FOTOS_STOCK_MAX = 2        # de stock, por frase, en los hechos modernos
 FOTOS_ARTICULO_MAX = 8     # del artículo del hecho: son candidatas para todas las frases
 FOTOS_BUSQUEDA_MAX = 4     # de Commons, por frase
 POOL_MAX = 40              # las que ve Gemini en la llamada (cada una ~250 tokens)
@@ -950,6 +1034,9 @@ def rankings_de(d: dict, candidatas: list[list[int]],
         # Gemini no está seguro de que la primera muestre lo que dice la frase, sale.
         if ok and (f or {}).get("seguro") is False:
             ok = ok[1:]
+        # Que no contradiga (2026-10-21: "el precio subió muchísimo" con un gráfico en picada).
+        if ok and (f or {}).get("contradice") is True:
+            ok = ok[1:]
         rankings.append(ok[:ilustrar.RANKING_MAX])
     return rankings, descartadas
 
@@ -957,7 +1044,8 @@ def rankings_de(d: dict, candidatas: list[list[int]],
 def elegir_fotos(cliente, g: Guion, pool: list[Foto], candidatas: list[list[int]],
                  propias: list[list[int]] | None = None, reintentos: int = 1,
                  avisar=log.info, anio: int | None = None, videos: dict | None = None,
-                 elegidos: dict | None = None) -> tuple[list[list[int]], set[int]]:
+                 elegidos: dict | None = None, ocr: dict[int, float] | None = None,
+                 extra: dict | None = None) -> tuple[list[list[int]], set[int]]:
     """UNA llamada: Gemini ve todas las fotos y ordena las que sirven para cada frase.
     `propias`: las que salieron de la búsqueda de esa frase (se le muestran primero). `anio`: el
     del hecho; junto con el año de cada foto, para que confirme la época (`de_epoca`).
@@ -987,16 +1075,63 @@ def elegir_fotos(cliente, g: Guion, pool: list[Foto], candidatas: list[list[int]
                               f"{len(imagenes) + len(v.frames)}")
                 imagenes += [_jpeg_chico(Path(fr), 384) for fr in v.frames]
         prompt += "\n".join(partes)
+    # SOLO el modelo principal (2026-10-21: el de respaldo eligió una app con error, una planilla y
+    # un gráfico en picada). Si el principal no está, el de respaldo, pero la hoja lo avisa.
+    from .gemini import GeminiError
+
+    principal = getattr(cliente, "modelo", None)
+    respaldo = getattr(cliente, "modelo_fallback", None)
+
+    def pedir(texto: str) -> str:
+        if not principal:
+            return cliente.json(SISTEMA_FOTOS, texto, SCHEMA_FOTOS, temperatura=0.2, imagenes=imagenes)
+        try:
+            return cliente.json(SISTEMA_FOTOS, texto, SCHEMA_FOTOS, temperatura=0.2, imagenes=imagenes,
+                                modelo=principal)
+        except GeminiError as e:
+            if not respaldo or respaldo == principal:
+                raise
+            avisar(f"    fotos: el modelo principal no respondió ({str(e)[:80]}): uso el de respaldo")
+            if extra is not None:
+                extra["respaldo"] = True
+            return cliente.json(SISTEMA_FOTOS, texto, SCHEMA_FOTOS, temperatura=0.2, imagenes=imagenes,
+                                modelo=respaldo)
+
     error = ""
+    ocr = ocr or {}
     for _ in range(reintentos + 1):
-        extra = f"\n\nTu respuesta anterior no servía: {error}" if error else ""
-        d = json.loads(cliente.json(SISTEMA_FOTOS, prompt + extra, SCHEMA_FOTOS, temperatura=0.2,
-                                    imagenes=imagenes))
+        texto_error = f"\n\nTu respuesta anterior no servía: {error}" if error else ""
+        d = json.loads(pedir(prompt + texto_error))
         try:
             rankings, malas = rankings_de(d, candidatas, g.presente)
         except ValueError as e:
             error = str(e)
             continue
+        # Lo que no es una foto del hecho, con texto en otro idioma o con mucho texto: solo en la
+        # frase que habla justo de eso, y nunca de reserva para otras.
+        tipos = tipos_de(d, len(pool))
+        no_aptas = set()
+        for k in range(len(pool)):
+            tipo, idioma = tipos.get(k, ("foto", False))
+            mucho = ocr.get(k, 0.0) > UMBRAL_TEXTO_OCR
+            if tipo in PERMITE_TIPO or idioma or mucho:
+                no_aptas.add(k)
+        for i, rk in enumerate(rankings):
+            frase = f"{g.frases[i]} {g.mostrar[i] if i < len(g.mostrar) else ''}"
+            antes = list(rk)
+            rankings[i] = [x for x in rk if sirve_para(frase, tipos.get(x, ("foto", False))[0],
+                                                     ocr.get(x, 0.0) > UMBRAL_TEXTO_OCR,
+                                                     tipos.get(x, ("foto", False))[1])]
+            for x in antes:
+                if x not in rankings[i]:
+                    t, idi = tipos.get(x, ("foto", False))
+                    avisar(f"    frase {i + 1}: foto {x + 1} afuera ({t}"
+                           + (", texto en otro idioma" if idi else "")
+                           + (f", {ocr.get(x, 0) * 100:.0f} % texto" if ocr.get(x, 0) > UMBRAL_TEXTO_OCR else "") + ")")
+        usadas = {x for r in rankings for x in r}
+        malas |= {x for x in no_aptas if x not in usadas}
+        if extra is not None:
+            extra["tipos"] = tipos
         # Con videos, después de las fotos van sus cuadros: Gemini a veces "descarta" esos
         # números, que no son fotos (en la muestra del Sputnik tiró un IndexError).
         malas = {x for x in malas if 0 <= x < len(pool)}
@@ -1108,6 +1243,14 @@ def fotos_para_guion(wiki: Wiki, cliente, e: Evento, g: Guion, fotos_articulo: l
         # La búsqueda tal cual primero (con el año, en Commons a veces trae más que sin él).
         consultas_commons = list(dict.fromkeys([mostrar] + qs[:3])) +             ([f'{sin_anios(mostrar)} incategory:"PD-AR-Photo"'] if argentino else [])
         halladas: list[Foto] = []
+        hoy = i < len(g.presente) and g.presente[i]
+        # Temas modernos (2026-10-21): primero Pexels/Unsplash, antes que capturas de Commons.
+        if e.anio >= ANIO_MODERNO or hoy:
+            for h in otras.stock(qs, FOTOS_STOCK_MAX, avisar):
+                halladas.append(Foto(archivo=h["archivo"], url=h["url"], ancho=h["ancho"], alto=h["alto"],
+                                     licencia=h["licencia"], autor=h["autor"] or "autor desconocido",
+                                     epigrafe=h["epigrafe"][:160], pagina=h["pagina"],
+                                     articulo=f"{h['fuente']}: {mostrar}", anio=h["anio"]))
         for q in consultas_commons:
             if len(halladas) >= FOTOS_BUSQUEDA_MAX:
                 break
@@ -1146,8 +1289,13 @@ def fotos_para_guion(wiki: Wiki, cliente, e: Evento, g: Guion, fotos_articulo: l
     candidatos_video = (buscar_videos(g, e.anio, carpeta, buscador, avisar, tema=e.paginas[0])
                         if videos else {})
     elegidos: dict = {}
+    # Qué parte de cada foto es texto (OCR): una captura, un documento o una placa no pasan.
+    ocr = {k: fraccion_texto(Path(f.ruta)) for k, f in enumerate(pool) if f.ruta}
+    extra: dict = {}
     rankings, vistas_malas = elegir_fotos(cliente, g, pool, candidatas, propias, avisar=avisar,
-                                          anio=e.anio, videos=candidatos_video, elegidos=elegidos)
+                                          anio=e.anio, videos=candidatos_video, elegidos=elegidos,
+                                          ocr=ocr, extra=extra)
+    g.fotos_respaldo = bool(extra.get("respaldo"))
     g.con_videos = videos
     g.videos = {str(i): v.a_dict() for i, v in elegidos.items()}
     g.con_video = sorted(elegidos)
@@ -1165,6 +1313,22 @@ def fotos_para_guion(wiki: Wiki, cliente, e: Evento, g: Guion, fotos_articulo: l
     g.fotos = ilustrar.completar_distintas(ilustrar.asignar(rankings, reserva), rankings, reserva,
                                            g.minimo_fotos)
     errores = ilustrar.errores_plan(plan_estimado(g, len(pool)), g.minimo_fotos)
+    # Una frase sin una foto buena (2026-10-21): antes que una mala, repetir una buena (lo de arriba)
+    # y, si ya no se puede repetir más, la tarjeta con el año o una palabra clave sobre una buena.
+    vacias = [i for i, r in enumerate(rankings) if not r]
+    base = next(iter(dict.fromkeys(list(reserva) + [x for r in rankings for x in r])), None)
+    while vacias and base is not None and any("aparecen más de" in x for x in errores):
+        i = vacias.pop()
+        t = tarjeta(pool[base], texto_tarjeta(g, i, e.anio), carpeta / f"tarjeta_{i + 1:02d}.jpg")
+        pool.append(t)
+        rankings[i] = [len(pool) - 1]
+        g.tarjetas = sorted(set(g.tarjetas) | {i})
+        avisar(f"    frase {i + 1}: sin foto buena → tarjeta «{t.epigrafe}»")
+        g.ranking = rankings
+        reserva = de_reserva(g, len(pool))
+        g.fotos = ilustrar.completar_distintas(ilustrar.asignar(rankings, reserva), rankings, reserva,
+                                               g.minimo_fotos)
+        errores = ilustrar.errores_plan(plan_estimado(g, len(pool)), g.minimo_fotos)
     if any("aparecen más de" in e for e in errores):
         # Pocas fotos para tantas frases sin repetir más de 2 veces: como con menos de 4, al siguiente.
         raise PocasFotos(pool, g, disponibles)
@@ -1173,6 +1337,41 @@ def fotos_para_guion(wiki: Wiki, cliente, e: Evento, g: Guion, fotos_articulo: l
     if g.minimo_fotos < ilustrar.MIN_FOTOS_ABSOLUTO:
         raise PocasFotos(pool, g, disponibles)
     return pool, g
+
+
+def texto_tarjeta(g: Guion, i: int, anio: int) -> str:
+    """La palabra clave de esa frase (si alguna de `g.claves` está en ella) o, si no, el año."""
+    frase = _norm(g.frases[i]) if i < len(g.frases) else ""
+    for c in g.claves:
+        if _norm(c) and _norm(c) in frase:
+            return c.upper()
+    return str(anio)
+
+
+def tarjeta(base: Foto, texto: str, salida: Path) -> Foto:
+    """Una imagen 9:16 con el texto grande sobre la foto `base` difuminada (para la frase que no
+    tiene una foto buena). Lleva el crédito de la foto de base."""
+    from PIL import Image, ImageDraw, ImageFilter
+
+    W, H = 1080, 1920
+    fondo = Image.open(base.ruta).convert("RGB")
+    escala = max(W / fondo.width, H / fondo.height)
+    fondo = fondo.resize((int(fondo.width * escala) + 1, int(fondo.height * escala) + 1))
+    x0, y0 = (fondo.width - W) // 2, (fondo.height - H) // 2
+    fondo = fondo.crop((x0, y0, x0 + W, y0 + H)).filter(ImageFilter.GaussianBlur(28))
+    fondo = Image.blend(fondo, Image.new("RGB", (W, H), (0, 0, 0)), 0.35)
+    d = ImageDraw.Draw(fondo)
+    tam = 260 if len(texto) <= 4 else max(90, int(1700 / max(len(texto), 1)))
+    fuente = _fuente_ttf(tam)
+    caja = d.textbbox((0, 0), texto, font=fuente, stroke_width=8)
+    x = (W - (caja[2] - caja[0])) // 2 - caja[0]
+    y = (H - (caja[3] - caja[1])) // 2 - caja[1]
+    d.text((x, y), texto, font=fuente, fill=(255, 255, 255), stroke_width=8, stroke_fill=(0, 0, 0))
+    salida.parent.mkdir(parents=True, exist_ok=True)
+    fondo.save(salida, quality=92)
+    return Foto(archivo=f"tarjeta:{salida.stem}", url="", ancho=W, alto=H, licencia=base.licencia,
+                autor=base.autor, epigrafe=f"tarjeta: {texto}", pagina=base.pagina, articulo="tarjeta",
+                ruta=str(salida), anio=base.anio)
 
 
 class PocasFotos(NarrarError):
@@ -1240,7 +1439,8 @@ def filas_de_hoja(plan: list[tuple[int, int, float]], frases: list[str]) -> list
 
 
 def hoja_de_guion(fotos: list[Foto], filas: list[tuple[list[int], str]], salida: Path,
-                  ancho: int = 1000, miniatura: int = 220, videos: dict | None = None) -> Path:
+                  ancho: int = 1000, miniatura: int = 220, videos: dict | None = None,
+                  aviso: str = "") -> Path:
     """La hoja para aprobar: por cada frase, su foto (o sus dos fotos) numerada a la izquierda y la
     frase al lado (con tildes: por eso PIL y no cv2.putText). Una frase con video muestra el
     cuadro elegido con "VIDEO" y de dónde sale (`videos`: {frase: Video})."""
@@ -1286,6 +1486,10 @@ def hoja_de_guion(fotos: list[Foto], filas: list[tuple[list[int], str]], salida:
         for j, l in enumerate(lineas):
             d.text((x_texto, 10 + 30 * j), l, font=chica, fill=(235, 235, 235))
         renglones.append(fila)
+    if aviso:   # arriba de todo, en amarillo (ej. las fotos las eligió el modelo de respaldo)
+        cartel = Image.new("RGB", (ancho, 56), (120, 90, 0))
+        ImageDraw.Draw(cartel).text((12, 12), aviso, font=grande, fill=(255, 255, 255))
+        renglones.insert(0, cartel)
     hoja = Image.new("RGB", (ancho, sum(r.height + 4 for r in renglones)), (0, 0, 0))
     y = 0
     for r in renglones:
@@ -1294,6 +1498,9 @@ def hoja_de_guion(fotos: list[Foto], filas: list[tuple[list[int], str]], salida:
     salida.parent.mkdir(parents=True, exist_ok=True)
     hoja.save(salida, quality=85)
     return salida
+
+
+AVISO_RESPALDO = "⚠️ Fotos elegidas con el modelo de respaldo: revisalas"
 
 
 def texto_aprobacion(e: Evento, g: Guion, fotos: list[Foto], fecha: date,
@@ -1308,6 +1515,8 @@ def texto_aprobacion(e: Evento, g: Guion, fotos: list[Foto], fecha: date,
               f"\n<b>Título:</b> {html.escape(g.titulo)}"]
     if g.idea_clave:
         lineas.append(f"<b>Tiene que quedar claro:</b> {html.escape(g.idea_clave)}")
+    if g.fotos_respaldo:
+        lineas.append(AVISO_RESPALDO)
     if g.sin_alternativa:
         lineas.append(f"⚠️ Ningún hecho de hoy llegó a {ilustrar.MIN_FOTOS_ABSOLUTO} fotos de la época: "
                       f"este es el que más tiene ({g.minimo_fotos}), así que se repiten. Si no te "

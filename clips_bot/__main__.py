@@ -3099,7 +3099,8 @@ def _efe_mostrar(conn, tg: TelegramClient, chat_id: str, token: str, estado: dic
     videos = {i: ef.Video.de_dict(v) for i, v in ((int(k), v) for k, v in g.videos.items())}
     # La hoja: cada foto con su frase al lado (regla fija de ilustrar.py); las de video, su cuadro.
     hoja = ef.hoja_de_guion([ef.Foto.de_dict(f) for f in p.fotos], ef.filas_de_hoja(plan, g.frases),
-                            carpeta / f"hoja_{token}.jpg", videos=videos)
+                            carpeta / f"hoja_{token}.jpg", videos=videos,
+                            aviso=ef.AVISO_RESPALDO if g.fotos_respaldo else "")
     db.set_valor(conn, f"efe:{token}", json.dumps(estado, ensure_ascii=False))
     tg.send_photo(chat_id, hoja, "Cada frase con la foto (o el VIDEO) que se ve mientras se dice")
     filas = [[{"text": "✅ Aprobar", "callback_data": f"efe:ok:{token}"},
@@ -3496,7 +3497,7 @@ def cmd_efemeride(args: argparse.Namespace) -> int:
         g = ef.Guion.de_dict(p.guion)
         plan = ef.plan_de(p)
         ef.hoja_de_guion([ef.Foto.de_dict(f) for f in p.fotos], ef.filas_de_hoja(plan, g.frases),
-                         carpeta / "hoja.jpg")
+                         carpeta / "hoja.jpg", aviso=ef.AVISO_RESPALDO if g.fotos_respaldo else "")
         texto = ef.texto_aprobacion(ef.Evento(**p.evento), g, ef.usadas_en_orden(p, plan), dia, plan,
                                     [ef.Foto.de_dict(f) for f in p.fotos])
         (carpeta / "aprobacion.txt").write_text(html.unescape(re.sub(r"<[^>]+>", "", texto)),

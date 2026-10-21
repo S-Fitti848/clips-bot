@@ -226,10 +226,11 @@ class GeminiClient:
         self._reloj = reloj
         self._caido_hasta = 0.0
 
-    def _clave_cache(self, sistema, prompt, schema, temperatura, imagenes, audio) -> str | None:
+    def _clave_cache(self, sistema, prompt, schema, temperatura, imagenes, audio,
+                     modelo: str | None = None) -> str | None:
         if not self.cache_dir:
             return None
-        h = hashlib.sha256(json.dumps([self.modelo, sistema, prompt, schema, temperatura],
+        h = hashlib.sha256(json.dumps([modelo or self.modelo, sistema, prompt, schema, temperatura],
                                       sort_keys=True, ensure_ascii=False).encode())
         for b in list(imagenes) + ([audio] if audio else []):
             h.update(hashlib.sha256(b).digest())
@@ -266,7 +267,8 @@ class GeminiClient:
     PAUSA_CAIDO_S = 15 * 60
 
     def json(self, sistema: str, prompt: str, schema: dict, temperatura: float = 0.7,
-             imagenes: list[bytes] | None = None, audio: bytes | None = None) -> str:
+             imagenes: list[bytes] | None = None, audio: bytes | None = None,
+             modelo: str | None = None) -> str:
         """Devuelve el texto crudo de la respuesta (debería ser JSON; lo valida quien llama).
 
         `imagenes`: JPEG en bytes, van en la misma llamada que el texto. Hacen falta porque el
@@ -275,10 +277,13 @@ class GeminiClient:
         5,0 el resto, y tenían 1,60 palabras/s contra 2,45.
 
         `audio`: MP3 en bytes (el de /narrar, para que diga si hay música antes de poner la voz).
+
+        `modelo`: SOLO ese modelo, sin pasar solo al de respaldo (2026-10-21: la elección de fotos
+        va con el principal; si hay que usar el de respaldo, lo decide y lo avisa quien llama).
         """
         funcion = _llamador()
         imagenes = [achicar(img) for img in imagenes or []]
-        clave_cache = self._clave_cache(sistema, prompt, schema, temperatura, imagenes, audio)
+        clave_cache = self._clave_cache(sistema, prompt, schema, temperatura, imagenes, audio, modelo)
         guardado = self._de_cache(clave_cache)
         if guardado is not None:
             log.info("Gemini (caché) para %s", funcion)
@@ -304,8 +309,8 @@ class GeminiClient:
         if self._reloj() < self._caido_hasta:
             raise GeminiError("Gemini no responde (falló hace menos de 15 min; no insisto)",
                               pasajero=True)
-        modelos = [self.modelo]
-        if self.modelo_fallback and self.modelo_fallback != self.modelo:
+        modelos = [modelo] if modelo else [self.modelo]
+        if not modelo and self.modelo_fallback and self.modelo_fallback != self.modelo:
             modelos.append(self.modelo_fallback)
         pasajero = False     # si ALGÚN modelo falló por algo pasajero, más tarde puede andar
         error, sin_cuota = "sin claves válidas", False

@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-10-20 | **Versión:** v0.65.0 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 + escucha de Telegram 24/7)
+**Snapshot:** 2026-10-21 | **Versión:** v0.66.0 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 + escucha de Telegram 24/7)
 
 > **SI ESTÁS EMPEZANDO UNA SESIÓN NUEVA, LEÉ §10.** Ahí está qué está hecho, qué quedó a medias,
 > qué falta, y las trampas que ya nos mordieron.
@@ -66,6 +66,18 @@ servicio systemd separado: `clips-bot`).
      marca `presente` en las que hablan de hoy); (c) al elegir, Gemini ve el año de cada foto y
      confirma `de_epoca` (si dice que no, esa foto sale); (d) sin foto de época, se repite una del
      artículo del hecho antes que usar una moderna; (e) en la hoja, el año al lado de cada foto.
+     **Fotos que sirven (2026-10-21, la de bitcoin: una app con "Something went wrong", una planilla
+     de frase semilla, un gráfico en picada con "el precio subió" y placas en filipino):** (f) nada
+     de capturas, apps, documentos, planillas, gráficos, diagramas, mapas ni logos salvo que la
+     frase hable de eso (Gemini dice el `tipo` de cada foto y el código decide por la frase); OCR:
+     más de 7 % de la imagen con texto (`UMBRAL_TEXTO_OCR`) = afuera, salvo frases de documentos
+     o pantallas; (g) nada con texto en otro idioma que no sea castellano o inglés
+     (`otro_idioma`); (h) si la foto contradice la frase (`contradice`), sale; (i) las elige SOLO
+     el modelo principal; si hay que usar el de respaldo, la hoja y el texto dicen "⚠️ Fotos
+     elegidas con el modelo de respaldo: revisalas"; (j) hechos desde 2000 (o frases de hoy):
+     Pexels/Unsplash antes que Commons; (k) una frase sin foto buena repite una buena y, si ya no
+     se puede repetir, va una **tarjeta** (la clave de la frase o el año, grande sobre una buena
+     difuminada) antes que una foto mala.
      La época le gana a la cantidad: si no hay 6 fotos de época, el mínimo baja a las que haya
      (4 o 5, con aviso). **Con menos de 4 (`ilustrar.MIN_FOTOS_ABSOLUTO`) el hecho no se usa y se
      pasa al siguiente del día** (pedido de Santi, 2026-09-29: antes que repetir fotos); solo si
@@ -773,6 +785,15 @@ Problemas abiertos:
 
 ## 9. CHANGELOG
 
+- v0.66.0 (2026-10-21) — **Fotos de Pequeña Historia, reglas nuevas** (la de bitcoin del 21/10
+  traía una app con error, una planilla de frase semilla, un gráfico en picada cuando el guion dice
+  que subió y una captura con texto en otro alfabeto). Ver §1 (f)-(k). Calibrado del OCR sobre las 40
+  fotos del pool de bitcoin (fracción de la imagen con cajas de palabras de tesseract, eng, psm 11,
+  conf ≥ 60): la app 8,5 %, documentos 12,9-15,2 %, placas en filipino 8,3-11,4 %, diagrama 8,4 %;
+  la foto real con más texto (un congreso con carteles) 6,0 % → corte 7 %. La planilla (2 %) y los
+  gráficos (2-5 %) no los ve el OCR: los agarra el `tipo` de Gemini. `GeminiClient.json(modelo=)`
+  pide SOLO ese modelo (la caché va por modelo). `Fuentes.stock` (Pexels → Unsplash);
+  OJO: `PEXELS_API_KEY` NO está en el .env de la compu (ni en la Pi): sin ella Pexels se saltea. 732 tests OK.
 - v0.65.0 (2026-10-20) — **Facebook: por qué el público no ve los Reels, y la portada.**
   (1) Por la API los 8 Reels están `published: true`, `ready`/`complete`, privacidad `EVERYONE`
   ("Público"), sin revisión ni restricción; la página está publicada (`is_published: true`), sin

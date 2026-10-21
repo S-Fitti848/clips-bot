@@ -184,6 +184,30 @@ class Fuentes:
                  "pagina": (p.get("links") or {}).get("html") or "", "anio": None}
                 for p in d.get("results") or []][:n]
 
+    def stock(self, consultas: list[str], cuantas: int, avisar=log.info) -> list[dict]:
+        """Fotos de stock (Pexels, Unsplash) para los temas modernos, ANTES que Commons: para un
+        hecho de 2021 Commons trae capturas de apps y planillas (2026-10-21, la de bitcoin)."""
+        from .efemerides import _NO_FOTO
+
+        out, vistos = [], set()
+        for nombre, f in (("pexels", self.pexels), ("unsplash", self.unsplash)):
+            for q in consultas[:2]:
+                if len(out) >= cuantas:
+                    return out[:cuantas]
+                try:
+                    halladas = f(q)
+                except (requests.RequestException, ValueError, KeyError) as e:
+                    avisar(f"    fotos: {nombre} «{q}» falló ({str(e)[:80]})")
+                    break
+                for h in halladas:
+                    if h["archivo"] in vistos or not h["url"] or _NO_FOTO.search(h["epigrafe"]):
+                        continue
+                    vistos.add(h["archivo"])
+                    out.append({**h, "fuente": nombre})
+                if halladas:
+                    break
+        return out[:cuantas]
+
     # ---- todas, en orden -------------------------------------------------------------------
 
     def buscar(self, consultas: list[str], presente: bool, de_espacio: bool, cuantas: int,
