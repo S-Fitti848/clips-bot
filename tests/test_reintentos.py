@@ -77,6 +77,16 @@ def test_si_los_dos_fallan_es_pasajero_y_no_insiste_por_15_min():
     assert c.json("s", "p", {}) == "{}"
 
 
+def test_un_modelo_puntual_que_falla_no_frena_al_otro():
+    """Fotos con el principal solo: si no anda, el de respaldo tiene que poder probarse ya."""
+    esperas = []
+    s = Sesion(*[Resp(503)] * 4, Resp(200, OK))
+    c = _cliente(s, esperas)
+    with pytest.raises(GeminiError):
+        c.json("s", "p", {}, modelo="principal")
+    assert c.json("s", "p", {}, modelo="lite") == "{}" and "lite" in s.urls[-1]
+
+
 def test_sin_cuota_pasa_al_otro_modelo_sin_esperar():
     esperas = []
     s = Sesion(Resp(429, {"error": "Quota exceeded"}), Resp(200, OK))

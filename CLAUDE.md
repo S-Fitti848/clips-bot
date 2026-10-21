@@ -793,7 +793,9 @@ Problemas abiertos:
   la foto real con más texto (un congreso con carteles) 6,0 % → corte 7 %. La planilla (2 %) y los
   gráficos (2-5 %) no los ve el OCR: los agarra el `tipo` de Gemini. `GeminiClient.json(modelo=)`
   pide SOLO ese modelo (la caché va por modelo). `Fuentes.stock` (Pexels → Unsplash);
-  OJO: `PEXELS_API_KEY` NO está en el .env de la compu (ni en la Pi): sin ella Pexels se saltea. 732 tests OK.
+  `PEXELS_API_KEY` cargada por Santi y copiada a la Pi (huellas comparadas). Encontrado en la
+  primera prueba: el principal sin cuota hacía que el cliente no insistiera 15 min y frenaba también
+  al de respaldo; un pedido de UN modelo puntual ya no prende esa pausa. 733 tests OK.
 - v0.65.0 (2026-10-20) — **Facebook: por qué el público no ve los Reels, y la portada.**
   (1) Por la API los 8 Reels están `published: true`, `ready`/`complete`, privacidad `EVERYONE`
   ("Público"), sin revisión ni restricción; la página está publicada (`is_published: true`), sin

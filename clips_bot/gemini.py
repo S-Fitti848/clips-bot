@@ -309,6 +309,7 @@ class GeminiClient:
         if self._reloj() < self._caido_hasta:
             raise GeminiError("Gemini no responde (falló hace menos de 15 min; no insisto)",
                               pasajero=True)
+        modelos_pedido = bool(modelo)
         modelos = [modelo] if modelo else [self.modelo]
         if not modelo and self.modelo_fallback and self.modelo_fallback != self.modelo:
             modelos.append(self.modelo_fallback)
@@ -370,7 +371,9 @@ class GeminiClient:
             if n + 1 < len(modelos):
                 log.warning("Gemini %s %s; sigo con %s", modelo,
                             "sin cuota" if sin_cuota else "no responde", modelos[n + 1])
-        if pasajero:
+        # Si se pidió UN modelo puntual, que ese no ande no dice que el otro tampoco (2026-10-21: el
+        # principal sin cuota frenaba 15 min al de respaldo en la elección de fotos).
+        if pasajero and not modelos_pedido:
             self._caido_hasta = self._reloj() + self.PAUSA_CAIDO_S
         raise GeminiError(f"Gemini ({modelo}): {error}", pasajero=pasajero)
 
