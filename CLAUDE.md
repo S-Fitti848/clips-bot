@@ -806,9 +806,9 @@ Problemas abiertos:
   del streamer) saca emojis y pictogramas, banderas, tonos de piel, selectores de variación (U+FE0F),
   ZWJ y keycaps, y las comillas que envuelven el título ENTERO: las «» venían del título de Gemini
   (una cita), no las agregaba el ASS; las comillas internas se quedan. El título del json (YouTube y
-  Telegram) no cambia. `tests/test_titulo_quemado.py`. En este worktree fallan 3 tests que ya
-  fallaban antes del cambio: 2 de `test_pego_0200` (no hay `.env` con Twitch) y
-  `test_multipov_evento::test_el_angulo_vacio_se_rescata_con_fit_blur`.
+  Telegram) no cambia. `tests/test_titulo_quemado.py`. 750 tests OK en la Pi (en un worktree de
+  Windows sin `.env` fallan 2 de `test_pego_0200` y
+  `test_multipov_evento::test_el_angulo_vacio_se_rescata_con_fit_blur`, igual que antes del cambio).
 - v0.67.0 (2026-10-25) — **El clip de Auron mal cortado** ("Auron expone la foto tras ser
   traicionado"): arriba la cara de un chico de una foto en pantalla, subtítulos dobles y la pantalla
   cortada a la izquierda. Causa de la cámara, medida: Haar veía la cara de Auron a pantalla completa
