@@ -145,6 +145,28 @@ def _escapar_ass(t: str) -> str:
 
 TITULO_TAMANOS = ((84, 21), (70, 25), (60, 30))   # (tamaño, caracteres por línea): el que entre en 2
 
+# Lo que Arial no dibuja y sale como un cuadradito vacío (2026-10-25, "…enviaste!» 📸" de Auron):
+# emojis y pictogramas, banderas, tonos de piel, selectores de variación, ZWJ y keycaps.
+_SIN_GLIFO = (
+    (0x1F000, 0x1FAFF), (0x2600, 0x27BF), (0x2B00, 0x2BFF), (0x231A, 0x231B), (0x23E9, 0x23FA),
+    (0xFE00, 0xFE0F), (0x200D, 0x200D), (0x20E3, 0x20E3), (0xE0000, 0xE007F),
+)
+_COMILLAS = (("«", "»"), ('"', '"'), ("“", "”"), ("'", "'"), ("‘", "’"))
+
+
+def titulo_quemable(titulo: str) -> str:
+    """El título para quemar en el video: sin lo que la fuente no puede dibujar y sin las comillas
+    que lo envuelven entero (Gemini a veces devuelve una cita: «…»; en letra grande ya se lee como
+    cita y las comillas sobran). El título que va a YouTube y Telegram no se toca."""
+    t = "".join(c for c in titulo if not any(a <= ord(c) <= b for a, b in _SIN_GLIFO))
+    t = " ".join(t.split())
+    for abre, cierra in _COMILLAS:
+        if len(t) > 2 and t.startswith(abre) and t.endswith(cierra) and abre not in t[1:-1] \
+                and cierra not in t[1:-1]:
+            t = t[1:-1].strip()
+            break
+    return t
+
 
 def lineas_titulo(titulo: str) -> tuple[int, list[str]]:
     """El título en 2 líneas como máximo: baja la letra hasta que entre; si ni así, corta."""
@@ -168,7 +190,7 @@ def escribir_titulo_ass(path: Path, titulo: str, streamer: str, cfg: Subtitulos,
     Se ve solo los primeros `render.titulo_segundos` (3) y se va con un fundido corto (2026-10-04)."""
     duracion = render.titulo_segundos if duracion is None else duracion
     fad = f"\\fad(0,{int(render.titulo_fundido_s * 1000)})"
-    tamano, lineas = lineas_titulo(titulo)
+    tamano, lineas = lineas_titulo(titulo_quemable(titulo))
     W = render.ancho
     y_titulo = y_centro if y_centro is not None else int(render.alto * 0.075) + 50 + tamano * len(lineas) // 2
     y_nombre = y_titulo - tamano * len(lineas) // 2 - 36
@@ -191,7 +213,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
     eventos = [
         f"Dialogue: 3,{_t_ass(0)},{_t_ass(duracion)},Titulo,,0,0,0,,{{\\an5\\pos({W // 2},{y_titulo}){fad}}}{texto}",
         f"Dialogue: 3,{_t_ass(0)},{_t_ass(duracion)},Nombre,,0,0,0,,{{\\an5\\pos({W // 2},{y_nombre}){fad}}}"
-        f"{_escapar_ass(streamer)}",
+        f"{_escapar_ass(titulo_quemable(streamer))}",
     ]
     path.write_text(cabecera + "\n".join(eventos) + "\n", encoding="utf-8")
 

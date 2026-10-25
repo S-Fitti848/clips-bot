@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-10-25 | **Versión:** v0.67.0 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 + escucha de Telegram 24/7)
+**Snapshot:** 2026-10-25 | **Versión:** v0.67.1 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 + escucha de Telegram 24/7)
 
 > **SI ESTÁS EMPEZANDO UNA SESIÓN NUEVA, LEÉ §10.** Ahí está qué está hecho, qué quedó a medias,
 > qué falta, y las trampas que ya nos mordieron.
@@ -800,6 +800,15 @@ Problemas abiertos:
 
 ## 9. CHANGELOG
 
+- v0.67.1 (2026-10-25) — **Título quemado sin cuadraditos.** En el clip de Auron
+  «¡Que todo el mundo vea la selfie que me enviaste!» 📸 el 📸 salía como un cuadradito vacío: Arial
+  no tiene emojis. `subtitles.titulo_quemable` (lo usa `escribir_titulo_ass`, también para el nombre
+  del streamer) saca emojis y pictogramas, banderas, tonos de piel, selectores de variación (U+FE0F),
+  ZWJ y keycaps, y las comillas que envuelven el título ENTERO: las «» venían del título de Gemini
+  (una cita), no las agregaba el ASS; las comillas internas se quedan. El título del json (YouTube y
+  Telegram) no cambia. `tests/test_titulo_quemado.py`. En este worktree fallan 3 tests que ya
+  fallaban antes del cambio: 2 de `test_pego_0200` (no hay `.env` con Twitch) y
+  `test_multipov_evento::test_el_angulo_vacio_se_rescata_con_fit_blur`.
 - v0.67.0 (2026-10-25) — **El clip de Auron mal cortado** ("Auron expone la foto tras ser
   traicionado"): arriba la cara de un chico de una foto en pantalla, subtítulos dobles y la pantalla
   cortada a la izquierda. Causa de la cámara, medida: Haar veía la cara de Auron a pantalla completa
