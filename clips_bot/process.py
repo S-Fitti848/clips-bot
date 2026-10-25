@@ -20,6 +20,7 @@ from . import subtitles as sub
 from . import textos as tx
 from . import deportes
 from . import pantalla as pant
+from . import revision
 from .candidates import MOTIVO_COSTREAM, aviso_futbol, es_costream
 from .config import DB_PATH, OUTPUT_DIR, Settings, Streamer
 from .download import descargar
@@ -67,6 +68,10 @@ class Resultado:
     picos_volumen: int | None = None  # picos de volumen (zooms.picos): solo un dato para el 📊
     zooms: list = field(default_factory=list)  # [(inicio, fin)] de los zooms en los picos (zooms.py)
     subtitulos_quemados: bool = True
+    # El clip ya traía subtítulos quemados (OCR, pantalla.subtitulos_en_video): en cuántos cuadros se
+    # vieron. Con eso no se queman los nuestros encima.
+    subtitulos_del_clip: int = 0
+    chequeo_visual: dict | None = None   # revision.Revision.a_dict(): lo que vio Gemini en el 9:16
     textos: dict | None = None
     textos_pendientes: bool = False  # el render está hecho; `seleccionar` reintenta los textos
     puntaje: int = 0        # 1 a 10 de Gemini: se entiende solo + tiene remate
@@ -270,6 +275,14 @@ def procesar(url: str, cfg: Settings, streamers: list[Streamer], forzar: bool = 
     sub.escribir_ass(subs, work / "subs.ass", cfg.subtitulos, cfg.render)
     if not res.subtitulos_quemados:
         avisar(f"  {d.streamer} tiene subtitulos_propios: no se queman los nuestros (el .srt se guarda igual)")
+    elif subs and cfg.subtitulos.detectar_quemados:
+        # El clip puede traer subtítulos quemados aunque el streamer no esté marcado (2026-10-25).
+        with crono.etapa("subtítulos del clip"):
+            traidos, res.subtitulos_del_clip = pant.subtitulos_en_video(d.path, palabras, cfg.pantalla.idioma)
+        if traidos:
+            res.subtitulos_quemados = False
+            avisar(f"  el clip ya trae subtítulos (se leen en {res.subtitulos_del_clip} cuadros): "
+                   "no se queman los nuestros")
 
     forzado = streamer.layout_forzado if streamer else ""
     with crono.etapa("detectar cámara"):
@@ -278,7 +291,8 @@ def procesar(url: str, cfg: Settings, streamers: list[Streamer], forzar: bool = 
         charla = (d.categoria or "") in cfg.camara.categorias_charla
         puntos = lay.trayectoria(d.path)[1] if cfg.camara.seguir_cara and not forzado else None
         layout = lay.decidir_layout(W, H, frames, cfg.camara, cfg.render, forzado=forzado,
-                                    charla=charla, puntos=puntos)
+                                    charla=charla, puntos=puntos, imagenes=imagenes,
+                                    facecams=streamer.facecam if streamer else ())
         if imagenes:
             lay.guardar_debug(imagenes[len(imagenes) // 2], layout, DEBUG_DIR / f"{d.clip_id}_layout.jpg")
     rms = _rms(d.path, info.duracion) if info.tiene_audio else []
@@ -321,6 +335,34 @@ def procesar(url: str, cfg: Settings, streamers: list[Streamer], forzar: bool = 
                                         cfg.subtitulos, cfg.render)
             with crono.etapa("re-render fit_blur"):
                 renderizar(d.path, salida, layout, cfg.render, work if quemar else None, titulo_dir)
+
+    # Chequeo visual con Gemini del video TERMINADO (2026-10-25): ¿arriba está la cámara?, ¿subtítulos
+    # dobles?, ¿algo cortado? Se rehace UNA vez, sin volver a preguntar (cuota).
+    if gemini and cfg.render.chequeo_visual:
+        with crono.etapa("chequeo visual (Gemini)"):
+            rev = revision.revisar(gemini, salida, layout.tipo, quemar)
+        res.chequeo_visual = rev.a_dict()
+        rehacer = False
+        if rev.falla_encuadre and layout.tipo != "fit_blur" and not forzado:
+            avisar(f"  ⚠ chequeo visual: {rev.detalle or 'la cámara o el encuadre no están bien'} → fit_blur")
+            res.rerender_fit_blur = f"chequeo visual: {rev.detalle}"[:200]
+            layout = lay.layout_fit_blur(W, H, cfg.render, layout.presencia, layout.cara)
+            layout = _con_zooms(layout, rms, info.duracion, frames, W, H, cfg)
+            res.layout, res.zooms = layout.tipo, list(layout.zooms)
+            if titulo_dir:
+                sub.escribir_titulo_ass(work / "titulo.ass", res.textos["titulo"], d.canal or d.streamer,
+                                        cfg.subtitulos, cfg.render)
+            rehacer = True
+        if rev.falla_subtitulos and quemar:
+            avisar(f"  ⚠ chequeo visual: subtítulos dobles ({rev.detalle}) → sin los nuestros")
+            quemar = False
+            res.subtitulos_quemados = False
+            rehacer = True
+        if rehacer:
+            with crono.etapa("re-render por el chequeo visual"):
+                renderizar(d.path, salida, layout, cfg.render, work if quemar else None, titulo_dir)
+        elif rev.error:
+            avisar(f"  (chequeo visual salteado: {rev.error[:80]})")
 
     shutil.copyfile(work / "subs.srt", READY_DIR / f"{d.clip_id}.srt")
     res.salida = str(salida)

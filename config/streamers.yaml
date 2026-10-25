@@ -115,6 +115,14 @@ streamers:
     fuentes: [reciente]
     grupo: famosos
     apodos: ["Auron"]   # para buscar lo que pegó en otros canales (editable en /streamers)
+    # Sus clips ya traen subtítulos tipo karaoke quemados: medido 2026-10-25, 12 de sus 12 últimos.
+    subtitulos_propios: true
+    # Su webcam, [x, y, ancho, alto] en fracción del cuadro (medido 2026-10-25 con los bordes fijos
+    # de 12 clips; editable en /streamers): en los juegos (Minecraft, Among Us) a la izquierda, al
+    # medio; en Just Chatting con la pantalla compartida, arriba a la derecha.
+    facecam:
+      - [0.006, 0.378, 0.180, 0.300]
+      - [0.806, 0.022, 0.172, 0.265]
     permiso:
       experimento: true
 

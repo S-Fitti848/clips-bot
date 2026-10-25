@@ -81,28 +81,30 @@ def test_una_cara_grande_pero_al_costado_es_fit_blur():
 
 def test_cara_chica_estable_es_split():
     cara = (1650, 800, 90, 90)  # facecam abajo a la derecha
-    frames = [[cara] for _ in range(15)] + [[] for _ in range(5)]
+    frames = [[cara] for _ in range(17)] + [[] for _ in range(3)]
     lay = decidir_layout(W, H, frames, CAM, R)
     assert lay.tipo == "split"
-    assert lay.presencia == pytest.approx(0.75)
+    assert lay.presencia == pytest.approx(0.85)
     c = lay.camara
     assert c.x <= 1650 and c.x + c.w >= 1740 and c.y <= 800 and c.y + c.h >= 890
     assert c.x + c.w <= W and c.y + c.h <= H
     assert abs(c.w / c.h - R.ancho / (R.alto_camara - R.separador_px)) < 0.02
 
 
-def test_juego_se_corre_si_pisa_la_camara():
+def test_una_cara_que_no_esta_todo_el_clip_no_es_la_webcam():
+    """2026-10-25: una cara en 75 % de los cuadros (una foto en pantalla, un cambio de escena) no es
+    una webcam: la webcam está todo el clip."""
+    cara = (1650, 800, 90, 90)
+    frames = [[cara] for _ in range(15)] + [[] for _ in range(5)]
+    assert decidir_layout(W, H, frames, CAM, R).tipo == "fit_blur"
+
+
+def test_split_abajo_va_el_cuadro_entero():
+    """2026-10-25: el recorte del "juego" cortó la pantalla de Auron a la izquierda. Abajo va todo."""
     cara = (180, 750, 150, 150)  # facecam abajo a la izquierda, como elxokas
     lay = decidir_layout(W, H, [[cara] for _ in range(20)], CAM, R)
-    cam, juego = lay.camara, lay.principal
-    assert juego.x >= cam.x + cam.w  # ya no se superponen
-    # y se aleja del overlay estimado (proporción de webcam), no del recorte de cámara: no depende del
-    # alto del panel de salida ni del recorte de abajo
-    otros = [Render(recorte_inferior_camara_px=0), Render(alto_camara=700), Render(alto_camara=900)]
-    for r in otros:
-        assert decidir_layout(W, H, [[cara] for _ in range(20)], CAM, r).principal.x == juego.x
-    assert juego.x >= 180 + 75 + 1.5 * 150 * 2.3 / 2 - 2  # borde derecho del overlay estimado
-    assert juego.x + juego.w <= W
+    assert lay.tipo == "split"
+    assert (lay.principal.x, lay.principal.y, lay.principal.w, lay.principal.h) == (0, 0, W, H)
 
 
 def test_caras_en_la_zona_del_juego_cancelan_el_split():

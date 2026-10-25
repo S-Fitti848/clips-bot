@@ -1,8 +1,8 @@
 """§3 pasos 5–6: armar el 9:16 y quemar subtítulos en una sola pasada de ffmpeg.
 
 Tres layouts (los elige `layout.decidir_layout`):
-  split     facecam clara: cámara arriba, juego abajo. Recorta, pero recorta bien porque sabe dónde
-            está cada cosa.
+  split     webcam fija: la cámara arriba (recortada de su recuadro) y abajo el cuadro entero, sin
+            recortar, sobre el mismo video difuminado.
   fullcam   una sola cara grande y centrada: recorte 9:16 centrado en la cara.
   fit_blur  todo lo demás. El 16:9 entero, escalado a 1080 de ancho y centrado, sobre el mismo video
             ampliado y borroso llenando el 9:16. No recorta NADA: es lo único seguro cuando hay dos
@@ -33,14 +33,21 @@ def filtro(layout: Layout, render: Render, con_subs: bool, con_titulo: bool = Fa
         return f"[0:v]{layout.ffmpeg_crop_movil()},{escalar.format(w=W, h=H)},{final}[v]"
 
     if layout.tipo == "split":
+        # Arriba la webcam; abajo el cuadro ENTERO a 1080 de ancho, pegado a la línea, sobre el mismo
+        # video difuminado (2026-10-25: recortar el "juego" cortó la pantalla de Auron a la izquierda).
+        # Los subtítulos caen en la franja difuminada de abajo, como en fit_blur.
         assert layout.camara is not None
         hc = render.alto_camara
         sep = render.separador_px
+        hj = H - hc
         pad = f",pad={W}:{hc}:0:0:black" if sep > 0 else ""  # línea negra entre cámara y juego
         return (
-            "[0:v]split=2[c][g];"
+            "[0:v]split=3[c][g][b];"
             f"[c]{layout.camara.ffmpeg_crop()},{escalar.format(w=W, h=hc - sep)}{pad}[cam];"
-            f"[g]{layout.principal.ffmpeg_crop()},{escalar.format(w=W, h=H - hc)}[juego];"
+            f"[b]scale={W}:{hj}:force_original_aspect_ratio=increase,crop={W}:{hj},"
+            f"gblur=sigma={render.blur_sigma}[fondo];"
+            f"[g]{layout.principal.ffmpeg_crop()},scale={W}:-2:flags=lanczos,setsar=1[entero];"
+            f"[fondo][entero]overlay=0:0[juego];"
             f"[cam][juego]vstack=inputs=2,{final}[v]"
         )
     if layout.tipo == "fit_blur":

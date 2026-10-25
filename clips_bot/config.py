@@ -50,6 +50,10 @@ class Streamer:
     # Cómo lo nombran los demás, para buscar lo que pegó en otros canales (pego.py): "Davo", no
     # "davooxeneize". El login se busca siempre; esto se suma. Editable desde /streamers (DB).
     apodos: tuple[str, ...] = ()
+    # Dónde está su webcam, como (x, y, ancho, alto) en fracción del cuadro; puede haber varias (Auron
+    # tiene una en los juegos y otra en Just Chatting). El split usa la que tenga su cara en todo el
+    # clip. Editable desde /streamers (DB, manda sobre el YAML).
+    facecam: tuple[tuple[float, float, float, float], ...] = ()
 
     @property
     def permitido(self) -> bool:
@@ -137,6 +141,9 @@ class Render:
     x264_preset: str = "medium"
     crf: int = 20
     maxrate_kbps: int = 5000
+    # Antes de mandar, Gemini mira 2 cuadros del 9:16 (revision.py): ¿arriba está la cámara?, ¿hay
+    # subtítulos dobles?, ¿algo cortado? Si falla, se rehace (2026-10-25, el clip de Auron).
+    chequeo_visual: bool = True
 
 
 @dataclass(frozen=True)
@@ -153,6 +160,9 @@ class Camara:
     # hasta que Santi vea 3 muestras.
     seguir_cara: bool = False
     persona_min: float = 0.6          # la persona ocupa al menos esto del alto
+    # La webcam está TODO el clip: para el split, la cara de la cámara tiene que estar en al menos esto
+    # de los cuadros (2026-10-25: una foto en pantalla la mitad del clip se tomó como la cámara).
+    presencia_facecam: float = 0.8
     categorias_charla: tuple = ("Just Chatting", "IRL", "Talk Shows & Podcasts", "Travel & Outdoors",
                                 "Food & Drink", "Pools, Hot Tubs, and Beaches", "ASMR")
 
@@ -174,6 +184,9 @@ class Subtitulos:
     max_lineas: int = 2
     max_duracion_s: float = 3.0
     posicion_y: float = 0.80
+    # Si el clip ya trae subtítulos quemados (OCR en la franja de abajo contra lo que se dice en ese
+    # momento), no se queman los nuestros encima (pantalla.subtitulos_en_video, 2026-10-25).
+    detectar_quemados: bool = True
 
 
 @dataclass(frozen=True)
@@ -482,6 +495,22 @@ def load_settings(path: Path = CONFIG_DIR / "settings.yaml") -> Settings:
 LAYOUTS = ("split", "fullcam", "fit_blur")
 
 
+def _facecam(valor, login: str) -> tuple[tuple[float, float, float, float], ...]:
+    """facecam: [[x, y, ancho, alto], ...] en fracción del cuadro (0 a 1)."""
+    if not valor:
+        return ()
+    out = []
+    for f in valor:
+        try:
+            x, y, w, h = (float(v) for v in f)
+        except (TypeError, ValueError):
+            raise ConfigError(f"{login}: facecam {f!r} (va [x, y, ancho, alto] en fracción del cuadro)")
+        if not (0 <= x < 1 and 0 <= y < 1 and 0 < w <= 1 and 0 < h <= 1 and x + w <= 1.001 and y + h <= 1.001):
+            raise ConfigError(f"{login}: facecam {f!r} se sale del cuadro")
+        out.append((x, y, w, h))
+    return tuple(out)
+
+
 def _layout_forzado(item: dict, login: str) -> str:
     valor = str(item.get("layout_forzado") or "").strip().lower()
     if valor and valor not in LAYOUTS:
@@ -527,6 +556,7 @@ def load_streamers(path: Path = CONFIG_DIR / "streamers.yaml") -> list[Streamer]
                     ),
                     layout_forzado=_layout_forzado(item, login),
                     apodos=tuple(str(a).strip() for a in (item.get("apodos") or ()) if str(a).strip()),
+                    facecam=_facecam(item.get("facecam"), login),
                 )
             )
     return out

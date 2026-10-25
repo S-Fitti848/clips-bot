@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-10-21 | **Versión:** v0.66.0 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 + escucha de Telegram 24/7)
+**Snapshot:** 2026-10-25 | **Versión:** v0.67.0 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 + escucha de Telegram 24/7)
 
 > **SI ESTÁS EMPEZANDO UNA SESIÓN NUEVA, LEÉ §10.** Ahí está qué está hecho, qué quedó a medias,
 > qué falta, y las trampas que ya nos mordieron.
@@ -197,8 +197,16 @@ y por eso la unidad va con `Nice=10` y prioridad de CPU baja. NO paralelizar.
    frame hay una palabra de contexto (tel, contacto, DNI): sin eso daba 3 falsos positivos y ningún
    acierto sobre 26 clips. Si tesseract no está instalado la capa se saltea y la corrida sigue.
 5. Layout, tres opciones (el recorte central "a ver qué sale" se eliminó el 2026-09-23):
-   - **split** — facecam clara (una cara chica y estable): cámara arriba 40 % (1080x762) + línea
-     negra de 6 px + juego abajo 60 % (1080x1152).
+   - **split** — webcam fija: cámara arriba 40 % (1080x762) + línea negra de 6 px + abajo el
+     cuadro ENTERO a 1080 de ancho, pegado a la línea, sobre el mismo video difuminado (desde
+     2026-10-25; antes se recortaba el "juego" y cortaba la pantalla). La webcam es, en orden:
+     (a) la PRIMERA de las guardadas del streamer (`facecam` en streamers.yaml, editable en
+     /streamers → 📷 Webcam; Auron tiene dos) con su marco fijo en el lugar (≥ 3 lados con borde
+     que no se mueve en todo el clip) y cara en ≥ 30 % de los cuadros, o cara en ≥ 80 %
+     (`camara.presencia_facecam`); (b) una cara chica en ≥ 80 % de los cuadros adentro de un
+     recuadro de bordes fijos (`layout.recuadro_fijo`), aunque haya otras caras; (c) una cara chica
+     en ≥ 80 % de los cuadros, como antes. "Misma cara" pide también tamaño parecido (`TAMANO_MAX`
+     1,6×). Una cara que no está todo el clip (foto en pantalla, cambio de escena) no es la webcam.
    - **fullcam** — UNA sola cara grande y centrada: crop 9:16 centrado en la cara.
    - **fit_blur** — todo lo demás: el 16:9 ENTERO escalado a 1080 de ancho y centrado, sobre el
      mismo video ampliado y con blur fuerte (`render.blur_sigma`) llenando el 9:16. No recorta nada,
@@ -210,9 +218,16 @@ y por eso la unidad va con `Nice=10` y prioridad de CPU baja. NO paralelizar.
    `layout_forzado` en streamers.yaml saltea toda la decisión para un canal (coker: `fit_blur`). Además, DESPUÉS del render se vuelve a
    pasar el detector de caras sobre el 9:16 final: si alguna queda pegada al borde, se re-renderiza
    con fit_blur y queda anotado en `rerender_fit_blur` del json.
+   **Chequeo visual (`revision.py`, 2026-10-25):** con el 9:16 terminado, Gemini ve 2 cuadros en UNA
+   llamada: ¿arriba está la cámara del streamer?, ¿subtítulos dobles?, ¿algo cortado? Cámara mal o
+   algo cortado → se rehace en fit_blur; subtítulos dobles → se rehace sin los nuestros. Una sola
+   vez, sin volver a preguntar. Si Gemini no responde, el clip sigue. Queda en `chequeo_visual` del
+   json. Cuesta 1 llamada más por clip procesado (`render.chequeo_visual` para apagarlo).
 6. Whisper → SRT → quemar subtítulos (fuente 64, bloque centrado al 80 % del alto, 2 líneas máx).
    Si el streamer tiene `subtitulos_propios: true` (ya trae subtítulos en vivo), no se queman; el
-   SRT se guarda igual (título + pista de subtítulos en YouTube).
+   SRT se guarda igual (título + pista de subtítulos en YouTube). Además, si el CLIP ya los trae
+   (`pantalla.subtitulos_en_video`: OCR en la franja de abajo, palabras centradas que se dicen en ese
+   momento, ±2,5 s; ≥ 2 de 8 cuadros), tampoco (`subtitulos_del_clip` en el json).
 7. Gemini: título (< 60 chars, gancho, sin clickbait falso), descripción con crédito
    "Clip de [streamer] — twitch.tv/[login]", 3–5 hashtags incluyendo #Shorts, tipo de gancho, y
    `depende_de_fecha` (true si referencia algo puntual de ese día/semana → se descarta; ante la
@@ -785,6 +800,26 @@ Problemas abiertos:
 
 ## 9. CHANGELOG
 
+- v0.67.0 (2026-10-25) — **El clip de Auron mal cortado** ("Auron expone la foto tras ser
+  traicionado"): arriba la cara de un chico de una foto en pantalla, subtítulos dobles y la pantalla
+  cortada a la izquierda. Causa de la cámara, medida: Haar veía la cara de Auron a pantalla completa
+  (primera escena, 12 % del ancho) y la del chico de la foto (segunda escena, 2,7 %) en el mismo
+  lugar, y contaban como UNA cara estable al 90 %; la webcam real (arriba a la derecha) Haar la vio
+  en 2 de 20 cuadros. Arreglos: (1) misma cara = mismo lugar Y tamaño parecido; split solo si la
+  cara está en ≥ 80 % del clip; recuadro de bordes fijos (`recuadro_fijo`); `facecam` por streamer
+  (lista en orden de prioridad, streamers.yaml + /streamers → 📷 Webcam, con un cuadro de su último
+  clip con los recuadros dibujados). Auron: dos, medidas con los bordes fijos de 12 clips — juegos
+  [0,006 0,378 0,180 0,300] (Minecraft y Among Us) y Just Chatting [0,806 0,022 0,172 0,265]. En los
+  Minecraft arriba a la derecha está la webcam de la INVITADA con cara en 90 %: por eso gana el
+  orden y no la presencia (probado: con "la de más presencia" elegía a la invitada). Haar dentro del
+  recuadro agrandado, con perfil: la cara de Auron pasó de 0-70 % a 95-100 % de los cuadros.
+  (2) Subtítulos: los 12 últimos clips de Auron traen karaoke quemado → `subtitulos_propios: true`;
+  y para todos, OCR en la franja de abajo (12 de Auron: 11 dan 3-8 de 8 cuadros, uno de Among Us
+  da 1; 8 de otros streamers sin subtítulos: 0 de 8 los ocho; corte 2). (3) Split: abajo el cuadro
+  entero. (4) Chequeo visual con Gemini (`revision.py`). Los 12 de Auron con la decisión nueva: 5
+  Minecraft → split con SU webcam (antes 3 fit_blur, 2 split), el menú con webcam grande → split
+  por el marco fijo, el roto y 3 a pantalla completa sin webcam fija → fit_blur, 2 a pantalla
+  completa siguen en split como antes. 748 tests OK.
 - v0.66.0 (2026-10-21) — **Fotos de Pequeña Historia, reglas nuevas** (la de bitcoin del 21/10
   traía una app con error, una planilla de frase semilla, un gráfico en picada cuando el guion dice
   que subió y una captura con texto en otro alfabeto). Ver §1 (f)-(k). Calibrado del OCR sobre las 40

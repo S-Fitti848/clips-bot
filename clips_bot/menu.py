@@ -79,10 +79,11 @@ def teclado_streamers(gi: int, streamers: list, pagina: int, excluidos: dict,
     return {"inline_keyboard": filas}
 
 
-def teclado_streamer(gi: int, si: int, pagina: int, apodos: tuple = ()) -> dict:
+def teclado_streamer(gi: int, si: int, pagina: int, apodos: tuple = (), facecam: tuple = ()) -> dict:
     """Tercer nivel: qué hacer con ese streamer. El período va directo; después, la cantidad."""
     etiqueta = ", ".join(apodos) or "ninguno"
     etiqueta = etiqueta if len(etiqueta) <= 28 else etiqueta[:27] + "…"
+    webcam = f"{len(facecam)} guardada{'s' if len(facecam) > 1 else ''}" if facecam else "automática"
     return {"inline_keyboard": [
         [{"text": "Últimos 7 días", "callback_data": _cb("st", "b", gi, si, "7")},
          {"text": "Últimos 30 días", "callback_data": _cb("st", "b", gi, si, "30")}],
@@ -90,6 +91,7 @@ def teclado_streamer(gi: int, si: int, pagina: int, apodos: tuple = ()) -> dict:
         [{"text": "🔥 Lo que pegó en otros canales", "callback_data": _cb("st", "b", gi, si, "pego")}],
         [{"text": "🔎 Con palabra…", "callback_data": _cb("st", "w", gi, si)}],
         [{"text": f"🏷 Apodos: {etiqueta}", "callback_data": _cb("st", "ap", gi, si)}],
+        [{"text": f"📷 Webcam: {webcam}", "callback_data": _cb("st", "fc", gi, si)}],
         [{"text": "📦 Mover a otra carpeta", "callback_data": _cb("st", "m", gi, si)}],
         [{"text": "⬅️ Volver", "callback_data": _cb("st", "g", gi, pagina)}],
     ]}

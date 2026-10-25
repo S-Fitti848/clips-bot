@@ -137,6 +137,11 @@ camara:
   # 6,7-8,8 %. Solo con la presencia no había margen (25 % contra 20 %).
   presencia_juego_max: 0.20
   cara_juego_min: 0.065
+  # La webcam está TODO el clip: para el split, la cara de la cámara (o la de la webcam guardada del
+  # streamer, streamers.yaml → facecam) tiene que estar en al menos esto de los cuadros. 2026-10-25:
+  # en un clip de Auron con cambio de escena, la cara de una foto en pantalla (60 % del clip) se
+  # tomó como la cámara.
+  presencia_facecam: 0.8
 
 # §3 paso 6: subtítulos.
 subtitulos:

@@ -218,6 +218,74 @@ def leer_frames(video: Path, n_frames: int, idioma: str = "eng", cmd: str | None
     return textos
 
 
+# ---- subtítulos que ya vienen quemados en el clip (2026-10-25) --------------------------------------
+#
+# Los clips de Auron traen subtítulos tipo karaoke quemados y el bot les ponía los suyos encima.
+# Se miran 8 cuadros: en la franja de abajo, palabras con el centro en el medio del ancho que se
+# dicen en ese momento (±2,5 s, de los tiempos de Whisper). Medido sobre 20 clips reales: los 12 de
+# Auron (todos con subtítulos) dan 3 a 8 cuadros de 8, salvo uno de Among Us con letra blanca sobre
+# fondo cargado (1); los 8 de otros streamers, sin subtítulos, dan 0 de 8 los ocho. Corte: 2.
+
+SUBS_FRANJA = 0.65        # se lee desde acá para abajo (fracción del alto)
+SUBS_VENTANA_S = 2.5      # una palabra cuenta si se dice a ± esto del cuadro
+SUBS_CUADROS = 8
+SUBS_CUADROS_MIN = 2
+
+
+def _palabras_ocr(texto: str) -> list[str]:
+    return re.findall(r"[a-zñ]{3,}", _normalizar(texto))
+
+
+def subtitulos_en_video(video: Path, palabras, idioma: str = "spa+eng", cmd: str | None = None,
+                        n: int = SUBS_CUADROS) -> tuple[bool, int]:
+    """(¿trae subtítulos quemados?, cuántos cuadros los mostraron). `palabras`: las de Whisper, con
+    inicio y fin. Sin tesseract devuelve (False, 0): mejor un subtítulo doble que ninguno."""
+    import cv2
+
+    try:
+        import pytesseract
+
+        pytesseract.pytesseract.tesseract_cmd = cmd or find_tesseract()
+    except (OcrNoDisponible, ImportError) as e:
+        log.warning("Subtítulos quemados: OCR salteado (%s)", e)
+        return False, 0
+    dichas = [(p.inicio, p.fin, set(_palabras_ocr(p.texto))) for p in palabras]
+    if not dichas:
+        return False, 0
+    cap = cv2.VideoCapture(str(video))
+    total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    fps = cap.get(cv2.CAP_PROP_FPS) or 30
+    con = 0
+    try:
+        for i in range(n):
+            idx = int(total * (0.08 + 0.84 * i / max(n - 1, 1)))
+            cap.set(cv2.CAP_PROP_POS_FRAMES, idx)
+            ok, img = cap.read()
+            if not ok:
+                continue
+            t = idx / fps
+            cerca = set().union(*(w for a, b, w in dichas if a - SUBS_VENTANA_S <= t <= b + SUBS_VENTANA_S))
+            if not cerca:
+                continue
+            alto, ancho = img.shape[:2]
+            franja = cv2.cvtColor(img[int(alto * SUBS_FRANJA):], cv2.COLOR_BGR2GRAY)
+            try:
+                d = pytesseract.image_to_data(franja, lang=idioma, config="--psm 11",
+                                              output_type=pytesseract.Output.DICT)
+            except pytesseract.TesseractError as e:
+                log.warning("Subtítulos quemados: tesseract falló (%s)", e)
+                return False, 0
+            for txt, conf, x, w in zip(d["text"], d["conf"], d["left"], d["width"]):
+                ws = _palabras_ocr(txt or "")
+                if ws and float(conf) >= 50 and 0.3 <= (x + w / 2) / ancho <= 0.7 \
+                        and any(p in cerca for p in ws):
+                    con += 1
+                    break
+    finally:
+        cap.release()
+    return con >= SUBS_CUADROS_MIN, con
+
+
 def detectar_datos(video: Path, cfg, cmd: str | None = None) -> Pantalla:
     """Capa completa. Nunca levanta por falta de tesseract: devuelve Pantalla(salteado=...)."""
     if not cfg.activo:

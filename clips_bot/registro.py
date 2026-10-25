@@ -119,6 +119,8 @@ def combinar(del_yaml: list[Streamer], conn: sqlite3.Connection) -> list[Streame
     # encontrar a Davo: 0 Shorts "lo nombraban"). "-" borra solo los de Telegram.
     out = [replace(s, apodos=tuple(dict.fromkeys(s.apodos + apodos[s.login]))) if s.login in apodos else s
            for s in out]
+    camaras = facecams_db(conn)   # la webcam cargada por /streamers manda sobre la del YAML
+    out = [replace(s, facecam=camaras[s.login]) if s.login in camaras else s for s in out]
     excluidos = programas_excluidos(conn)
     out = [aplicar_experimento(s, excluidos) for s in out]
     por_login = {s.login for s in out}
@@ -153,6 +155,64 @@ def guardar_apodos(conn: sqlite3.Connection, login: str, texto: str, quien: str)
                ts = excluded.ts""", (login.lower(), json.dumps(lista[:8], ensure_ascii=False), str(quien)))
     conn.commit()
     return tuple(lista[:8])
+
+
+FACECAM = "facecam:"   # bot_estado: facecam:<login> -> JSON [[x, y, ancho, alto], ...] (fracciones)
+
+
+def facecams_db(conn: sqlite3.Connection) -> dict[str, tuple]:
+    """{login: posiciones de su webcam} cargadas por Telegram. Una lista vacía = sin webcam fija."""
+    import json
+
+    out = {}
+    for clave, valor in conn.execute("SELECT clave, valor FROM bot_estado WHERE clave LIKE ?",
+                                     (FACECAM + "%",)):
+        try:
+            out[clave[len(FACECAM):]] = tuple(tuple(float(v) for v in f) for f in json.loads(valor))
+        except (ValueError, TypeError):
+            continue
+    return out
+
+
+def leer_facecam(texto: str) -> tuple[tuple[float, float, float, float], ...] | None:
+    """Posiciones escritas a mano: "x y ancho alto" en PORCENTAJE del cuadro, varias separadas por
+    punto y coma ("0,6 37,8 18 30; 80,6 2,2 17,2 26,5"). "-" = ninguna. None si no se entiende."""
+    import re
+
+    texto = (texto or "").strip()
+    if texto == "-":
+        return ()
+    out = []
+    for parte in texto.split(";"):
+        nums = re.findall(r"\d+(?:[.,]\d+)?", parte)
+        if not parte.strip():
+            continue
+        if len(nums) != 4:
+            return None
+        x, y, w, h = (float(n.replace(",", ".")) / 100 for n in nums)
+        if not (0 <= x < 1 and 0 <= y < 1 and 0 < w <= 1 and 0 < h <= 1 and x + w <= 1.001 and y + h <= 1.001):
+            return None
+        out.append((round(x, 4), round(y, 4), round(w, 4), round(h, 4)))
+    return tuple(out) if out else None
+
+
+def guardar_facecam(conn: sqlite3.Connection, login: str, posiciones: tuple | None) -> None:
+    """Guarda las posiciones (manda sobre el YAML). None = borrar lo de Telegram y volver al YAML."""
+    import json
+
+    from . import db
+
+    if posiciones is None:
+        db.borrar_valor(conn, FACECAM + login.lower())
+    else:
+        db.set_valor(conn, FACECAM + login.lower(), json.dumps([list(f) for f in posiciones]))
+
+
+def texto_facecam(posiciones: tuple) -> str:
+    """Las posiciones en porcentaje, como se escriben en /streamers."""
+    def pct(v: float) -> str:
+        return f"{v * 100:.1f}".rstrip("0").rstrip(".").replace(".", ",")
+    return "; ".join(" ".join(pct(v) for v in f) for f in posiciones) or "ninguna (la busca sola)"
 
 
 def carpeta_de(s: Streamer) -> str:

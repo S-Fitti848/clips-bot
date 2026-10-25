@@ -2526,6 +2526,12 @@ def escuchar_telegram(settings: Settings, timeout_poll: int = 50) -> int:
                     _seguro(tg, t["chat_id"], "guardar los apodos", _guardar_apodos, conn, tg, t,
                             espera_apodos)
                     continue
+                espera_facecam = db.get_valor(conn, f"{ESPERA_FACECAM}:{t['user_id']}")
+                if espera_facecam:
+                    db.borrar_valor(conn, f"{ESPERA_FACECAM}:{t['user_id']}")
+                    _seguro(tg, t["chat_id"], "guardar la webcam", _guardar_facecam, conn, tg, t,
+                            espera_facecam)
+                    continue
                 espera_carpeta = db.get_valor(conn, f"{ESPERA_CARPETA}:{t['user_id']}")
                 if espera_carpeta:
                     db.borrar_valor(conn, f"{ESPERA_CARPETA}:{t['user_id']}")
@@ -4224,6 +4230,7 @@ def _streamers(conn=None) -> list:
 
 ESPERA_CARPETA = "esperando_carpeta"   # bot_estado: <user_id> -> {"tipo": alta|mover, ...}
 ESPERA_APODOS = "esperando_apodos"     # bot_estado: <user_id> -> login
+ESPERA_FACECAM = "esperando_facecam"   # bot_estado: <user_id> -> login
 
 
 def _carpetas_vista(conn) -> tuple[dict, dict]:
@@ -4276,12 +4283,76 @@ def _guardar_apodos(conn, tg: TelegramClient, t: dict, login: str) -> None:
                                   f"<b>{html.escape(', '.join((login,) + lista))}</b>.")
 
 
+def _guardar_facecam(conn, tg: TelegramClient, t: dict, login: str) -> None:
+    """La webcam escrita a mano (porcentajes) o "fabrica" para volver a la del YAML. Después manda
+    un cuadro del último clip de ese streamer con los recuadros dibujados, para verificarlos."""
+    from . import registro
+
+    texto = (t["texto"] or "").strip()
+    if texto.lower() in ("fabrica", "fábrica"):
+        registro.guardar_facecam(conn, login, None)
+        posiciones = next((s.facecam for s in load_streamers() if s.login == login), ())
+        tg.send_message(t["chat_id"], f"📷 <b>{html.escape(login)}</b>: vuelve a la webcam de fábrica "
+                                      f"(<code>{registro.texto_facecam(posiciones)}</code>).")
+    else:
+        posiciones = registro.leer_facecam(texto)
+        if posiciones is None:
+            tg.send_message(t["chat_id"], "📷 No entendí. Van 4 números por webcam, en % del cuadro: "
+                                          "<code>x y ancho alto</code>, varias separadas por <code>;</code> "
+                                          "(ej. <code>0,6 37,8 18 30; 80,6 2,2 17,2 26,5</code>). "
+                                          "Tocá 📷 Webcam de nuevo para reintentar.")
+            return
+        registro.guardar_facecam(conn, login, posiciones)
+        tg.send_message(t["chat_id"], f"📷 <b>{html.escape(login)}</b>: webcam "
+                                      f"<code>{registro.texto_facecam(posiciones)}</code>. El split usa la "
+                                      f"primera que esté en todo el clip.")
+    vista = _vista_facecam(conn, login, posiciones)
+    if vista:
+        tg.send_photo(t["chat_id"], vista, f"📷 {login}: así quedan los recuadros sobre su último clip")
+
+
+def _vista_facecam(conn, login: str, posiciones: tuple) -> Path | None:
+    """El cuadro del medio del último clip bajado de ese streamer, con cada webcam numerada."""
+    import cv2
+
+    from .config import OUTPUT_DIR
+    from .layout import caja_de
+    from .process import RAW_DIR
+
+    if not posiciones:
+        return None
+    for (clip_id,) in conn.execute("SELECT clip_id FROM clips WHERE broadcaster = ? "
+                                   "ORDER BY first_seen_at DESC LIMIT 20", (login,)):
+        video = RAW_DIR / f"{clip_id}.mp4"
+        if not video.exists():
+            continue
+        cap = cv2.VideoCapture(str(video))
+        cap.set(cv2.CAP_PROP_POS_FRAMES, int(cap.get(cv2.CAP_PROP_FRAME_COUNT)) // 2)
+        ok, img = cap.read()
+        cap.release()
+        if not ok:
+            continue
+        H, W = img.shape[:2]
+        for i, f in enumerate(posiciones):
+            c = caja_de(f, W, H)
+            cv2.rectangle(img, (c.x, c.y), (c.x + c.w, c.y + c.h), (0, 255, 0), 4)
+            cv2.putText(img, str(i + 1), (c.x + 8, c.y + 44), cv2.FONT_HERSHEY_SIMPLEX, 1.5, (0, 255, 0), 4)
+        salida = OUTPUT_DIR / "debug" / f"facecam_{login}.jpg"
+        salida.parent.mkdir(parents=True, exist_ok=True)
+        cv2.imwrite(str(salida), img)
+        return salida
+    return None
+
+
 def _texto_streamer(s, excluidos: dict) -> str:
+    from .registro import texto_facecam
+
     estado = f"\n🚫 EXCLUIDO: {html.escape(excluidos[s.login])}" if s.login in excluidos else ""
     permiso = "experimento" if s.experimento else ("cita" if s.permitido else "SIN PERMISO")
     apodos = f"\n🏷 Apodos: {html.escape(', '.join(s.apodos))}" if s.apodos else ""
+    webcam = f"\n📷 Webcam: {texto_facecam(s.facecam)}" if s.facecam else ""
     return (f"<b>{html.escape(s.login)}</b> · {s.plataforma} · carpeta {s.grupo or '—'} · {permiso}"
-            f"{estado}{apodos}\n\n¿Qué busco?")
+            f"{estado}{apodos}{webcam}\n\n¿Qué busco?")
 
 
 def _menu_streamers(conn, tg: TelegramClient, chat_id: str, message_id: int | None = None) -> None:
@@ -4354,7 +4425,7 @@ def _menu_callback(conn, tg: TelegramClient, cb: dict, settings: Settings, cola:
     if d["accion"] == "s":
         tg.answer_callback(cb["callback_id"])
         return tg.edit_message(chat, msg, _texto_streamer(s, excluidos),
-                               teclado_streamer(gi, si, pagina, s.apodos))
+                               teclado_streamer(gi, si, pagina, s.apodos, s.facecam))
     if d["accion"] == "ap":
         db.set_valor(conn, f"{ESPERA_APODOS}:{cb['user_id']}", s.login)
         tg.answer_callback(cb["callback_id"])
@@ -4365,6 +4436,21 @@ def _menu_callback(conn, tg: TelegramClient, cb: dict, settings: Settings, cola:
                        f"<b>{html.escape(actuales)}</b>.\n\n"
                        f"Escribime los que quieras SUMAR, separados por coma (ej. <code>Davo, Davo "
                        f"Xeneize</code>), o <code>-</code> para borrar los que se sumaron por acá.",
+            {"inline_keyboard": []})
+    if d["accion"] == "fc":
+        from .registro import texto_facecam
+        db.set_valor(conn, f"{ESPERA_FACECAM}:{cb['user_id']}", s.login)
+        tg.answer_callback(cb["callback_id"])
+        return tg.edit_message(
+            chat, msg, f"📷 Webcam de <b>{html.escape(s.login)}</b>: "
+                       f"<code>{texto_facecam(s.facecam)}</code>.\n\n"
+                       f"Mandame dónde está su webcam en % del cuadro: <code>x y ancho alto</code> "
+                       f"(desde la esquina de arriba a la izquierda). Si tiene más de una (ej. una en los "
+                       f"juegos y otra en Just Chatting), separadas por <code>;</code>, la más usada "
+                       f"primero: el split usa la primera que esté en todo el clip. Ej. "
+                       f"<code>0,6 37,8 18 30; 80,6 2,2 17,2 26,5</code>.\n"
+                       f"<code>-</code> = sin webcam fija (la busca sola) · <code>fabrica</code> = la de "
+                       f"streamers.yaml.",
             {"inline_keyboard": []})
     carpetas_menu = [(n, cfg[n]["etiqueta"] or n) for n in nombres]
     if d["accion"] == "m":
