@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-10-29 | **Versión:** v0.68.0 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 de clips + timer 06:00 de la efeméride + escucha de Telegram 24/7)
+**Snapshot:** 2026-10-29 | **Versión:** v0.68.1 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 de clips + timer 06:00 de la efeméride + escucha de Telegram 24/7)
 
 > **SI ESTÁS EMPEZANDO UNA SESIÓN NUEVA, LEÉ §10.** Ahí está qué está hecho, qué quedó a medias,
 > qué falta, y las trampas que ya nos mordieron.
@@ -800,6 +800,14 @@ Problemas abiertos:
 
 ## 9. CHANGELOG
 
+- v0.68.1 (2026-10-29) — **Telegram: los cortes de conexión se reintentan solos** (pedido de Santi).
+  `TelegramClient._llamar` (todo lo que manda el bot) y la bajada de `get_file`: ante
+  `ConnectionError` (RemoteDisconnected, "Connection aborted") o timeout, 2 reintentos esperando 3 y
+  6 s (`ESPERAS_REINTENTO_S`), con el archivo rebobinado para que se mande entero; recién si fallan
+  los 3 intentos es `TelegramError` (y ahí avisa lo de siempre). Un error que CONTESTA Telegram (400,
+  403…) no se reintenta. `alerta.sh`: `curl --retry 2 --retry-delay 5 --retry-connrefused`. OJO: si
+  el corte fue DESPUÉS de que Telegram recibió el mensaje, el reintento lo puede mandar dos veces.
+  `tests/test_telegram_reintentos.py`. 762 tests OK.
 - v0.68.0 (2026-10-29) — **La corrida del 29/10 murió por timeout buscando fotos de la efeméride.**
   Del log: clips de 05:02 a 05:45 (3 procesados, 856/586/1106 s; 2 con re-render por cara al
   borde), entrega 05:45 (**2 de 3**: dos de los 3 procesados eran de Brunenger y el tope es 1 por

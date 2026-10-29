@@ -4,12 +4,16 @@ from __future__ import annotations
 
 import html
 import json
+import logging
 import re
+import time
 from pathlib import Path
 
 import requests
 
 from .idioma import L
+
+log = logging.getLogger(__name__)
 
 API = "https://api.telegram.org/bot{token}/{metodo}"
 MAX_ARCHIVO_BYTES = 50 * 1024 * 1024  # límite de subida de la Bot API
@@ -26,18 +30,37 @@ class TelegramError(RuntimeError):
 
 
 class TelegramClient:
-    def __init__(self, token: str, session: requests.Session | None = None, timeout: float = 120):
+    # Un corte de conexión (RemoteDisconnected, "Connection aborted", timeout) se reintenta solo, con
+    # estas esperas, antes de darlo por fallido: casi siempre es un corte de un segundo de la red de
+    # la Pi o de Telegram (2026-10-29). Un error que CONTESTA Telegram (400, 403…) no se reintenta.
+    ESPERAS_REINTENTO_S = (3, 6)
+
+    def __init__(self, token: str, session: requests.Session | None = None, timeout: float = 120,
+                 sleep=time.sleep):
         self.token = token
         self.session = session or requests.Session()
         self.timeout = timeout
+        self._sleep = sleep
 
     def _llamar(self, metodo: str, data: dict | None = None, files: dict | None = None) -> object:
-        try:
-            r = self.session.post(API.format(token=self.token, metodo=metodo), data=data, files=files,
-                                  timeout=self.timeout)
-            cuerpo = r.json()
-        except (requests.RequestException, ValueError) as e:
-            raise TelegramError(f"{metodo}: {e}") from e
+        for intento in range(len(self.ESPERAS_REINTENTO_S) + 1):
+            try:
+                r = self.session.post(API.format(token=self.token, metodo=metodo), data=data,
+                                      files=files, timeout=self.timeout)
+                cuerpo = r.json()
+                break
+            except (requests.ConnectionError, requests.Timeout) as e:
+                if intento == len(self.ESPERAS_REINTENTO_S):
+                    raise TelegramError(f"{metodo}: {e} (después de {intento + 1} intentos)") from e
+                log.warning("Telegram %s: %s; reintento en %d s", metodo, str(e)[:120],
+                            self.ESPERAS_REINTENTO_S[intento])
+                self._sleep(self.ESPERAS_REINTENTO_S[intento])
+                for valor in (files or {}).values():   # el archivo se vuelve a mandar desde el principio
+                    f = valor[1] if isinstance(valor, tuple) and len(valor) > 1 else valor
+                    if hasattr(f, "seek"):
+                        f.seek(0)
+            except (requests.RequestException, ValueError) as e:
+                raise TelegramError(f"{metodo}: {e}") from e
         if not cuerpo.get("ok"):
             raise TelegramError(f"{metodo}: {cuerpo.get('error_code')} {cuerpo.get('description')}")
         return cuerpo["result"]
@@ -124,12 +147,21 @@ class TelegramClient:
         url = f"https://api.telegram.org/file/bot{self.token}/{ruta}"
         destino.parent.mkdir(parents=True, exist_ok=True)
         final = destino.with_suffix(Path(ruta).suffix or ".mp4")
-        with self.session.get(url, stream=True, timeout=self.timeout) as r:
-            if not r.ok:
-                raise TelegramError(f"getFile: {r.status_code}")
-            with final.open("wb") as f:
-                for trozo in r.iter_content(1 << 16):
-                    f.write(trozo)
+        for intento in range(len(self.ESPERAS_REINTENTO_S) + 1):
+            try:
+                with self.session.get(url, stream=True, timeout=self.timeout) as r:
+                    if not r.ok:
+                        raise TelegramError(f"getFile: {r.status_code}")
+                    with final.open("wb") as f:
+                        for trozo in r.iter_content(1 << 16):
+                            f.write(trozo)
+                return final
+            except (requests.ConnectionError, requests.Timeout) as e:
+                if intento == len(self.ESPERAS_REINTENTO_S):
+                    raise TelegramError(f"getFile: {e} (después de {intento + 1} intentos)") from e
+                log.warning("Telegram getFile: %s; reintento en %d s", str(e)[:120],
+                            self.ESPERAS_REINTENTO_S[intento])
+                self._sleep(self.ESPERAS_REINTENTO_S[intento])
         return final
 
     def send_audio(self, chat_id: str, path: Path, titulo: str = "", caption_html: str = "") -> None:

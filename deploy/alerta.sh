@@ -40,7 +40,7 @@ TEXTO="$(printf '\xe2\x9a\xa0\xef\xb8\x8f <b>%s</b> fallo (%s) en la Pi.\n\nUlti
 # por el HTML), y así la alerta del 2026-09-30 figuró como enviada sin que nadie supiera si llegó.
 # Si el HTML no pasa, se reintenta en texto plano; si tampoco, la unidad termina con error.
 enviar() {
-  curl -sS --max-time 30 -X POST     "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage"     --data-urlencode "chat_id=${TELEGRAM_CHAT_ID}"     "$@"
+  curl -sS --max-time 30 --retry 2 --retry-delay 5 --retry-connrefused -X POST    "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage"     --data-urlencode "chat_id=${TELEGRAM_CHAT_ID}"     "$@"
 }
 RESPUESTA="$(enviar --data-urlencode "parse_mode=HTML" --data-urlencode "text=${TEXTO}" 2>&1)"
 if printf '%s' "$RESPUESTA" | grep -q '"ok":true'; then
