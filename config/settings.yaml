@@ -306,6 +306,11 @@ efemerides:
   # diaria (/destinos); para mandarla a otro lado, poné el id (o varios, con coma).
   diaria: true
   chat: ""
+  # Tope de la búsqueda de fotos (y videos) de cada hecho, en minutos: pasado esto sigue con lo que
+  # ya bajó. Además cada pedido a una fuente tiene 10 s y una fuente que falla 2 veces se saltea el
+  # resto de la corrida (fuentes_fotos.py). 2026-10-29: Openverse colgado + Smithsonian con 429 llevaron
+  # la búsqueda a más de 45 min y systemd mató la corrida.
+  tope_fotos_min: 10
   # Video en 2 o 3 frases de acción (las marca Gemini en el guion): filmación de la época de
   # Commons/archive.org; si no hay, stock libre (Pexels/Pixabay con su clave en el .env) o NASA;
   # si no, la foto. PRENDIDO todos los días desde el 2026-10-04 (Santi aprobó la muestra del Apolo

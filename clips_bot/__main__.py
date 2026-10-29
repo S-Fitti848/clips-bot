@@ -711,9 +711,13 @@ def cmd_diario(args: argparse.Namespace) -> int:
         # clips (candidatos, procesado, entrega). Después, cada extra por separado: si uno falla o
         # tarda, los clips ya salieron.
         codigo = _diario(args, settings)
-        for nombre, extra in (("las métricas", actualizar_metricas),
-                              ("el resumen de pegó", lambda: _resumen_pego(settings, args.simular)),
-                              ("la efeméride", lambda: efemeride_del_dia(settings, simular=args.simular))):
+        extras = [("las métricas", actualizar_metricas),
+                  ("el resumen de pegó", lambda: _resumen_pego(settings, args.simular))]
+        if efemeride_aparte():
+            print("\n=== Pequeña Historia: va en su propio servicio (clips-bot-efemeride, 06:00)")
+        else:
+            extras.append(("la efeméride", lambda: efemeride_del_dia(settings, simular=args.simular)))
+        for nombre, extra in extras:
             try:
                 extra()
             except Exception:   # noqa: BLE001 — ninguno de estos puede tumbar la corrida
@@ -726,6 +730,58 @@ def cmd_diario(args: argparse.Namespace) -> int:
             db.soltar_turno(conn, db.RECURSO_PESADO, token, VENCIMIENTO_PESADO_S)
         finally:
             conn.close()
+
+
+def cmd_efemeride_diaria(args: argparse.Namespace) -> int:
+    """La efeméride del día con su propio servicio y timer (06:00, clips-bot-efemeride): así ni ella
+    tumba la entrega de clips ni los clips la dejan sin tiempo (2026-10-29: la búsqueda de fotos se
+    comió los 90 min de la corrida). Toma el turno pesado; si la corrida de clips sigue andando
+    después de ESPERA_EFEMERIDE_S, no la pisa: deja la propuesta para los reintentos de la escucha
+    (07:00 y 10:00)."""
+    settings = load_settings()
+    token = f"efemeride:{datetime.now(timezone.utc).timestamp():.0f}"
+    conn = db.connect(DB_PATH)
+    try:
+        espera = 0.0
+        while not db.tomar_turno(conn, db.RECURSO_PESADO, token, maximo=1,
+                                 vencimiento_s=VENCIMIENTO_PESADO_S):
+            quien = db.hay_trabajo_pesado(conn, VENCIMIENTO_PESADO_S)
+            if espera >= ESPERA_EFEMERIDE_S:
+                print(f"  {quien} sigue andando después de {espera / 60:.0f} min: la efeméride queda "
+                      "para los reintentos de la escucha")
+                _efe_agendar_reintento(conn, settings, f"{quien} seguía andando a las "
+                                       f"{datetime.now(AR):%H:%M}")
+                return 0
+            if espera == 0:
+                print(f"  hay {quien} andando; espero hasta {ESPERA_EFEMERIDE_S // 60} min")
+            time.sleep(30)
+            espera += 30
+    finally:
+        conn.close()
+    try:
+        efemeride_del_dia(settings, simular=args.simular)
+        return 0
+    finally:
+        conn = db.connect(DB_PATH)
+        try:
+            db.soltar_turno(conn, db.RECURSO_PESADO, token, VENCIMIENTO_PESADO_S)
+        finally:
+            conn.close()
+
+
+def _efe_agendar_reintento(conn, settings: Settings, error: str) -> None:
+    """Deja la propuesta de hoy para los reintentos de la escucha (o avisa si no queda ninguno)."""
+    cfg = settings.efemerides
+    ahora = datetime.now(AR)
+    chats = [c.strip() for c in cfg.chat.split(",") if c.strip()] or db.destinos(conn)
+    horas = _efe_horas_que_faltan(cfg.reintentos, ahora)
+    if horas and chats:
+        db.set_valor(conn, EFE_REINTENTO, json.dumps({
+            "fecha": ahora.date().isoformat(), "chats": chats, "horas": horas, "error": error,
+            "intentos": [ahora.strftime("%H:%M")]}, ensure_ascii=False))
+        print(f"  la escucha de Telegram reintenta a las {', '.join(horas)}")
+    elif chats:
+        _efe_sin_propuesta(TelegramClient(env("TELEGRAM_BOT_TOKEN")), chats, error)
 
 
 def _avisar_sin_original(settings: Settings, streamers: list, desde: datetime,
@@ -1308,6 +1364,14 @@ CANTIDAD_MAX_PEDIDO = 6  # tope de clips por pedido con xN; más no entra en la 
 TOPE_BUSCAR = 3        # clips procesados por búsqueda: cada uno es Whisper + OCR + render
 VENCIMIENTO_PESADO_S = 3 * 3600   # un turno pesado colgado se suelta solo a las 3 h
 ESPERA_DIARIO_S = 20 * 60         # lo que `diario` aguanta a una búsqueda antes de arrancar igual
+ESPERA_EFEMERIDE_S = 30 * 60      # lo que `efemeride-diaria` espera el turno (los clips de las 05:00)
+# Desde el 2026-10-29 la efeméride tiene su propio servicio y timer (06:00): si está instalado, la
+# corrida de clips ya no la hace. Hasta que se instale, sigue al final de `diario`.
+TIMER_EFEMERIDE = Path("/etc/systemd/system/clips-bot-efemeride.timer")
+
+
+def efemeride_aparte() -> bool:
+    return TIMER_EFEMERIDE.exists()
 
 OCUPADO = object()     # lo devuelve _buscar cuando hay otra cosa pesada andando
 
@@ -3176,7 +3240,8 @@ def _efe_proponer(conn, tg: TelegramClient, chats: list[str], dia, settings: Set
     carpeta = OUTPUT_DIR / "efemerides" / f"{dia:%m%d}_{token}"
     try:
         p = ef.proponer(ef.Wiki(), gemini, dia, carpeta, avisar=log.info, hecho=hecho,
-                        videos=settings.efemerides.videos)
+                        videos=settings.efemerides.videos,
+                        tope_fotos_s=settings.efemerides.tope_fotos_min * 60)
     except (NarrarError, ef.WikiError, GeminiError) as e:
         error = f"No salió la efeméride: {html.escape(str(e)[:400])}"
         return ErrorPasajero(error) if getattr(e, "pasajero", False) else error
@@ -3326,7 +3391,8 @@ def efemeride_del_dia(settings: Settings, simular: bool = False) -> None:
             if horas:
                 db.set_valor(conn, EFE_REINTENTO, json.dumps({
                     "fecha": datetime.now(AR).date().isoformat(), "chats": chats, "horas": horas,
-                    "error": error, "intentos": ["05:00"]}, ensure_ascii=False))
+                    "error": error, "intentos": [datetime.now(AR).strftime("%H:%M")]},
+                    ensure_ascii=False))
                 print(f"  la escucha de Telegram reintenta a las {', '.join(horas)}")
             else:
                 _efe_sin_propuesta(tg, chats, error)
@@ -3497,7 +3563,8 @@ def cmd_efemeride(args: argparse.Namespace) -> int:
             print("Falta GEMINI_API_KEY", file=sys.stderr)
             return 2
         p = ef.proponer(ef.Wiki(), gemini, dia, carpeta, avisar=print, hecho=args.hecho or "",
-                        videos=settings.efemerides.videos or getattr(args, "videos", False))
+                        videos=settings.efemerides.videos or getattr(args, "videos", False),
+                        tope_fotos_s=settings.efemerides.tope_fotos_min * 60)
         (carpeta / "propuesta.json").write_text(json.dumps(p.__dict__, ensure_ascii=False, indent=2),
                                                encoding="utf-8")
         g = ef.Guion.de_dict(p.guion)
@@ -4953,6 +5020,11 @@ def main(argv: list[str] | None = None) -> int:
     pd.add_argument("--incluir-sin-permiso", action="store_true",
                     help="incluye streamers sin permiso cargado. Solo para simular: el envío igual los rechaza")
     pd.set_defaults(func=cmd_diario)
+
+    pe = sub.add_parser("efemeride-diaria", help="la propuesta de Pequeña Historia de hoy (la corre "
+                                                 "clips-bot-efemeride.timer a las 06:00)")
+    pe.add_argument("--simular", action="store_true", help="no propone nada (solo prueba el turno)")
+    pe.set_defaults(func=cmd_efemeride_diaria)
 
     pm = sub.add_parser("multipov", help="armar un Short multi-POV con clips ya procesados del mismo momento")
     pm.add_argument("clip_id", nargs="+", help="ids de clips ya procesados (2 a 3 ángulos)")

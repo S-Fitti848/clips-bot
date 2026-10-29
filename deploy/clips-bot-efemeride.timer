@@ -1,0 +1,14 @@
+# 06:00 hora de Argentina, todos los días: después de los clips de las 05:00.
+[Unit]
+Description=Disparador diario de la efeméride del Clips Bot (06:00 AR)
+
+[Timer]
+# Como en clips-bot.timer: con systemd < 252 el instalador lo cambia a 09:00 UTC (= 06:00 AR).
+OnCalendar=*-*-* 06:00:00 America/Argentina/Buenos_Aires
+Persistent=true
+RandomizedDelaySec=2min
+AccuracySec=1min
+Unit=clips-bot-efemeride.service
+
+[Install]
+WantedBy=timers.target

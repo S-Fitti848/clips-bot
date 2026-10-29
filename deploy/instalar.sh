@@ -23,7 +23,8 @@ done
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 USUARIO="${SUDO_USER:-$(id -un)}"
 LOG_DIR=/var/log/clips-bot
-UNIDADES=(clips-bot.service clips-bot.timer clips-bot-alerta@.service clips-bot-telegram.service)
+UNIDADES=(clips-bot.service clips-bot.timer clips-bot-alerta@.service clips-bot-telegram.service
+          clips-bot-efemeride.service clips-bot-efemeride.timer)
 
 decir() { printf '  %s\n' "$*"; }
 hacer() { if [ "$DRY" = 1 ]; then printf '  [dry-run] %s\n' "$*"; else eval "$@"; fi; }
@@ -54,37 +55,44 @@ decir "unidades clips-bot ya presentes: $otras (las de trading no se tocan)"
 # Argentina es UTC-3 todo el año (no hay horario de verano), así que 05:00 AR = 08:00 UTC.
 VER="$(systemctl --version | head -1 | awk '{print $2}' | tr -cd '0-9')"
 TIMER_TMP="$(mktemp)"
+EFE_TMP="$(mktemp)"
 if [ "${VER:-0}" -ge 252 ]; then
   cp "$DIR/deploy/clips-bot.timer" "$TIMER_TMP"
+  cp "$DIR/deploy/clips-bot-efemeride.timer" "$EFE_TMP"
   decir "systemd $VER: uso la zona horaria dentro de OnCalendar"
 else
   sed 's|^OnCalendar=.*|OnCalendar=*-*-* 08:00:00 UTC  # = 05:00 AR (systemd viejo, sin zonas)|' \
     "$DIR/deploy/clips-bot.timer" > "$TIMER_TMP"
-  decir "systemd $VER (< 252): uso 08:00 UTC, que es 05:00 AR"
+  sed 's|^OnCalendar=.*|OnCalendar=*-*-* 09:00:00 UTC  # = 06:00 AR (systemd viejo, sin zonas)|' \
+    "$DIR/deploy/clips-bot-efemeride.timer" > "$EFE_TMP"
+  decir "systemd $VER (< 252): uso 08:00 y 09:00 UTC, que son 05:00 y 06:00 AR"
 fi
 
 # --- escribir -----------------------------------------------------------------
 hacer "install -d -m 0755 -o '$USUARIO' -g '$USUARIO' '$LOG_DIR'"
-UNIDADES_A_ESCRIBIR=(clips-bot.service clips-bot-alerta@.service)
+UNIDADES_A_ESCRIBIR=(clips-bot.service clips-bot-alerta@.service clips-bot-efemeride.service)
 [ "$ESCUCHA" = 1 ] && UNIDADES_A_ESCRIBIR+=(clips-bot-telegram.service)
 for u in "${UNIDADES_A_ESCRIBIR[@]}"; do
   hacer "sed -e 's|__DIR__|$DIR|g' -e 's|__USUARIO__|$USUARIO|g' '$DIR/deploy/$u' > '/etc/systemd/system/$u'"
 done
 hacer "install -m 0644 '$TIMER_TMP' /etc/systemd/system/clips-bot.timer"
+hacer "install -m 0644 '$EFE_TMP' /etc/systemd/system/clips-bot-efemeride.timer"
 hacer "sed 's|__USUARIO__|$USUARIO|g' '$DIR/deploy/logrotate-clips-bot' > /etc/logrotate.d/clips-bot"
 hacer "chmod +x '$DIR/deploy/correr.sh' '$DIR/deploy/alerta.sh' '$DIR/deploy/escuchar.sh'"
 hacer "systemctl daemon-reload"
 hacer "systemctl enable --now clips-bot.timer"
+# La efeméride va aparte desde el 2026-10-29: con su timer instalado, `diario` ya no la hace.
+hacer "systemctl enable --now clips-bot-efemeride.timer"
 if [ "$ESCUCHA" = 1 ]; then
   hacer "systemctl enable --now clips-bot-telegram.service"
 else
   decir "sin modo escucha (--sin-escucha): /buscar se atiende recién en la corrida diaria"
 fi
-rm -f "$TIMER_TMP"
+rm -f "$TIMER_TMP" "$EFE_TMP"
 
 echo
 echo "Listo. Comprobaciones:"
-echo "  systemctl list-timers clips-bot.timer        # próxima corrida"
+echo "  systemctl list-timers 'clips-bot*'          # próximas corridas (clips 05:00, efeméride 06:00)"
 echo "  systemctl status clips-bot-telegram          # la escucha de Telegram"
 echo "  journalctl -u clips-bot-telegram -f          # ver los comandos que llegan"
 echo "  sudo systemctl start clips-bot.service       # correrlo ahora a mano"

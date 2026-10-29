@@ -39,6 +39,51 @@ _ARGENTINO = re.compile(r"argentin|buenos aires|rosario|c[oó]rdoba|mendoza|la p
                         r"river plate|per[oó]n|malvinas|rioplatense", re.I)
 
 
+# ---- límites por corrida (2026-10-29: la corrida murió por timeout buscando fotos) ------------------
+#
+# Openverse no contestaba (timeout de 30 s, varias veces por frase) y Smithsonian daba 429 con la
+# clave de prueba, en cada frase de cada hecho: la búsqueda de fotos pasó de 45 min. Ahora cada
+# pedido tiene TIMEOUT_S, una fuente que falla MAX_FALLAS veces se saltea el resto de la corrida, y
+# la búsqueda de un hecho tiene un tope total (efemerides.tope_fotos_min) después del cual se sigue
+# con lo que haya.
+
+TIMEOUT_S = 10
+MAX_FALLAS = 2
+
+
+class Corrida:
+    """Las fallas por fuente de una corrida (una propuesta, con sus hechos) y el tope de tiempo de
+    la búsqueda en curso."""
+
+    def __init__(self, reloj=time.monotonic):
+        self.fallas: dict[str, int] = {}
+        self.hasta: float | None = None
+        self._reloj = reloj
+
+    def salteada(self, fuente: str) -> bool:
+        return self.fallas.get(fuente, 0) >= MAX_FALLAS
+
+    def fallo(self, fuente: str) -> int:
+        self.fallas[fuente] = self.fallas.get(fuente, 0) + 1
+        return self.fallas[fuente]
+
+    def con_tope(self, segundos: float | None) -> None:
+        self.hasta = self._reloj() + segundos if segundos else None
+
+    def vencida(self) -> bool:
+        return self.hasta is not None and self._reloj() >= self.hasta
+
+
+CORRIDA = Corrida()
+
+
+def nueva_corrida() -> Corrida:
+    """Al empezar una propuesta: las fallas de ayer (o de otra propuesta) no cuentan."""
+    global CORRIDA
+    CORRIDA = Corrida()
+    return CORRIDA
+
+
 def es_argentino(texto: str) -> bool:
     return bool(_ARGENTINO.search(texto or ""))
 
@@ -49,7 +94,7 @@ def _anio(texto) -> int | None:
 
 
 class Fuentes:
-    def __init__(self, session: requests.Session | None = None, timeout: float = 30, sleep=time.sleep):
+    def __init__(self, session: requests.Session | None = None, timeout: float = TIMEOUT_S, sleep=time.sleep):
         self.s = session or requests.Session()
         self.s.headers["User-Agent"] = user_agent()
         self.timeout = timeout
@@ -84,7 +129,11 @@ class Fuentes:
         return out[:n]
 
     def smithsonian(self, q: str, n: int = POR_FUENTE) -> list[dict]:
-        clave = env("SMITHSONIAN_API_KEY", requerido=False) or "DEMO_KEY"
+        # Solo con clave propia (gratis en https://api.data.gov/signup/): la DEMO_KEY compartida
+        # daba 429 en todas las frases (2026-10-25 al 29).
+        clave = env("SMITHSONIAN_API_KEY", requerido=False)
+        if not clave:
+            return []
         d = self._json("https://api.si.edu/openaccess/api/v1.0/search", params={
             "q": f"{q} AND online_media_type:Images", "rows": n * 3, "api_key": clave})
         out = []
@@ -192,12 +241,14 @@ class Fuentes:
         out, vistos = [], set()
         for nombre, f in (("pexels", self.pexels), ("unsplash", self.unsplash)):
             for q in consultas[:2]:
-                if len(out) >= cuantas:
+                if len(out) >= cuantas or CORRIDA.vencida():
                     return out[:cuantas]
+                if CORRIDA.salteada(nombre):
+                    break
                 try:
                     halladas = f(q)
                 except (requests.RequestException, ValueError, KeyError) as e:
-                    avisar(f"    fotos: {nombre} «{q}» falló ({str(e)[:80]})")
+                    self._fallo(nombre, q, e, avisar)
                     break
                 for h in halladas:
                     if h["archivo"] in vistos or not h["url"] or _NO_FOTO.search(h["epigrafe"]):
@@ -207,6 +258,12 @@ class Fuentes:
                 if halladas:
                     break
         return out[:cuantas]
+
+    @staticmethod
+    def _fallo(nombre: str, q: str, e: Exception, avisar) -> None:
+        n = CORRIDA.fallo(nombre)
+        avisar(f"    fotos: {nombre} «{q}» falló ({str(e)[:80]})"
+               + (f" → la salteo el resto de la corrida ({n} fallas)" if n >= MAX_FALLAS else ""))
 
     # ---- todas, en orden -------------------------------------------------------------------
 
@@ -225,12 +282,14 @@ class Fuentes:
         out, vistos = [], set()
         for nombre, f in fuentes:
             for q in consultas[:3]:
-                if len(out) >= cuantas:
+                if len(out) >= cuantas or CORRIDA.vencida():
                     return out[:cuantas]
+                if CORRIDA.salteada(nombre):
+                    break
                 try:
                     halladas = f(q)
                 except (requests.RequestException, ValueError, KeyError) as e:
-                    avisar(f"    fotos: {nombre} «{q}» falló ({str(e)[:80]})")
+                    self._fallo(nombre, q, e, avisar)
                     break
                 for h in halladas:
                     if (h["archivo"] in vistos or not h["url"] or not h["licencia"]

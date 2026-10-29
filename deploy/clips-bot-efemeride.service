@@ -1,0 +1,36 @@
+# Propuesta diaria de Pequeña Historia. La dispara clips-bot-efemeride.timer (06:00 AR).
+# Va APARTE de la corrida de clips (2026-10-29: la búsqueda de fotos se comió los 90 min de
+# clips-bot.service y systemd mató la corrida): cada una con su límite de tiempo, ninguna tumba a la
+# otra. Si los clips siguen andando, espera el turno pesado hasta 30 min y, si no, la propuesta queda
+# para los reintentos de la escucha de Telegram (07:00 y 10:00).
+[Unit]
+Description=Clips Bot - efeméride del día (Pequeña Historia)
+After=network-online.target
+Wants=network-online.target
+OnFailure=clips-bot-alerta@%n.service
+
+[Service]
+Type=oneshot
+User=__USUARIO__
+WorkingDirectory=__DIR__
+Environment=PYTHONUNBUFFERED=1
+Environment=OMP_NUM_THREADS=2
+Nice=10
+IOSchedulingClass=idle
+CPUWeight=20
+Environment=HF_HOME=__DIR__/.cache/huggingface
+Environment=XDG_CACHE_HOME=__DIR__/.cache
+ExecStart=__DIR__/deploy/correr.sh efemeride-diaria
+# Hasta 30 min esperando el turno + hasta 3 hechos con 10 min de fotos cada uno (tope de
+# efemerides.tope_fotos_min) + Gemini. Si igual se pasa, se corta y salta la alerta.
+TimeoutStartSec=75min
+SyslogIdentifier=clips-bot-efemeride
+
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=full
+ProtectHome=read-only
+ReadWritePaths=__DIR__ /var/log/clips-bot
+
+[Install]
+WantedBy=multi-user.target

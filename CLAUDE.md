@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-10-25 | **Versión:** v0.67.1 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 + escucha de Telegram 24/7)
+**Snapshot:** 2026-10-29 | **Versión:** v0.68.0 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 de clips + timer 06:00 de la efeméride + escucha de Telegram 24/7)
 
 > **SI ESTÁS EMPEZANDO UNA SESIÓN NUEVA, LEÉ §10.** Ahí está qué está hecho, qué quedó a medias,
 > qué falta, y las trampas que ya nos mordieron.
@@ -800,6 +800,26 @@ Problemas abiertos:
 
 ## 9. CHANGELOG
 
+- v0.68.0 (2026-10-29) — **La corrida del 29/10 murió por timeout buscando fotos de la efeméride.**
+  Del log: clips de 05:02 a 05:45 (3 procesados, 856/586/1106 s; 2 con re-render por cara al
+  borde), entrega 05:45 (**2 de 3**: dos de los 3 procesados eran de Brunenger y el tope es 1 por
+  streamer; el 28/10 salió 1 por lo mismo), efeméride de 05:45 hasta que systemd la mató a las
+  06:30 (TimeoutStartSec 90 min): 3 hechos, y en cada frase Openverse colgado (timeout de 30 s) y
+  Smithsonian con 429 (la DEMO_KEY compartida; pasaba desde el 25/10). Arreglos: (1) **la
+  efeméride con su propio servicio y timer** (`clips-bot-efemeride.service/.timer`, 06:00 AR,
+  TimeoutStartSec 75 min, `python -m clips_bot efemeride-diaria`, log `efemeride.log`): espera el
+  turno pesado hasta 30 min y, si los clips siguen, la deja para los reintentos de la escucha
+  (07:00/10:00) sin pisarlos. `diario` la deja de hacer apenas existe
+  `/etc/systemd/system/clips-bot-efemeride.timer`; hasta que Santi corra `sudo bash
+  ~/clips/deploy/instalar.sh`, sigue al final de `diario` (después de la entrega, como antes).
+  `correr.sh` recibe el comando (`diario` reintenta una vez; la efeméride no). (2) **Topes de
+  fotos** (`fuentes_fotos.Corrida`): 10 s por pedido; una fuente que falla 2 veces se saltea el
+  resto de la propuesta (los 3 hechos); búsqueda de fotos y videos de cada hecho con tope de
+  `efemerides.tope_fotos_min` (10): vencido, sigue con lo que bajó. (3) **Smithsonian solo con
+  clave propia** (`SMITHSONIAN_API_KEY`, gratis en https://api.data.gov/signup/): sin clave se
+  saltea. (4) Preset: se queda `medium` — la parte de clips de los últimos 8 días fue de 21 a 47
+  min (2-4 clips, 234-1106 s cada uno), y sin la efeméride adentro le sobran ≥ 43 de los 90 min.
+  Lo que más pesa son los re-renders (un clip con re-render tarda el doble). 758 tests OK.
 - v0.67.1 (2026-10-25) — **Título quemado sin cuadraditos.** En el clip de Auron
   «¡Que todo el mundo vea la selfie que me enviaste!» 📸 el 📸 salía como un cuadradito vacío: Arial
   no tiene emojis. `subtitles.titulo_quemable` (lo usa `escribir_titulo_ass`, también para el nombre

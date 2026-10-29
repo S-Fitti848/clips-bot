@@ -1009,6 +1009,7 @@ def tipos_de(d: dict, n_pool: int) -> dict[int, tuple[str, bool]]:
 ANIO_MODERNO = 2000        # desde acá, primero fotos de stock (Pexels/Unsplash) antes que Commons
 FOTOS_STOCK_MAX = 2        # de stock, por frase, en los hechos modernos
 FOTOS_ARTICULO_MAX = 8     # del artículo del hecho: son candidatas para todas las frases
+TOPE_FOTOS_S = 600         # búsqueda de fotos (y videos) de UN hecho; vencido, sigue con lo que hay
 FOTOS_BUSQUEDA_MAX = 4     # de Commons, por frase
 POOL_MAX = 40              # las que ve Gemini en la llamada (cada una ~250 tokens)
 
@@ -1207,7 +1208,8 @@ def buscar_videos(g: Guion, anio: int, carpeta: Path, buscador=None, avisar=log.
 def fotos_para_guion(wiki: Wiki, cliente, e: Evento, g: Guion, fotos_articulo: list[Foto],
                      carpeta: Path, avisar=log.info, pool: list[Foto] | None = None,
                      descartadas: set[int] | None = None, videos: bool = False,
-                     buscador=None, fuentes=None) -> tuple[list[Foto], Guion]:
+                     buscador=None, fuentes=None,
+                     tope_s: float | None = None) -> tuple[list[Foto], Guion]:
     """Busca candidatas para cada frase (las del artículo + Commons con su `mostrar`), las baja,
     Gemini elige, y arma la foto de cada frase con las reglas de `ilustrar`. Devuelve el pool (las
     fotos que se bajaron, en su numeración) y el guion con `fotos`, `ranking` y `descartadas`.
@@ -1236,7 +1238,17 @@ def fotos_para_guion(wiki: Wiki, cliente, e: Evento, g: Guion, fotos_articulo: l
 
     argentino = fuentes_fotos.es_argentino(f"{e.texto} {' '.join(e.paginas)}")
     otras = fuentes or fuentes_fotos.Fuentes()
+    # Tope total de la búsqueda (2026-10-29: pasó de 45 min y systemd mató la corrida): vencido, se
+    # sigue con lo que ya se bajó.
+    corrida = fuentes_fotos.CORRIDA
+    corrida.con_tope(TOPE_FOTOS_S if tope_s is None else tope_s)
     for i, mostrar in enumerate(g.mostrar):
+        if corrida.vencida():
+            if len(propias) == i:
+                avisar(f"    fotos: pasó el tope de {(TOPE_FOTOS_S if tope_s is None else tope_s) / 60:.0f} "
+                       f"min de búsqueda: sigo con lo que hay (frases {i + 1} a {len(g.mostrar)} sin buscar)")
+            propias.append([])
+            continue
         # Commons, de la búsqueda puntual a la general (2026-10-02: "1924 Onzari Argentina" pedía
         # todas las palabras y no traía nada) y, si el hecho es argentino, las fotos PD-AR-Photo.
         qs = achicar_consultas(mostrar)
@@ -1252,7 +1264,7 @@ def fotos_para_guion(wiki: Wiki, cliente, e: Evento, g: Guion, fotos_articulo: l
                                      epigrafe=h["epigrafe"][:160], pagina=h["pagina"],
                                      articulo=f"{h['fuente']}: {mostrar}", anio=h["anio"]))
         for q in consultas_commons:
-            if len(halladas) >= FOTOS_BUSQUEDA_MAX:
+            if len(halladas) >= FOTOS_BUSQUEDA_MAX or corrida.vencida():
                 break
             nuevas, desc = filtrar_infos(wiki, "commons", wiki.buscar_commons(q), f"Commons: {mostrar}",
                                          e.anio)
@@ -1260,7 +1272,7 @@ def fotos_para_guion(wiki: Wiki, cliente, e: Evento, g: Guion, fotos_articulo: l
                 descartes[k] = descartes.get(k, 0) + v
             halladas += [f for f in nuevas if f.archivo not in {h.archivo for h in halladas}]
         # Si Commons no alcanza: las otras fuentes, en orden (fuentes_fotos).
-        if len(halladas) < FOTOS_BUSQUEDA_MAX:
+        if len(halladas) < FOTOS_BUSQUEDA_MAX and not corrida.vencida():
             hoy = i < len(g.presente) and g.presente[i]
             for h in otras.buscar(qs, hoy, es_de_espacio(mostrar), FOTOS_BUSQUEDA_MAX - len(halladas), avisar):
                 halladas.append(Foto(archivo=h["archivo"], url=h["url"], ancho=h["ancho"], alto=h["alto"],
@@ -1286,8 +1298,11 @@ def fotos_para_guion(wiki: Wiki, cliente, e: Evento, g: Guion, fotos_articulo: l
     candidatas = [[x for x in dict.fromkeys(p + del_hecho + todas)
                    if (hoy or x not in modernas) and (web or x not in capturas)]
                   for p, hoy, web in zip(propias, presente, de_web)]
+    if videos and corrida.vencida():
+        avisar("    videos: sin buscar (pasó el tope de la búsqueda)")
     candidatos_video = (buscar_videos(g, e.anio, carpeta, buscador, avisar, tema=e.paginas[0])
-                        if videos else {})
+                        if videos and not corrida.vencida() else {})
+    corrida.con_tope(None)
     elegidos: dict = {}
     # Qué parte de cada foto es texto (OCR): una captura, un documento o una placa no pasan.
     ocr = {k: fraccion_texto(Path(f.ruta)) for k, f in enumerate(pool) if f.ruta}
@@ -1696,7 +1711,8 @@ class Propuesta:
 
 
 def proponer(wiki: Wiki, cliente, dia: date, carpeta: Path, avisar=log.info,
-             correccion: str = "", saltear: int = 0, hecho: str = "", videos: bool = False) -> Propuesta:
+             correccion: str = "", saltear: int = 0, hecho: str = "", videos: bool = False,
+             tope_fotos_s: float | None = None) -> Propuesta:
     """Elige el evento, escribe el guion (con qué mostrar en cada frase), busca y elige las fotos
     de cada frase. Si un evento no llega a ilustrar.MIN_FOTOS_DISTINTAS fotos distintas que
     sirvan, pasa al siguiente del ranking.
@@ -1706,7 +1722,11 @@ def proponer(wiki: Wiki, cliente, dia: date, carpeta: Path, avisar=log.info,
     Commons, frase por frase, así que eso pasa menos; cada evento que se intenta son 2 llamadas
     (guion y fotos), por eso el tope de MAX_GUIONES.
 
-    `hecho`: solo los eventos cuyo texto lo contiene ("penicilina"): para rehacer uno a mano."""
+    `hecho`: solo los eventos cuyo texto lo contiene ("penicilina"): para rehacer uno a mano.
+    `tope_fotos_s`: el tope de la búsqueda de fotos de cada hecho (efemerides.tope_fotos_min)."""
+    from . import fuentes_fotos
+
+    fuentes_fotos.nueva_corrida()   # las fuentes caídas se cuentan en toda la propuesta
     todos = wiki.eventos("es", dia) + wiki.eventos("en", dia)
     candidatos, motivos = [], {}
     for e in todos:
@@ -1740,7 +1760,8 @@ def proponer(wiki: Wiki, cliente, dia: date, carpeta: Path, avisar=log.info,
         guiones += 1
         try:
             g = escribir_guion(cliente, e, fuente, correccion)
-            pool, g = fotos_para_guion(wiki, cliente, e, g, fotos, carpeta, avisar, videos=videos)
+            pool, g = fotos_para_guion(wiki, cliente, e, g, fotos, carpeta, avisar, videos=videos,
+                                       tope_s=tope_fotos_s)
         except PocasFotos as pocas:
             # Menos de 4 fotos de época: al siguiente. Se guarda el que más tenga, por si ninguno llega.
             avisar(f"  {pocas}")

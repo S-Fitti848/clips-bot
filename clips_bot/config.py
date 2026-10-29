@@ -284,6 +284,8 @@ class EfemeridesCfg:
     # Si la de las 05:00 no sale, la escucha de Telegram reintenta a estas horas (AR) y recién
     # después del último avisa que no hay propuesta.
     reintentos: tuple = ("07:00", "10:00")
+    # Tope de la búsqueda de fotos (y videos) de cada hecho: pasado esto, sigue con lo que haya.
+    tope_fotos_min: float = 10
     musica: bool = True
     # 2 o 3 frases de acción con video libre (videos_libres.py). Apagado hasta que Santi vea la muestra.
     videos: bool = False

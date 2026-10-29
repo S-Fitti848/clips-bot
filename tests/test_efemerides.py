@@ -4,6 +4,7 @@ Sin red: Wikipedia y Gemini son fakes. Los casos salen de la prueba real del 202
 """
 
 import json
+import re
 from datetime import date
 from pathlib import Path
 
@@ -679,7 +680,9 @@ def test_si_falla_a_las_5_no_avisa_y_reintenta_a_las_7_y_a_las_10(diaria, monkey
     m._efe_reintento_tick(conn, tg, cfg(), ahora=_a_las(10, 0))
     assert len(llamadas) == 3 and llamadas[-1] == (["-100"], _a_las(10).date())
     chat, texto = enviados["mensajes"][-1]
-    assert chat == "-100" and "hoy no hay propuesta" in texto and "05:00, 07:00, 10:00" in texto
+    # el primer intento lleva la hora real (desde el 2026-10-29 la efeméride corre a las 06:00)
+    assert chat == "-100" and "hoy no hay propuesta" in texto
+    assert re.search(r"probé a las \d\d:\d\d, 07:00, 10:00", texto)
     assert db.get_valor(conn, m.EFE_REINTENTO) is None
     m._efe_reintento_tick(conn, tg, cfg(), ahora=_a_las(11, 0))
     assert len(llamadas) == 3                                       # no queda nada pendiente
