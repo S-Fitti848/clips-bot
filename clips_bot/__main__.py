@@ -853,7 +853,8 @@ def _pego_tick(conn, settings: Settings, ahora=None) -> None:
                                        kick=KickClient(pausa_s=settings.kick.pausa_s), avisar=log.info,
                                        hasta=time.monotonic() + cfg.vod_tope_min * 60,
                                        twitch=_twitch(), procesar_tramo=procesar_tramo,
-                                       carpeta_tramos=RAW_DIR)
+                                       carpeta_tramos=RAW_DIR, gemini=gemini, chat=Chat(),
+                                       cfg_subtitulos=settings.subtitulos, todos=todos)
     finally:
         db.soltar_turno(conn, db.RECURSO_PESADO, turno, VENCIMIENTO_PESADO_S)
 

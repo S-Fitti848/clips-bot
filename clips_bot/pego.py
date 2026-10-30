@@ -399,16 +399,23 @@ def sin_original(conn: sqlite3.Connection, streamers: list[Streamer], desde: dat
 def buscar_en_vod_del_dia(conn: sqlite3.Connection, streamers: list[Streamer], cfg, carpeta: Path,
                           kick=None, avisar=log.info, hasta: float | None = None,
                           reloj=time.monotonic, twitch=None, procesar_tramo=None,
-                          carpeta_tramos: Path | None = None) -> int:
+                          carpeta_tramos: Path | None = None, gemini=None, chat=None,
+                          cfg_subtitulos=None, todos: list[Streamer] | None = None) -> int:
     """Los `cfg.vod_por_dia` Shorts sin original con más vistas (de las últimas 24 h, sin probar en
     el VOD) se buscan en los VODs del streamer (Kick o Twitch) de los `dias_antes` días antes de
     publicado. Si aparece: si el stream es de un programa de terceros excluido, se anota y NO se
     procesa (el resumen lo dice); si es de uno en experimento (el 412), se procesa con "⚠️ 412";
     si no, el tramo se corta del VOD y `procesar_tramo(descarga, aviso, pego)` lo procesa como un
-    clip normal, con todos los filtros. Devuelve cuántos encontró."""
+    clip normal, con todos los filtros. Devuelve cuántos encontró.
+
+    Desde el 2026-10-29 la búsqueda es el embudo de `vod_embudo` (stream por hora, texto e imagen;
+    ventanas; audio solo de las ventanas; el VOD entero solo si sobra tiempo). Antes, los compilados
+    y los que nombran a otros (Gastón Edul, el Kun, otro streamer) no se buscan: se anotan con el
+    motivo y salen igual en el resumen de "🔥 pegó"."""
     import shutil
 
     from . import vod as vd
+    from . import vod_embudo as em
     from .candidates import AVISO_PROGRAMA, es_programa_de_terceros
     from .download import Descarga
     from .media import probe
@@ -420,6 +427,7 @@ def buscar_en_vod_del_dia(conn: sqlite3.Connection, streamers: list[Streamer], c
            WHERE clip_id IS NULL AND COALESCE(vod_intentado, 0) = 0 AND fecha >= ?
            ORDER BY vistas DESC""", (desde,)).fetchall()
     hallados = intentados = 0
+    todos = todos or streamers
     for sid, login, titulo, vistas, publicado, canal in filas:
         if intentados >= cfg.vod_por_dia or (hasta is not None and reloj() >= hasta):
             break
@@ -427,29 +435,48 @@ def buscar_en_vod_del_dia(conn: sqlite3.Connection, streamers: list[Streamer], c
         cliente = kick if s is not None and s.plataforma == "kick" else twitch
         if s is None or cliente is None or not nombra(s, titulo or "", ""):
             continue
+        # Lo que no puede estar en el VOD de este streamer no se busca (pero sale en el resumen).
+        propios = {em._norm(n) for n in nombres(s)}
+        otros = list(cfg.otros_nombres) + [n for o in todos if o.login != s.login for n in nombres(o)]
+        motivo = em.motivo_saltear(titulo or "", propios, otros)
+        if motivo:
+            avisar(f"pegó (VOD): «{(titulo or '')[:50]}» no lo busco: {motivo}")
+            conn.execute("UPDATE pegados SET vod_intentado = 1, vod_resultado = ? WHERE short_id = ?",
+                         (f"no lo busqué en el VOD: {motivo}", sid))
+            conn.commit()
+            continue
         intentados += 1
         conn.execute("UPDATE pegados SET vod_intentado = 1 WHERE short_id = ?", (sid,))
         conn.commit()
         tmp = carpeta / f"vod_{sid}"
         try:
-            audio, fecha = bajar_audio_short(ShortAjeno(sid, titulo or "", "", vistas, 0), tmp)
-            try:
-                dur_short = probe(audio).duracion or 30.0
-            except Exception:
-                dur_short = 30.0
-            cuando = (datetime.fromisoformat(publicado.replace("Z", "+00:00")) if publicado
-                      else fecha or datetime.now(timezone.utc))
+            pista = em.bajar_pista(sid, tmp)
+            if publicado:   # la de la búsqueda trae la hora; la de yt-dlp a veces solo el día
+                pista.publicado = datetime.fromisoformat(publicado.replace("Z", "+00:00"))
+            pista.publicado = pista.publicado or datetime.now(timezone.utc)
+            dur_short = pista.duracion or 30.0
+            if cfg_subtitulos is not None:
+                try:
+                    pista.transcripcion = em.transcribir_pista(pista, cfg_subtitulos)
+                except Exception as e:   # sin transcripción el embudo sigue con la hora y la imagen
+                    avisar(f"pegó (VOD): {sid}: sin transcripción ({str(e)[:80]})")
+            cuando = pista.publicado
             buscar = vd.vods_kick if s.plataforma == "kick" else vd.vods_twitch
-            vods = buscar(cliente, s.login, cuando - timedelta(days=cfg.dias_antes), cuando)
-            mejor = vd.buscar_en_vods(audio, vods, carpeta / "huellas", cfg.umbral, avisar, hasta, reloj)
+            vods = buscar(cliente, s.login, cuando - timedelta(days=cfg.vod_dias_antes), cuando)
+            clips = originales(s, cuando, cfg.vod_dias_antes, max(300, cfg.max_originales),
+                               twitch=twitch, kick=kick)
+            avisar(f"pegó (VOD): «{(titulo or '')[:50]}»: {len(vods)} VODs, {len(clips)} clips")
+            h = em.buscar(pista, vods, clips, cfg.umbral, tmp, {em._norm(n) for n in nombres(s)},
+                          gemini=gemini, chat=chat, cache=carpeta / "huellas", avisar=avisar,
+                          hasta=hasta, reloj=reloj, respaldo=cfg.vod_respaldo)
         except Exception as e:
             avisar(f"pegó (VOD): {sid}: {str(e)[:150]}")
             continue
         finally:
             shutil.rmtree(tmp, ignore_errors=True)
-        if not mejor:
+        if not h:
             continue
-        v, seg, valor = mejor
+        v, seg, valor = h.vod, h.segundo, h.valor
         hallados += 1
         # ¿Stream de un programa de terceros? Excluido: no se procesa; en experimento: con aviso.
         bloqueado = next((p for p in s.palabras_programa if es_programa_de_terceros(v.titulo, (p,))), "")
@@ -531,6 +558,9 @@ def texto_sin_original(filas: list[dict]) -> str:
                 donde += f" {html.escape(res[0].upper() + res[1:])}."
         else:
             donde = "No encontré el original."
+            if f.get("vod_resultado"):   # ej. "no lo busqué en el VOD: compilado"
+                res = f["vod_resultado"]
+                donde += f" {html.escape(res[0].upper() + res[1:])}."
         lineas.append(f"• <a href=\"{f['url']}\">{html.escape(f['titulo'][:70])}</a> — "
                       f"{html.escape(f['canal'])}, {vistas} vistas ({html.escape(f['streamer'])}"
                       f"{cuantos}). {donde}")

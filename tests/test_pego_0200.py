@@ -133,11 +133,15 @@ def test_en_el_vod_se_prueban_solo_los_2_con_mas_vistas_y_se_avisa_donde(tmp_pat
     for i, vistas in enumerate((900000, 500000, 300000)):
         pego.guardar(conn, pego.ShortAjeno(f"s{i}", f"DAVO {i}", "Otro", vistas, 30,
                                            AHORA.isoformat()), "davooxeneize", None, 40)
+    from clips_bot import vod_embudo as em
+
     probados = []
-    monkeypatch.setattr(pego, "bajar_audio_short", lambda short, d: probados.append(short.id) or (d / "a", AHORA))
+    monkeypatch.setattr(em, "bajar_pista", lambda sid, d: probados.append(sid) or em.Pista(
+        sid, "t", "", AHORA, 30.0, d / "a"))
+    monkeypatch.setattr(pego, "originales", lambda *a, **k: [])
     monkeypatch.setattr(vd, "vods_kick", lambda k, slug, a, b: ["vod"])
-    monkeypatch.setattr(vd, "buscar_en_vods", lambda *a, **k: (
-        vd.Vod("1", "kick", "u", "https://kick.com/davooxeneize/videos/x", AHORA, 3600), 3725.0, 0.8)
+    monkeypatch.setattr(em, "buscar", lambda *a, **k: em.Hallazgo(
+        vd.Vod("1", "kick", "u", "https://kick.com/davooxeneize/videos/x", AHORA, 3600), 3725.0, 0.8, "x")
         if probados[-1] == "s0" else None)
     n = pego.buscar_en_vod_del_dia(conn, [davo], Pego(), tmp_path, kick=object())
     assert probados == ["s0", "s1"] and n == 1
@@ -182,12 +186,15 @@ def test_los_datos_de_shorts_ajenos_se_borran_a_los_30_dias(tmp_path):
 
 def _vod_hallado(monkeypatch, titulo_stream):
     from clips_bot import vod as vd
+    from clips_bot import vod_embudo as em
 
-    monkeypatch.setattr(pego, "bajar_audio_short", lambda short, d: (d / "a", AHORA))
+    monkeypatch.setattr(em, "bajar_pista", lambda sid, d: em.Pista(sid, "t", "", AHORA, 30.0, d / "a"))
+    monkeypatch.setattr(pego, "originales", lambda *a, **k: [])
     monkeypatch.setattr(vd, "vods_kick", lambda k, slug, a, b: ["vod"])
     monkeypatch.setattr(vd, "vods_twitch", lambda t, login, a, b: ["vod"])
-    monkeypatch.setattr(vd, "buscar_en_vods", lambda *a, **k: (
-        vd.Vod("7", "kick", "u", "https://kick.com/davooxeneize/videos/x", AHORA, 3600, titulo_stream), 600.0, 0.8))
+    monkeypatch.setattr(em, "buscar", lambda *a, **k: em.Hallazgo(
+        vd.Vod("7", "kick", "u", "https://kick.com/davooxeneize/videos/x", AHORA, 3600, titulo_stream),
+        600.0, 0.8, "hora de publicación"))
     monkeypatch.setattr(vd, "cortar", lambda v, inicio, dur, destino: destino)
 
 

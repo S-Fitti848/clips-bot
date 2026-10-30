@@ -340,6 +340,12 @@ class Pego:
     vod: bool = False
     vod_por_dia: int = 2
     vod_tope_min: int = 25
+    # El embudo (vod_embudo.py, 2026-10-29): VODs desde estos días antes de publicado el Short; el
+    # VOD entero como respaldo solo si sobra tiempo del tope; y a quiénes nombra un Short que NO se
+    # busca en el VOD del streamer (además de los otros streamers cargados).
+    vod_dias_antes: int = 7
+    vod_respaldo: bool = True
+    otros_nombres: tuple = ("Gastón Edul", "Edul", "Kun Agüero", "el Kun", "Agüero")
 
 
 @dataclass(frozen=True)

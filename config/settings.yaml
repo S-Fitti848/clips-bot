@@ -497,3 +497,12 @@ pego:
   vod: true
   vod_por_dia: 2
   vod_tope_min: 75
+  # Embudo (vod_embudo.py, 2026-10-29): VODs desde 7 días antes; puntaje por en vivo a la hora de
+  # publicado (los 3 originales encontrados se publicaron 8-17 min después del momento, en vivo),
+  # texto e imagen (Gemini); audio solo de las ventanas; el VOD entero solo si sobra tiempo del tope.
+  vod_dias_antes: 7
+  vod_respaldo: true
+  # Un Short que nombra a alguno de estos (o a otro streamer cargado) además del nuestro, o un
+  # compilado (TOP…, mejores momentos), NO se busca en el VOD: su original no está ahí. Sale igual en
+  # el resumen de "🔥 pegó" con el motivo.
+  otros_nombres: ["Gastón Edul", "Edul", "Kun Agüero", "el Kun", "Agüero"]

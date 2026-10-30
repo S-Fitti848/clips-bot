@@ -49,6 +49,8 @@ class Vod:
     duracion_s: float
     titulo: str = ""
     maestra: str = ""    # Kick: la playlist con todas las variantes (para cortar en buena calidad)
+    categoria: str = ""  # Kick: la del stream (una sola: Kick no guarda los cambios de categoría)
+    miniatura: str = ""  # URL de la miniatura del VOD (pista visual del embudo, vod_embudo.py)
 
 
 def vods_kick(kick, slug: str, desde: datetime, hasta: datetime) -> list[Vod]:
@@ -63,9 +65,12 @@ def vods_kick(kick, slug: str, desde: datetime, hasta: datetime) -> list[Vod]:
             continue
         base = str(v["source"]).rsplit("/", 1)[0]
         uuid = (v.get("video") or {}).get("uuid") or v.get("id")
+        cats = v.get("categories") or []
         out.append(Vod(str(v.get("id")), "kick", f"{base}/{VARIANTE}/playlist.m3u8",
                        f"https://kick.com/{slug}/videos/{uuid}", inicio, dur,
-                       str(v.get("session_title") or ""), str(v["source"])))
+                       str(v.get("session_title") or ""), str(v["source"]),
+                       categoria=str((cats[0] or {}).get("name") or "") if cats else "",
+                       miniatura=str((v.get("thumbnail") or {}).get("src") or "")))
     return sorted(out, key=lambda x: x.inicio, reverse=True)
 
 
@@ -91,7 +96,9 @@ def vods_twitch(tw, login: str, desde: datetime, hasta: datetime) -> list[Vod]:
         if inicio > hasta or inicio + timedelta(seconds=dur) < desde:
             continue
         out.append(Vod(str(v["id"]), "twitch", "", v.get("url") or f"https://www.twitch.tv/videos/{v['id']}",
-                       inicio, dur, str(v.get("title") or "")))
+                       inicio, dur, str(v.get("title") or ""),
+                       miniatura=str(v.get("thumbnail_url") or "").replace("%{width}", "640")
+                       .replace("%{height}", "360")))
     return sorted(out, key=lambda x: x.inicio, reverse=True)
 
 
