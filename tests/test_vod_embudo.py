@@ -101,3 +101,36 @@ def test_el_vod_entero_solo_si_sobra_tiempo(monkeypatch, tmp_path):
     con_tiempo = em.buscar(_pista(pub), [_vod()], [], 0.55, tmp_path, set(), cache=tmp_path,
                            hasta=100.0, reloj=lambda: 20.0)
     assert con_tiempo.como == "VOD entero (respaldo)" and llamados == [1]
+
+
+def test_la_pista_baja_video_y_audio_y_usa_el_archivo_unido(tmp_path, monkeypatch):
+    """2026-10-30: el formato 18 ya no venía y bajaba solo el audio: sin cuadros para Gemini."""
+    import sys
+    import types
+
+    pedidos = {}
+
+    class YDL:
+        def __init__(self, opts):
+            pedidos.update(opts)
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def extract_info(self, url, download=True):
+            unido = tmp_path / "short_s.mp4"
+            unido.write_bytes(b"x")
+            return {"title": "t", "duration": 30, "vcodec": "avc1", "timestamp": 1761788000,
+                    "requested_downloads": [{"filepath": str(unido)}]}
+
+        def prepare_filename(self, info):
+            return str(tmp_path / "short_s.webm")
+
+    monkeypatch.setitem(sys.modules, "yt_dlp", types.SimpleNamespace(YoutubeDL=YDL))
+    monkeypatch.setattr(em.subprocess, "run", lambda *a, **k: types.SimpleNamespace(returncode=1))
+    p = em.bajar_pista("s", tmp_path)
+    assert "bv*" in pedidos["format"] and "+ba" in pedidos["format"]
+    assert p.audio.name == "short_s.mp4"

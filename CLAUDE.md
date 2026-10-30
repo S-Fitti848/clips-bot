@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-10-30 | **Versión:** v0.71.0 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 de clips + timer 06:00 de la efeméride + escucha de Telegram 24/7)
+**Snapshot:** 2026-10-30 | **Versión:** v0.71.1 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 de clips + timer 06:00 de la efeméride + escucha de Telegram 24/7)
 
 > **SI ESTÁS EMPEZANDO UNA SESIÓN NUEVA, LEÉ §10.** Ahí está qué está hecho, qué quedó a medias,
 > qué falta, y las trampas que ya nos mordieron.
@@ -805,6 +805,10 @@ Problemas abiertos:
 
 ## 9. CHANGELOG
 
+- v0.71.1 (2026-10-30) — **Primera subida real con 📤** (Santi, 09:29 AR): `clip_01M5ZV59PA5XWE4NS6HTHM4V1F`
+  → `5WJiIU4kDgI` en Rots, privado con `publishAt` 13:00 AR, procesado y sin restricciones (la Pi le
+  avisa a Santi a las 13:05 si pasó a público). La pista del embudo de "pegó" baja video + audio (el
+  formato 18 ya no venía y la imagen nunca se puntuaba; ver v0.69.0). 781 tests OK.
 - v0.71.0 (2026-10-30) — **Subida a YouTube prendida, tests aislados y tope de tiempo** (pedido de
   Santi). (1) `youtube_upload_enabled: true` (la prueba pública de v0.70.0: público, procesado y sin
   restricciones a los 0, 10 y 60 min). Al prenderla, la suite se colgó en el 27 %. (2) `conftest.py`:
@@ -849,7 +853,17 @@ Problemas abiertos:
   ventanas; el VOD entero solo si sobra tiempo del tope (`pego.vod_respaldo`). Antes de buscar, los
   compilados (título que empieza con TOP, mejores momentos) y los que nombran a otros
   (`pego.otros_nombres` + los otros streamers cargados; los hashtags no cuentan) no se buscan y salen
-  en el resumen con el motivo. Medición con 6 Shorts reales de Davo: en curso.
+  en el resumen con el motivo. **Medición en la Pi (6 Shorts reales de Davo, sin el respaldo):** los
+  3 con original conocido → 3/3 encontrados en el minuto correcto (76,8 / 105,2 / 107,0; 0,97-0,99),
+  los 3 por la ventana de la hora, en 226, 264 y 115 s (pista 2-4 s, Whisper 34-63 s, listar VODs y
+  clips 25-27 s, ventana de audio 37-201 s); el sistema anterior tardó 70 min (QfN, 4 VODs enteros)
+  y 29 min (R4Wx) según los logs (el de 3LhkA ya rotó). Los otros 3 (PZ4rdImHudw, pBQojLfdMsk,
+  q5UJArZYOs8) → 0/3 en 76-111 s: ninguno se publicó con Davo en vivo, ningún clip de la comunidad
+  se parecía y Kick no tiene chat grabado, así que no hubo ventanas; el sistema anterior, con los
+  VODs enteros de 3 días, tampoco los había encontrado. Encontrado al medir: YouTube ya no da el
+  formato 18 y la pista bajaba solo el audio (sin cuadros, la imagen nunca se puntuó); ahora video
+  ≤ 480p + audio unidos (`bv*[height<=480]+ba`): probado con R4Wx, Gemini dio 10/10 al VOD correcto
+  y 5/10 al otro.
 - v0.68.1 (2026-10-29) — **Telegram: los cortes de conexión se reintentan solos** (pedido de Santi).
   `TelegramClient._llamar` (todo lo que manda el bot) y la bajada de `get_file`: ante
   `ConnectionError` (RemoteDisconnected, "Connection aborted") o timeout, 2 reintentos esperando 3 y

@@ -103,11 +103,17 @@ def bajar_pista(short_id: str, carpeta: Path) -> Pista:
 
     carpeta.mkdir(parents=True, exist_ok=True)
     url = f"https://www.youtube.com/shorts/{short_id}"
+    # El formato 18 (360p con audio) ya no lo da YouTube para muchos Shorts: en la medición del
+    # 2026-10-30 bajaba solo el audio y la comparación de imágenes quedaba sin cuadros. Video ≤ 480p
+    # y audio por separado, unidos por ffmpeg.
     with YoutubeDL({"quiet": True, "no_warnings": True, "noprogress": True,
-                    "format": "18/best[height<=480][acodec!=none][vcodec!=none]/bestaudio/best",
+                    "format": "bv*[height<=480]+ba/b[height<=480]/18/b",
+                    "merge_output_format": "mp4", "socket_timeout": 30,
                     "outtmpl": str(carpeta / f"short_{short_id}.%(ext)s")}) as y:
         info = y.extract_info(url, download=True)
-        ruta = Path(y.prepare_filename(info))
+        bajados = info.get("requested_downloads") or []
+        ruta = Path(bajados[0].get("filepath") if bajados and bajados[0].get("filepath")
+                    else y.prepare_filename(info))
     publicado = None
     if info.get("timestamp"):
         publicado = datetime.fromtimestamp(int(info["timestamp"]), tz=timezone.utc)
