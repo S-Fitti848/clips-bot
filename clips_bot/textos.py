@@ -37,7 +37,7 @@ SCHEMA = {
     "propertyOrdering": list(CAMPOS),
 }
 
-SISTEMA = """Escribís los textos de YouTube Shorts hechos con clips de streamers de Twitch.
+SISTEMA = """Escribís los textos de YouTube Shorts hechos con clips de streamers de Twitch y Kick.
 Reglas:
 - Título: gancho basado en lo que REALMENTE pasa en el clip. Nada de clickbait falso ni de inventar
   hechos que no están en la transcripción. Sin hashtags. Como mucho un emoji.
@@ -154,12 +154,16 @@ def nombres_sin_respaldo(titulo: str, contexto: str) -> list[str]:
     return [n for n in nombres_propios(titulo) if _sin_tildes(n).lower() not in respaldo]
 
 
-def credito(canal: str, login: str) -> str:
+DOMINIO = {"kick": "kick.com", "twitch": "twitch.tv"}
+
+
+def credito(canal: str, login: str, plataforma: str = "twitch") -> str:
     if not login:
         # Un video propio (/editar, /narrar) no tiene streamer: antes salía "twitch.tv/" pelado.
         # Queda un hueco a la vista para completar, o `cc: <link>` lo reemplaza por el crédito CC.
         return f"Video original: {canal or '(completar autor)'} – (completar link)"
-    return f"Clip de {canal} — twitch.tv/{login}"
+    # 2026-10-29: los clips de Kick salían con "twitch.tv/davooxeneize".
+    return f"Clip de {canal} — {DOMINIO.get(plataforma, 'twitch.tv')}/{login}"
 
 
 def credito_cc(canal: str, link: str) -> str:
@@ -253,7 +257,7 @@ def _datos_personales(texto: str, campo: str, errores: list[str]) -> None:
 
 
 def parsear(texto: str, cfg: Textos, canal: str, login: str,
-            contexto: str = "") -> tuple[TextosClip | None, list[str]]:
+            contexto: str = "", plataforma: str = "twitch") -> tuple[TextosClip | None, list[str]]:
     try:
         data = json.loads(texto)
     except json.JSONDecodeError as e:
@@ -265,7 +269,7 @@ def parsear(texto: str, cfg: Textos, canal: str, login: str,
     errores = validar(data, cfg, contexto)   # sin el contexto, el chequeo de nombres no corría
     if errores:
         return None, errores
-    cred = credito(canal, login)
+    cred = credito(canal, login, plataforma)
     return (
         TextosClip(
             titulo=data["titulo"].strip(),
@@ -322,16 +326,19 @@ def texto_gusto(gusto: dict[str, list[dict]] | None) -> str:
 
 
 def armar_prompt(canal: str, categoria: str, titulo_twitch: str, duracion: float, transcripcion: str,
-                 cfg: Textos, fecha: str | None = None, gusto: dict | None = None) -> str:
+                 cfg: Textos, fecha: str | None = None, gusto: dict | None = None,
+                 plataforma: str = "twitch") -> str:
     # Lo original del clip va TAPADO (pantalla.tapar_datos): si el título que le puso la comunidad
     # o lo que se dice trae un teléfono, un mail o una dirección, Gemini no lo ve y no lo copia.
     trans = tapar_datos(transcripcion.strip()) or "(sin habla)"
     titulo_twitch = tapar_datos(titulo_twitch)
     if len(trans) > MAX_TRANSCRIPCION:
         trans = trans[:MAX_TRANSCRIPCION] + "…"
+    nombre_plataforma = {"kick": "Kick", "twitch": "Twitch"}.get(plataforma, "Twitch")
     return f"""Streamer: {canal}
+Plataforma donde transmite: {nombre_plataforma} (si la nombrás, que sea esta)
 Juego o categoría: {categoria or "desconocida"}
-Título que le puso la comunidad al clip en Twitch: {titulo_twitch or "(sin título)"}
+Título que le puso la comunidad al clip en {nombre_plataforma}: {titulo_twitch or "(sin título)"}
 Duración: {duracion:.0f} s
 Fecha del clip: {fecha or "desconocida"}
 Transcripción:
@@ -344,11 +351,13 @@ Generá: titulo (máximo {cfg.max_titulo} caracteres), descripcion, hashtags (en
 
 def generar(cliente: GeminiClient, cfg: Textos, *, canal: str, login: str, categoria: str,
             titulo_twitch: str, duracion: float, transcripcion: str, fecha: str | None = None,
-            imagenes: list[bytes] | None = None, gusto: dict | None = None) -> TextosClip:
+            imagenes: list[bytes] | None = None, gusto: dict | None = None,
+            plataforma: str = "twitch") -> TextosClip:
     """`imagenes`: frames del clip, en la misma llamada. Sin ellas el puntaje castiga al humor
     visual: medido sobre 30 clips, los que solo se entienden con la imagen puntuaban 4,0 de mediana
     contra 5,0 el resto, y tenían 1,60 palabras/s contra 2,45."""
-    prompt = armar_prompt(canal, categoria, titulo_twitch, duracion, transcripcion, cfg, fecha, gusto)
+    prompt = armar_prompt(canal, categoria, titulo_twitch, duracion, transcripcion, cfg, fecha, gusto,
+                          plataforma)
     # Contra esto se chequean los nombres del título. El nombre del canal entra a propósito: el
     # streamer puede ir en el título aunque no se nombre a sí mismo hablando.
     contexto = " ".join([transcripcion, categoria, titulo_twitch, canal, login])
@@ -358,7 +367,7 @@ def generar(cliente: GeminiClient, cfg: Textos, *, canal: str, login: str, categ
         if errores:
             p += "\n\nTu respuesta anterior no era válida. Corregí esto:\n- " + "\n- ".join(errores)
         crudo = cliente.json(SISTEMA, p, SCHEMA, imagenes=imagenes)
-        textos, errores = parsear(crudo, cfg, canal, login, contexto)
+        textos, errores = parsear(crudo, cfg, canal, login, contexto, plataforma)
         if textos:
             return textos
     raise TextosError("Gemini no devolvió textos válidos: " + "; ".join(errores))

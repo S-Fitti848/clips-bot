@@ -85,6 +85,27 @@ def excluir_programa(conn: sqlite3.Connection, programa: str) -> bool:
     return True
 
 
+# Partido en pantalla como experimento (2026-10-29, Santi): ya no se descarta, va con aviso y nunca se
+# publica solo. Un /reclamo sobre un clip con partido los vuelve a descartar a TODOS (marca en la DB).
+PARTIDOS_EXCLUIDOS = "partidos_excluidos"
+
+
+def partidos_excluidos(conn: sqlite3.Connection) -> bool:
+    from . import db
+
+    return bool(db.get_valor(conn, PARTIDOS_EXCLUIDOS))
+
+
+def excluir_partidos(conn: sqlite3.Connection, clip_id: str) -> bool:
+    """Vuelve a descartar todo clip con partido en pantalla. True si no estaba excluido."""
+    from . import db
+
+    if partidos_excluidos(conn):
+        return False
+    db.set_valor(conn, PARTIDOS_EXCLUIDOS, clip_id or "1")
+    return True
+
+
 def aplicar_experimento(s: Streamer, excluidos: set[str]) -> Streamer:
     """Las marcas en experimento (y no re-excluidas) pasan de descartar a avisar."""
     from dataclasses import replace

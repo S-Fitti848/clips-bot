@@ -31,6 +31,7 @@ from .render import renderizar
 log = logging.getLogger(__name__)
 
 RAW_DIR = OUTPUT_DIR / "raw"
+AVISO_PARTIDO = "⚠️ Partido en pantalla: revisá las Verificaciones antes de publicar"
 READY_DIR = OUTPUT_DIR / "ready"
 WORK_DIR = OUTPUT_DIR / "work"
 DEBUG_DIR = OUTPUT_DIR / "debug"
@@ -55,6 +56,9 @@ class Resultado:
     pego: dict | None = None  # un Short de otro canal con este momento pegó: {vistas, canal}
     chat_pico: float = 0.0  # chat en el momento ÷ lo normal del stream (chat.py)
     marcador_deportivo: dict | None = None
+    # Partido en pantalla, en experimento (2026-10-29): no se descarta, lleva AVISO_PARTIDO y nunca se
+    # publica solo (se sube privado sin fecha). Un /reclamo sobre uno vuelve a descartarlos a todos.
+    partido_en_pantalla: bool = False
     pantalla: dict | None = None  # OCR: datos personales / pantalla de pago
     duracion_s: float = 0.0
     silencio: float = 0.0
@@ -182,8 +186,20 @@ def procesar(url: str, cfg: Settings, streamers: list[Streamer], forzar: bool = 
         res.marcador_deportivo = deporte.a_dict()  # se guarda SIEMPRE, dispare o no: sirve para calibrar
         avisar(f"  deporte: césped máx {deporte.cesped_max:.0%} en {deporte.frames_con_cesped} frames, "
                f"marcador {'sí' if deporte.marcador.hay else 'no'}")
-        if deporte.hay and descartar(f"transmisión deportiva: {deporte.motivo}", "transmisión deportiva"):
-            return _cerrar(res)
+        if deporte.hay:
+            from .registro import partidos_excluidos
+
+            conn = db.connect(DB_PATH)
+            try:
+                excluidos = partidos_excluidos(conn)
+            finally:
+                conn.close()
+            if excluidos and descartar(f"transmisión deportiva: {deporte.motivo}", "transmisión deportiva"):
+                return _cerrar(res)
+            if not excluidos:
+                res.partido_en_pantalla = True
+                res.aviso = " · ".join(x for x in (AVISO_PARTIDO, res.aviso) if x)
+                avisar(f"  partido en pantalla ({deporte.motivo}): sigue, con aviso (experimento)")
 
     # Datos personales en pantalla (OCR). Va antes de Whisper: es más barato (3-9 s) y es un
     # descarte duro. Se guarda SIEMPRE, dispare o no, igual que el marcador deportivo.
@@ -428,7 +444,7 @@ def generar_textos(gemini: GeminiClient, cfg: Settings, meta: dict,
         gemini, cfg.textos, canal=meta["canal"] or meta["streamer"], login=meta["streamer"],
         categoria=meta["categoria"], titulo_twitch=meta["titulo_twitch"], duracion=meta["duracion_s"],
         transcripcion=meta["transcripcion"], fecha=(meta.get("creado") or "")[:10] or None,
-        imagenes=imagenes, gusto=_gusto(cfg),
+        imagenes=imagenes, gusto=_gusto(cfg), plataforma=meta.get("plataforma") or "twitch",
     )
 
 

@@ -181,8 +181,9 @@ class Cliente:
         return {"id": items[0]["id"], "titulo": items[0]["snippet"]["title"]}
 
     def subir(self, video: Path, titulo: str, descripcion: str, tags: list[str],
-              publicar: datetime, categoria: str = "24") -> str:
+              publicar: datetime | None, categoria: str = "24") -> str:
         """Sube en PRIVADO con `publishAt`: YouTube lo hace público solo a esa hora. Devuelve el id.
+        `publicar` None = privado SIN fecha: no se publica nunca solo (clips con partido en pantalla).
         Upload reanudable (dos pasos): el mp4 entero en un PUT; son 20-40 MB."""
         cuerpo = metadatos(titulo, descripcion, tags, publicar, categoria)
         tam = video.stat().st_size
@@ -314,7 +315,7 @@ def _json_o_texto(r):
         return r.text[:2000]
 
 
-def metadatos(titulo: str, descripcion: str, tags: list[str], publicar: datetime,
+def metadatos(titulo: str, descripcion: str, tags: list[str], publicar: datetime | None,
               categoria: str = "24") -> dict:
     """El cuerpo de videos.insert, con los límites de YouTube aplicados. `publishAt` exige
     privacyStatus private; los hashtags van en la descripción y, sin el #, como tags."""
@@ -324,13 +325,14 @@ def metadatos(titulo: str, descripcion: str, tags: list[str], publicar: datetime
         if t and total + len(t) + 1 <= MAX_TAGS:
             limpios.append(t)
             total += len(t) + 1
+    status = {"privacyStatus": "private", "selfDeclaredMadeForKids": False}
+    if publicar is not None:
+        status["publishAt"] = publicar.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     return {
         "snippet": {"title": titulo[:MAX_TITULO], "description": descripcion[:MAX_DESCRIPCION],
                     "tags": limpios, "categoryId": categoria, "defaultLanguage": "es",
                     "defaultAudioLanguage": "es"},
-        "status": {"privacyStatus": "private",
-                   "publishAt": publicar.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-                   "selfDeclaredMadeForKids": False},
+        "status": status,
     }
 
 

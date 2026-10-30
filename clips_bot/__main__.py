@@ -3614,8 +3614,10 @@ def _programar_subida(conn, settings: Settings, meta: dict, canal: str, hora: st
     if not settings.youtube_upload_enabled and not demo:
         return ""
     clip_id = meta["clip_id"]
-    if db.subidas(conn, ("programada",), clip_id=clip_id):
+    if db.subidas(conn, ("programada", "privada", "publicada"), clip_id=clip_id):
         return ""
+    if meta.get("partido_en_pantalla") and not demo:
+        return _subir_privado_a_revisar(conn, meta, canal)
     ocupados = {s["publish_at"] for s in db.subidas(conn, ("programada",)) if s["canal"] == canal}
     try:
         hoy = (ahora or datetime.now(timezone.utc)).astimezone(AR)
@@ -3656,6 +3658,26 @@ def _programar_subida(conn, settings: Settings, meta: dict, canal: str, hora: st
              f"scheduled (publishAt) for {cuando:%Y-%m-%d %H:%M} Argentina time ({iso}). "
              f"Video id: <code>{html.escape(video_id)}</code> — https://studio.youtube.com/video/{video_id}/edit\n"
              f"Use <code>/subidas</code> to see it and cancel the schedule.")
+
+
+def _subir_privado_a_revisar(conn, meta: dict, canal: str) -> str:
+    """Un clip con partido en pantalla (experimento 2026-10-29) NUNCA se publica solo: se sube en
+    PRIVADO y SIN fecha, y el aviso pide revisar las Verificaciones en Studio y publicarlo a mano."""
+    from . import youtube
+
+    clip_id, t = meta["clip_id"], meta["textos"]
+    try:
+        cliente = youtube.Cliente(canal)
+        video_id = cliente.subir(Path(meta["salida"]), t["titulo"], t["descripcion"],
+                                 t.get("hashtags") or [], None, CATEGORIA.get(canal, "24"))
+    except youtube.YouTubeError as e:
+        db.crear_subida(conn, clip_id, canal, "error", error=str(e)[:500])
+        return f"⚠️ No pude subirlo a YouTube ({html.escape(youtube.CANALES[canal])}): {html.escape(str(e)[:300])}"
+    db.crear_subida(conn, clip_id, canal, "privada", video_id=video_id,
+                    respuesta=json.dumps(getattr(cliente, "respuesta_subida", {}), ensure_ascii=False))
+    return (f"🔒 Subido en <b>PRIVADO y sin fecha</b> a {html.escape(youtube.CANALES[canal])}: tiene "
+            f"<b>partido en pantalla</b>, así que no se publica solo. Revisá las Verificaciones en Studio "
+            f"y, si sale limpio, publicalo a mano: https://studio.youtube.com/video/{video_id}/edit")
 
 
 def _cancelar_youtube(conn, s: dict) -> None:
@@ -3854,6 +3876,8 @@ def _estado_subida(conn, clip_id: str, meta: dict) -> str | None:
     """El estado para la fila de botones: None sin subida, "" sin decidir, "no", o "HH:MM"."""
     if _canal_de(clip_id, meta) is None:
         return None
+    if db.subidas(conn, ("privada",), clip_id=clip_id):
+        return "privado"
     prog = db.subidas(conn, ("programada",), clip_id=clip_id)
     if prog and prog[-1]["publish_at"]:
         cuando = datetime.fromisoformat(prog[-1]["publish_at"].replace("Z", "+00:00")).astimezone(AR)
@@ -3959,6 +3983,11 @@ def _subir_callback(conn, tg: TelegramClient, cb: dict, settings: Settings, d: d
 
     if canal is None or not meta:
         return tg.answer_callback(cb["callback_id"], L("Ese video ya no está.", "That video is gone."))
+    if d["accion"] == "i" and db.subidas(conn, ("privada",), clip_id=clip_id):
+        return tg.answer_callback(cb["callback_id"], L(
+            "Está en PRIVADO y sin fecha (partido en pantalla): revisá las Verificaciones en Studio y "
+            "publicalo a mano.", "It's PRIVATE with no date (a match on screen): check Studio and "
+            "publish it by hand."), alerta=True)
     if d["accion"] == "i":
         return tg.answer_callback(cb["callback_id"], L("Ya está programado. ❌ Cancelar para sacarlo.",
                                                        "Already scheduled. ❌ Cancel to unschedule it."))
@@ -4899,6 +4928,15 @@ def _reclamo(conn, args: list[str]) -> str:
     from . import registro
     from .candidates import AVISO_PROGRAMA
 
+    # Un clip con partido en pantalla (experimento 2026-10-29): se vuelven a descartar TODOS los
+    # clips con partido; el streamer sigue en las corridas, como con el 412.
+    if meta.get("partido_en_pantalla"):
+        nuevo = registro.excluir_partidos(conn, clip_id)
+        return (("Anotado. <b>Los clips con partido en pantalla vuelven a quedar EXCLUIDOS</b>: se "
+                 "descartan otra vez. " if nuevo else
+                 "Los partidos ya estaban excluidos. Anoté el reclamo. ")
+                + f"{html.escape(streamer)} sigue en las corridas.\n"
+                  "Acordate de sacar el video de YouTube si el reclamo bloquea el contenido.")
     programa = next((p for p in registro.PROGRAMAS_EXPERIMENTO
                      if AVISO_PROGRAMA.format(p) in (meta.get("aviso") or "")), "")
     if programa:

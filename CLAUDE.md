@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-10-29 | **Versión:** v0.68.1 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 de clips + timer 06:00 de la efeméride + escucha de Telegram 24/7)
+**Snapshot:** 2026-10-29 | **Versión:** v0.70.0 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 de clips + timer 06:00 de la efeméride + escucha de Telegram 24/7)
 
 > **SI ESTÁS EMPEZANDO UNA SESIÓN NUEVA, LEÉ §10.** Ahí está qué está hecho, qué quedó a medias,
 > qué falta, y las trampas que ya nos mordieron.
@@ -188,9 +188,14 @@ y por eso la unidad va con `Nice=10` y prioridad de CPU baja. NO paralelizar.
    o con palabra de contexto (whatsapp, tel…), tarjetas con contexto y direcciones con calle y
    número. En texto escrito las palabras sueltas del OCR ("calle", "piso") NO cuentan.
 3. Descargar los mejores candidatos con yt-dlp, solo hasta llenar el cupo de cada grupo.
-4. Transmisión deportiva (streamers con `detectar_marcador`) → descarta con DOS señales: marcador de
+4. Transmisión deportiva (streamers con `detectar_marcador`) → se detecta con DOS señales: marcador de
    TV en una esquina de arriba, o fracción de verde-césped alta en ≥ 2 de 12 frames (una cancha llena
-   la pantalla). Después, filtros de audio: casi todo silencio, o muy pocas palabras por segundo.
+   la pantalla). **Desde 2026-10-29 es un EXPERIMENTO (pedido de Santi): no se descarta**; el clip
+   lleva `partido_en_pantalla` y el aviso "⚠️ Partido en pantalla: revisá las Verificaciones antes de
+   publicar", y con la subida prendida se sube en PRIVADO y SIN fecha (nunca se publica solo; el
+   botón queda "🔒 En privado: revisá Studio"). Un /reclamo sobre un clip con partido vuelve a
+   descartarlos a todos (`bot_estado.partidos_excluidos`); el streamer sigue en las corridas.
+   Después, filtros de audio: casi todo silencio, o muy pocas palabras por segundo.
 4b. **Datos en pantalla (OCR, sin LLM).** tesseract sobre 8 frames; descarta con motivo
    `datos_en_pantalla` si aparece un mail, una palabra de pago (checkout, subtotal, CVV…) o de
    dirección (shipping, código postal…). Los NÚMEROS (teléfono, tarjeta) solo cuentan si en el mismo
@@ -800,6 +805,32 @@ Problemas abiertos:
 
 ## 9. CHANGELOG
 
+- v0.70.0 (2026-10-29) — **Partido en pantalla como experimento** (pedido de Santi; §3 paso 4): ya no
+  se descarta, avisa en el mensaje (`process.AVISO_PARTIDO`), con la subida prendida va PRIVADO y SIN
+  fecha (`youtube.metadatos(publicar=None)`, `_subir_privado_a_revisar`, estado `privada` en
+  `subidas`) con el link a Studio para revisar las Verificaciones, y un /reclamo sobre uno vuelve a
+  descartar todos (`registro.excluir_partidos`) sin excluir al streamer. **Crédito de Kick:** los
+  clips de Kick salían con "twitch.tv/davooxeneize" y Gemini escribía "reacciona en Twitch" (visto en
+  el video de la prueba de subida pública): `textos.credito` y el prompt usan la plataforma real.
+  `tests/test_partido_experimento.py`. **Prueba de subida pública** (el mail de cierre de la
+  auditoría: "los videos subidos por la API no quedan privados automáticamente"):
+  `clip_01M5ZYC0HH21XTPYWQ1RN3BSS3` ("Davo se cansó de escuchar a Gastón 😂", textos corregidos a
+  Kick) subido PÚBLICO a Rots por `videos.insert` el 30/10 00:48 UTC → `y5TBZ5OwxoI`, respuesta
+  completa en `data/prueba_publica_y5TBZ5OwxoI.json` y en `subidas`; chequeos a los 10 y 60 min en
+  `data/prueba_{10,60}min.json`.
+- v0.69.0 (2026-10-29) — **"Pegó": el original se busca en el VOD con un embudo** (`vod_embudo.py`,
+  diseño aprobado por Santi). Medido antes: de 18 Shorts de Davo buscados en el VOD entero aparecieron
+  3, cada VOD nuevo costaba 10-40 min de audio en la Pi y 2 búsquedas se cortaron por tiempo. Los 3
+  originales se publicaron 8, 10 y 17 min después del momento, con el stream en vivo; los clips de
+  la comunidad de Kick no traen posición (`vod_starts_at` = 0) y los más cercanos estaban a 10,6 y
+  24 min. Embudo: VODs de 7 días antes (`pego.vod_dias_antes`), puntaje por en vivo a la hora de
+  publicado + texto + imagen (UNA llamada a Gemini: 3 cuadros del Short contra miniatura y 2 cuadros
+  de cada VOD), los 2 mejores; hasta 3 ventanas (la hora: 45 min antes de publicado; clips con título
+  parecido a lo que se dice en el Short, Whisper; pico de chat en Twitch) ±10 min; audio SOLO de las
+  ventanas; el VOD entero solo si sobra tiempo del tope (`pego.vod_respaldo`). Antes de buscar, los
+  compilados (título que empieza con TOP, mejores momentos) y los que nombran a otros
+  (`pego.otros_nombres` + los otros streamers cargados; los hashtags no cuentan) no se buscan y salen
+  en el resumen con el motivo. Medición con 6 Shorts reales de Davo: en curso.
 - v0.68.1 (2026-10-29) — **Telegram: los cortes de conexión se reintentan solos** (pedido de Santi).
   `TelegramClient._llamar` (todo lo que manda el bot) y la bajada de `get_file`: ante
   `ConnectionError` (RemoteDisconnected, "Connection aborted") o timeout, 2 reintentos esperando 3 y
