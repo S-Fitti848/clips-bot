@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-10-29 | **Versión:** v0.70.1 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 de clips + timer 06:00 de la efeméride + escucha de Telegram 24/7)
+**Snapshot:** 2026-10-30 | **Versión:** v0.71.0 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 de clips + timer 06:00 de la efeméride + escucha de Telegram 24/7)
 
 > **SI ESTÁS EMPEZANDO UNA SESIÓN NUEVA, LEÉ §10.** Ahí está qué está hecho, qué quedó a medias,
 > qué falta, y las trampas que ya nos mordieron.
@@ -98,15 +98,15 @@ servicio systemd separado: `clips-bot`).
 - **Volumen: 3 uploads/día** de clips + 1 de Pequeña Historia. Cuota (doc oficial, revisada
   2026-09-28): `videos.insert` cuesta 1 unidad de un balde aparte, *Video Uploads*, con 100 por día;
   ya no son 1600 de las 10.000 unidades generales. La cuota no es un límite para este volumen.
-- **Publicación: TODO MANUAL hasta la auditoría de YouTube (decisión 2026-09-21, revisada).**
-  CONFIRMADO: los videos subidos por API desde un proyecto sin auditar quedan bloqueados como
-  privados de forma permanente (no se pueden publicar desde Studio ni apelar). Por eso, hasta
-  aprobar la auditoría, el bot NO sube nada: entrega por Telegram el mp4 + título + descripción +
-  hashtags y Santi sube a mano a YouTube Shorts, TikTok, Instagram Reels y Facebook Reels
-  (~5–7 min/día). Esto también evita la auditoría de TikTok y la revisión de Meta.
-  Con la auditoría aprobada se activa YouTube automático: `videos.insert` privado + `publishAt`
-  escalonado (ej. 13:00/18:00/21:30 AR). Preparado desde v0.28.1 (apagado): ver
-  docs/auditoria-youtube.md. TikTok/IG/FB siguen manuales.
+- **Publicación en YouTube por la API: PRENDIDA desde 2026-10-30** (`youtube_upload_enabled: true`).
+  Hasta ahí era todo manual, porque se creía (y se anotó como confirmado) que los videos subidos por
+  API desde un proyecto sin auditar quedaban bloqueados privados para siempre. YouTube cerró la
+  auditoría diciendo que eso NO pasa, y la prueba lo confirmó: `y5TBZ5OwxoI`, subido PÚBLICO a Rots
+  por `videos.insert`, quedó público, procesado y visible sin login a los 0, 10 y 60 min, sin
+  restricciones. Ahora 📤 sube a Rots o a Pequeña Historia en privado con `publishAt` en su horario
+  (13:00/18:00/21:30 los clips; `efemerides.hora_publicacion` la efeméride); un clip con partido en
+  pantalla va privado SIN fecha (§3 paso 4). TikTok/IG siguen manuales; Facebook (Pequeña Historia)
+  por su propia API.
 - **Feedback loop obligatorio:** el bot mide cómo rinde cada video y usa eso para elegir mejor
   (ver §4b). Sin métricas el proyecto es ciego.
 - **Valor agregado obligatorio en cada Short**: subtítulos quemados, layout vertical con cámara
@@ -805,6 +805,20 @@ Problemas abiertos:
 
 ## 9. CHANGELOG
 
+- v0.71.0 (2026-10-30) — **Subida a YouTube prendida, tests aislados y tope de tiempo** (pedido de
+  Santi). (1) `youtube_upload_enabled: true` (la prueba pública de v0.70.0: público, procesado y sin
+  restricciones a los 0, 10 y 60 min). Al prenderla, la suite se colgó en el 27 %. (2) `conftest.py`:
+  en TODOS los tests, `requests.Session.request` corta googleapis.com, youtube.com,
+  accounts.google.com y facebook.com (`SalidaProhibida`, al instante), `youtube.ruta_token` apunta a
+  una carpeta vacía y las credenciales de Facebook vienen vacías; con `CLIPS_REGISTRO_SALIDAS` se
+  anota qué test lo intentó. Auditoría (una corrida con los tokens reales al alcance, la subida
+  prendida y la red cortada): **0 intentos**; y nada nuevo en los canales (Rots: lo último es la
+  prueba; Pequeña Historia: 5/10) ni en la página de Facebook (las efemérides diarias del 23 al
+  28/10). La suite pasó de 3,5-6 min a ~100 s. El cuelgue del 27 % no se reprodujo. (3) `red.py`:
+  `SesionConTope`, tope TOTAL por pedido (120 s; 900 s el video) además del timeout de requests, que
+  es entre bytes; la usan `youtube.Cliente`, el OAuth y la búsqueda de "pegó". Un tope vencido es
+  `TiempoAgotado` (un `requests.Timeout`) y donde se atrapaba `YouTubeError` ahora también los
+  errores de red. `tests/test_red_tope.py`. 780 tests OK.
 - v0.70.1 (2026-10-29) — **Pequeña Historia conectada a YouTube** (`youtube-auth pequena_historia`,
   aceptado por Santi): canal «PequeÑahistoria» `UC-L0R7qXCpzHy14r_DFOleA`. Token en
   `config/youtube_token_pequena_historia.json` de la compu y de la Pi (chmod 600, fuera de git,

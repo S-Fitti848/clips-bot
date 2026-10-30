@@ -169,7 +169,9 @@ def buscar_api(consulta: str, desde: datetime, clave: str,
                session: requests.Session | None = None) -> list[ShortAjeno]:
     """search.list (100 unidades) ordenado por vistas, Shorts (menos de 4 min) desde `desde`, y
     videos.list (1 unidad) para vistas y duración exactas."""
-    s = session or requests.Session()
+    from .red import SesionConTope
+
+    s = session or SesionConTope()
     r = s.get(f"{API}/search", timeout=30, params={
         "part": "snippet", "q": consulta, "type": "video", "videoDuration": "short",
         "order": "viewCount", "publishedAfter": desde.strftime("%Y-%m-%dT%H:%M:%SZ"),

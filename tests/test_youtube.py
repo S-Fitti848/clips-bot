@@ -107,7 +107,8 @@ META = {"clip_id": "c1", "salida": "x.mp4",
 
 def test_apagada_no_hace_nada(conn, monkeypatch):
     monkeypatch.setattr(yt, "Cliente", lambda *a, **k: pytest.fail("está apagada"))
-    assert m._programar_subida(conn, load_settings(), META, "rots", "13:00") == ""
+    apagada = replace(load_settings(), youtube_upload_enabled=False)
+    assert m._programar_subida(conn, apagada, META, "rots", "13:00") == ""
     assert db.subidas(conn) == []
 
 
@@ -178,5 +179,5 @@ def test_subidas_lista_y_cancela(conn, prendida):
 
 
 def test_con_la_subida_apagada_subidas_lo_dice(conn):
-    texto, teclado = m._subidas_texto(conn, load_settings())
+    texto, teclado = m._subidas_texto(conn, replace(load_settings(), youtube_upload_enabled=False))
     assert "apagada" in texto and teclado is None

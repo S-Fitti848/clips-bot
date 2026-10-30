@@ -456,9 +456,12 @@ envivo:
 publicacion:
   horarios: ["13:00", "18:00", "21:30"]   # hora AR sugerida para cada seleccionado, en orden
 
-# §3 paso 9. Queda en false hasta que la auditoría de la YouTube Data API esté aprobada
-# (sin auditoría los uploads quedan bloqueados privados para siempre).
-youtube_upload_enabled: false
+# §3 paso 9. PRENDIDO el 2026-10-30 (Santi): YouTube cerró la auditoría diciendo que los videos subidos
+# por la API no quedan privados automáticamente, y la prueba lo confirmó (y5TBZ5OwxoI, subido PÚBLICO
+# a Rots por videos.insert: público, procesado y visible sin login a los 0, 10 y 60 min, sin
+# restricciones). 📤 sube en privado con publishAt en su horario; un clip con partido en pantalla va
+# privado SIN fecha (se publica a mano después de revisar las Verificaciones).
+youtube_upload_enabled: true
 
 # Reels de Pequeña Historia a la página de Facebook (Reels Publishing API de Meta): con el mismo
 # "📤 Subir" de la efeméride, además de programarse en YouTube. PRENDIDO desde el 2026-10-04: token

@@ -30,6 +30,8 @@ from collections import Counter
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+import requests
+
 from . import __version__, db, metricas
 from .idioma import L
 from .candidates import (MOTIVO_COSTREAM, Resultado, buscar_candidatos, buscar_catalogo, buscar_kick,
@@ -962,7 +964,7 @@ def actualizar_metricas() -> int:
         print(f"  {r['nuevos']} nuevos, {r['actualizados']} actualizados, {r['borrados']} borrados "
               f"(ya no están en el canal); {total} clips con métricas")
         return total
-    except youtube.YouTubeError as e:
+    except (youtube.YouTubeError, requests.RequestException) as e:
         if "invalid_grant" in str(e):
             # Revocaron el acceso: se borran los datos de la API; las conclusiones quedan.
             n = metricas.borrar_por_revocacion(conn, "rots")
@@ -3644,7 +3646,7 @@ def _programar_subida(conn, settings: Settings, meta: dict, canal: str, hora: st
                 cliente.poner_portada(video_id, img)
             except (youtube.YouTubeError, OSError) as e:   # la portada nunca frena la subida
                 log.warning("YouTube: %s salió sin la portada del año: %s", video_id, e)
-    except youtube.YouTubeError as e:
+    except (youtube.YouTubeError, requests.RequestException) as e:
         db.crear_subida(conn, clip_id, canal, "error", error=str(e)[:500])
         return L(f"⚠️ No pude subirlo a YouTube ({html.escape(youtube.CANALES[canal])}): ",
                  f"⚠️ The YouTube upload failed ({html.escape(youtube.CANALES[canal])}): ") + html.escape(str(e)[:300])
@@ -3670,7 +3672,7 @@ def _subir_privado_a_revisar(conn, meta: dict, canal: str) -> str:
         cliente = youtube.Cliente(canal)
         video_id = cliente.subir(Path(meta["salida"]), t["titulo"], t["descripcion"],
                                  t.get("hashtags") or [], None, CATEGORIA.get(canal, "24"))
-    except youtube.YouTubeError as e:
+    except (youtube.YouTubeError, requests.RequestException) as e:
         db.crear_subida(conn, clip_id, canal, "error", error=str(e)[:500])
         return f"⚠️ No pude subirlo a YouTube ({html.escape(youtube.CANALES[canal])}): {html.escape(str(e)[:300])}"
     db.crear_subida(conn, clip_id, canal, "privada", video_id=video_id,
@@ -4122,7 +4124,7 @@ def _subidas_callback(conn, tg: TelegramClient, cb: dict, settings: Settings) ->
         return tg.answer_callback(cb["callback_id"], L("Esa ya no está programada.", "That one is no longer scheduled."))
     try:
         _cancelar_youtube(conn, s)
-    except youtube.YouTubeError as e:
+    except (youtube.YouTubeError, requests.RequestException) as e:
         return tg.answer_callback(cb["callback_id"], f"No pude: {str(e)[:150]}")
     db.marcar_subida(conn, sid, "cancelada")
     tg.answer_callback(cb["callback_id"], L("Cancelada: queda privado en Studio.",

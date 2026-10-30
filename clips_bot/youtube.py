@@ -29,6 +29,7 @@ from urllib.parse import urlencode
 import requests
 
 from .config import CONFIG_DIR
+from .red import SesionConTope
 
 log = logging.getLogger(__name__)
 
@@ -91,7 +92,7 @@ def autorizar(canal: str, puerto: int = 8765, abrir=None, esperar=None,
     print(f"\nAbrí esto si no se abrió solo, y elegí el canal «{CANALES[canal]}»:\n{url}\n")
     (abrir or webbrowser.open)(url)
     codigo = (esperar or _esperar_codigo)(puerto, estado)
-    session = session or requests.Session()
+    session = session or SesionConTope()
     r = session.post(TOKEN_URL, data={"code": codigo, "client_id": s["client_id"],
                                       "client_secret": s["client_secret"], "redirect_uri": redirect,
                                       "grant_type": "authorization_code"}, timeout=30)
@@ -146,7 +147,7 @@ class Cliente:
     def __init__(self, canal: str, session: requests.Session | None = None, token: dict | None = None,
                  secreto: dict | None = None):
         self.canal = canal
-        self.session = session or requests.Session()
+        self.session = session or SesionConTope()
         if token is None:
             ruta = ruta_token(canal)
             if not ruta.exists():
