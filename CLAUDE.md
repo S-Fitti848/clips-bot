@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-10-29 | **Versión:** v0.70.0 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 de clips + timer 06:00 de la efeméride + escucha de Telegram 24/7)
+**Snapshot:** 2026-10-29 | **Versión:** v0.70.1 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 de clips + timer 06:00 de la efeméride + escucha de Telegram 24/7)
 
 > **SI ESTÁS EMPEZANDO UNA SESIÓN NUEVA, LEÉ §10.** Ahí está qué está hecho, qué quedó a medias,
 > qué falta, y las trampas que ya nos mordieron.
@@ -805,6 +805,11 @@ Problemas abiertos:
 
 ## 9. CHANGELOG
 
+- v0.70.1 (2026-10-29) — **Pequeña Historia conectada a YouTube** (`youtube-auth pequena_historia`,
+  aceptado por Santi): canal «PequeÑahistoria» `UC-L0R7qXCpzHy14r_DFOleA`. Token en
+  `config/youtube_token_pequena_historia.json` de la compu y de la Pi (chmod 600, fuera de git,
+  huellas iguales); verificado desde la Pi con `mi_canal()`. La subida sigue gobernada por
+  `youtube_upload_enabled`.
 - v0.70.0 (2026-10-29) — **Partido en pantalla como experimento** (pedido de Santi; §3 paso 4): ya no
   se descarta, avisa en el mensaje (`process.AVISO_PARTIDO`), con la subida prendida va PRIVADO y SIN
   fecha (`youtube.metadatos(publicar=None)`, `_subir_privado_a_revisar`, estado `privada` en
