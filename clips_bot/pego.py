@@ -617,6 +617,11 @@ def candidatos_viejos(conn: sqlite3.Connection, s: Streamer, cfg, clave: str, de
     otros = list(cfg.otros_nombres) + [n for o in (todos or []) if o.login != s.login for n in nombres(o)]
     for x in pasan:
         m = em.motivo_saltear(x.titulo, nombres_propios, otros)
+        if not m:
+            # Subido por el canal de OTRA persona conocida ("Gastón Edul"): es de su stream, no del nuestro.
+            del_canal = em.motivo_saltear(x.canal, nombres_propios, otros)
+            if del_canal.startswith("nombra a "):
+                m = "es del canal de " + del_canal[len("nombra a "):]
         if not m and x.publicado and vod_mas_viejo is not None and \
                 datetime.fromisoformat(x.publicado.replace("Z", "+00:00")) < vod_mas_viejo:
             m = "es de antes del VOD más viejo que queda"

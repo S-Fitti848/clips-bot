@@ -819,6 +819,12 @@ Problemas abiertos:
   Tope `pego.viejos_tope_min` (30); el resumen dice qué pasó con cada Short. Sin `YOUTUBE_API_KEY`
   no anda (la búsqueda con yt-dlp solo da "esta semana"). Botón: "Viejos (lo que pegó, 1-2 meses)".
   `tests/test_viejos_pego.py`.
+  **Probado en la Pi con datos reales (solo la búsqueda):** Davo → YouTube 46 Shorts, 25 no pegaron / no
+  lo nombran, 5 de antes del VOD más viejo (04/10), 3 ya buscados, 6 compilados, 6 nombran a otros
+  (Edul, La Cobra) → quedaba 1, subido por el canal de Gastón Edul: ahora también se saltea un Short
+  subido por el canal de otra persona conocida ("es del canal de …"). Auron (Twitch, VODs desde el
+  02/09) → 16 candidatos; entre ellos una película india ("Auron Mein Kahan Dum Tha"): el nombre
+  coincide, el embudo no la va a encontrar pero gasta 2-4 min.
 - v0.75.0 (2026-11-01) — **Clips aburridos** (pedido de Santi). (1) En la llamada de textos, campo nuevo
   `momento` (el remate, la reacción fuerte o lo que pasa, en una frase; vacío si no hay) y el prompt del
   puntaje exige un momento concreto: sin él, 5 como mucho (lo hace cumplir el código:

@@ -28,6 +28,7 @@ def test_candidatos_viejos_filtra_y_ordena(tmp_path):
         _short("f", "DAVO otra vez", canal="Rots"),                # canal propio
         _short("g", "DAVO ya subido"),
         _short("h", "Davo poco visto", 200),                       # no pegó
+        _short("i", "Hasta acá llegó Puerrul DAVO", canal="Gastón Edul"),   # del canal de otro
     ]
     pego.guardar(conn, shorts[6], "davooxeneize", None)
     conn.execute("UPDATE pegados SET vod_clip_id = 'vod_x' WHERE short_id = 'g'")
@@ -38,6 +39,7 @@ def test_candidatos_viejos_filtra_y_ordena(tmp_path):
     assert v.filtrados["compilado"] == 1 and v.filtrados["nombra a Gastón Edul"] == 1
     assert v.filtrados["es de antes del VOD más viejo que queda"] == 1
     assert v.filtrados["ya lo subí"] == 1
+    assert v.filtrados["es del canal de Gastón Edul"] == 1
     assert "quedan 2 para buscar en el stream" in pego.texto_viejos(v)
 
 
