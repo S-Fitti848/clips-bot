@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-11-01 | **Versión:** v0.73.0 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 de clips + timer 06:00 de la efeméride + escucha de Telegram 24/7)
+**Snapshot:** 2026-11-01 | **Versión:** v0.74.0 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 de clips + timer 06:00 de la efeméride + escucha de Telegram 24/7)
 
 > **SI ESTÁS EMPEZANDO UNA SESIÓN NUEVA, LEÉ §10.** Ahí está qué está hecho, qué quedó a medias,
 > qué falta, y las trampas que ya nos mordieron.
@@ -805,6 +805,15 @@ Problemas abiertos:
 
 ## 9. CHANGELOG
 
+- v0.74.0 (2026-11-01) — **Brunenger seguía saliendo en los diarios** (Santi: "no puedo sacarlo"). En la
+  Pi estaba bien movido a la carpeta "Extra" (sin diarios) desde el 29/10 14:49, y desde ahí la corrida ya
+  no buscaba clips nuevos suyos; pero los que ya estaban PROCESADOS de antes quedaban en la pila de
+  `output/ready/` y la selección elegía de ahí sin mirar la carpeta: salió uno el 30/10, otro el 31/10 y
+  otro el 1/11 (procesados el 25-29/10). Ahora `ejecutar_seleccion` saca de la pila a los streamers que
+  hoy no están en los diarios (`_fuera_de_diarios`; los que no son streamers no se tocan). Y en
+  /streamers, por streamer, **"📅 En diarios: sí/no"** (`st:dd`), que le gana a la carpeta
+  (`registro.en_diarios`, `bot_estado.diarios_streamer`); el modo en vivo sigue mirando la carpeta.
+  `tests/test_diarios_streamer.py`.
 - v0.73.0 (2026-11-01) — **🔥 SUBIR YA se publica ya** (pedido de Santi). Un clip que salió de una alerta
   del modo en vivo (`db.es_de_envivo`: `envivo_alertas` entregada con ese clip) se sube con 📤 PÚBLICO al
   instante (`youtube.subir(publico=True)`, `_subir_publico_ya`), sin programarlo para el próximo horario;

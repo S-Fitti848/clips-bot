@@ -248,10 +248,48 @@ def mover(conn: sqlite3.Connection, s: Streamer, carpeta: str, quien: str) -> No
     guardar(conn, s.login, accion, quien, plataforma=s.plataforma, grupo=carpeta)
 
 
-def filtrar(streamers: list[Streamer], conn: sqlite3.Connection, interruptor: str) -> list[Streamer]:
-    """Los de las carpetas con ese interruptor prendido ("en_vivo" o "diarios")."""
+# "📅 En diarios: sí/no" por streamer (2026-11-01), independiente de la carpeta: si está anotado, le
+# gana al interruptor de su carpeta. {login: true|false} en bot_estado.
+DIARIOS_STREAMER = "diarios_streamer"
+
+
+def diarios_por_streamer(conn: sqlite3.Connection) -> dict[str, bool]:
+    import json
+
     from . import db
 
+    crudo = db.get_valor(conn, DIARIOS_STREAMER)
+    return {k.lower(): bool(v) for k, v in (json.loads(crudo) if crudo else {}).items()}
+
+
+def poner_diarios(conn: sqlite3.Connection, login: str, valor: bool) -> None:
+    import json
+
+    from . import db
+
+    d = diarios_por_streamer(conn)
+    d[login.lower()] = bool(valor)
+    db.set_valor(conn, DIARIOS_STREAMER, json.dumps(d))
+
+
+def en_diarios(conn: sqlite3.Connection, s: Streamer, propios: dict[str, bool] | None = None) -> bool:
+    """¿Entra en la corrida diaria? Lo del streamer manda; si no tiene nada, lo de su carpeta."""
+    from . import db
+
+    propios = diarios_por_streamer(conn) if propios is None else propios
+    if s.login.lower() in propios:
+        return propios[s.login.lower()]
+    return bool(db.carpeta(conn, carpeta_de(s))["diarios"])
+
+
+def filtrar(streamers: list[Streamer], conn: sqlite3.Connection, interruptor: str) -> list[Streamer]:
+    """Los de las carpetas con ese interruptor prendido ("en_vivo" o "diarios"); en "diarios",
+    el interruptor propio del streamer le gana a la carpeta."""
+    from . import db
+
+    if interruptor == "diarios":
+        propios = diarios_por_streamer(conn)
+        return [s for s in streamers if en_diarios(conn, s, propios)]
     return [s for s in streamers if db.carpeta(conn, carpeta_de(s))[interruptor]]
 
 

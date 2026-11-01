@@ -389,6 +389,25 @@ def _opciones_pendientes(ready: Path, settings: Settings) -> list:
     return opciones
 
 
+def _fuera_de_diarios(conn, opciones: list) -> list:
+    """Saca los clips YA procesados de streamers que hoy no están en los diarios (por su carpeta o por
+    su 📅 propio). Sin esto, sacar a alguien de los diarios solo frenaba los clips NUEVOS: los que ya
+    estaban procesados seguían saliendo días después (Brunenger, 30/10 a 1/11). Un streamer que no
+    está en la lista (videos propios, otros) no se toca."""
+    from . import registro
+
+    todos = _streamers(conn)
+    conocidos = {s.login.lower() for s in todos}
+    en = {s.login.lower() for s in registro.filtrar(todos, conn, "diarios")}
+    quedan, afuera = [], []
+    for o in opciones:
+        (afuera if o.streamer.lower() in conocidos and o.streamer.lower() not in en else quedan).append(o)
+    if afuera:
+        print("Fuera de los diarios (no se eligen): " + ", ".join(sorted({o.streamer for o in afuera}))
+              + f" ({len(afuera)} clips)")
+    return quedan
+
+
 def completar_textos(opciones: list, gemini: GeminiClient | None, settings: Settings, ready: Path,
                      marcar_descartado, pasajeros: list | None = None) -> list:
     """Genera los textos que falten (Gemini falló o no había key al procesar) y saca los que
@@ -448,7 +467,7 @@ def ejecutar_seleccion(settings: Settings, gemini: GeminiClient | None, enviar: 
             conn.execute("UPDATE clips SET estado = 'descartado', motivo = ? WHERE clip_id = ?", (motivo, clip_id))
             conn.commit()
 
-        pendientes = _opciones_pendientes(READY_DIR, settings)
+        pendientes = _fuera_de_diarios(conn, _opciones_pendientes(READY_DIR, settings))
         pasajeros: list[str] = []
         opciones = completar_textos(pendientes, gemini, settings, READY_DIR, marcar_descartado,
                                     pasajeros)
@@ -4549,10 +4568,17 @@ def _menu_callback(conn, tg: TelegramClient, cb: dict, settings: Settings, cola:
     from .menu import POR_PAGINA
     pagina = si // POR_PAGINA
 
-    if d["accion"] == "s":
-        tg.answer_callback(cb["callback_id"])
+    if d["accion"] in ("s", "dd"):
+        if d["accion"] == "dd":
+            # 📅 En diarios: sí/no, de ESTE streamer (le gana a la carpeta).
+            nuevo = not registro.en_diarios(conn, s)
+            registro.poner_diarios(conn, s.login, nuevo)
+            tg.answer_callback(cb["callback_id"], f"{s.login}: {'entra' if nuevo else 'no entra'} en los diarios")
+        else:
+            tg.answer_callback(cb["callback_id"])
         return tg.edit_message(chat, msg, _texto_streamer(s, excluidos),
-                               teclado_streamer(gi, si, pagina, s.apodos, s.facecam))
+                               teclado_streamer(gi, si, pagina, s.apodos, s.facecam,
+                                                registro.en_diarios(conn, s)))
     if d["accion"] == "ap":
         db.set_valor(conn, f"{ESPERA_APODOS}:{cb['user_id']}", s.login)
         tg.answer_callback(cb["callback_id"])
