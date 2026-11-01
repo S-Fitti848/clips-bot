@@ -805,6 +805,11 @@ Problemas abiertos:
 
 ## 9. CHANGELOG
 
+- docs (2026-11-01) — **Portadas e ilustraciones con IA para Pequeña Historia: EN PAUSA** (Santi). El
+  diseño (portada cinematográfica con título serif dorado, hasta 2 ilustraciones "Recreación" por
+  video, `containsSyntheticMedia` en YouTube, costo ~US$4–7/mes con Flash) quedó en
+  `docs/portadas-ia.md` para retomarlo. Nada programado ni pago activado; siguen vigentes "Sin IA
+  generativa" (§1) y "nada de IA, dibujos ni recreaciones" en Pequeña Historia.
 - v0.76.0 (2026-11-01) — **/buscar "viejos" = lo que más pegó en otros canales, cortado del stream**
   (pedido de Santi; antes eran los clips más vistos de hace más de 30 días). `_buscar_viejos`: por
   streamer, search.list por vistas de los Shorts de OTROS canales publicados entre `pego.viejos_dias`
