@@ -59,7 +59,7 @@ def test_catalogo_usa_el_umbral_historico_y_lo_guarda_una_semana(tmp_path):
 
 def test_la_config_real_tiene_las_reglas_nuevas():
     s = load_settings()
-    assert s.filtros.vistas_top == 0.30 and s.textos.puntaje_min == 6
+    assert s.filtros.vistas_top == 0.30 and s.textos.puntaje_min == 7
 
 
 def test_por_que_en_una_linea():

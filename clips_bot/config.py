@@ -269,7 +269,7 @@ class Textos:
     reintento_hasta: str = "22:00"
     # Calidad: puntaje de 1 a 10 (se entiende solo + tiene remate). Abajo del corte el clip no se
     # tira: queda como RELLENO, y solo se usa si la corrida no llega a 3 sin él.
-    puntaje_min: int = 6     # 5 → 6 el 2026-09-29 (pedido de Santi: llegaban clips malos)
+    puntaje_min: int = 7     # 5 → 6 el 2026-09-29, 6 → 7 el 2026-11-01 (clips aburridos)
     # Ejemplos del gusto de Santi en la llamada del puntaje: los últimos N 👍 y N 👎. 0 = sin.
     ejemplos_gusto: int = 0
     frames_para_puntaje: int = 3   # 0 = puntuar solo con la transcripción (4 → 3 el 2026-10-02: cuota)
@@ -382,7 +382,7 @@ FUENTES = ("reciente", "catalogo")
 @dataclass(frozen=True)
 class Seleccion:
     mezcla: dict = field(default_factory=lambda: {"kick_reciente": 1, "evento": 1, "catalogo": 1})
-    peso_momento: float = 0.5
+    peso_momento: float = 1.0
     max_por_streamer: int = 1
     empate_pct: dict = field(default_factory=lambda: {"reciente": 0.03, "catalogo": 0.10})
     # Peso por votos 👍/👎 de `votos_de` a los clips de cada streamer (ver settings.yaml).

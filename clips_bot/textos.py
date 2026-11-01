@@ -14,7 +14,10 @@ from .pantalla import datos_en_texto, tapar_datos
 # Tipo de gancho del título: se guarda para el análisis de métricas (§4b).
 GANCHOS = ("reaccion", "frase_textual", "pregunta", "situacion", "resultado")
 CAMPOS = ("titulo", "descripcion", "hashtags", "gancho", "depende_de_fecha", "sensible",
-          "puntaje")
+          "momento", "puntaje")
+# Sin un momento concreto (remate, reacción fuerte, algo que pasa) el clip no pasa de esto
+# (pedido de Santi, 2026-11-01: "clips aburridos").
+TOPE_SIN_MOMENTO = 5
 MOTIVO_FECHA = "depende_de_fecha"      # motivos de descarte en la DB
 MOTIVO_SENSIBLE = "tono_sensible"      # muerte, duelo, enfermedad, violencia real, salud mental
 MOTIVO_SIN_REMATE = "sin_remate"       # no se entiende solo o no tiene remate
@@ -31,6 +34,7 @@ SCHEMA = {
         "gancho": {"type": "STRING", "enum": list(GANCHOS)},
         "depende_de_fecha": {"type": "BOOLEAN"},
         "sensible": {"type": "BOOLEAN"},
+        "momento": {"type": "STRING"},
         "puntaje": {"type": "INTEGER"},
     },
     "required": list(CAMPOS),
@@ -60,10 +64,17 @@ Reglas:
   se cuenta), o salud mental. Ante la duda, true.
   NO es sensible: el humor normal, las puteadas, las derrotas, las peleas DENTRO de un juego, ni una
   charla hipotética sobre quién ganaría una pelea.
-- puntaje: del 1 al 10, cuánto se entiende el clip SOLO, sin saber lo que pasó antes, y si tiene un
-  remate (algo que cierra: una reacción, una frase, un desenlace). Si te mandan frames, contá lo que
-  se VE: un fail, un susto o una cara valen como remate aunque no se diga nada. 10 = se entiende
-  solo y tiene remate claro. 1 = no se entiende qué pasa ni mirando las imágenes.
+- momento: el MOMENTO CONCRETO del clip, en una frase: el remate, la reacción fuerte o lo que pasa
+  ("le explota el horno y grita", "lo traicionan y se queda mudo", "la frase final que hace reír a
+  todos"). Tiene que ser algo que se ve o se escucha en el clip, no una descripción general. Si el
+  clip es una charla tranquila, alguien jugando sin que pase nada, o un pedazo de algo más largo sin
+  cierre, dejalo VACÍO ("").
+- puntaje: del 1 al 10. Lo que manda es el momento: ¿pasa algo que haga que alguien que no conoce al
+  streamer lo mire hasta el final? Además, que se entienda SOLO, sin saber lo que pasó antes. Si te
+  mandan frames, contá lo que se VE: un fail, un susto o una cara valen como remate aunque no se
+  diga nada. SIN momento concreto, el puntaje es 5 como mucho, aunque se entienda y sea simpático.
+  10 = un momento fuerte y claro que se entiende solo. 1 = no pasa nada ni se entiende qué es.
+  Sé exigente: la mayoría de los clips de un stream son aburridos.
 Respondé solo con el JSON pedido."""
 
 
@@ -81,6 +92,7 @@ class TextosClip:
     depende_de_fecha: bool = False
     sensible: bool = False   # muerte, duelo, enfermedad, violencia real, salud mental
     puntaje: int = 0         # 1 a 10: se entiende solo + tiene remate
+    momento: str = ""        # el remate / la reacción / lo que pasa ("" = no hay: puntaje ≤ 5)
 
     def to_dict(self) -> dict:
         d = asdict(self)
@@ -91,7 +103,7 @@ class TextosClip:
     def from_dict(cls, d: dict) -> "TextosClip":
         return cls(d["titulo"], d["descripcion"], tuple(d["hashtags"]), d["gancho"], d["credito"],
                    bool(d.get("depende_de_fecha", False)), bool(d.get("sensible", False)),
-                   int(d.get("puntaje", 0)))
+                   int(d.get("puntaje", 0)), str(d.get("momento") or ""))
 
 
 # Palabras que arrancan en mayúscula pero no nombran nada: pronombres, días, y el arranque de una
@@ -241,10 +253,20 @@ def validar(data: object, cfg: Textos, contexto: str = "") -> list[str]:
         errores.append("depende_de_fecha tiene que ser true o false")
     if not isinstance(data.get("sensible"), bool):
         errores.append("sensible tiene que ser true o false")
+    if not isinstance(data.get("momento"), str):
+        errores.append("momento tiene que ser un texto (vacío si no pasa nada concreto)")
     p = data.get("puntaje")
     if not isinstance(p, int) or isinstance(p, bool) or not 1 <= p <= 10:
         errores.append("puntaje tiene que ser un entero de 1 a 10")
     return errores
+
+
+def puntaje_con_momento(puntaje: int, momento: str) -> int:
+    """Sin momento concreto (vacío o de menos de 3 palabras), el puntaje no pasa de TOPE_SIN_MOMENTO:
+    lo dice el prompt y lo hace cumplir el código."""
+    if len((momento or "").split()) < 3:
+        return min(puntaje, TOPE_SIN_MOMENTO)
+    return puntaje
 
 
 def _datos_personales(texto: str, campo: str, errores: list[str]) -> None:
@@ -279,7 +301,8 @@ def parsear(texto: str, cfg: Textos, canal: str, login: str,
             credito=cred,
             depende_de_fecha=data["depende_de_fecha"],
             sensible=data["sensible"],
-            puntaje=data["puntaje"],
+            puntaje=puntaje_con_momento(data["puntaje"], data["momento"]),
+            momento=data["momento"].strip(),
         ),
         [],
     )
@@ -310,18 +333,54 @@ def ejemplos_de_gusto(conn, ready: "Path", user_ids, n: int) -> dict[str, list[d
         dice = tapar_datos(" ".join((meta.get("transcripcion") or "").split()[:30]))
         if titulo or dice:
             out[lado].append({"titulo": titulo, "dice": dice})
+    out["canal"] = mejores_del_canal(conn, ready, n)
+    return out
+
+
+def mejores_del_canal(conn, ready: "Path", n: int) -> list[dict]:
+    """Los Shorts del canal que mejor rindieron (pedido 2026-11-01): los `n` con más vistas y los `n`
+    que más gente miró hasta el final (tabla metricas, la de /metricas), sin repetir. Cada uno
+    {"titulo", "dice", "vistas", "pct_entero"}."""
+    import json as _json
+
+    if n <= 0:
+        return []
+    try:
+        filas = conn.execute("SELECT clip_id, vistas, pct_entero FROM metricas").fetchall()
+    except Exception:          # base sin la tabla todavía
+        return []
+    por_vistas = sorted(filas, key=lambda f: -(f[1] or 0))[:n]
+    por_final = sorted((f for f in filas if f[2] is not None), key=lambda f: -f[2])[:n]
+    out, vistos = [], set()
+    for clip_id, vistas, pct in por_vistas + por_final:
+        if clip_id in vistos:
+            continue
+        vistos.add(clip_id)
+        p = ready / f"{clip_id}.json"
+        if not p.exists():
+            continue
+        meta = _json.loads(p.read_text(encoding="utf-8"))
+        titulo = ((meta.get("textos") or {}).get("titulo")) or meta.get("titulo_twitch") or ""
+        dice = tapar_datos(" ".join((meta.get("transcripcion") or "").split()[:30]))
+        out.append({"titulo": titulo, "dice": dice, "vistas": int(vistas or 0), "pct_entero": pct})
     return out
 
 
 def texto_gusto(gusto: dict[str, list[dict]] | None) -> str:
     """El bloque del prompt con los ejemplos (vacío si no hay)."""
-    if not gusto or not (gusto.get("bien") or gusto.get("mal")):
+    if not gusto or not (gusto.get("bien") or gusto.get("mal") or gusto.get("canal")):
         return ""
     lineas = ["", "CÓMO JUZGA SANTI, el dueño del canal (usalo para el `puntaje`, no para copiar títulos):"]
     for lado, etiqueta in (("bien", "Le GUSTARON"), ("mal", "NO le gustaron")):
         if gusto.get(lado):
             lineas.append(f"{etiqueta}:")
             lineas += [f"- «{e['titulo']}» — dice: {e['dice'] or '(sin habla)'}" for e in gusto[lado]]
+    if gusto.get("canal"):
+        lineas.append("Los que MEJOR RINDIERON en el canal (más vistas o más gente que los miró enteros):")
+        for e in gusto["canal"]:
+            pct = f", {e['pct_entero']:.0f} % lo vio entero" if e.get("pct_entero") is not None else ""
+            lineas.append(f"- «{e['titulo']}» ({e['vistas']:,} vistas{pct}) — dice: "
+                          f"{e['dice'] or '(sin habla)'}".replace(",", "."))
     return "\n".join(lineas) + "\n"
 
 

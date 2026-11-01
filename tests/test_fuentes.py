@@ -314,7 +314,7 @@ def test_fuente_por_antiguedad_para_urls_manuales():
 # ---- depende_de_fecha -----------------------------------------------------------------------
 
 BASE = {"titulo": "No puede creer lo que pasó", "descripcion": "Pasa algo.", "hashtags": ["#Shorts", "#a", "#b"],
-        "gancho": "reaccion", "sensible": False, "puntaje": 7}
+        "gancho": "reaccion", "sensible": False, "momento": "pierde la ronda y se agarra la cabeza", "puntaje": 7}
 
 
 def test_depende_de_fecha_es_obligatorio_y_booleano():
@@ -349,7 +349,7 @@ def test_seleccionar_completa_textos_y_descarta_los_que_dependen_de_la_fecha(tmp
     from clips_bot.__main__ import completar_textos
 
     viejos = {"titulo": "t", "descripcion": "d", "hashtags": ["#Shorts"], "gancho": "reaccion",
-              "credito": "c", "sensible": False, "puntaje": 7}
+              "credito": "c", "sensible": False, "momento": "pierde la ronda y se agarra la cabeza", "puntaje": 7}
     opciones = [
         Opcion("fecha", "uno", 10, AHORA, meta=meta("fecha")),  # Gemini dice que depende de la fecha
         Opcion("ok", "uno", 10, AHORA, meta=meta("ok")),  # Gemini dice que no

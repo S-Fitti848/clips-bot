@@ -61,7 +61,7 @@ def test_a_gemini_le_llega_tapado():
 
 
 BASE = {"titulo": "Davo y la llamada", "descripcion": "Pasa algo.", "hashtags": ["#Shorts", "#a", "#b"],
-        "gancho": "reaccion", "depende_de_fecha": False, "sensible": False, "puntaje": 7}
+        "gancho": "reaccion", "depende_de_fecha": False, "sensible": False, "momento": "pierde la ronda y se agarra la cabeza", "puntaje": 7}
 
 
 def test_lo_que_escribe_gemini_se_revisa():
