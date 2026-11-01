@@ -3244,7 +3244,8 @@ def _efe_proponer(conn, tg: TelegramClient, chats: list[str], dia, settings: Set
     try:
         p = ef.proponer(ef.Wiki(), gemini, dia, carpeta, avisar=log.info, hecho=hecho,
                         videos=settings.efemerides.videos,
-                        tope_fotos_s=settings.efemerides.tope_fotos_min * 60)
+                        tope_fotos_s=settings.efemerides.tope_fotos_min * 60,
+                        hablado=settings.efemerides.guion_hablado)
     except (NarrarError, ef.WikiError, GeminiError) as e:
         error = f"No salió la efeméride: {html.escape(str(e)[:400])}"
         return ErrorPasajero(error) if getattr(e, "pasajero", False) else error
@@ -3476,7 +3477,8 @@ def _efe_corregir(conn, tg: TelegramClient, t: dict, token: str, settings: Setti
     p = ef.Propuesta(**estado["propuesta"])
     tg.send_message(t["chat_id"], "Lo reescribo y busco las fotos de nuevo…")
     try:
-        p = ef.rehacer_guion(p, ef.Wiki(), gemini, Path(estado["carpeta"]), t["texto"])
+        p = ef.rehacer_guion(p, ef.Wiki(), gemini, Path(estado["carpeta"]), t["texto"],
+                             hablado=settings.efemerides.guion_hablado)
     except (NarrarError, GeminiError, ef.WikiError) as e:
         db.set_valor(conn, f"{ESPERA_EFE}:{t['user_id']}", token)   # que pueda probar otra vez
         return tg.send_message(t["chat_id"], f"No salió: {html.escape(str(e)[:300])}\n"
@@ -3567,7 +3569,8 @@ def cmd_efemeride(args: argparse.Namespace) -> int:
             return 2
         p = ef.proponer(ef.Wiki(), gemini, dia, carpeta, avisar=print, hecho=args.hecho or "",
                         videos=settings.efemerides.videos or getattr(args, "videos", False),
-                        tope_fotos_s=settings.efemerides.tope_fotos_min * 60)
+                        tope_fotos_s=settings.efemerides.tope_fotos_min * 60,
+                        hablado=settings.efemerides.guion_hablado)
         (carpeta / "propuesta.json").write_text(json.dumps(p.__dict__, ensure_ascii=False, indent=2),
                                                encoding="utf-8")
         g = ef.Guion.de_dict(p.guion)

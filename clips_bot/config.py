@@ -315,6 +315,11 @@ class EfemeridesCfg:
     piper_length_scale: float = 0.88
     piper_noise_scale: float = 0.8
     piper_noise_w_scale: float = 1.0
+    # Prueba 2026-11-01 ("la voz todavía suena a IA"), APAGADAS hasta que Santi escuche las muestras:
+    # guion escrito para ser dicho (frases de largo variado, muletillas, números redondeados como se
+    # dicen) y la voz con pausas variables entre frases + ecualizado suave de locutor.
+    guion_hablado: bool = False
+    voz_natural: bool = False
 
 
 @dataclass(frozen=True)

@@ -649,6 +649,23 @@ nombre, ni un número, ni una fecha que no esté ahí. Si el artículo no lo dic
   curioso o emotivo.
 Respondé solo con el JSON pedido."""
 
+SISTEMA_GUION_HABLADO = SISTEMA_GUION.replace(
+    """- Frases CORTAS: ninguna de más de 14 palabras. Mejor dos frases que una larga con comas.""",
+    """- ESCRITO PARA SER DICHO EN VOZ ALTA (lo lee una voz y tiene que sonar a una persona contando una
+  historia, no a un texto leído): rioplatense de verdad ("mirá", "imaginate", "resulta que").
+- Frases de LARGO VARIADO: alternás frases muy cortas (2 a 5 palabras: "Y funcionó.", "Nadie le
+  creía.") con otras más largas (hasta 16 palabras). Nunca tres seguidas del mismo largo.
+- Una o dos muletillas naturales, no más: "y acá viene lo mejor", "pero esperá", "posta",
+  "¿y sabés qué?". Que no sea siempre la misma ni vaya en la primera frase.
+- Pausas escritas: comas donde una persona respira y puntos suspensivos (…) una o dos veces, antes
+  de lo sorprendente ("Y adentro encontraron… nada.").""").replace(
+    """- Números: solo los que están en el artículo, escritos igual. Nada de "hoy tiene millones de…"
+  si el artículo no lo dice con esas palabras.""",
+    """- Números COMO SE DICEN: redondeados y con letras, con "casi", "más de", "unos" o "cerca de"
+  ("casi cien años", "más de dos mil personas"), y solo redondeando un número que ESTÁ en el
+  artículo o los años que pasaron desde el hecho. Nada de números que no salgan de ahí. Los años
+  del hecho van en cifras ("en 1928").""")
+
 SCHEMA_GUION = {
     "type": "OBJECT",
     "properties": {
@@ -691,15 +708,61 @@ def _numeros_en_letras(texto_norm: str) -> list[str]:
     return out
 
 
-def no_respaldados(guion: str, fuente: str) -> list[str]:
+_UNIDADES = {"un": 1, "uno": 1, "una": 1, "dos": 2, "tres": 3, "cuatro": 4, "cinco": 5, "seis": 6,
+             "siete": 7, "ocho": 8, "nueve": 9, "diez": 10, "once": 11, "doce": 12, "trece": 13,
+             "catorce": 14, "quince": 15, "dieciseis": 16, "diecisiete": 17, "dieciocho": 18,
+             "diecinueve": 19, "veinte": 20, "veintiun": 21, "veintiuno": 21, "veintiuna": 21,
+             "veintidos": 22, "veintitres": 23, "veinticuatro": 24, "veinticinco": 25,
+             "veintiseis": 26, "veintisiete": 27, "veintiocho": 28, "veintinueve": 29, "treinta": 30,
+             "cuarenta": 40, "cincuenta": 50, "sesenta": 60, "setenta": 70, "ochenta": 80,
+             "noventa": 90, "cien": 100, "ciento": 100, "doscientos": 200, "doscientas": 200,
+             "trescientos": 300, "trescientas": 300, "cuatrocientos": 400, "cuatrocientas": 400,
+             "quinientos": 500, "quinientas": 500, "seiscientos": 600, "seiscientas": 600,
+             "setecientos": 700, "setecientas": 700, "ochocientos": 800, "ochocientas": 800,
+             "novecientos": 900, "novecientas": 900}
+# Lo que en un guion hablado marca que el número está redondeado ("casi cien años").
+_APROX = r"casi|unos|unas|cerca de|mas de|menos de|alrededor de|aproximadamente|poco mas de|poco menos de"
+MARGEN_REDONDEO = 0.15
+
+
+def valor_en_letras(frase: str) -> int | None:
+    """"dos mil quinientos" -> 2500. None si no es una cantidad exacta ("miles", "docenas")."""
+    total, actual = 0, 0
+    for w in frase.split():
+        if w in ("y", "de"):
+            continue
+        if w in _UNIDADES:
+            actual += _UNIDADES[w]
+        elif w == "mil":
+            total += (actual or 1) * 1000
+            actual = 0
+        elif w in ("millon", "millones"):
+            total = (total + (actual or 1)) * 1_000_000
+            actual = 0
+        else:
+            return None
+    return total + actual or None
+
+
+def redondeo_valido(valor: float, permitidos: set[float]) -> bool:
+    """Un número redondeado ("casi cien") está bien si queda a menos del 15 % de uno permitido."""
+    return any(n > 0 and abs(valor - n) / n <= MARGEN_REDONDEO for n in permitidos)
+
+
+def no_respaldados(guion: str, fuente: str, anio: int | None = None, hoy: date | None = None) -> list[str]:
     """Nombres, números y meses del guion que NO están en el artículo (ni en el texto del evento).
 
     Los nombres salen de la heurística de mayúscula en medio de la oración (la misma de los títulos
     de los clips). Los números en cifras se comparan normalizados; los escritos con letras, como
     frase ("mil millones" tiene que estar tal cual): el 2026-09-27 el primer guion real dijo "más
     de mil millones de búsquedas diarias", que no estaba en el artículo, y el chequeo de cifras no
-    lo vio. Los meses, en castellano o en inglés."""
+    lo vio. Los meses, en castellano o en inglés.
+
+    Redondeos (guion hablado, 2026-11-01): "casi cien años", "más de dos mil personas" pasan si van
+    con casi/más de/unos/cerca de y quedan a menos del 15 % de un número del artículo o de los años
+    que pasaron desde el hecho (`anio`). Sin esa palabra, el número tiene que estar tal cual."""
     fuente_n = _norm(fuente)
+    guion_n = _norm(guion)
     palabras_fuente = set(re.findall(r"[a-z0-9]+", fuente_n))
     faltan = []
     for frase in re.split(r"(?<=[.!?¿¡])\s+", guion):
@@ -707,8 +770,18 @@ def no_respaldados(guion: str, fuente: str) -> list[str]:
             if _norm(nombre) not in palabras_fuente:
                 faltan.append(nombre)
     nums_fuente = _numeros(fuente)
-    faltan += [n for n in sorted(_numeros(guion)) if n not in nums_fuente]
-    faltan += [f for f in _numeros_en_letras(_norm(guion)) if f not in fuente_n]
+    permitidos = {float(n) for n in nums_fuente if n.isdigit()}
+    if anio:
+        permitidos.add(float((hoy or date.today()).year - anio))
+
+    def aproximado(texto_num: str, valor: float | None) -> bool:
+        return valor is not None and redondeo_valido(valor, permitidos) and bool(
+            re.search(rf"\b(?:{_APROX})\s+{re.escape(texto_num)}\b", guion_n))
+
+    faltan += [n for n in sorted(_numeros(guion))
+               if n not in nums_fuente and not (n.isdigit() and aproximado(n, float(n)))]
+    faltan += [f for f in _numeros_en_letras(guion_n)
+               if f not in fuente_n and not aproximado(f, valor_en_letras(f))]
     for i, mes in enumerate(MESES):
         if re.search(rf"\b{mes}\b", _norm(guion)) and mes not in palabras_fuente \
                 and MONTHS[i] not in palabras_fuente:
@@ -814,7 +887,7 @@ def validar_guion(d: dict, anio: int, fuente: str) -> list[str]:
                        f"década del hecho ({anio}) y el lugar, ej. \"{anio} ... <país>\"")
     if not str(d.get("idea_clave") or "").strip():
         errores.append("falta `idea_clave`: qué tiene que entender un chico de 15 años al final")
-    faltan = no_respaldados(texto, fuente)
+    faltan = no_respaldados(texto, fuente, anio)
     if faltan:
         errores.append("esto NO está en el artículo, sacalo o cambialo por lo que dice el artículo: "
                        + ", ".join(faltan))
@@ -848,7 +921,7 @@ def frases_de_accion(frases: list[dict]) -> list[int]:
 
 
 def escribir_guion(cliente, e: Evento, fuente: str, correccion: str = "", anterior: str = "",
-                   reintentos: int = 2) -> Guion:
+                   reintentos: int = 2, hablado: bool = False) -> Guion:
     """Gemini con el artículo, SIN fotos: el guion y qué mostrar en cada frase. Las fotos se buscan
     después para cada frase (`fotos_para_guion`). Reintenta con los errores de la validación."""
     prompt = (f"Hecho ({e.anio}): {e.texto}\n\nTEXTO DEL ARTÍCULO (lo único que podés usar):\n"
@@ -858,7 +931,8 @@ def escribir_guion(cliente, e: Evento, fuente: str, correccion: str = "", anteri
     errores: list[str] = []
     for _ in range(reintentos + 1):
         extra = f"\n\nTu respuesta anterior tenía estos errores: {'; '.join(errores)}" if errores else ""
-        d = json.loads(cliente.json(SISTEMA_GUION, prompt + extra, SCHEMA_GUION, temperatura=0.5))
+        sistema = SISTEMA_GUION_HABLADO if hablado else SISTEMA_GUION   # efemerides.guion_hablado
+        d = json.loads(cliente.json(sistema, prompt + extra, SCHEMA_GUION, temperatura=0.5))
         errores = validar_guion(d, e.anio, fuente + "\n" + e.texto + f" {e.anio}")
         if not errores:
             return Guion(frases=[f["texto"].strip() for f in d["frases"]], fotos=[],
@@ -1712,7 +1786,7 @@ class Propuesta:
 
 def proponer(wiki: Wiki, cliente, dia: date, carpeta: Path, avisar=log.info,
              correccion: str = "", saltear: int = 0, hecho: str = "", videos: bool = False,
-             tope_fotos_s: float | None = None) -> Propuesta:
+             tope_fotos_s: float | None = None, hablado: bool = False) -> Propuesta:
     """Elige el evento, escribe el guion (con qué mostrar en cada frase), busca y elige las fotos
     de cada frase. Si un evento no llega a ilustrar.MIN_FOTOS_DISTINTAS fotos distintas que
     sirvan, pasa al siguiente del ranking.
@@ -1759,7 +1833,7 @@ def proponer(wiki: Wiki, cliente, dia: date, carpeta: Path, avisar=log.info,
         fuente = texto_fuente(wiki, e)
         guiones += 1
         try:
-            g = escribir_guion(cliente, e, fuente, correccion)
+            g = escribir_guion(cliente, e, fuente, correccion, hablado=hablado)
             pool, g = fotos_para_guion(wiki, cliente, e, g, fotos, carpeta, avisar, videos=videos,
                                        tope_s=tope_fotos_s)
         except PocasFotos as pocas:
@@ -1803,12 +1877,13 @@ def texto_fuente(wiki: Wiki, e: Evento) -> str:
 
 
 def rehacer_guion(p: Propuesta, wiki: Wiki, cliente, carpeta: Path, correccion: str,
-                  avisar=log.info) -> Propuesta:
+                  avisar=log.info, hablado: bool = False) -> Propuesta:
     """✏️: el guion de nuevo con la corrección, y las fotos de sus frases otra vez. El pool de antes
     se conserva (los números no cambian) y lo ya descartado sigue descartado."""
     e = Evento(**p.evento)
     anterior = Guion.de_dict(p.guion)
-    g = escribir_guion(cliente, e, p.fuente, correccion=correccion, anterior=anterior.texto)
+    g = escribir_guion(cliente, e, p.fuente, correccion=correccion, anterior=anterior.texto,
+                       hablado=hablado)
     fotos, _ = fotos_del_evento(wiki, e)
     try:
         pool, g = fotos_para_guion(wiki, cliente, e, g, fotos, carpeta, avisar,
@@ -2010,6 +2085,90 @@ def acelerar(wav: Path, factor: float) -> Path:
     return wav
 
 
+# Voz natural (prueba 2026-11-01, `efemerides.voz_natural`): el silencio que queda ENTRE frases, a
+# un largo distinto cada vez (Gemini TTS los deja todos parecidos), según cómo termina la frase.
+PAUSA_PUNTO = (0.30, 0.60)
+PAUSA_PREGUNTA = (0.40, 0.70)      # ? o !
+PAUSA_SUSPENSO = (0.55, 0.85)      # … o ...
+# Ecualizado suave de locutor: algo de cuerpo abajo, menos "caja" en los medios, presencia y aire.
+# Sin tocar el tono ni la velocidad: solo filtros de ecualizado y un compresor suave.
+EQ_LOCUTOR = ("highpass=f=75,equalizer=f=160:t=q:w=0.9:g=1.5,equalizer=f=400:t=q:w=1.4:g=-2,"
+              "equalizer=f=3000:t=q:w=1.2:g=2,highshelf=f=7500:g=1.5,"
+              "acompressor=threshold=-20dB:ratio=2:attack=10:release=150:makeup=1.3,alimiter=limit=0.95")
+
+
+def _rango_pausa(frase: str) -> tuple[float, float]:
+    f = frase.rstrip()
+    if f.endswith(("…", "...")):
+        return PAUSA_SUSPENSO
+    if f.endswith(("?", "!")):
+        return PAUSA_PREGUNTA
+    return PAUSA_PUNTO
+
+
+def pausas_variables(wav: Path, palabras: list, inicios: list[float], frases: list[str],
+                     maximo_extra_s: float = 3.0) -> tuple[list, list[float], float]:
+    """Alarga el silencio entre frases hasta un largo al azar dentro de su rango (nunca lo acorta:
+    cortar puede comerse una sílaba). El azar sale del texto del guion: el mismo guion da siempre las
+    mismas pausas. El silencio se mete en el medio del hueco que ya había. Devuelve las palabras y
+    los inicios de cada frase corridos, y cuántos segundos se agregaron (como mucho maximo_extra_s)."""
+    import random
+    import wave
+
+    import numpy as np
+
+    from .subtitles import Palabra
+
+    rng = random.Random(hashlib.sha256(" ".join(frases).encode()).hexdigest())
+    cuantas = [len(f.split()) for f in frases]
+    finales, k = [], 0
+    for n in cuantas:                       # dónde termina la última palabra de cada frase
+        k += n
+        finales.append(palabras[k - 1].fin if n and k - 1 < len(palabras) else 0.0)
+    extras = []
+    for i in range(len(frases) - 1):
+        hueco = max(0.0, inicios[i + 1] - finales[i])
+        lo, hi = _rango_pausa(frases[i])
+        extras.append((finales[i] + hueco / 2, max(0.0, rng.uniform(lo, hi) - hueco)))
+    total = sum(e for _, e in extras)
+    if total > maximo_extra_s > 0:
+        extras = [(t, e * maximo_extra_s / total) for t, e in extras]
+    elif maximo_extra_s <= 0:
+        extras = [(t, 0.0) for t, _ in extras]
+    with wave.open(str(wav)) as w:
+        sr, params = w.getframerate(), w.getparams()
+        audio = np.frombuffer(w.readframes(w.getnframes()), dtype=np.int16)
+    trozos, desde = [], 0
+    for t, e in extras:
+        corte = min(len(audio), max(desde, int(round(t * sr))))
+        trozos += [audio[desde:corte], np.zeros(int(round(e * sr)), dtype=np.int16)]
+        desde = corte
+    trozos.append(audio[desde:])
+    with wave.open(str(wav), "wb") as w:
+        w.setparams(params)
+        w.writeframes(np.concatenate(trozos).tobytes())
+    # Los tiempos: cada frase se corre lo que se agregó antes de ella.
+    corrimiento = [0.0]
+    for _, e in extras:
+        corrimiento.append(corrimiento[-1] + round(e * sr) / sr)
+    nuevas, k = [], 0
+    for f, n in enumerate(cuantas):
+        for p in palabras[k:k + n]:
+            nuevas.append(Palabra(p.inicio + corrimiento[f], p.fin + corrimiento[f], p.texto))
+        k += n
+    nuevas += palabras[k:]
+    return nuevas, [ini + corrimiento[f] for f, ini in enumerate(inicios)], corrimiento[-1]
+
+
+def ecualizar_locutor(wav: Path) -> Path:
+    """EQ_LOCUTOR sobre la voz, a 48 kHz, en el mismo archivo."""
+    tmp = wav.with_name(wav.stem + ".eq.wav")
+    run([find_bin("ffmpeg"), "-hide_banner", "-loglevel", "error", "-y", "-i", str(wav.resolve()),
+         "-af", EQ_LOCUTOR, "-ar", "48000", "-c:a", "pcm_s16le", str(tmp.resolve())])
+    tmp.replace(wav)
+    return wav
+
+
 def voz_efemeride(frases: list[str], settings, carpeta: Path, avisar=log.info,
                   tts=None) -> tuple[Path, list[float] | None, str]:
     """La voz del guion: (wav, duración de cada frase o None, motor que se usó).
@@ -2178,6 +2337,13 @@ def hacer_video(p: Propuesta, settings, carpeta: Path, avisar=log.info, conn=Non
         fin = narrar.duracion_wav(wav)
         avisar(f"la voz dijo {recortado:.1f} s de algo antes del guion: recortado")
     palabras, inicios = narrar.alinear_a_guion(oidas, g.frases, fin)
+    if cfg_v.voz_natural:
+        # Pausas variables entre frases (sin pasarse del tope de duración) y EQ de locutor.
+        palabras, inicios, extra = pausas_variables(wav, palabras, inicios, g.frases, max(0.0, tope - fin))
+        ecualizar_locutor(wav)
+        fin = narrar.duracion_wav(wav)
+        duraciones = None    # con las pausas nuevas, los cortes salen de la alineación corrida
+        avisar(f"voz natural: +{extra:.1f} s de pausas variables y EQ de locutor ({fin:.1f} s)")
     if duraciones is None:   # Gemini: un solo audio, los cortes salen de la alineación
         duraciones = [b - a for a, b in zip(inicios, inicios[1:] + [fin])]
     subs = sub.palabra_por_palabra(palabras, settings.subtitulos)
