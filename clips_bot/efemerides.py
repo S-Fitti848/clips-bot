@@ -692,7 +692,7 @@ def _numeros(t: str) -> set[str]:
 
 _NUM = (r"un|una|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez|once|doce|trece|catorce|quince|"
         r"dieci\w+|veinte|veinti\w+|treinta|cuarenta|cincuenta|sesenta|setenta|ochenta|noventa|"
-        r"cien|ciento|cientos|\w+cientos|\w+cientas|mil|miles|millon|millones|billon|billones|"
+        r"cien|ciento|cientos|quinientos|quinientas|\w+cientos|\w+cientas|mil|miles|millon|millones|billon|billones|"
         r"docena|docenas|decenas|centenares")
 _NUM_FRASE = re.compile(rf"\b(?:(?:{_NUM})(?:\s+(?:y|de)\s+|\s+))*(?:{_NUM})\b")
 _SUELTOS = {"un", "una"}   # "un día como hoy", "una empresa": son artículos, no cantidades
@@ -721,7 +721,9 @@ _UNIDADES = {"un": 1, "uno": 1, "una": 1, "dos": 2, "tres": 3, "cuatro": 4, "cin
              "setecientos": 700, "setecientas": 700, "ochocientos": 800, "ochocientas": 800,
              "novecientos": 900, "novecientas": 900}
 # Lo que en un guion hablado marca que el número está redondeado ("casi cien años").
-_APROX = r"casi|unos|unas|cerca de|mas de|menos de|alrededor de|aproximadamente|poco mas de|poco menos de"
+# El orden importa: "poco mas de" antes que "mas de".
+_APROX = (r"poco mas de|poco menos de|casi|unos|unas|cerca de|mas de|menos de|alrededor de|"
+          r"aproximadamente")
 MARGEN_REDONDEO = 0.15
 
 
@@ -744,9 +746,27 @@ def valor_en_letras(frase: str) -> int | None:
     return total + actual or None
 
 
-def redondeo_valido(valor: float, permitidos: set[float]) -> bool:
-    """Un número redondeado ("casi cien") está bien si queda a menos del 15 % de uno permitido."""
-    return any(n > 0 and abs(valor - n) / n <= MARGEN_REDONDEO for n in permitidos)
+def redondeo_valido(valor: float, permitidos: set[float], como: str = "unos") -> bool:
+    """¿El número dicho ("más de mil") respeta alguno de los reales (`permitidos`)? Según la palabra:
+      casi / poco menos de: el real está apenas abajo (de 85 % a 100 % de lo dicho);
+      más de / poco más de: el real está arriba, pero no tanto (de 100 % a 150 %): 1.356 kg es
+        "más de mil kilos", 9.000 no;
+      menos de: el real está abajo (de 67 % a 100 %);
+      unos / cerca de / alrededor de / aproximadamente: a ±15 %."""
+    for n in permitidos:
+        if n <= 0:
+            continue
+        if como in ("casi", "poco menos de"):
+            ok = valor * (1 - MARGEN_REDONDEO) <= n <= valor
+        elif como in ("mas de", "poco mas de"):
+            ok = valor <= n <= valor * 1.5
+        elif como == "menos de":
+            ok = valor * 0.67 <= n <= valor
+        else:
+            ok = abs(valor - n) / n <= MARGEN_REDONDEO
+        if ok:
+            return True
+    return False
 
 
 def no_respaldados(guion: str, fuente: str, anio: int | None = None, hoy: date | None = None) -> list[str]:
@@ -770,13 +790,14 @@ def no_respaldados(guion: str, fuente: str, anio: int | None = None, hoy: date |
             if _norm(nombre) not in palabras_fuente:
                 faltan.append(nombre)
     nums_fuente = _numeros(fuente)
-    permitidos = {float(n) for n in nums_fuente if n.isdigit()}
+    # "3,10" (metros) es 3.1: la coma decimal del castellano.
+    permitidos = {float(n.replace(",", ".")) for n in nums_fuente if re.fullmatch(r"\d+(?:[.,]\d+)?", n)}
     if anio:
         permitidos.add(float((hoy or date.today()).year - anio))
 
     def aproximado(texto_num: str, valor: float | None) -> bool:
-        return valor is not None and redondeo_valido(valor, permitidos) and bool(
-            re.search(rf"\b(?:{_APROX})\s+{re.escape(texto_num)}\b", guion_n))
+        m = re.search(rf"\b({_APROX})\s+{re.escape(texto_num)}\b", guion_n)
+        return valor is not None and m is not None and redondeo_valido(valor, permitidos, m.group(1))
 
     faltan += [n for n in sorted(_numeros(guion))
                if n not in nums_fuente and not (n.isdigit() and aproximado(n, float(n)))]

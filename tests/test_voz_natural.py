@@ -24,6 +24,15 @@ def test_redondeos_con_casi_pasan_y_sin_casi_no():
     assert ef.no_respaldados("Mató a casi cinco mil colonias.", FUENTE, 1928, hoy) == ["cinco mil"]
 
 
+def test_redondeos_segun_la_palabra_el_gigante_de_cardiff():
+    """Lo que escribió Gemini el 2026-11-01 con el artículo del Gigante de Cardiff (3,10 m y 1.356 kg)."""
+    fuente = "una figura humana de 3,10 metros de altura. Peso: 1.356 kg."
+    assert ef.no_respaldados("Medía más de tres metros y pesaba más de mil kilos.", fuente, 1869) == []
+    assert ef.no_respaldados("Medía casi tres metros.", fuente, 1869) == ["tres"]      # era MÁS
+    assert ef.no_respaldados("Pesaba más de cinco mil kilos.", fuente, 1869) == ["cinco mil"]
+    assert ef.no_respaldados("Pesaba casi mil quinientos kilos.", fuente, 1869) == []
+
+
 def test_valor_en_letras():
     assert ef.valor_en_letras("dos mil quinientos") == 2500
     assert ef.valor_en_letras("cien") == 100
