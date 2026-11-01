@@ -87,8 +87,14 @@ def test_la_corrida_diaria_no_busca_y_un_extra_que_falla_no_la_tumba(tmp_path, m
     monkeypatch.setattr(m, "actualizar_metricas", lambda: (_ for _ in ()).throw(RuntimeError("x")))
     monkeypatch.setattr(m, "_resumen_pego", lambda s, simular: orden.append("pego"))
     monkeypatch.setattr(m, "efemeride_del_dia", lambda s, simular: orden.append("efemeride"))
+    # Sin el timer aparte de la efeméride (en la Pi ya está instalado: ahí `diario` no la hace).
+    monkeypatch.setattr(m, "efemeride_aparte", lambda: False)
     assert m.cmd_diario(argparse.Namespace(simular=True)) == 0
     assert orden == ["clips", "pego", "efemeride"]
+    orden.clear()
+    monkeypatch.setattr(m, "efemeride_aparte", lambda: True)
+    assert m.cmd_diario(argparse.Namespace(simular=True)) == 0
+    assert orden == ["clips", "pego"]
 
 
 def test_el_resumen_diario_lleva_titulo_vistas_y_link():
