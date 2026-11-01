@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-10-30 | **Versión:** v0.71.1 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 de clips + timer 06:00 de la efeméride + escucha de Telegram 24/7)
+**Snapshot:** 2026-11-01 | **Versión:** v0.72.0 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 de clips + timer 06:00 de la efeméride + escucha de Telegram 24/7)
 
 > **SI ESTÁS EMPEZANDO UNA SESIÓN NUEVA, LEÉ §10.** Ahí está qué está hecho, qué quedó a medias,
 > qué falta, y las trampas que ya nos mordieron.
@@ -805,6 +805,23 @@ Problemas abiertos:
 
 ## 9. CHANGELOG
 
+- v0.72.0 (2026-11-01) — **Prueba de voz menos IA en Pequeña Historia** (Santi: "todavía suena a IA"),
+  todo APAGADO hasta que elija: (1) `efemerides.guion_hablado`: `SISTEMA_GUION_HABLADO`, escrito para
+  ser dicho (frases de largo variado, 1-2 muletillas, puntos suspensivos, números redondeados como se
+  dicen). La validación de "nada que no esté en el artículo" acepta redondeos SOLO con la palabra que
+  los marca y según cuál es (`redondeo_valido`): "casi X" = el real un poco abajo (85-100 %), "más de X"
+  = arriba hasta ×1,5, "menos de" = 67-100 %, "unos/cerca de" = ±15 %, contra los números del artículo
+  (coma decimal incluida: 3,10 m) o los años desde el hecho. Vale también con el prompt de siempre
+  (sin "casi/más de" el número tiene que estar tal cual, como antes). Encontrado en la prueba: la
+  validación vieja tiraba "más de tres metros" (3,10 m) y "más de mil kilos" (1.356 kg) del Gigante de
+  Cardiff; y "quinientos" no se reconocía como número. (2) `efemerides.voz_natural`: pausas entre
+  frases a un largo al azar según cómo termina (punto 0,30-0,60 s, ?/! 0,40-0,70, … 0,55-0,85; solo
+  alarga, siempre igual para el mismo guion, sin pasarse del tope) y EQ suave de locutor
+  (`EQ_LOCUTOR`: filtros y compresor, sin tocar tono ni velocidad); los subtítulos y los cortes de
+  foto se corren con las pausas. Muestras A (guion de siempre), B (guion hablado) y B+ (B con pausas y
+  EQ) del Gigante de Cardiff mandadas a Santi por Telegram. ElevenLabs (C): falta la clave. También:
+  el test de la corrida diaria fallaba en la Pi porque el timer aparte de la efeméride YA está
+  instalado (Santi corrió `instalar.sh`); ahora prueba los dos casos. 789 tests OK.
 - v0.71.1 (2026-10-30) — **Primera subida real con 📤** (Santi, 09:29 AR): `clip_01M5ZV59PA5XWE4NS6HTHM4V1F`
   → `5WJiIU4kDgI` en Rots, privado con `publishAt` 13:00 AR, procesado y sin restricciones (la Pi le
   avisa a Santi a las 13:05 si pasó a público). La pista del embudo de "pegó" baja video + audio (el
