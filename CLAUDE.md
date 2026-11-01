@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-11-01 | **Versión:** v0.72.0 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 de clips + timer 06:00 de la efeméride + escucha de Telegram 24/7)
+**Snapshot:** 2026-11-01 | **Versión:** v0.73.0 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 de clips + timer 06:00 de la efeméride + escucha de Telegram 24/7)
 
 > **SI ESTÁS EMPEZANDO UNA SESIÓN NUEVA, LEÉ §10.** Ahí está qué está hecho, qué quedó a medias,
 > qué falta, y las trampas que ya nos mordieron.
@@ -805,6 +805,12 @@ Problemas abiertos:
 
 ## 9. CHANGELOG
 
+- v0.73.0 (2026-11-01) — **🔥 SUBIR YA se publica ya** (pedido de Santi). Un clip que salió de una alerta
+  del modo en vivo (`db.es_de_envivo`: `envivo_alertas` entregada con ese clip) se sube con 📤 PÚBLICO al
+  instante (`youtube.subir(publico=True)`, `_subir_publico_ya`), sin programarlo para el próximo horario;
+  queda `publicada` en `subidas` y el botón dice "✅ Publicado". Con partido en pantalla sigue yendo
+  privado sin fecha. `Cliente.publicar_ya` (videos.update a público) para pasar uno ya programado.
+  `tests/test_envivo_publico.py`.
 - v0.72.0 (2026-11-01) — **Prueba de voz menos IA en Pequeña Historia** (Santi: "todavía suena a IA"),
   todo APAGADO hasta que elija: (1) `efemerides.guion_hablado`: `SISTEMA_GUION_HABLADO`, escrito para
   ser dicho (frases de largo variado, 1-2 muletillas, puntos suspensivos, números redondeados como se

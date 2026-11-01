@@ -182,11 +182,12 @@ class Cliente:
         return {"id": items[0]["id"], "titulo": items[0]["snippet"]["title"]}
 
     def subir(self, video: Path, titulo: str, descripcion: str, tags: list[str],
-              publicar: datetime | None, categoria: str = "24") -> str:
+              publicar: datetime | None, categoria: str = "24", publico: bool = False) -> str:
         """Sube en PRIVADO con `publishAt`: YouTube lo hace público solo a esa hora. Devuelve el id.
         `publicar` None = privado SIN fecha: no se publica nunca solo (clips con partido en pantalla).
+        `publico` = PÚBLICO al instante, sin fecha (las alertas 🔥 SUBIR YA del modo en vivo).
         Upload reanudable (dos pasos): el mp4 entero en un PUT; son 20-40 MB."""
-        cuerpo = metadatos(titulo, descripcion, tags, publicar, categoria)
+        cuerpo = metadatos(titulo, descripcion, tags, None if publico else publicar, categoria, publico)
         tam = video.stat().st_size
         r = self.session.post(UPLOAD, params={"uploadType": "resumable", "part": "snippet,status"},
                               headers={**self._headers(), "Content-Type": "application/json",
@@ -278,6 +279,20 @@ class Cliente:
         if r.status_code != 200:
             raise YouTubeError(f"No pude cancelar {video_id}: {r.status_code} {r.text[:200]}")
 
+    def publicar_ya(self, video_id: str) -> dict:
+        """videos.update: PÚBLICO ahora (saca el publishAt). Para pasar a público uno programado."""
+        r = self.session.put(f"{API}/videos", params={"part": "status"},
+                             headers={**self._headers(), "Content-Type": "application/json"},
+                             data=json.dumps({"id": video_id, "status": {
+                                 "privacyStatus": "public", "selfDeclaredMadeForKids": False}}),
+                             timeout=30)
+        self.respuesta_publicar = {"http": r.status_code, "cuerpo": _json_o_texto(r)}
+        log.info("videos.update (publicar ya) %s %s: %s", self.canal, video_id,
+                 json.dumps(self.respuesta_publicar, ensure_ascii=False)[:2000])
+        if r.status_code != 200:
+            raise YouTubeError(f"No pude publicar {video_id}: {r.status_code} {r.text[:200]}")
+        return self.respuesta_publicar
+
     def poner_portada(self, video_id: str, imagen: Path) -> dict:
         """thumbnails.set (JPEG < 2 MB). Necesita el canal verificado; si YouTube la rechaza, YouTubeError."""
         r = self.session.post(THUMBNAILS, params={"videoId": video_id}, data=imagen.read_bytes(),
@@ -317,7 +332,7 @@ def _json_o_texto(r):
 
 
 def metadatos(titulo: str, descripcion: str, tags: list[str], publicar: datetime | None,
-              categoria: str = "24") -> dict:
+              categoria: str = "24", publico: bool = False) -> dict:
     """El cuerpo de videos.insert, con los límites de YouTube aplicados. `publishAt` exige
     privacyStatus private; los hashtags van en la descripción y, sin el #, como tags."""
     limpios, total = [], 0
@@ -326,8 +341,8 @@ def metadatos(titulo: str, descripcion: str, tags: list[str], publicar: datetime
         if t and total + len(t) + 1 <= MAX_TAGS:
             limpios.append(t)
             total += len(t) + 1
-    status = {"privacyStatus": "private", "selfDeclaredMadeForKids": False}
-    if publicar is not None:
+    status = {"privacyStatus": "public" if publico else "private", "selfDeclaredMadeForKids": False}
+    if publicar is not None and not publico:
         status["publishAt"] = publicar.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     return {
         "snippet": {"title": titulo[:MAX_TITULO], "description": descripcion[:MAX_DESCRIPCION],

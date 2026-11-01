@@ -291,6 +291,8 @@ def fila_subida(clip_id: str, estado: str | None) -> list[list[dict]]:
         return []
     if estado == "no":
         return [[{"text": L("🚫 No se sube", "🚫 Not uploading"), "callback_data": f"sub:r:{clip_id}"}]]
+    if estado == "publicado":   # 🔥 SUBIR YA del modo en vivo: público al instante
+        return [[{"text": L("✅ Publicado", "✅ Published"), "callback_data": f"sub:i:{clip_id}"}]]
     if estado == "privado":   # partido en pantalla: subido privado sin fecha, se publica a mano
         return [[{"text": L("🔒 En privado: revisá Studio", "🔒 Private: check Studio"),
                   "callback_data": f"sub:i:{clip_id}"}]]

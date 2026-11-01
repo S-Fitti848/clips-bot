@@ -3623,6 +3623,8 @@ def _programar_subida(conn, settings: Settings, meta: dict, canal: str, hora: st
         return ""
     if meta.get("partido_en_pantalla") and not demo:
         return _subir_privado_a_revisar(conn, meta, canal)
+    if canal == "rots" and not demo and db.es_de_envivo(conn, clip_id):
+        return _subir_publico_ya(conn, meta, canal)
     ocupados = {s["publish_at"] for s in db.subidas(conn, ("programada",)) if s["canal"] == canal}
     try:
         hoy = (ahora or datetime.now(timezone.utc)).astimezone(AR)
@@ -3663,6 +3665,27 @@ def _programar_subida(conn, settings: Settings, meta: dict, canal: str, hora: st
              f"scheduled (publishAt) for {cuando:%Y-%m-%d %H:%M} Argentina time ({iso}). "
              f"Video id: <code>{html.escape(video_id)}</code> — https://studio.youtube.com/video/{video_id}/edit\n"
              f"Use <code>/subidas</code> to see it and cancel the schedule.")
+
+
+def _subir_publico_ya(conn, meta: dict, canal: str) -> str:
+    """🔥 SUBIR YA (modo en vivo, pedido 2026-11-01): PÚBLICO al instante, sin esperar el horario.
+    Lo que se busca es llegar mientras el momento está caliente. (Con partido en pantalla no llega
+    acá: va privado a revisar.)"""
+    from . import youtube
+
+    clip_id, t = meta["clip_id"], meta["textos"]
+    try:
+        cliente = youtube.Cliente(canal)
+        video_id = cliente.subir(Path(meta["salida"]), t["titulo"], t["descripcion"],
+                                 t.get("hashtags") or [], None, CATEGORIA.get(canal, "24"), publico=True)
+    except (youtube.YouTubeError, requests.RequestException) as e:
+        db.crear_subida(conn, clip_id, canal, "error", error=str(e)[:500])
+        return f"⚠️ No pude subirlo a YouTube ({html.escape(youtube.CANALES[canal])}): {html.escape(str(e)[:300])}"
+    ahora = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    db.crear_subida(conn, clip_id, canal, "publicada", video_id=video_id, publish_at=ahora,
+                    respuesta=json.dumps(getattr(cliente, "respuesta_subida", {}), ensure_ascii=False))
+    return (f"🔥 Publicado YA en <b>{html.escape(youtube.CANALES[canal])}</b> (alerta en vivo, sin esperar "
+            f"el horario): https://youtube.com/shorts/{video_id}")
 
 
 def _subir_privado_a_revisar(conn, meta: dict, canal: str) -> str:
@@ -3883,6 +3906,8 @@ def _estado_subida(conn, clip_id: str, meta: dict) -> str | None:
         return None
     if db.subidas(conn, ("privada",), clip_id=clip_id):
         return "privado"
+    if db.subidas(conn, ("publicada",), clip_id=clip_id) and _canal_de(clip_id, meta) == "rots":
+        return "publicado"    # 🔥 SUBIR YA: salió público al instante
     prog = db.subidas(conn, ("programada",), clip_id=clip_id)
     if prog and prog[-1]["publish_at"]:
         cuando = datetime.fromisoformat(prog[-1]["publish_at"].replace("Z", "+00:00")).astimezone(AR)

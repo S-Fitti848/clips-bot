@@ -841,6 +841,12 @@ def subidas_sin_chequear(conn: sqlite3.Connection, minutos: int = 2) -> list[dic
     return [_fila_subida(f) for f in filas]
 
 
+def es_de_envivo(conn: sqlite3.Connection, clip_id: str) -> bool:
+    """¿El clip salió de una alerta 🔥 SUBIR YA del modo en vivo?"""
+    return conn.execute("SELECT 1 FROM envivo_alertas WHERE clip_id = ? AND estado = 'entregada' LIMIT 1",
+                        (clip_id,)).fetchone() is not None
+
+
 def marcar_subida(conn: sqlite3.Connection, subida_id: int, estado: str, error: str = "") -> None:
     conn.execute("UPDATE subidas SET estado = ?, error = ? WHERE id = ?", (estado, error, subida_id))
     conn.commit()
