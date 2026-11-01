@@ -546,7 +546,7 @@ def parse_buscar(args: list[str], dias_default: int = 7, dias_max: int = 90, max
 # pegó en otros canales). Los botones del período mandan estos mismos tokens.
 MODOS_BUSCAR = {"viejos": "viejos", "pego": "pego", "pegó": "pego", "🔥": "pego"}
 PERIODOS_BUSCAR = (("7", "Últimos 7 días"), ("30", "Últimos 30 días"),
-                   ("viejos", "Viejos (más de 30 días)"), ("pego", "🔥 Lo que pegó en otros canales"))
+                   ("viejos", "Viejos (lo que pegó, 1-2 meses)"), ("pego", "🔥 Lo que pegó en otros canales"))
 CANTIDADES_BUSCAR = (1, 3, 5)
 
 

@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-11-01 | **Versión:** v0.75.0 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 de clips + timer 06:00 de la efeméride + escucha de Telegram 24/7)
+**Snapshot:** 2026-11-01 | **Versión:** v0.76.0 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 de clips + timer 06:00 de la efeméride + escucha de Telegram 24/7)
 
 > **SI ESTÁS EMPEZANDO UNA SESIÓN NUEVA, LEÉ §10.** Ahí está qué está hecho, qué quedó a medias,
 > qué falta, y las trampas que ya nos mordieron.
@@ -805,6 +805,20 @@ Problemas abiertos:
 
 ## 9. CHANGELOG
 
+- v0.76.0 (2026-11-01) — **/buscar "viejos" = lo que más pegó en otros canales, cortado del stream**
+  (pedido de Santi; antes eran los clips más vistos de hace más de 30 días). `_buscar_viejos`: por
+  streamer, search.list por vistas de los Shorts de OTROS canales publicados entre `pego.viejos_dias`
+  (60) y `pego.dias` (7) días atrás (`pego.candidatos_viejos`), sin los que no pegaron, los compilados,
+  los que nombran a otros, los de canales propios, los que ya busqué en el VOD o ya subí
+  (`pego.ya_subido`) y los publicados antes del VOD más viejo que todavía existe. **Medido en la Pi:**
+  Kick devuelve los VODs del último mes (Davo, Spreen, Coscu y La Cobra: el más viejo del 3-4/10);
+  Twitch daba 20 (Auron hasta el 23/09) y ahora pide 100. Para cada Short, de más visto a menos, el
+  embudo de "pegó" (`pego.vod_de_un_short`, sacado de `buscar_en_vod_del_dia`, que ahora lo usa
+  también): si aparece, corta el tramo, lo procesa con todos los filtros y lo manda como cualquier
+  clip; si ese momento del stream ya salió por otro Short (±60 s, `ya_subido_cerca`), no lo repite.
+  Tope `pego.viejos_tope_min` (30); el resumen dice qué pasó con cada Short. Sin `YOUTUBE_API_KEY`
+  no anda (la búsqueda con yt-dlp solo da "esta semana"). Botón: "Viejos (lo que pegó, 1-2 meses)".
+  `tests/test_viejos_pego.py`.
 - v0.75.0 (2026-11-01) — **Clips aburridos** (pedido de Santi). (1) En la llamada de textos, campo nuevo
   `momento` (el remate, la reacción fuerte o lo que pasa, en una frase; vacío si no hay) y el prompt del
   puntaje exige un momento concreto: sin él, 5 como mucho (lo hace cumplir el código:

@@ -87,7 +87,7 @@ def vods_twitch(tw, login: str, desde: datetime, hasta: datetime) -> list[Vod]:
     if not uid:
         return []
     out = []
-    for v in (tw._get("/videos", [("user_id", uid), ("type", "archive"), ("first", "20")]) or {}).get("data", []):
+    for v in (tw._get("/videos", [("user_id", uid), ("type", "archive"), ("first", "100")]) or {}).get("data", []):
         try:
             inicio = datetime.fromisoformat(v["created_at"].replace("Z", "+00:00"))
         except (KeyError, ValueError, AttributeError):

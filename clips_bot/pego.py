@@ -414,13 +414,7 @@ def buscar_en_vod_del_dia(conn: sqlite3.Connection, streamers: list[Streamer], c
     ventanas; audio solo de las ventanas; el VOD entero solo si sobra tiempo). Antes, los compilados
     y los que nombran a otros (Gastón Edul, el Kun, otro streamer) no se buscan: se anotan con el
     motivo y salen igual en el resumen de "🔥 pegó"."""
-    import shutil
-
-    from . import vod as vd
     from . import vod_embudo as em
-    from .candidates import AVISO_PROGRAMA, es_programa_de_terceros
-    from .download import Descarga
-    from .media import probe
 
     por_login = {s.login: s for s in streamers}
     desde = (datetime.now(timezone.utc) - timedelta(days=1)).isoformat()
@@ -448,71 +442,202 @@ def buscar_en_vod_del_dia(conn: sqlite3.Connection, streamers: list[Streamer], c
             conn.commit()
             continue
         intentados += 1
-        conn.execute("UPDATE pegados SET vod_intentado = 1 WHERE short_id = ?", (sid,))
+        r = vod_de_un_short(conn, sid, titulo, vistas, publicado, canal, s, cfg, carpeta, cliente,
+                            kick=kick, twitch=twitch, avisar=avisar, hasta=hasta, reloj=reloj,
+                            procesar_tramo=procesar_tramo, carpeta_tramos=carpeta_tramos,
+                            gemini=gemini, chat=chat, cfg_subtitulos=cfg_subtitulos)
+        if r.encontrado:
+            hallados += 1
+    return hallados
+
+
+@dataclass
+class EnVod:
+    """Lo que pasó al buscar UN Short en los VODs (`vod_de_un_short`)."""
+    encontrado: bool = False
+    clip_id: str | None = None        # el tramo cortado y procesado (None si no se llegó)
+    resultado: str = ""               # para el resumen: "listo", "se descartó: …", "ya lo subí…"
+    procesado: object = None          # lo que devolvió procesar_tramo (process.Resultado)
+
+
+def ya_subido_cerca(conn: sqlite3.Connection, vod_url: str, segundo: float, sin: str,
+                    margen_s: float = 60.0) -> str:
+    """¿Ya salió un clip de ESE momento del stream (otro Short que pegó con el mismo original)?
+    Devuelve el clip_id o ""."""
+    for (clip_id,) in conn.execute(
+            """SELECT p.vod_clip_id FROM pegados p JOIN clips c ON c.clip_id = p.vod_clip_id
+               WHERE p.vod_url = ? AND ABS(p.vod_segundo - ?) < ? AND p.short_id != ?
+                 AND c.estado IN ('procesado', 'entregado')""", (vod_url, segundo, margen_s, sin)):
+        return clip_id
+    return ""
+
+
+def vod_de_un_short(conn: sqlite3.Connection, sid: str, titulo: str, vistas, publicado: str, canal: str,
+                    s: Streamer, cfg, carpeta: Path, cliente, kick=None, twitch=None, avisar=log.info,
+                    hasta: float | None = None, reloj=time.monotonic, procesar_tramo=None,
+                    carpeta_tramos: Path | None = None, gemini=None, chat=None,
+                    cfg_subtitulos=None) -> EnVod:
+    """El embudo de `vod_embudo` para UN Short (que ya está en `pegados`): lo busca en los VODs de
+    los `vod_dias_antes` días antes de publicado y, si aparece y no es de un programa excluido ni un
+    momento que ya salió, corta el tramo y lo procesa con `procesar_tramo(descarga, aviso, pego)`."""
+    import shutil
+
+    from . import vod as vd
+    from . import vod_embudo as em
+    from .candidates import AVISO_PROGRAMA, es_programa_de_terceros
+    from .download import Descarga
+
+    conn.execute("UPDATE pegados SET vod_intentado = 1 WHERE short_id = ?", (sid,))
+    conn.commit()
+    tmp = carpeta / f"vod_{sid}"
+    try:
+        pista = em.bajar_pista(sid, tmp)
+        if publicado:   # la de la búsqueda trae la hora; la de yt-dlp a veces solo el día
+            pista.publicado = datetime.fromisoformat(publicado.replace("Z", "+00:00"))
+        pista.publicado = pista.publicado or datetime.now(timezone.utc)
+        dur_short = pista.duracion or 30.0
+        if cfg_subtitulos is not None:
+            try:
+                pista.transcripcion = em.transcribir_pista(pista, cfg_subtitulos)
+            except Exception as e:   # sin transcripción el embudo sigue con la hora y la imagen
+                avisar(f"pegó (VOD): {sid}: sin transcripción ({str(e)[:80]})")
+        cuando = pista.publicado
+        buscar = vd.vods_kick if s.plataforma == "kick" else vd.vods_twitch
+        vods = buscar(cliente, s.login, cuando - timedelta(days=cfg.vod_dias_antes), cuando)
+        clips = originales(s, cuando, cfg.vod_dias_antes, max(300, cfg.max_originales),
+                           twitch=twitch, kick=kick)
+        avisar(f"pegó (VOD): «{(titulo or '')[:50]}»: {len(vods)} VODs, {len(clips)} clips")
+        h = em.buscar(pista, vods, clips, cfg.umbral, tmp, {em._norm(n) for n in nombres(s)},
+                      gemini=gemini, chat=chat, cache=carpeta / "huellas", avisar=avisar,
+                      hasta=hasta, reloj=reloj, respaldo=cfg.vod_respaldo)
+    except Exception as e:
+        avisar(f"pegó (VOD): {sid}: {str(e)[:150]}")
+        return EnVod(resultado=f"falló la búsqueda: {str(e)[:80]}")
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    if not h:
+        conn.execute("UPDATE pegados SET vod_resultado = ? WHERE short_id = ?",
+                     ("no apareció en los VODs", sid))
         conn.commit()
-        tmp = carpeta / f"vod_{sid}"
-        try:
-            pista = em.bajar_pista(sid, tmp)
-            if publicado:   # la de la búsqueda trae la hora; la de yt-dlp a veces solo el día
-                pista.publicado = datetime.fromisoformat(publicado.replace("Z", "+00:00"))
-            pista.publicado = pista.publicado or datetime.now(timezone.utc)
-            dur_short = pista.duracion or 30.0
-            if cfg_subtitulos is not None:
-                try:
-                    pista.transcripcion = em.transcribir_pista(pista, cfg_subtitulos)
-                except Exception as e:   # sin transcripción el embudo sigue con la hora y la imagen
-                    avisar(f"pegó (VOD): {sid}: sin transcripción ({str(e)[:80]})")
-            cuando = pista.publicado
-            buscar = vd.vods_kick if s.plataforma == "kick" else vd.vods_twitch
-            vods = buscar(cliente, s.login, cuando - timedelta(days=cfg.vod_dias_antes), cuando)
-            clips = originales(s, cuando, cfg.vod_dias_antes, max(300, cfg.max_originales),
-                               twitch=twitch, kick=kick)
-            avisar(f"pegó (VOD): «{(titulo or '')[:50]}»: {len(vods)} VODs, {len(clips)} clips")
-            h = em.buscar(pista, vods, clips, cfg.umbral, tmp, {em._norm(n) for n in nombres(s)},
-                          gemini=gemini, chat=chat, cache=carpeta / "huellas", avisar=avisar,
-                          hasta=hasta, reloj=reloj, respaldo=cfg.vod_respaldo)
-        except Exception as e:
-            avisar(f"pegó (VOD): {sid}: {str(e)[:150]}")
-            continue
-        finally:
-            shutil.rmtree(tmp, ignore_errors=True)
-        if not h:
-            continue
-        v, seg, valor = h.vod, h.segundo, h.valor
-        hallados += 1
-        # ¿Stream de un programa de terceros? Excluido: no se procesa; en experimento: con aviso.
-        bloqueado = next((p for p in s.palabras_programa if es_programa_de_terceros(v.titulo, (p,))), "")
-        experimento = next((p for p in s.programa_aviso if es_programa_de_terceros(v.titulo, (p,))), "")
-        programa = bloqueado or experimento
-        conn.execute("""UPDATE pegados SET vod_url = ?, vod_segundo = ?, coincidencia = ?, vod_programa = ?
-                        WHERE short_id = ?""", (v.pagina, seg, valor, programa or None, sid))
+        return EnVod(resultado="no apareció en los VODs")
+    v, seg, valor = h.vod, h.segundo, h.valor
+    # ¿Stream de un programa de terceros? Excluido: no se procesa; en experimento: con aviso.
+    bloqueado = next((p for p in s.palabras_programa if es_programa_de_terceros(v.titulo, (p,))), "")
+    experimento = next((p for p in s.programa_aviso if es_programa_de_terceros(v.titulo, (p,))), "")
+    programa = bloqueado or experimento
+    conn.execute("""UPDATE pegados SET vod_url = ?, vod_segundo = ?, coincidencia = ?, vod_programa = ?
+                    WHERE short_id = ?""", (v.pagina, seg, valor, programa or None, sid))
+    conn.commit()
+    avisar(f"pegó (VOD): «{(titulo or '')[:50]}» está en {v.pagina} a los {seg / 60:.1f} min "
+           f"({valor:.2f})" + (f" — stream del {programa}" if programa else ""))
+    if bloqueado:
+        resultado = f"no lo procesé: el {bloqueado} está excluido"
+        conn.execute("UPDATE pegados SET vod_resultado = ? WHERE short_id = ?", (resultado, sid))
         conn.commit()
-        avisar(f"pegó (VOD): «{(titulo or '')[:50]}» está en {v.pagina} a los {seg / 60:.1f} min "
-               f"({valor:.2f})" + (f" — stream del {programa}" if programa else ""))
-        if bloqueado:
-            conn.execute("UPDATE pegados SET vod_resultado = ? WHERE short_id = ?",
-                         (f"no lo procesé: el {bloqueado} está excluido", sid))
-            conn.commit()
-            continue
-        if procesar_tramo is None or (hasta is not None and reloj() >= hasta):
-            continue
-        inicio, dur = vd.tramo(seg, dur_short)
-        clip_id = f"vod_{v.plataforma}_{v.id}_{int(inicio)}"
+        return EnVod(True, resultado=resultado)
+    otro = ya_subido_cerca(conn, v.pagina, seg, sid)
+    if otro:
+        resultado = f"ya lo subí (el mismo momento salió como {otro})"
+        conn.execute("UPDATE pegados SET vod_resultado = ? WHERE short_id = ?", (resultado, sid))
+        conn.commit()
+        return EnVod(True, resultado=resultado)
+    if procesar_tramo is None or (hasta is not None and reloj() >= hasta):
+        return EnVod(True, resultado="encontrado, sin tiempo para procesarlo")
+    inicio, dur = vd.tramo(seg, dur_short)
+    clip_id = f"vod_{v.plataforma}_{v.id}_{int(inicio)}"
+    procesado = None
+    previo = conn.execute("SELECT estado FROM clips WHERE clip_id = ?", (clip_id,)).fetchone()
+    if previo and previo[0] in ("procesado", "entregado"):
+        resultado = "ya lo subí"
+    else:
         try:
             ruta = vd.cortar(v, inicio, dur, (carpeta_tramos or carpeta / "tramos") / f"{clip_id}.mp4")
             d = Descarga(ruta, clip_id, f"{v.pagina}?t={int(inicio)}s", v.titulo, v.plataforma, s.login,
                          s.login, dur, 0, v.inicio + timedelta(seconds=inicio), "", de_streamer=True)
             aviso = (AVISO_PROGRAMA.format(experimento) + " (stream del programa: revisalo con más cuidado)"
                      if experimento else "")
-            r = procesar_tramo(d, aviso, {"vistas": int(vistas or 0), "canal": canal or ""})
-            resultado = f"se descartó: {r.descartado}" if r.descartado else "listo"
+            procesado = procesar_tramo(d, aviso, {"vistas": int(vistas or 0), "canal": canal or ""})
+            resultado = f"se descartó: {procesado.descartado}" if procesado.descartado else "listo"
         except Exception as e:
             avisar(f"pegó (VOD): no pude cortar o procesar {clip_id}: {str(e)[:150]}")
             clip_id, resultado = None, f"no pude cortarlo: {str(e)[:80]}"
-        conn.execute("UPDATE pegados SET vod_clip_id = ?, vod_resultado = ? WHERE short_id = ?",
-                     (clip_id, resultado, sid))
-        conn.commit()
-    return hallados
+    conn.execute("UPDATE pegados SET vod_clip_id = ?, vod_resultado = ? WHERE short_id = ?",
+                 (clip_id, resultado, sid))
+    conn.commit()
+    return EnVod(True, clip_id, resultado, procesado)
+
+
+# ---- /buscar "viejos": lo que pegó en los últimos meses, cortado del stream (2026-11-01) ------
+
+@dataclass
+class Viejos:
+    """Lo que salió de buscar los Shorts viejos de un streamer, para el resumen."""
+    streamer: str
+    encontrados_youtube: int = 0
+    filtrados: dict = field(default_factory=dict)     # motivo -> cuántos
+    candidatos: list[ShortAjeno] = field(default_factory=list)
+    vod_mas_viejo: datetime | None = None
+
+
+def ya_subido(conn: sqlite3.Connection, short_id: str) -> str:
+    """"" si el Short no se trató; si no, por qué no se vuelve a buscar."""
+    fila = conn.execute("SELECT clip_id, vod_clip_id, vod_intentado, vod_resultado FROM pegados "
+                        "WHERE short_id = ?", (short_id,)).fetchone()
+    if not fila:
+        return ""
+    clip_id, vod_clip_id, intentado, resultado = fila
+    for cid in (clip_id, vod_clip_id):
+        if cid and conn.execute("SELECT 1 FROM clips WHERE clip_id = ? AND estado IN ('procesado', 'entregado')",
+                                (cid,)).fetchone():
+            return "ya lo subí"
+    if intentado:
+        return "ya lo busqué en el VOD"
+    return ""
+
+
+def candidatos_viejos(conn: sqlite3.Connection, s: Streamer, cfg, clave: str, desde: datetime,
+                      hasta: datetime, vod_mas_viejo: datetime | None, propios: tuple[str, ...] = (),
+                      todos: list[Streamer] | None = None, buscar=None) -> Viejos:
+    """Los Shorts de OTROS canales que más pegaron sobre `s` entre `desde` y `hasta` (search.list por
+    vistas), sin los que ya traté o ya subí, los compilados, los que nombran a otros, y los que
+    se publicaron antes del VOD más viejo que todavía existe (Kick guarda ~1 mes): de esos no hay de
+    dónde cortar. Los más vistos primero."""
+    from collections import Counter
+
+    from . import vod_embudo as em
+
+    res = Viejos(s.login, vod_mas_viejo=vod_mas_viejo)
+    hallados = [x for x in (buscar or buscar_api)(consulta(s), desde, clave)
+                if not x.publicado or x.publicado <= hasta.strftime("%Y-%m-%dT%H:%M:%SZ")]
+    res.encontrados_youtube = len(hallados)
+    motivos: Counter = Counter()
+    pasan = filtrar(hallados, s, cfg.min_vistas, propios)
+    motivos["no pegó, dura más de 61 s, no lo nombra o es de un canal propio"] = len(hallados) - len(pasan)
+    nombres_propios = {em._norm(n) for n in nombres(s)}
+    otros = list(cfg.otros_nombres) + [n for o in (todos or []) if o.login != s.login for n in nombres(o)]
+    for x in pasan:
+        m = em.motivo_saltear(x.titulo, nombres_propios, otros)
+        if not m and x.publicado and vod_mas_viejo is not None and \
+                datetime.fromisoformat(x.publicado.replace("Z", "+00:00")) < vod_mas_viejo:
+            m = "es de antes del VOD más viejo que queda"
+        if not m:
+            m = ya_subido(conn, x.id)
+        if m:
+            motivos[m] += 1
+        else:
+            res.candidatos.append(x)
+    res.filtrados = {k: v for k, v in motivos.items() if v}
+    return res
+
+
+def texto_viejos(v: Viejos) -> str:
+    """Una línea para Telegram: qué dio YouTube y por qué quedó afuera cada cosa."""
+    partes = [f"{v.streamer}: YouTube dio {v.encontrados_youtube} Shorts"]
+    partes += [f"{n} {m}" for m, n in v.filtrados.items()]
+    partes.append(f"quedan {len(v.candidatos)} para buscar en el stream")
+    if v.vod_mas_viejo:
+        partes.append(f"(VODs desde el {v.vod_mas_viejo:%d/%m})")
+    return " · ".join(partes)
 
 
 def texto_publicos(recuentos: list) -> str:

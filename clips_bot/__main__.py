@@ -1448,6 +1448,10 @@ def _buscar(conn, tg: TelegramClient, chat_id: str, args: list[str], settings: S
         # Ventana pedida a mano: sin el mínimo de 24 h de antigüedad (eso es para que un clip junte
         # vistas y duplicados; acá el que busca ya sabe lo que quiere) y con margen de candidatos
         # para que el filtro de palabras tenga con qué trabajar.
+        if modo == "viejos":
+            # Lo que más pegó en otros canales en los últimos meses, cortado del stream (2026-11-01).
+            return _buscar_viejos(conn, tg, chat_id, elegidos_st, cupo, settings, streamers, gemini,
+                                  token) + _problemas(problemas)
         filtros = _replace(settings.filtros, ventana_horas=dias * 24, antiguedad_min_h=0,
                            n_candidatos=max(settings.filtros.n_candidatos, 20))
         vistos = db.ids_vistos(conn)
@@ -1457,9 +1461,6 @@ def _buscar(conn, tg: TelegramClient, chat_id: str, args: list[str], settings: S
                 por_streamer.append((st, _pegados_para(settings, [st], buscar_ahora=True,
                                                        avisar=log.info, forzar=True,
                                                        recuentos=recuentos_pego)))
-                continue
-            if modo == "viejos":
-                por_streamer.append((st, _candidatos_viejos(st, settings, vistos, descartes)))
                 continue
             if st.plataforma == "kick":
                 res = buscar_kick(KickClient(pausa_s=settings.kick.pausa_s), [st], filtros, vistos,
@@ -4208,7 +4209,8 @@ SECCIONES = [
         ("/buscar &lt;streamer[,streamer]&gt; [palabras] [días | viejos | pego] [xN]",
          f"busco en sus clips los que tengan esas palabras en el título del clip o del stream, "
          f"proceso hasta {TOPE_BUSCAR} y te los mando. Solo con el streamer, te pregunto con "
-         "botones de cuándo (7 días, 30 días, viejos de más de 30 días, o 🔥 lo que pegó en otros "
+         "botones de cuándo (7 días, 30 días, viejos = lo que más pegó en otros canales hace 1-2 meses, "
+         "cortado del stream, o 🔥 lo que pegó en otros "
          "canales) y cuántos (1, 3, 5); si ya escribís todo, no pregunto nada. Con varios "
          "streamers separados por coma, el tope se reparte entre ellos.",
          "/buscar spreen 30 x5"),
@@ -4646,39 +4648,67 @@ def _menu_callback(conn, tg: TelegramClient, cb: dict, settings: Settings, cola:
                                teclado_cantidad(token))
 
 
-def _candidatos_viejos(st, settings: Settings, vistos: set, descartes) -> list:
-    """/buscar "viejos": los clips del streamer de hace más de 30 días (hasta el tope del catálogo,
-    3 años), los más vistos primero, con los filtros de siempre menos la antigüedad y las vistas."""
-    from dataclasses import replace as _replace
+def _buscar_viejos(conn, tg: TelegramClient, chat_id: str, elegidos: list, cupo: int, settings: Settings,
+                   streamers: list, gemini, token: str, reloj=time.monotonic) -> str:
+    """/buscar "viejos" (pedido 2026-11-01): los Shorts de OTROS canales que más pegaron sobre el
+    streamer entre `pego.viejos_dias` y `pego.dias` atrás; para cada uno, el momento en el stream
+    con el embudo de "pegó" (vod_embudo) y el tramo cortado de ahí, procesado con todos los filtros y
+    mandado como cualquier clip. Saltea lo que ya subí o ya busqué, los compilados, los que nombran a
+    otros y los de antes del VOD más viejo que queda. Va con el turno pesado ya tomado."""
+    from . import pego
+    from . import vod as vd
+    from .config import env
+    from .process import READY_DIR, RAW_DIR, procesar
 
-    from .candidates import Clip, con_aviso_programa, motivo_descarte, umbrales_vistas
-    from .kick import a_clip
-
+    cfg = settings.pego
+    clave = env("YOUTUBE_API_KEY", requerido=False)
+    if not clave:
+        return "«Viejos» necesita la búsqueda de YouTube por la API (falta YOUTUBE_API_KEY en el .env)."
     ahora = datetime.now(timezone.utc)
-    limite = ahora - timedelta(days=30)
-    if st.plataforma == "kick":
-        clips = []
-        for d in KickClient(pausa_s=settings.kick.pausa_s).get_clips(st.login, 100, "view", ""):
-            p = a_clip(d, st.login)
-            clips.append(Clip.from_helix(p, st.login, p["_game_name"], "", "catalogo", "kick"))
-    else:
-        tw = _twitch()
-        bid = tw.get_user_ids([st.login]).get(st.login)
-        desde = ahora - timedelta(days=settings.catalogo.antiguedad_max_dias)
-        clips = [Clip.from_helix(d, st.login, "", "", "catalogo")
-                 for d in tw.get_clips(bid, desde, limite, 100)] if bid else []
-    clips = [c for c in clips if c.created_at < limite]
-    filtros = _replace(settings.filtros, antiguedad_min_h=0, min_vistas=0, vistas_top=0)
-    mediana = umbrales_vistas(clips, 1.0).get(st.login, (0, 0))[1] if clips else 0
-    out = []
-    for c in clips:
-        m = motivo_descarte(c, filtros, vistos, palabras_programa=st.palabras_programa)
-        if m:
-            descartes[m] += 1
-        else:
-            out.append(_replace(con_aviso_programa(c, st.programa_aviso), mediana_vistas=mediana,
-                                grupo=st.grupo_de("catalogo")))
-    return sorted(out, key=lambda c: -c.view_count)[:20]
+    desde, hasta = ahora - timedelta(days=cfg.viejos_dias), ahora - timedelta(days=cfg.dias)
+    limite = reloj() + cfg.viejos_tope_min * 60
+    kick, tw = KickClient(pausa_s=settings.kick.pausa_s), _twitch()
+    carpeta = DATA_DIR / "pego_tmp"
+    enviados, lineas = 0, []
+    for st in elegidos:
+        cliente = kick if st.plataforma == "kick" else tw
+        try:
+            todos_vods = (vd.vods_kick if st.plataforma == "kick" else vd.vods_twitch)(
+                cliente, st.login, datetime(2020, 1, 1, tzinfo=timezone.utc), ahora)
+            v = pego.candidatos_viejos(conn, st, cfg, clave, desde, hasta,
+                                       min((x.inicio for x in todos_vods), default=None),
+                                       cfg.canales_propios, streamers)
+        except Exception as e:     # YouTube o la plataforma caídos: se dice y sigue con el próximo
+            lineas.append(f"{st.login}: la búsqueda falló ({html.escape(str(e)[:120])})")
+            continue
+        tg.send_message(chat_id, "🔎 Viejos: " + html.escape(pego.texto_viejos(v)) +
+                        ("\nBusco en el stream los más vistos (tarda 2-4 min cada uno)." if v.candidatos else ""))
+
+        def procesar_tramo(d, aviso, pego_dato, st=st):
+            return procesar(d.url, settings, streamers, gemini=gemini, avisar=log.info, fuente="catalogo",
+                            descarga=d, aviso=aviso, pego=pego_dato, grupo=st.grupo_de("catalogo"))
+
+        for x in v.candidatos:
+            if enviados >= cupo or reloj() >= limite:
+                break
+            pego.guardar(conn, x, st.login, None)
+            r = pego.vod_de_un_short(conn, x.id, x.titulo, x.vistas, x.publicado, x.canal, st, cfg,
+                                     carpeta, cliente, kick=kick, twitch=tw, avisar=log.info,
+                                     hasta=limite, reloj=reloj, procesar_tramo=procesar_tramo,
+                                     carpeta_tramos=RAW_DIR, gemini=gemini, chat=Chat(),
+                                     cfg_subtitulos=settings.subtitulos)
+            lineas.append(f"«{html.escape(x.titulo[:60])}» ({x.vistas:,} vistas, {html.escape(x.canal)}): "
+                          f"{html.escape(r.resultado)}".replace(",", "."))
+            if r.clip_id and r.procesado is not None and not r.procesado.descartado:
+                meta = json.loads((READY_DIR / f"{r.clip_id}.json").read_text(encoding="utf-8"))
+                if meta.get("textos"):
+                    enviados += 1
+                    enviar_clip(tg, chat_id, conn, r.clip_id, meta, enviados, None, pedido=token)
+    if reloj() >= limite:
+        lineas.append(f"(cortado por el tope de {cfg.viejos_tope_min} min)")
+    quienes = ", ".join(st.login for st in elegidos)
+    return (f"Listo: <b>{enviados}</b> clip(s) viejos de {html.escape(quienes)} sacados de lo que pegó en "
+            f"otros canales ({cfg.dias}-{cfg.viejos_dias} días atrás).\n" + "\n".join(lineas[:12]))
 
 
 def _encolar_busqueda(conn, tg: TelegramClient, chat_id: str, args: list, settings: Settings,

@@ -351,6 +351,10 @@ class Pego:
     vod_dias_antes: int = 7
     vod_respaldo: bool = True
     otros_nombres: tuple = ("Gastón Edul", "Edul", "Kun Agüero", "el Kun", "Agüero")
+    # /buscar "viejos" (2026-11-01): los Shorts que pegaron entre `viejos_dias` y `dias` atrás, buscados
+    # en el stream con el embudo. Kick guarda ~1 mes de VODs y Twitch ~2: más atrás no hay de dónde cortar.
+    viejos_dias: int = 60
+    viejos_tope_min: int = 30         # tope de toda la búsqueda (cada Short son 2-4 min en la Pi)
 
 
 @dataclass(frozen=True)

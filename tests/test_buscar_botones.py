@@ -35,7 +35,7 @@ def test_los_botones_entran_en_64_bytes():
             for b in fila:
                 assert len(b["callback_data"].encode()) <= LIMITE_CALLBACK
     textos = [b["text"] for f in teclado_periodo("t")["inline_keyboard"] for b in f]
-    assert textos == ["Últimos 7 días", "Últimos 30 días", "Viejos (más de 30 días)",
+    assert textos == ["Últimos 7 días", "Últimos 30 días", "Viejos (lo que pegó, 1-2 meses)",
                       "🔥 Lo que pegó en otros canales"]
     assert [b["text"] for b in teclado_cantidad("t")["inline_keyboard"][0]] == ["1", "3", "5"]
 
@@ -125,7 +125,7 @@ def test_modo_pego_usa_solo_lo_que_pego(conn, monkeypatch):
         return []
 
     monkeypatch.setattr(m, "_pegados_para", pegados_para)
-    monkeypatch.setattr(m, "_candidatos_viejos", lambda *a: pytest.fail("no es viejos"))
+    monkeypatch.setattr(m, "_buscar_viejos", lambda *a, **k: pytest.fail("no es viejos"))
     tg = TG()
     r = m._buscar(conn, tg, "1", ["spreen", "pego", "x3"], load_settings(), [st], None)
     assert llamados == [True] and "en lo que pegó en otros canales" in r   # busca aunque esté apagado

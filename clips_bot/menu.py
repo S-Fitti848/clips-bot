@@ -88,7 +88,7 @@ def teclado_streamer(gi: int, si: int, pagina: int, apodos: tuple = (), facecam:
     return {"inline_keyboard": [
         [{"text": "Últimos 7 días", "callback_data": _cb("st", "b", gi, si, "7")},
          {"text": "Últimos 30 días", "callback_data": _cb("st", "b", gi, si, "30")}],
-        [{"text": "Viejos (más de 30 días)", "callback_data": _cb("st", "b", gi, si, "viejos")}],
+        [{"text": "Viejos (lo que pegó, 1-2 meses)", "callback_data": _cb("st", "b", gi, si, "viejos")}],
         [{"text": "🔥 Lo que pegó en otros canales", "callback_data": _cb("st", "b", gi, si, "pego")}],
         [{"text": "🔎 Con palabra…", "callback_data": _cb("st", "w", gi, si)}],
         [{"text": f"🏷 Apodos: {etiqueta}", "callback_data": _cb("st", "ap", gi, si)}],
