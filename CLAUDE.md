@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-11-01 | **Versión:** v0.76.0 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 de clips + timer 06:00 de la efeméride + escucha de Telegram 24/7)
+**Snapshot:** 2026-11-06 | **Versión:** v0.77.0 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 de clips + timer 06:00 de la efeméride + escucha de Telegram 24/7)
 
 > **SI ESTÁS EMPEZANDO UNA SESIÓN NUEVA, LEÉ §10.** Ahí está qué está hecho, qué quedó a medias,
 > qué falta, y las trampas que ya nos mordieron.
@@ -805,6 +805,22 @@ Problemas abiertos:
 
 ## 9. CHANGELOG
 
+- v0.77.0 (2026-11-06) — **Dos fallas del 5/11.** (1) **/ya no andaba nunca**: armaba los args con
+  `max_procesar=None` y `_diario` comparaba `procesados >= None` apenas había un candidato
+  (TypeError; falló igual el 30/10 dos veces y el 5/11 a las 07:03). No tenía que ver con las
+  estadísticas ni la retención. Ahora `MAX_PROCESAR` (6) es el tope por defecto en `_diario`, en /ya
+  y en el CLI. `tests/test_ya_tope.py`. (2) **El video de Pequeña Historia de Android llegó sin
+  botones**: Telegram rechazó el mensaje de los textos ("message is too long", más de 4096
+  caracteres) porque el autor de una foto de Commons (la consola OUYA) traía el CSS de Wikipedia
+  (`.mw-parser-output .hlist …`) y la descripción se infló. Arreglos: `efemerides.sin_html` saca los
+  bloques `<style>`/`<script>` enteros; `telegram.mandar_con_botones` parte un mensaje largo
+  (`partir_html`, cerrando y reabriendo `<pre>`/`<b>`/`<i>`/`<code>`), pone los botones en el último
+  pedazo y VERIFICA que hayan quedado (`reply_markup` de la respuesta): si no, `editMessageReplyMarkup`;
+  si tampoco, un mensaje corto solo con los botones. `send_message` devuelve el mensaje.
+  `tests/test_botones_siempre.py`. La foto de "inversores" de ese video (billetes de rupias de
+  Pexels): Gemini no encontró ninguna foto para esa frase y el relleno repitió la que había elegido
+  para "10.000 dólares en efectivo" (marcada "NO es de la época"); se reemplazó a mano por una de
+  Commons y el video se reenvió.
 - docs (2026-11-01) — **Portadas e ilustraciones con IA para Pequeña Historia: EN PAUSA** (Santi). El
   diseño (portada cinematográfica con título serif dorado, hasta 2 ilustraciones "Recreación" por
   video, `containsSyntheticMedia` en YouTube, costo ~US$4–7/mes con Flash) quedó en

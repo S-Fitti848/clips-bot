@@ -72,12 +72,13 @@ class TelegramClient:
             data["offset"] = str(offset)
         return self._llamar("getUpdates", data)  # type: ignore[return-value]
 
-    def send_message(self, chat_id: str, texto_html: str, teclado: dict | None = None) -> None:
+    def send_message(self, chat_id: str, texto_html: str, teclado: dict | None = None) -> dict:
+        """Devuelve el mensaje que armó Telegram (con su `reply_markup`, para verificar los botones)."""
         data = {"chat_id": chat_id, "text": texto_html, "parse_mode": "HTML",
                 "disable_web_page_preview": "true"}
         if teclado:
             data["reply_markup"] = json.dumps(teclado)
-        self._llamar("sendMessage", data)
+        return self._llamar("sendMessage", data)  # type: ignore[return-value]
 
     def answer_callback(self, callback_id: str, texto: str = "", alerta: bool = False) -> None:
         """Le saca el relojito al botón. Si no se contesta, Telegram lo deja girando. `alerta`: el
@@ -253,6 +254,69 @@ def por_que(meta: dict) -> str:
         linea = (f"🔥 Pegó en otro canal: {int(pego['vistas']):,} vistas".replace(",", ".")
                  + (f" ({pego['canal']})" if pego.get("canal") else "") + " · " + linea)
     return linea
+
+
+MAX_MENSAJE = 4000     # Telegram corta en 4096 caracteres: "message is too long" (5/11, Android)
+_TAG = re.compile(r"<(/?)(b|i|code|pre)>")
+
+
+def partir_html(texto: str, maximo: int = MAX_MENSAJE) -> list[str]:
+    """Parte un mensaje HTML largo en pedazos de hasta `maximo`, por renglones. Si un pedazo corta
+    adentro de un <pre>, <b>, <i> o <code>, lo cierra al final y lo vuelve a abrir en el siguiente
+    (si no, Telegram rechaza el HTML). Un renglón solo más largo que el máximo se recorta."""
+    if len(texto) <= maximo:
+        return [texto]
+    pedazos, actual, abiertos = [], [], []
+
+    def cierre(tags):
+        return "".join(f"</{t}>" for t in reversed(tags))
+
+    for linea in texto.split("\n"):
+        if len(linea) > maximo - 200:
+            linea = linea[:maximo - 200] + "…"
+        largo = len("\n".join(actual + [linea])) + len(cierre(abiertos)) + 20
+        if actual and largo > maximo:
+            pedazos.append("\n".join(actual) + cierre(abiertos))
+            actual = ["".join(f"<{t}>" for t in abiertos) + linea]
+        else:
+            actual.append(linea)
+        for barra, tag in _TAG.findall(linea):
+            if not barra:
+                abiertos.append(tag)
+            elif tag in abiertos:
+                del abiertos[len(abiertos) - 1 - abiertos[::-1].index(tag)]
+    if actual:
+        pedazos.append("\n".join(actual) + cierre(abiertos))
+    return pedazos
+
+
+def mandar_con_botones(tg, chat_id: str, texto_html: str, teclado: dict, resumen: str) -> None:
+    """El texto (partido si es largo; los botones van en el ÚLTIMO pedazo) y después se VERIFICA
+    que el mensaje haya quedado con los botones (2026-11-05: el video de Android llegó sin botones
+    porque el mensaje pasaba de 4096 caracteres y Telegram lo rechazó entero). Si quedó sin
+    botones, se le ponen; si el mensaje no salió, va uno corto solo con los botones. Si eso también
+    falla, el TelegramError sube (y el que llama lo cuenta como no entregado)."""
+    pedazos = partir_html(texto_html)
+    enviado = None
+    try:
+        for p in pedazos[:-1]:
+            tg.send_message(chat_id, p)
+        enviado = tg.send_message(chat_id, pedazos[-1], teclado=teclado)
+    except TelegramError as e:
+        log.warning("el mensaje de %s no salió (%s): mando los botones aparte", resumen, e)
+        enviado = {}
+    if not isinstance(enviado, dict):      # clientes falsos de los tests
+        return
+    if (enviado.get("reply_markup") or {}).get("inline_keyboard"):
+        return
+    if enviado.get("message_id"):
+        try:
+            tg.edit_reply_markup(chat_id, enviado["message_id"], teclado)
+            log.warning("el mensaje de %s había quedado sin botones: se los puse", resumen)
+            return
+        except TelegramError as e:
+            log.warning("no pude ponerle los botones a %s (%s): van aparte", resumen, e)
+    tg.send_message(chat_id, f"🔘 Botones de {html.escape(resumen)}", teclado=teclado)
 
 
 def mensaje_textos(numero: int, streamer: str, clip_id: str, horario: str | None, textos: dict,

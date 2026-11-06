@@ -611,7 +611,7 @@ def enviar_clip(tg: TelegramClient, chat_id, conn, clip_id: str, meta: dict, num
     datos en vez de con un número puesto a ojo (ver db.votos_por_puntaje).
     """
     from .process import READY_DIR, guardar_meta
-    from .telegram import mensaje_textos, por_que, teclado_voto
+    from .telegram import mandar_con_botones, mensaje_textos, por_que, teclado_voto
 
     destinos = [chat_id] if isinstance(chat_id, (str, int)) else list(chat_id)
     if not destinos:
@@ -649,7 +649,8 @@ def enviar_clip(tg: TelegramClient, chat_id, conn, clip_id: str, meta: dict, num
             teclado = teclado_voto(clip_id, pedido=pedido, ultimo=ultimo, cuantos_mas=cuantos_mas,
                                    subida=_estado_subida(conn, clip_id, meta), gameplay=_con_gameplay(meta))
             teclado["inline_keyboard"] += list(extra_filas or [])
-            tg.send_message(destino, cuerpo, teclado=teclado)
+            # Partido si es largo y con los botones verificados (si no quedan, se vuelven a poner).
+            mandar_con_botones(tg, destino, cuerpo, teclado, f"#{numero} · {meta['textos']['titulo']}")
             llegaron += 1
         except TelegramError as e:
             # Que un destino falle (bloqueado, sacaron al bot del grupo) no puede tumbar el resto.
@@ -1038,12 +1039,15 @@ def _diario(args: argparse.Namespace, settings: Settings, atender: bool = True,
 
     # Pasos 3-7. Se procesa por fuente en orden de score, solo hasta llenar el cupo de esa fuente
     # (más lo que se vaya descartando), para no gastar Whisper y render de más.
-    print(f"\n=== Pasos 3-7: procesar (tope {args.max_procesar} clips)")
+    # Sin tope (el /ya armaba los args con max_procesar=None y la mezcla reventaba con un TypeError
+    # apenas había candidatos: 30/10 y 5/11), el de siempre.
+    tope = args.max_procesar if getattr(args, "max_procesar", None) is not None else MAX_PROCESAR
+    print(f"\n=== Pasos 3-7: procesar (tope {tope} clips)")
     procesados = 0
     # Por grupo (no por fuente): cada cupo de la mezcla se llena con sus propios candidatos.
     # Multi-POV: si 3+ canales del evento clipearon el mismo momento, esos 3 clips se procesan y el
     # Short secuencial se queda con el cupo del evento. Uno por día.
-    multipov_hecho = procesar_multipov_del_dia(settings, streamers, res, gemini, args.max_procesar)
+    multipov_hecho = procesar_multipov_del_dia(settings, streamers, res, gemini, tope)
     procesados += multipov_hecho
 
     por_grupo: dict[str, list] = {}
@@ -1060,7 +1064,7 @@ def _diario(args: argparse.Namespace, settings: Settings, atender: bool = True,
         fuente = clips[0].fuente
         ok = 0
         for c in clips:
-            if ok >= objetivo or procesados >= args.max_procesar:
+            if ok >= objetivo or procesados >= tope:
                 break
             print(f"\n--- [{grupo}] {c.url}")
             try:
@@ -1385,6 +1389,7 @@ MAX_BUSQUEDAS = 2      # búsquedas esperando en la cola del modo escucha
 CANTIDAD_MAX_PEDIDO = 6  # tope de clips por pedido con xN; más no entra en la Pi
 TOPE_BUSCAR = 3        # clips procesados por búsqueda: cada uno es Whisper + OCR + render
 VENCIMIENTO_PESADO_S = 3 * 3600   # un turno pesado colgado se suelta solo a las 3 h
+MAX_PROCESAR = 6                  # tope de clips procesados por corrida diaria (y por /ya)
 ESPERA_DIARIO_S = 20 * 60         # lo que `diario` aguanta a una búsqueda antes de arrancar igual
 ESPERA_EFEMERIDE_S = 30 * 60      # lo que `efemeride-diaria` espera el turno (los clips de las 05:00)
 # Desde el 2026-10-29 la efeméride tiene su propio servicio y timer (06:00): si está instalado, la
@@ -1570,7 +1575,7 @@ def _ya(conn, tg: TelegramClient, chat_id: str, settings: Settings, args: list |
         antes = _cuantos_entregados(conn)
         tg.send_message(chat_id, f"Arranco la mezcla diaria: <b>{cuantos}</b> clips. "
                                  "Tarda entre 15 y 30 minutos en la Pi.")
-        args = argparse.Namespace(simular=False, max_procesar=None, incluir_sin_permiso=False)
+        args = argparse.Namespace(simular=False, max_procesar=MAX_PROCESAR, incluir_sin_permiso=False)
         # Lo pediste vos y por acá: la entrega va a ESTE chat, no a la lista de las 05:00.
         codigo = _diario(args, settings, atender=False, destinos=[chat_id], cuantos=cuantos)
         nuevos = _cuantos_entregados(conn) - antes
@@ -5141,7 +5146,8 @@ def main(argv: list[str] | None = None) -> int:
     pd = sub.add_parser("diario", help="corrida completa: candidatos → procesar → elegir → entregar")
     pd.add_argument("--simular", action="store_true",
                     help="hace todo menos el envío: no manda por Telegram ni marca entregado")
-    pd.add_argument("--max-procesar", type=int, default=6, help="tope de clips a procesar (default 6)")
+    pd.add_argument("--max-procesar", type=int, default=MAX_PROCESAR,
+                    help=f"tope de clips a procesar (default {MAX_PROCESAR})")
     pd.add_argument("--incluir-sin-permiso", action="store_true",
                     help="incluye streamers sin permiso cargado. Solo para simular: el envío igual los rechaza")
     pd.set_defaults(func=cmd_diario)

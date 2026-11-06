@@ -112,8 +112,13 @@ def _norm(t: str) -> str:
 
 
 def sin_html(t: str) -> str:
-    """Commons a veces manda el HTML escapado ("&lt;abbr ..."): se desescapa ANTES de sacar tags."""
-    t = re.sub(r"<[^>]+>", " ", html.unescape(str(t or "")))
+    """Commons a veces manda el HTML escapado ("&lt;abbr ..."): se desescapa ANTES de sacar tags.
+    Los bloques <style> y <script> se sacan ENTEROS: el 5/11 el autor de una foto de Commons trajo
+    el CSS de Wikipedia (".mw-parser-output .hlist …", cientos de caracteres) y la descripción del
+    video de Android pasó el largo de un mensaje de Telegram."""
+    t = html.unescape(str(t or ""))
+    t = re.sub(r"<(style|script)\b[^>]*>.*?</\1\s*>", " ", t, flags=re.I | re.S)
+    t = re.sub(r"<[^>]+>", " ", t)
     return re.sub(r"\s+", " ", html.unescape(t)).strip()
 
 
