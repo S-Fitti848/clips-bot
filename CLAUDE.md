@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-11-09 | **Versión:** v0.78.0 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 de clips + timer 06:00 de la efeméride + escucha de Telegram 24/7)
+**Snapshot:** 2026-11-09 | **Versión:** v0.79.2 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 de clips + timer 06:00 de la efeméride + escucha de Telegram 24/7, que además propone la historia de Facebook a las 06:30)
 
 > **SI ESTÁS EMPEZANDO UNA SESIÓN NUEVA, LEÉ §10.** Ahí está qué está hecho, qué quedó a medias,
 > qué falta, y las trampas que ya nos mordieron.
@@ -103,6 +103,16 @@ servicio systemd separado: `clips-bot`).
   en el puente de Nacozari). Lo que funcionó: historia humana real, lugar concreto, en el día en
   que ese lugar la conmemora, acto heroico (no tragedia sola). **YouTube NO se toca** (las
   efemérides andan ahí, ~1.000 vistas cada una): cualquier prueba con esto es solo en Facebook.
+  **Insights medidos el 2026-11-09** (token de página con `read_insights`): Nacozari 16.841
+  reproducciones, 45 % del video visto en promedio (16,3 de 36,5 s), 37 % llega al final, +88
+  seguidores; Instagram (06/10) 7.914; el resto entre 3 y 225, y desde el 31/10 casi todos ~200.
+- **Video APARTE para Facebook (prueba de 2 semanas desde el 2026-11-10, decisión de Santi del
+  2026-11-09; §3d):** una historia humana real de un lugar concreto de Latinoamérica por día, en
+  lo posible en su aniversario. **Texto con Claude** (Sonnet 5.5 elige el hecho y escribe el
+  guion, Haiku 5.5 clasifica): deja de depender del cupo de Gemini. **Gemini solo para las fotos y
+  la voz**; la voz va por la SEGUNDA clave (Piper de respaldo). YouTube no cambia nada. La escucha
+  la propone a las 06:30; 📤 la sube SOLO a la página de Facebook a las 19:00 AR
+  (`historias_fb.hora_publicacion`, la hora la eligió Claude).
 - **Videos largos: NO por ahora (decisión de Santi, 2026-09-28).** No quiere videos largos con voz
   de IA. Si más adelante se hacen, van con SU voz grabada, no con Gemini TTS ni Piper.
 - **Sin música agregada en los clips.** Cualquier música es riesgo de Content ID. Si el clip trae
@@ -441,6 +451,40 @@ ancho estándar (1280, o 960 si el original no pasa de 1280; si no hay ninguna, 
 CLI: `python -m clips_bot efemeride [--fecha 27/09] [--hecho penicilina] [--aprobar] [--propuesta <json>]`
 (`--hecho`: solo los hechos que contienen esa palabra, para rehacer uno a mano).
 
+### 3d. Pequeña Historia para Facebook (`/historia [día/mes] [tema]`, `clips_bot/locales.py`, `claude.py`)
+Pedido 2026-11-09 (§1). Prueba de 2 semanas desde el 2026-11-10. Config en `historias_fb` de settings.
+1. **Candidatos**: la página de cada día de Wikipedia en español ("10 de noviembre"), sección
+   Acontecimientos con un lugar de Latinoamérica (`LUGAR_RE`: países, gentilicios, provincias,
+   estados, ciudades) + nacimientos y fallecimientos de las personas que una celebración del día
+   homenajea (La Pola el 14/11, Sor Juana el 12/11; se comparan sin "Sor/San" ni tildes:
+   `homenajeado`). Afuera sin llamar a nadie: atentados, masacres, asesinatos, secuestros,
+   torturas (`_DURO`) y guerras desde 1945. Las muertes, fusilamientos o accidentes pasan: con el
+   criterio de Nacozari decide el modelo (acto heroico sí; tragedia sola, no).
+2. **Haiku** clasifica todos en UNA llamada (`humana`, lugar, región, país, `tipo`
+   heroe_de_pueblo/gente_comun/anecdota/momento_emotivo/fundacion/otro, `tragedia_sola`,
+   `conmemora`, `interes` 1-10). Buenos = humana + lugar concreto + no tragedia sola; primero los
+   que se conmemoran hoy. Con un hecho elegido a mano, Haiku clasifica el día entero (solo, un
+   hecho lo juzga distinto: Epecuén dio "no es humana" sola y "gente común, 8" con el día) y no lo
+   puede descartar.
+3. **Sonnet** ordena hasta 8 y dice el artículo del hecho y el del lugar.
+4. Guion con Sonnet (`SISTEMA_GUION_LOCAL` = el de siempre + "Un día como hoy, en <año>, en
+   <lugar>," + lugar en el título y como hashtag, validado por `validar_lugar`); fotos con Gemini,
+   primero las del artículo del lugar (se suman a las del hecho, mismas reglas fijas).
+5. Aprobación igual que la efeméride (✅ ✏️ 🔁, encabezado "📘 SOLO FACEBOOK"); el video
+   (`clip_id` historia_fb_…, `meta.efemeride.destino = "facebook"`) con la voz por la segunda clave;
+   📤 → `_subir_facebook(hora=19:00)` y nada a YouTube; cada subida queda en
+   `bot_estado.historias_fb_registro` (lugar, país, tipo, conmemoración, video_id) para comparar.
+6. **La escucha** (`_fb_tick`): desde las 06:30 y hasta las 21:00, una vez por día
+   (`historias_fb_dia`), con el turno pesado libre. Un hecho fijado a mano: `historias_fb_hecho`
+   = {"dia","hecho"} o `historias_fb_hecho:<AAAA-MM-DD>` = texto. Una falla se avisa y no se
+   reintenta (para eso, `/historia`).
+CLI: `historia-fb [--fecha 10/11] [--hecho Epecuén]` (propone sin Telegram) y `historia-fb --fecha
+10/11 --contar-mes 30` (cuenta candidatos buenos por día con Haiku).
+**Costo medido (Epecuén, 2026-11-09):** Haiku clasifica US$ 0,001; Sonnet elige US$ 0,007; cada
+intento de guion US$ 0,058-0,063 (~6.500 tokens de entrada y ~4.500-5.000 de salida, casi todo
+pensamiento); esa propuesta tuvo 2 intentos → **US$ 0,13**. Peor caso (3 hechos × 3 intentos)
+≈ US$ 0,55; un ✏️ ≈ US$ 0,06. Más 1 llamada de Gemini por hecho (fotos) y 1 voz por video.
+
 ### 4b. Módulo de métricas (feedback loop)
 **Hecho (v0.36.0, solo YouTube, `clips_bot/metricas.py`):** en la corrida de las 05:00, si hay
 token de YouTube (`youtube-auth rots`, con el permiso `yt-analytics.readonly`), se listan los
@@ -623,6 +667,10 @@ clips_bot/pego.py        lo que pega en otros canales → el clip original (bús
 clips_bot/audio_huella.py ¿mismo momento? audio a 8 kHz en 16 bandas + correlación con desfase
 clips_bot/chat.py        picos de chat de Twitch (GQL interno, una página por pedido) ÷ ritmo del VOD
 clips_bot/metricas.py    §4b: métricas de los Shorts del canal y pesos por streamer y tipo
+clips_bot/claude.py      texto con Claude (SDK oficial `anthropic`, ANTHROPIC_API_KEY): misma forma
+                         que GeminiClient.json; schema de Gemini → JSON Schema; uso en gemini_uso
+                         con clave "claude"; Sonnet con fallbacks "default"
+clips_bot/locales.py     §3d: historias de Facebook (Wikipedia en español por día, Haiku, Sonnet)
 clips_bot/envivo.py      modo en vivo (§3b): quién está al aire, momentos por creadores distintos,
                          alertas en la DB (no repetir, tope, vencer) y el resumen de tiempos
 tests/                   549 tests sin red ni video (conftest.py: nada sale a YouTube) (test_reglas_fijas.py: las 3 reglas de §1)
@@ -818,6 +866,26 @@ Problemas abiertos:
 
 ## 9. CHANGELOG
 
+- v0.79.2 (2026-11-09) — Sor Juana no entraba el 12/11 (el nacimiento enlaza "Juana Inés de la
+  Cruz" y el Día Nacional del Libro, "Sor Juana Inés de la Cruz"): `locales.homenajeado` compara
+  sin "Sor/San/…", tildes ni paréntesis. Un hecho se puede fijar por día
+  (`historias_fb_hecho:<día>`): el 12/11 queda fijado a Sor Juana (Newbery no va, pedido de Santi).
+  835 tests OK.
+- v0.79.1 (2026-11-09) — Con un hecho elegido a mano, Haiku clasifica el día entero y no lo puede
+  descartar (la primera prueba de Epecuén falló así). **Prueba real en la Pi:** "Villa Epecuén: el
+  pueblo que tapó el lago", 10 frases, 99 palabras, el lugar en título, primera frase y
+  #VillaEpecuen, 8 fotos (bañistas de 1938, costanera de 1980, ruinas de 2009, Pablo Novak) y 4
+  tarjetas donde no había foto de época. 833 tests OK.
+- v0.79.0 (2026-11-09) — **Pequeña Historia para Facebook** (§3d): `locales.py`, `claude.py`,
+  `/historia`, CLI `historia-fb`, `_fb_tick` a las 06:30 en la escucha, voz por la segunda clave
+  (`voz_efemeride(segunda_primero=True)`), subida solo a Facebook a las 19:00 y registro del tipo
+  de historia. `anthropic>=2.7` en requirements; `ANTHROPIC_API_KEY` copiada al .env de clips en la
+  Pi (la misma de ~/bot-videos; no está en la compu). Los tests no hablan con Claude
+  (`conftest._sin_claude`). **Token de Facebook canjeado:** el de usuario con `read_insights`
+  estaba pegado en FACEBOOK_PAGE_TOKEN (no había FB_USER_TOKEN); se canjeó ahí mismo por uno de
+  PÁGINA que no vence (huella ab2e94551f81, compu y Pi). **Conteo de un mes (10/11 → 09/12, Haiku):**
+  4,3 historias buenas por día, 1,1 fuertes (interés ≥ 7), 0,6 con conmemoración; días sin ninguna
+  buena: 21/11 y 29/11; sin ninguna fuerte: 10 de 30.
 - v0.78.0 (2026-11-09) — **Relleno de fotos sin la foto de otra frase** (regla de Santi, a partir
   de los billetes de rupias de Android): en `ilustrar.asignar`, `completar_distintas` y `tramos`,
   una frase sin foto propia solo usa las `generales` (las del artículo del hecho) o alarga la de la
@@ -1920,7 +1988,9 @@ aparte de Pequeña Historia a las 06:00 (`clips-bot-efemeride`) y la escucha de 
 
 | | |
 |---|---|
-| commit | v0.78.0 (relleno de fotos), desplegado el 2026-11-09; 817 tests OK en la compu y en la Pi |
+| commit | v0.79.2 (`fe57bbb`), desplegado y la escucha reiniciada el 2026-11-09 22:49; 835 tests OK en la compu |
+| historia de Facebook | la escucha la propone a las 06:30; fijados: 10/11 Epecuén (`historias_fb_hecho`) y 12/11 Sor Juana (`historias_fb_hecho:2026-11-12`); publica 19:00 AR solo en la página |
+| claves | `ANTHROPIC_API_KEY` en el .env de clips de la Pi (no en la compu); FACEBOOK_PAGE_TOKEN = token de página con `read_insights`, no vence (huella ab2e94551f81) |
 | timers y escucha | `clips-bot.timer`, `clips-bot-efemeride.timer` y `clips-bot-telegram` activos; 56 °C en reposo |
 | corrida del 09/11 | clips 05:02 (tope 6, entrega, métricas: 66 clips con métricas, "pegó": 7 Shorts sin original); efeméride 06:00 propuesta al grupo |
 | subida a YouTube | PRENDIDA (`youtube_upload_enabled: true`, desde 2026-10-30): 📤 programa en Rots o en Pequeña Historia; los dos canales conectados (tokens en `config/`, fuera de git) |
@@ -1962,15 +2032,16 @@ aparte de Pequeña Historia a las 06:00 (`clips-bot-efemeride`) y la escucha de 
 2. **Foto del HTC Dream en el video de Android**: en la pantalla se leen palabras chicas en alemán
    (regla (g) de §1). Se le ofreció cambiarla por una de Andy Rubin de 2008 (Commons, CC BY 2.0).
    También la frase 3 ("creado para cámaras digitales") muestra un joystick de OUYA: no se tocó.
-3. **Prueba de Facebook de 2 semanas** (pedida el 2026-11-09, NO programada: Santi pidió primero
-   render extra en la Pi, voces de Gemini por día y los próximos 7 hechos): un video APARTE por día
-   solo para Facebook, historias humanas reales con un lugar concreto de Latinoamérica (México
-   incluido), en lo posible en su aniversario o conmemoración; fuentes: las páginas de cada día de
-   Wikipedia en español + días nacionales por país; el lugar en título, primera frase y hashtags;
-   fotos primero del lugar real; mismos filtros con el criterio de Nacozari; registrar el tipo de
-   historia y, a las 2 semanas, comparar reacciones/comentarios/compartidos contra las 2 anteriores.
-   YouTube sigue igual. El token de la página no tiene `read_insights` (las reacciones,
-   comentarios y compartidos sí se leen).
+3. **Prueba de Facebook de 2 semanas: PROGRAMADA y andando (v0.79.x, §3d).** El **2026-11-24**:
+   comparar reacciones, comentarios, compartidos y reproducciones (`video_insights`) de las
+   historias (`bot_estado.historias_fb_registro`, con su tipo) contra los Reels de las 2 semanas
+   anteriores. **Más fuentes (propuesta, NO programada):** en un mes hay 2 días sin ninguna
+   historia buena (21/11, 29/11) y 10 sin ninguna fuerte; además las celebraciones de una ciudad
+   sin línea en Acontecimientos (Independencia de Ambato, 12/11/1820) hoy no son candidatas. Ideas:
+   tomar como candidato la celebración que trae año y ciudad; los anexos "Efemérides de <país>" y
+   las fundaciones de ciudades de Wikipedia en español; la historia del artículo de cada ciudad.
+   Detalles vistos en la prueba de Epecuén: los créditos repiten la foto base de las tarjetas (4
+   veces la misma línea) y la miniatura de la tarjeta en la hoja corta el texto del medio.
 4. **Pruebas de voz** (v0.72.0): muestras A / B / B+ mandadas; falta que elija. La C (ElevenLabs)
    necesita una clave que no está.
 
