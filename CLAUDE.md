@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-11-10 | **Versión:** v0.82.0 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 de clips + timer 06:00 de la efeméride + escucha de Telegram 24/7, que además propone la historia de Facebook a las 06:30)
+**Snapshot:** 2026-11-10 | **Versión:** v0.83.0 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 de clips + timer 06:00 de la efeméride + escucha de Telegram 24/7, que además propone la historia de Facebook a las 06:30)
 
 > **SI ESTÁS EMPEZANDO UNA SESIÓN NUEVA, LEÉ §10.** Ahí está qué está hecho, qué quedó a medias,
 > qué falta, y las trampas que ya nos mordieron.
@@ -119,7 +119,11 @@ servicio systemd separado: `clips-bot`).
   guion, Haiku 5.5 clasifica): deja de depender del cupo de Gemini. **Gemini solo para las fotos y
   la voz**; la voz va por la SEGUNDA clave (Piper de respaldo). YouTube no cambia nada. La escucha
   la propone a las 06:30; 📤 la sube SOLO a la página de Facebook a las 19:00 AR
-  (`historias_fb.hora_publicacion`, la hora la eligió Claude).
+  (`historias_fb.hora_publicacion`, la hora la eligió Claude). **2 Reels por día (Santi,
+  2026-11-10):** la efeméride de YouTube (✅ y 📤, como siempre) sale también en la página a las
+  12:00 (`facebook.hora_efemeride`; ya salía desde el 30/10 a la hora de YouTube). Las dos quedan
+  en `bot_estado.historias_fb_registro` con `reel` = `efemeride` | `historia` para la comparación
+  del 24/11 (las entradas sin `reel`, anteriores a esto, son historias).
 - **Videos largos: NO por ahora (decisión de Santi, 2026-09-28).** No quiere videos largos con voz
   de IA. Si más adelante se hacen, van con SU voz grabada, no con Gemini TTS ni Piper.
 - **Sin música agregada en los clips.** Cualquier música es riesgo de Content ID. Si el clip trae
@@ -146,8 +150,15 @@ servicio systemd separado: `clips-bot`).
   el texto y el crédito; sin tags; categoría 22. Los arma el código, no Gemini (traían
   "#Davoeneize" o "#Shorts射"). Pequeña Historia no cambia. `python -m clips_bot hashtags-rots
   [--aplicar]` corrige por `videos.update` los ya subidos (sin `--aplicar` solo muestra): sobre la descripción PUBLICADA (no la del json, que en `y5TBZ5OwxoI` seguía diciendo Twitch), solo le mete los hashtags antes del crédito.
-- **Prueba manual vs API en Rots (11/11 → 17/11, pedido de Santi del 2026-11-10;
-  `clips_bot/prueba_manual.py`).** Desde que sube la API, el feed de Shorts pasó de 84 % a 6 % de
+- **Rots se sube SOLO todos los días (Santi, 2026-11-10: "subir todos los días sin cortar").**
+  `publicacion.subir_solo: true`: la entrega diaria (05:00, su reintento y /ya; no /buscar ni
+  /seleccionar a mano) se sube a Rots ANTES de mandarse, programada en su horario
+  (13:00/18:00/21:30), sin tocar 📤; el mensaje llega con "📤 Programado" y ❌ Cancelar. Con
+  partido en pantalla, privado sin fecha; una subida que falla se avisa en el grupo y la entrega
+  sigue. Antes dependía de tocar 📤: hubo días con 1 subida y días con 4.
+- **Prueba manual vs API: CANCELADA por Santi el 2026-11-10, antes de arrancar** ("no voy a subir
+  nada a mano"; `prueba_manual_desde: ""`). El código queda (`clips_bot/prueba_manual.py`) por si
+  se vuelve a hacer: poner la fecha de inicio. Lo que hacía: desde que sube la API, el feed de Shorts pasó de 84 % a 6 % de
   las vistas: hay que descartar que la causa sea subir por la API. Cada día, UN clip de la entrega
   diaria va con "📱 SUBILO VOS DESDE EL CELU": sin 📤 (el botón dice "📱 Lo subís vos" y el
   callback se niega a subirlo), con la descripción y los hashtags juntos en un bloque para pegar.
@@ -895,6 +906,11 @@ Problemas abiertos:
 
 ## 9. CHANGELOG
 
+- v0.83.0 (2026-11-10) — (1) Prueba manual vs API cancelada (`prueba_manual_desde: ""`).
+  (2) **Rots se sube solo** (`publicacion.subir_solo`): la entrega diaria, antes de mandarse, se
+  programa en su horario. (3) La efeméride en Facebook a las 12:00 (`facebook.hora_efemeride`) y
+  registrada con `reel: efemeride` junto a las historias (`reel: historia`) para el 24/11.
+  `tests/test_subida_diaria.py`. 870 tests OK.
 - v0.82.0 (2026-11-10) — **Hashtags, tags y categoría de Rots como los subidos a mano** (§1): la
   descripción termina con `#Shorts #<streamer> #<plataforma> [#tema]` antes del crédito, sin tags,
   categoría 22 (era 20). El clip de la prueba manual lleva la misma descripción. CLI `hashtags-rots`
@@ -2063,10 +2079,11 @@ aparte de Pequeña Historia a las 06:00 (`clips-bot-efemeride`) y la escucha de 
 
 ### Esperando respuesta de Santi (NO programar sin su OK)
 
-0. **Prueba manual vs API (11/11 → 17/11):** Santi sube a mano el clip "📱 SUBILO VOS" de cada día
-   (PÚBLICO, en el horario sugerido, el título tal cual). El 18/11 llega el informe solo; si un
-   video no aparece, es que no se subió o se cambió el título. Con el resultado se decide si se
-   vuelve a la subida manual o se buscan las otras causas (hashtags, categoría, streamers).
+0. **Propuesta de EDICIÓN (2026-11-10, mandada, NO programar sin su OK):** videos más cortos y
+   entretenidos en Rots y en Pequeña Historia (fotos = lo que dice la frase, 20-30 s, cortes de
+   1,5-2,5 s, subtítulos karaoke; en Rots recortes sin silencios, zoom en reacciones, texto de
+   contexto, pregunta al cierre). Santi pidió ver un ejemplo de cada canal antes de activarlo en
+   los timers.
 
 1. **Diseño del algoritmo de ROTS y Pequeña Historia** (mandado el 2026-11-05): `/analisis`;
    ponderación del rendimiento 40/40/20 (vistas / % que llega al final / comentarios cada 1.000

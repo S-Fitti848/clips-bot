@@ -362,6 +362,9 @@ class Facebook:
     """Reels de Pequeña Historia a la página de Facebook (facebook.py, docs/facebook.md)."""
     activo: bool = False       # apagado hasta que Santi complete la guía y cargue el .env
     version: str = "v23.0"     # la versión de la Graph API (la que muestre el Graph API Explorer)
+    # La efeméride de YouTube también sale como Reel en la página (2 Reels por día con la historia
+    # de las 19:00). Vacío = la misma hora que YouTube (efemerides.hora_publicacion).
+    hora_efemeride: str = "12:00"
 
 
 @dataclass(frozen=True)
@@ -427,6 +430,8 @@ class Publicacion:
     # Prueba manual vs API (prueba_manual.py): un clip por día lo sube Santi desde el celular.
     prueba_manual_desde: str = ""      # AAAA-MM-DD; vacío = sin prueba
     prueba_manual_dias: int = 7
+    # La entrega diaria se sube sola a Rots en sus horarios (sin tocar 📤). ❌ sigue cancelando.
+    subir_solo: bool = False
 
 
 @dataclass(frozen=True)

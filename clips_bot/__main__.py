@@ -447,11 +447,15 @@ def cmd_seleccionar(args: argparse.Namespace) -> int:
 
 
 def ejecutar_seleccion(settings: Settings, gemini: GeminiClient | None, enviar: bool,
-                       n: int | None = None, destinos: list[str] | None = None) -> int:
+                       n: int | None = None, destinos: list[str] | None = None,
+                       subir: bool = False) -> int:
     """Paso 8 + paso 10. Sin `enviar` muestra lo que mandaría y no toca Telegram ni la DB.
 
     `destinos`: a qué chats entregar. None = la lista de /destinos (la corrida de las 05:00).
     Un comando como /ya pasa el chat desde donde lo pidieron, que es donde hay que contestar.
+    `subir`: la entrega diaria (05:00, su reintento y /ya) se sube sola a Rots, programada en su
+    horario, antes de mandarse (`publicacion.subir_solo`, 2026-11-10: "subir todos los días sin
+    cortar"); el mensaje llega con "📤 Programado" y ❌ Cancelar.
     """
     from .process import READY_DIR, guardar_meta
     from .seleccion import desempate_gemini, factores_votos, score, seleccionar
@@ -588,12 +592,25 @@ def ejecutar_seleccion(settings: Settings, gemini: GeminiClient | None, enviar: 
     try:
         db.crear_pedido(conn, token, "diario", str(chats[0]), "", {"cantidad": cupo})
         manual = _manual_del_dia(conn, settings, elegidos, horarios) if destinos is None else None
+        avisos_subida = []
         for i, o in enumerate(elegidos, 1):
             horario = horarios[i - 1] if i <= len(horarios) else None
+            if (subir and settings.publicacion.subir_solo and o.clip_id != manual
+                    and _canal_de(o.clip_id, o.meta) == "rots"):
+                aviso = _programar_subida(conn, settings, o.meta, "rots", horario or horarios[0])
+                print(f"  subida #{i}: {re.sub(r'<[^>]+>', '', aviso) or '(ya estaba o apagada)'}")
+                if aviso.startswith("⚠️"):
+                    avisos_subida.append(f"#{i} · {aviso}")
             enviar_clip(tg, chats, conn, o.clip_id, o.meta, i, horario, pedido=token,
                         ultimo=(i == len(elegidos)), cuantos_mas=cupo)
             if o.clip_id == manual:
                 print(f"  #{i} va A MANO (prueba manual vs API)")
+        for aviso in avisos_subida:     # una subida que falló no frena la entrega, pero se avisa
+            for chat in chats:
+                try:
+                    tg.send_message(chat, aviso)
+                except TelegramError as e:
+                    log.warning("No pude avisar la subida fallida a %s: %s", chat, e)
             print(f"  enviado #{i}: {o.clip_id}")
     finally:
         conn.close()
@@ -1201,7 +1218,7 @@ def _diario(args: argparse.Namespace, settings: Settings, atender: bool = True,
 
     print("\n=== Pasos 8 y 10: elegir y entregar")
     return ejecutar_seleccion(settings, gemini, enviar=not args.simular, n=cuantos,
-                              destinos=destinos)
+                              destinos=destinos, subir=True)
 
 
 def procesar_multipov_del_dia(settings: Settings, streamers: list, res: Resultado,
@@ -3558,7 +3575,8 @@ def _clips_reintento_tick(conn, settings: Settings, ahora=None, seleccion=None) 
     db.borrar_valor(conn, CLIPS_REINTENTO)   # si sigue faltando, la selección lo vuelve a agendar
     log.info("clips: reintento de las %s, faltan %d", d["hora"], d["faltan"])
     try:
-        (seleccion or ejecutar_seleccion)(settings, _gemini(settings), enviar=True, n=d["faltan"])
+        (seleccion or ejecutar_seleccion)(settings, _gemini(settings), enviar=True, n=d["faltan"],
+                                          subir=True)
     finally:
         db.soltar_turno(conn, db.RECURSO_PESADO, turno, VENCIMIENTO_PESADO_S)
 
@@ -4444,11 +4462,14 @@ HISTORIAS_FB_REGISTRO = "historias_fb_registro"   # bot_estado: lo que salió en
 
 
 def _registrar_historia_fb(conn, meta: dict, video_id: str, cuando: str) -> None:
-    """Para la comparación de las 2 semanas: cada historia de Facebook con su tipo y su lugar."""
+    """Para la comparación del 24/11: cada Reel de la página con cuál es (`reel`: "historia" = el
+    video aparte de Facebook de las 19:00; "efemeride" = la de YouTube, que también sale en
+    Facebook a las 12:00), su tipo y su lugar."""
     ef_ = meta.get("efemeride") or {}
     lista = json.loads(db.get_valor(conn, HISTORIAS_FB_REGISTRO) or "[]")
     lista = [x for x in lista if x.get("clip_id") != meta["clip_id"]]
     lista.append({"clip_id": meta["clip_id"], "video_id": video_id, "fecha": ef_.get("fecha"),
+                  "reel": "historia" if _solo_facebook(meta) else "efemeride",
                   "publica": cuando, "anio": ef_.get("anio"), "titulo": meta["textos"]["titulo"],
                   **{k: (ef_.get("local") or {}).get(k) for k in ("lugar", "region", "pais", "tipo",
                                                                   "conmemora")}})
@@ -4483,7 +4504,8 @@ def _subir_facebook(conn, settings: Settings, meta: dict, ahora: datetime | None
     if any(s["canal"] == "facebook" for s in db.subidas(conn, ("programada", "publicada"), clip_id=clip_id)):
         return ""
     hoy = (ahora or datetime.now(timezone.utc)).astimezone(AR)
-    cuando = youtube.proximo_horario(hora or settings.efemerides.hora_publicacion, ahora=hoy)
+    cuando = youtube.proximo_horario(hora or settings.facebook.hora_efemeride
+                                     or settings.efemerides.hora_publicacion, ahora=hoy)
     if cuando.date() != hoy.date():          # "un día como hoy": nunca mañana
         cuando = None
     t = meta["textos"]
@@ -4501,13 +4523,11 @@ def _subir_facebook(conn, settings: Settings, meta: dict, ahora: datetime | None
             log.warning("Facebook: el Reel %s salió sin la portada del año: %s", vid, e)
     if cuando is None or (cuando - hoy).total_seconds() < facebook.MIN_PROGRAMAR_S:
         db.crear_subida(conn, clip_id, "facebook", "publicada", video_id=vid)
-        if _solo_facebook(meta):
-            _registrar_historia_fb(conn, meta, vid, hoy.isoformat())
+        _registrar_historia_fb(conn, meta, vid, hoy.isoformat())
         return "📘 Publicado en Facebook (Reels de la página)."
     iso = cuando.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     db.crear_subida(conn, clip_id, "facebook", "programada", video_id=vid, publish_at=iso)
-    if _solo_facebook(meta):
-        _registrar_historia_fb(conn, meta, vid, iso)
+    _registrar_historia_fb(conn, meta, vid, iso)
     return f"📘 Programado en Facebook para las {cuando:%H:%M}."
 
 

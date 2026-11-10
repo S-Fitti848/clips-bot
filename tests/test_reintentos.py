@@ -258,7 +258,7 @@ def test_el_reintento_de_clips_elige_solo_los_que_faltan_a_la_hora(base):
     llamadas = []
     db.set_valor(c, m.CLIPS_REINTENTO, json.dumps({"fecha": _hoy(0).date().isoformat(),
                                                    "hora": "06:30", "faltan": 2}))
-    fake = lambda settings, gemini, enviar, n: llamadas.append((enviar, n))
+    fake = lambda settings, gemini, enviar, n, subir=False: llamadas.append((enviar, n, subir))
     m._clips_reintento_tick(c, s, ahora=_hoy(6, 29), seleccion=fake)
     assert llamadas == []
     db.tomar_turno(c, db.RECURSO_PESADO, "diario", maximo=1, vencimiento_s=3600)
@@ -266,7 +266,7 @@ def test_el_reintento_de_clips_elige_solo_los_que_faltan_a_la_hora(base):
     assert llamadas == []                                   # algo pesado andando: espera
     db.soltar_turno(c, db.RECURSO_PESADO, "diario", 3600)
     m._clips_reintento_tick(c, s, ahora=_hoy(6, 30), seleccion=fake)
-    assert llamadas == [(True, 2)] and db.get_valor(c, m.CLIPS_REINTENTO) is None
+    assert llamadas == [(True, 2, True)] and db.get_valor(c, m.CLIPS_REINTENTO) is None
     assert not db.hay_trabajo_pesado(c, 3600)               # soltó el turno
 
 

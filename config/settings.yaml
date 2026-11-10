@@ -455,11 +455,14 @@ envivo:
 # §3 paso 10: entrega por Telegram.
 publicacion:
   horarios: ["13:00", "18:00", "21:30"]   # hora AR sugerida para cada seleccionado, en orden
-  # Prueba manual vs API (pedido de Santi, 2026-11-10; prueba_manual.py): durante 7 días, 1 clip
-  # de la entrega diaria va "📱 SUBILO VOS" (sin 📤) y lo sube Santi desde la app; el día 8 llega
-  # el informe con el % de vistas del feed de Shorts, a mano contra API.
-  prueba_manual_desde: "2026-11-11"
+  # Prueba manual vs API (prueba_manual.py): CANCELADA por Santi el 2026-11-10 antes de arrancar
+  # ("no voy a subir nada a mano"). Para volver a hacerla, poné la fecha de inicio.
+  prueba_manual_desde: ""
   prueba_manual_dias: 7
+  # Rots todos los días sin cortar (Santi, 2026-11-10): la entrega diaria (05:00, su reintento y
+  # /ya) se sube sola, programada en su horario; ❌ Cancelar la saca. Con partido en pantalla va
+  # privado sin fecha, como siempre.
+  subir_solo: true
 
 # §3 paso 9. PRENDIDO el 2026-10-30 (Santi): YouTube cerró la auditoría diciendo que los videos subidos
 # por la API no quedan privados automáticamente, y la prueba lo confirmó (y5TBZ5OwxoI, subido PÚBLICO
@@ -475,6 +478,10 @@ youtube_upload_enabled: true
 facebook:
   activo: true
   version: "v23.0"         # la que muestre el Graph API Explorer
+  # La efeméride de YouTube (con ✅ y 📤, como siempre) sale también como Reel de la página a esta
+  # hora; la historia aparte de Facebook, a historias_fb.hora_publicacion (19:00). Las dos quedan en
+  # bot_estado.historias_fb_registro con `reel` = efemeride | historia, para la comparación del 24/11.
+  hora_efemeride: "12:00"
 
 # Pequeña Historia, video APARTE solo para Facebook (prueba de 2 semanas desde el 2026-11-10, a
 # partir del Reel de Nacozari: 100 % orgánico, 16.841 reproducciones contra ~200 del resto).

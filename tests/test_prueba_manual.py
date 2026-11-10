@@ -155,6 +155,6 @@ def test_informe_una_sola_vez_desde_el_dia_8(tmp_path):
     assert not pm.toca_informe(conn, date(2026, 11, 19), "2026-11-11", 7)
 
 
-def test_settings_tiene_la_prueba():
-    cfg = load_settings().publicacion
-    assert cfg.prueba_manual_desde == "2026-11-11" and cfg.prueba_manual_dias == 7
+def test_settings_la_prueba_esta_cancelada():
+    # Santi la canceló el 2026-11-10, antes de arrancar ("no voy a subir nada a mano")
+    assert load_settings().publicacion.prueba_manual_desde == ""
