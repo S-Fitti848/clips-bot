@@ -118,6 +118,23 @@ def test_creditos_autor_y_licencia_de_cada_foto():
     assert "1. Ana Pérez — CC BY-SA 4.0 — https://commons/x" in c and "2. Ana Pérez — Public domain" in c
 
 
+def test_creditos_la_foto_de_las_tarjetas_sale_una_sola_vez(tmp_path):
+    """Epecuén (2026-11-09): 4 tarjetas sobre la misma foto → la misma línea 4 veces. Vale igual
+    para la efeméride de YouTube y la historia de Facebook (las dos usan `creditos`)."""
+    from PIL import Image
+    base = ef.a_foto(_info(), "A")
+    base.ruta = str(tmp_path / "base.jpg")
+    Image.new("RGB", (800, 600), (90, 90, 90)).save(base.ruta)
+    otra = ef.a_foto(_info(lic="Public domain"), "A")
+    otra.pagina = "https://commons/otra"
+    tarjetas = [ef.tarjeta(base, t, tmp_path / f"t{i}.jpg") for i, t in enumerate(["MURO", "1985", "LAGO", "1938"])]
+    c = ef.creditos([base, tarjetas[0], otra, *tarjetas[1:]])
+    assert c.count("Ana Pérez — CC BY-SA 4.0 — https://commons/x") == 1
+    assert "1. Ana Pérez — CC BY-SA 4.0 — https://commons/x" in c
+    assert "2. Ana Pérez — Public domain — https://commons/otra" in c
+    assert len(c.splitlines()) == 3
+
+
 # ---- el guion contra el artículo ---------------------------------------------------------
 
 ARTICULO = ("Larry Page y Sergey Brin comenzaron Google como un proyecto universitario en la "

@@ -63,8 +63,9 @@ class Candidato:
 
 
 def _limpiar(t: str) -> str:
-    """Wikitexto de una línea → texto: [[A|B]] → B, sin plantillas, refs ni negritas."""
+    """Wikitexto de una línea → texto: [[A|B]] → B, sin plantillas, refs, etiquetas ni negritas."""
     t = re.sub(r"<ref[^>]*/>|<ref[^>]*>.*?</ref>", "", t, flags=re.S)
+    t = re.sub(r"<[^>]+>", " ", t)
     t = re.sub(r"\{\{(?:esd|nbsp)\}\}", " ", t)
     t = re.sub(r"\{\{[^{}]*\}\}", "", t)
     t = re.sub(r"\[\[(?:Archivo|File|Imagen):[^\]]*\]\]", "", t)
@@ -106,13 +107,27 @@ def leer_dia(wiki: ef.Wiki, dia: date) -> tuple[list[Candidato], list[str], set[
         texto = texto.get("*", "")
     secs = _secciones(texto)
     conmemoraciones, homenajeados = [], set()
+    out: list[Candidato] = []
     for nombre, cuerpo in secs.items():
         if nombre.startswith(("celebraciones", "fiestas", "conmemoraciones")):
+            pais = None
             for linea in cuerpo.splitlines():
-                if linea.lstrip().startswith("*") and len(_limpiar(linea.lstrip("*: "))) > 3:
-                    conmemoraciones.append(_limpiar(linea.lstrip("*: "))[:220])
-                    homenajeados.update(_enlaces(linea))
-    out: list[Candidato] = []
+                m = re.match(r"^\*\s*\{\{([A-Z]{3})\}\}", linea.strip())
+                if m:
+                    pais = PAISES_PLANTILLA.get(m.group(1))    # None = país de afuera
+                    continue
+                if not linea.lstrip().startswith("*") or len(_limpiar(linea.lstrip("*: "))) <= 3:
+                    continue
+                limpio = _limpiar(linea.lstrip("*: "))
+                conmemoraciones.append(((pais + ": ") if pais else "") + limpio[:220])
+                homenajeados.update(_enlaces(linea))
+                # Fuente 1 (2026-11-10): la conmemoración de un lugar que trae el año del hecho
+                # ("Independencia de Ambato… ocurrida el 12 de noviembre de 1820") es un candidato
+                # aunque Acontecimientos no tenga la línea.
+                anio = anio_celebracion(limpio, dia)
+                if anio and (pais or LUGAR_RE.search(limpio)) and _enlaces(linea):
+                    out.append(Candidato("celebracion", anio, ((pais + ": ") if pais else "") + limpio[:400],
+                                         _enlaces(linea)))
     for nombre, cuerpo in secs.items():
         seccion = next((s for s in ("acontecimientos", "nacimientos", "fallecimientos")
                         if nombre.startswith(s)), None)
@@ -124,6 +139,183 @@ def leer_dia(wiki: ef.Wiki, dia: date) -> tuple[list[Candidato], list[str], set[
                 continue
             out.append(Candidato(seccion, int(m.group(1)), _limpiar(m.group(2)), _enlaces(m.group(2))))
     return out, conmemoraciones, homenajeados
+
+
+# ---- fuentes extra (pedido de Santi, 2026-11-10: que ningún día quede sin una historia fuerte) ---
+# El conteo del mes dio 2 días sin ninguna historia buena y 10 sin ninguna fuerte con solo la página
+# del día. Estas fuentes se suman a esa; si alguna falla (429, red), se avisa y sigue sin ella.
+
+PAISES_PLANTILLA = {
+    "ARG": "Argentina", "MEX": "México", "CHI": "Chile", "CHL": "Chile", "PER": "Perú",
+    "COL": "Colombia", "VEN": "Venezuela", "URU": "Uruguay", "PAR": "Paraguay", "BOL": "Bolivia",
+    "ECU": "Ecuador", "CUB": "Cuba", "BRA": "Brasil", "GUA": "Guatemala", "HON": "Honduras",
+    "NIC": "Nicaragua", "CRC": "Costa Rica", "CRI": "Costa Rica", "PAN": "Panamá",
+    "SLV": "El Salvador", "ESA": "El Salvador", "PUR": "Puerto Rico", "PRI": "Puerto Rico",
+    "DOM": "República Dominicana"}
+
+# Medido el 2026-11-10: de los anexos "Efemérides de/en <país>" de es.wikipedia, el único de un país
+# de Latinoamérica es el de Venezuela (más el del estado Nueva Esparta).
+ANEXOS_EFEMERIDES = ("Anexo:Efemérides en Venezuela", "Anexo:Efemérides del Estado Nueva Esparta")
+
+# Lo que dice qué ES el artículo (las primeras líneas): un lugar sí; un club, una empresa, no.
+_ES_LUGAR = re.compile(r"\b(ciudad|localidad|pueblo|municipio|barrio|villa|comuna|distrito|parroquia|"
+                       r"cant[oó]n|corregimiento|poblaci[oó]n|aldea|caser[ií]o|partido|departamento|"
+                       r"provincia|estado|capital|puerto|colonia|asentamiento)\b", re.I)
+_NO_LUGAR = re.compile(r"\b(club|f[uú]tbol|equipo|universidad|colegio|instituto|escuela|empresa|"
+                       r"compa[nñ][ií]a|banco|aerol[ií]nea|radio|televisi[oó]n|canal|revista|diario|"
+                       r"peri[oó]dico|iglesia|hermandad|cofrad[ií]a|logia|congregaci[oó]n|sindicato|"
+                       r"orquesta|banda|federaci[oó]n|liga|asociaci[oó]n|sociedad|partido pol[ií]tico|"
+                       r"organizaci[oó]n|museo|hospital|marca)\b", re.I)
+
+
+def anio_celebracion(texto: str, dia: date) -> int | None:
+    """El año del HECHO que recuerda una conmemoración ("ocurrida el 12 de noviembre de 1820",
+    "el nacimiento de Sor Juana…, ocurrido en 1651"). El año en que se instituyó el día ("por decreto
+    en 1979") no sirve: sin uno de estos dos, None."""
+    mes = ef.MESES[dia.month - 1]
+    m = re.search(rf"\b{dia.day}\s+de\s+{mes}\s+del?\s+(\d{{3,4}})\b", texto, re.I)
+    if m:
+        return int(m.group(1))
+    m = re.search(r"\b(?:ocurrid[ao]s?|sucedid[ao]s?|fundad[ao]s?|nacid[ao]|naci[oó]|muri[oó]|fallecid[ao]|"
+                  r"proclamad[ao]|librad[ao])\b[^.]{0,40}?\b(?:en|el a[nñ]o)\s+(\d{3,4})\b", texto, re.I)
+    return int(m.group(1)) if m else None
+
+
+def _fecha_re(dia: date) -> re.Pattern:
+    return re.compile(rf"\b(?:el\s+)?{dia.day}\s+de\s+{ef.MESES[dia.month - 1]}\s+del?\s+(\d{{3,4}})\b", re.I)
+
+
+def leer_anexos(wiki: ef.Wiki, dia: date) -> tuple[list[str], set[str]]:
+    """Fuente 2: las líneas de hoy de los anexos de efemérides por país ("14 de noviembre: natalicio
+    del General José Antonio Anzoátegui"): van a las conmemoraciones y sus personas cuentan como
+    homenajeadas, así su nacimiento o muerte de la página del día pasa el filtro."""
+    conm, homen = [], set()
+    patron = re.compile(rf"^\*+\s*{dia.day}\s+de\s+{ef.MESES[dia.month - 1]}\s*[:–—-]\s*(.+)$", re.I)
+    for titulo in ANEXOS_EFEMERIDES:
+        d = wiki._get(ef.API.format(lang="es"), {"action": "parse", "page": titulo, "prop": "wikitext",
+                                                  "format": "json", "formatversion": 2, "redirects": 1})
+        texto = (d.get("parse") or {}).get("wikitext") or ""
+        if isinstance(texto, dict):
+            texto = texto.get("*", "")
+        pais = re.sub(r"^Anexo:Efemérides (?:de|del|en)\s+", "", titulo)
+        for linea in texto.splitlines():
+            m = patron.match(linea.strip())
+            if m:
+                conm.append(f"{pais}: {_limpiar(m.group(1))[:200]}")
+                homen.update(_enlaces(m.group(1)))
+    return conm, homen
+
+
+def _buscar(wiki: ef.Wiki, frase: str, limite: int = 50) -> list[tuple[str, str]]:
+    d = wiki._get(ef.API.format(lang="es"), {"action": "query", "list": "search", "srsearch": frase,
+                                              "srlimit": limite, "srprop": "snippet", "format": "json"})
+    return [(x["title"], ef.sin_html(x.get("snippet") or "")) for x in (d.get("query") or {}).get("search") or []]
+
+
+def _intros(wiki: ef.Wiki, titulos: list[str]) -> dict[str, str]:
+    """Las primeras líneas de cada artículo (de a 20 por pedido): dicen qué es y de qué país."""
+    out = {}
+    for i in range(0, len(titulos), 20):
+        lote = titulos[i:i + 20]
+        d = wiki._get(ef.API.format(lang="es"), {"action": "query", "prop": "extracts", "exintro": 1,
+                                                  "explaintext": 1, "exlimit": 20, "exchars": 400,
+                                                  "titles": "|".join(lote), "format": "json"})
+        for p in ((d.get("query") or {}).get("pages") or {}).values():
+            out[p.get("title", "")] = str(p.get("extract") or "")
+    return out
+
+
+def es_lugar_latino(intro: str) -> bool:
+    """¿El artículo es un pueblo o una ciudad de Latinoamérica? Mira la primera oración."""
+    primera = re.split(r"(?<=[.;])\s", intro.strip(), maxsplit=1)[0][:300]
+    return bool(_ES_LUGAR.search(primera)) and not _NO_LUGAR.search(primera) and bool(LUGAR_RE.search(intro))
+
+
+FRASES_FUNDACION = ("fundada el {d}", "fundado el {d}", "se fundó el {d}", "fundó el {d}")
+
+
+def buscar_fundaciones(wiki: ef.Wiki, dia: date) -> list[Candidato]:
+    """Fuente 3: pueblos y ciudades de Latinoamérica fundados un día como hoy (el buscador de
+    es.wikipedia con la frase "fundada el 21 de noviembre", y solo los artículos que son un lugar de
+    Latinoamérica). Un club o una universidad fundados ese día no entran."""
+    fecha = f"{dia.day} de {ef.MESES[dia.month - 1]}"
+    fre = _fecha_re(dia)
+    hits: dict[str, str] = {}
+    for f in FRASES_FUNDACION:
+        for titulo, snip in _buscar(wiki, '"' + f.format(d=fecha) + '"'):
+            if fre.search(snip) and titulo not in hits:
+                hits[titulo] = snip
+    intros = _intros(wiki, list(hits))
+    out = []
+    for titulo, snip in hits.items():
+        intro = intros.get(titulo, "")
+        if not es_lugar_latino(intro):
+            continue
+        out.append(Candidato("fundacion", int(fre.search(snip).group(1)),
+                             f"Fundación de {titulo}: {snip[:250]} ({intro[:200]})", [titulo]))
+    return out
+
+
+FRASES_HISTORIA = ('"el {d} de" vecinos', '"el {d} de" pobladores')
+
+
+def historia_de_ciudades(wiki: ef.Wiki, dia: date, lugares: list[str], tope: int = 12) -> list[Candidato]:
+    """Fuente 4: la historia de cada ciudad. En el artículo de los lugares que ya son candidatos de
+    hoy (fundaciones, conmemoraciones) y de los que el buscador encuentra con "el 21 de noviembre de"
+    y "vecinos" o "pobladores", las oraciones que cuentan algo que pasó un día como hoy."""
+    fecha = f"{dia.day} de {ef.MESES[dia.month - 1]}"
+    fre = _fecha_re(dia)
+    candidatos = list(dict.fromkeys(lugares))
+    buscados = []
+    for f in FRASES_HISTORIA:
+        buscados += [t for t, s in _buscar(wiki, f.format(d=fecha), 30) if fre.search(s)]
+    intros = _intros(wiki, [t for t in dict.fromkeys(buscados) if t not in candidatos])
+    candidatos += [t for t, i in intros.items() if es_lugar_latino(i)]
+    out = []
+    for titulo in candidatos[:tope]:
+        texto = wiki.texto("es", titulo)
+        for oracion in re.split(r"(?<=[.!?])\s+|\n+", texto):
+            m = fre.search(oracion)
+            if m and 40 <= len(oracion) <= 600:
+                out.append(Candidato("historia_ciudad", int(m.group(1)),
+                                     f"Historia de {titulo}: {oracion.strip()[:400]}", [titulo]))
+    return out
+
+
+def leer_todo(wiki: ef.Wiki, dia: date, avisar=log.info) -> tuple[list[Candidato], list[str], set[str]]:
+    """La página del día más las fuentes extra. Sin repetir el mismo hecho (mismo año y mismo primer
+    artículo)."""
+    todos, conm, homen = leer_dia(wiki, dia)
+    cuenta = {}
+    try:
+        c2, h2 = leer_anexos(wiki, dia)
+        conm += c2
+        homen |= h2
+        cuenta["anexos"] = len(c2)
+    except Exception as err:  # noqa: BLE001 — una fuente extra caída no frena la propuesta
+        avisar(f"anexos de efemérides: no salió ({err})")
+    try:
+        fund = buscar_fundaciones(wiki, dia)
+        cuenta["fundaciones"] = len(fund)
+    except Exception as err:  # noqa: BLE001
+        fund = []
+        avisar(f"fundaciones: no salió ({err})")
+    lugares = [c.paginas[0] for c in fund] + [c.paginas[0] for c in todos if c.seccion == "celebracion"]
+    try:
+        hist = historia_de_ciudades(wiki, dia, lugares)
+        cuenta["historia de ciudades"] = len(hist)
+    except Exception as err:  # noqa: BLE001
+        hist = []
+        avisar(f"historia de ciudades: no salió ({err})")
+    cuenta["conmemoraciones con año"] = sum(1 for c in todos if c.seccion == "celebracion")
+    vistos = {(c.anio, ef._norm(c.paginas[0])) for c in todos if c.paginas}
+    for c in fund + hist:
+        clave = (c.anio, ef._norm(c.paginas[0]))
+        if clave not in vistos:
+            vistos.add(clave)
+            todos.append(c)
+    avisar(f"fuentes extra del {dia:%d/%m}: {cuenta}")
+    return todos, conm, homen
 
 
 _TRATAMIENTO = re.compile(r"^(sor|san|santa|santo|beato|beata|fray|don|doña)\s+")
@@ -148,7 +340,7 @@ def motivo_local(c: Candidato, hoy: date, homenajeados: set[str]) -> str | None:
         return "sin artículo"
     if c.anio > hoy.year:
         return "fecha rara"
-    if c.seccion != "acontecimientos" and not homenajeado(c.paginas[0], homenajeados):
+    if c.seccion in ("nacimientos", "fallecimientos") and not homenajeado(c.paginas[0], homenajeados):
         return "nacimiento o muerte sin conmemoración"
     if not LUGAR_RE.search(c.texto):
         return "sin lugar de Latinoamérica"
@@ -344,7 +536,7 @@ def proponer(wiki: ef.Wiki, sonnet, haiku, gemini, dia: date, carpeta: Path, avi
     from . import fuentes_fotos
 
     fuentes_fotos.nueva_corrida()
-    todos, conmemoraciones, homenajeados = leer_dia(wiki, dia)
+    todos, conmemoraciones, homenajeados = leer_todo(wiki, dia, avisar)
     cands, motivos = filtrar(todos, date.today(), homenajeados)
     if hecho:
         # Haiku clasifica igual el día entero (solo, un hecho lo juzga distinto); después se queda
@@ -453,7 +645,7 @@ def contar_mes(wiki: ef.Wiki, haiku, desde: date, dias: int, avisar=print) -> li
     out = []
     for k in range(dias):
         dia = desde + timedelta(days=k)
-        todos, conm, homen = leer_dia(wiki, dia)
+        todos, conm, homen = leer_todo(wiki, dia, avisar)
         cands, _ = filtrar(todos, date.today(), homen)
         clasificar(haiku, cands, conm)
         b = buenos(cands)

@@ -593,10 +593,18 @@ def es_de_otra_fuente(f: Foto) -> bool:
 
 
 def creditos(fotos: list[Foto]) -> str:
-    """Autor y licencia de cada foto, en el orden en que aparecen. Va al final de la descripción."""
+    """Autor y licencia de cada foto, en el orden en que aparecen, UNA vez cada una. Va al final de
+    la descripción. Una tarjeta lleva el crédito de su foto de base: con 4 tarjetas sobre la misma
+    foto salía 4 veces la misma línea (Epecuén, 2026-11-09); ahora se cuenta una sola vez, también
+    si la foto de base aparece además sola."""
     lineas = ["Fotos:" if any(es_de_otra_fuente(f) for f in fotos) else "Fotos (Wikimedia Commons):"]
-    for i, f in enumerate(fotos, 1):
-        lineas.append(f"{i}. {f.autor} — {f.licencia}" + (f" — {f.pagina}" if f.pagina else ""))
+    vistas: set[tuple] = set()
+    for f in fotos:
+        clave = (f.autor, f.licencia, f.pagina)
+        if clave in vistas:
+            continue
+        vistas.add(clave)
+        lineas.append(f"{len(vistas)}. {f.autor} — {f.licencia}" + (f" — {f.pagina}" if f.pagina else ""))
     return "\n".join(lineas)
 
 
