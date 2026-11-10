@@ -587,14 +587,39 @@ def ejecutar_seleccion(settings: Settings, gemini: GeminiClient | None, enviar: 
     conn = db.connect(DB_PATH)
     try:
         db.crear_pedido(conn, token, "diario", str(chats[0]), "", {"cantidad": cupo})
+        manual = _manual_del_dia(conn, settings, elegidos, horarios) if destinos is None else None
         for i, o in enumerate(elegidos, 1):
             horario = horarios[i - 1] if i <= len(horarios) else None
             enviar_clip(tg, chats, conn, o.clip_id, o.meta, i, horario, pedido=token,
                         ultimo=(i == len(elegidos)), cuantos_mas=cupo)
+            if o.clip_id == manual:
+                print(f"  #{i} va A MANO (prueba manual vs API)")
             print(f"  enviado #{i}: {o.clip_id}")
     finally:
         conn.close()
     return 0
+
+
+def _manual_del_dia(conn, settings: Settings, elegidos: list, horarios) -> str | None:
+    """Prueba manual vs API: de la entrega diaria, UN clip por día lo sube Santi desde el celular.
+    Rota la posición con el día (no siempre el mejor ni el mismo horario) y saltea los que tienen
+    partido en pantalla (esos van privados a revisar). Devuelve el clip_id marcado, o None."""
+    from . import prueba_manual as pm
+
+    cfg = settings.publicacion
+    hoy = datetime.now(AR).date()
+    if not elegidos or pm.ya_hay_hoy(conn, hoy) or not pm.activa(
+            hoy, cfg.prueba_manual_desde, cfg.prueba_manual_dias):
+        return None
+    inicio = pm.indice_del_dia(hoy, cfg.prueba_manual_desde, len(elegidos))
+    for k in range(len(elegidos)):
+        i = (inicio + k) % len(elegidos)
+        o = elegidos[i]
+        if o.meta.get("partido_en_pantalla"):
+            continue
+        pm.anotar(conn, o.clip_id, hoy, o.streamer, horarios[i] if i < len(horarios) else None, i + 1)
+        return o.clip_id
+    return None
 
 
 def enviar_clip(tg: TelegramClient, chat_id, conn, clip_id: str, meta: dict, numero: int,
@@ -625,7 +650,19 @@ def enviar_clip(tg: TelegramClient, chat_id, conn, clip_id: str, meta: dict, num
     thumb = miniatura(video, video.with_suffix(".thumb.jpg"), PORTADA_S if meta.get("efemeride") else 1.0)
     marca = f" · RELLENO (puntaje {meta.get('puntaje', 0)})" if meta.get("relleno") else ""
     linea = " · ".join(x for x in (por_que(meta), meta.get("aviso") or "") if x)
-    cuerpo = mensaje_textos(numero, meta["streamer"], clip_id, horario, meta["textos"],
+    from . import prueba_manual
+
+    textos = meta["textos"]
+    a_mano = prueba_manual.es_manual(conn, clip_id)
+    if a_mano:
+        # Para pegar en la app: la descripción (con el crédito) y los hashtags en UN bloque.
+        textos = {**textos, "descripcion": prueba_manual.descripcion_para_pegar(textos),
+                  "hashtags": [], "credito": ""}
+        cfg = load_settings().publicacion
+        n_dia = len(prueba_manual.registro(conn))
+        encabezado = prueba_manual.ENCABEZADO.format(n=n_dia, total=cfg.prueba_manual_dias) + (
+            "\n\n" + encabezado if encabezado else "")
+    cuerpo = mensaje_textos(numero, meta["streamer"], clip_id, horario, textos,
                             por_que=linea)
     if meta.get("relleno"):
         cuerpo = (f"⚠️ <b>RELLENO (puntaje {meta.get('puntaje', 0)} de 10)</b> — no llegó al corte "
@@ -734,7 +771,8 @@ def cmd_diario(args: argparse.Namespace) -> int:
         # tarda, los clips ya salieron.
         codigo = _diario(args, settings)
         extras = [("las métricas", actualizar_metricas),
-                  ("el resumen de pegó", lambda: _resumen_pego(settings, args.simular))]
+                  ("el resumen de pegó", lambda: _resumen_pego(settings, args.simular)),
+                  ("el informe de la prueba manual", lambda: _informe_prueba_manual(settings, args.simular))]
         if efemeride_aparte():
             print("\n=== Pequeña Historia: va en su propio servicio (clips-bot-efemeride, 06:00)")
         else:
@@ -964,6 +1002,36 @@ def _pegados_para(settings: Settings, streamers: list, buscar_ahora: bool, avisa
                                        palabras_programa=programa.get(c.broadcaster_login, ()))]
     finally:
         conn.close()
+
+
+def _informe_prueba_manual(settings: Settings, simular: bool = False, forzar: bool = False) -> str:
+    """Prueba manual vs API: el día siguiente al último (después de las métricas, que encuentran
+    los videos subidos a mano por el título), el informe a Santi. Una sola vez; `forzar` lo arma
+    igual (CLI `prueba-manual`) sin marcarlo como mandado."""
+    from . import prueba_manual as pm
+    from . import youtube
+
+    cfg = settings.publicacion
+    hoy = datetime.now(AR).date()
+    conn = db.connect(DB_PATH)
+    try:
+        if not forzar and not pm.toca_informe(conn, hoy, cfg.prueba_manual_desde, cfg.prueba_manual_dias):
+            return ""
+        texto = pm.comparar(conn, youtube.Cliente("rots"), cfg.prueba_manual_desde,
+                            cfg.prueba_manual_dias, hoy)
+        if not forzar and not simular:
+            TelegramClient(env("TELEGRAM_BOT_TOKEN")).send_message(DUENO, "🔧 Claude Code: " + texto)
+            db.set_valor(conn, pm.INFORME, hoy.isoformat())
+        print("\n=== Prueba manual vs API\n" + re.sub(r"<[^>]+>", "", texto))
+        return texto
+    finally:
+        conn.close()
+
+
+def cmd_prueba_manual(args: argparse.Namespace) -> int:
+    """El informe de la prueba manual vs API en el momento, sin mandarlo (solo lectura)."""
+    _informe_prueba_manual(load_settings(), forzar=True)
+    return 0
 
 
 def actualizar_metricas() -> int:
@@ -4104,6 +4172,10 @@ def _estado_subida(conn, clip_id: str, meta: dict) -> str | None:
     """El estado para la fila de botones: None sin subida, "" sin decidir, "no", o "HH:MM"."""
     if _canal_de(clip_id, meta) is None:
         return None
+    from . import prueba_manual
+
+    if prueba_manual.es_manual(conn, clip_id):
+        return "manual"
     if db.subidas(conn, ("privada",), clip_id=clip_id):
         return "privado"
     if db.subidas(conn, ("publicada",), clip_id=clip_id) and _canal_de(clip_id, meta) == "rots":
@@ -4213,6 +4285,12 @@ def _subir_callback(conn, tg: TelegramClient, cb: dict, settings: Settings, d: d
 
     if canal is None or not meta:
         return tg.answer_callback(cb["callback_id"], L("Ese video ya no está.", "That video is gone."))
+    from . import prueba_manual
+
+    if prueba_manual.es_manual(conn, clip_id):
+        return tg.answer_callback(cb["callback_id"], L(
+            "Este lo subís vos desde el celu (prueba manual vs API): el bot no lo sube.",
+            "This one is uploaded by hand (manual vs API test)."), alerta=True)
     if d["accion"] == "i" and db.subidas(conn, ("privada",), clip_id=clip_id):
         return tg.answer_callback(cb["callback_id"], L(
             "Está en PRIVADO y sin fecha (partido en pantalla): revisá las Verificaciones en Studio y "
@@ -5416,6 +5494,9 @@ def main(argv: list[str] | None = None) -> int:
     ph.add_argument("--contar-mes", type=int, default=0,
                     help="contar cuántas historias locales buenas hay por día, N días desde --fecha")
     ph.set_defaults(func=cmd_historia_fb)
+
+    pm = sub.add_parser("prueba-manual", help="informe de la prueba manual vs API (solo lectura)")
+    pm.set_defaults(func=cmd_prueba_manual)
 
     pb = sub.add_parser("benchmark", help="cuánto tarda un clip completo en esta máquina")
     pb.add_argument("--clips", type=int, default=2, help="cuántos mp4 de output/raw/ medir (default 2)")

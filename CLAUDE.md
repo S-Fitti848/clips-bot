@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-11-09 | **Versión:** v0.79.2 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 de clips + timer 06:00 de la efeméride + escucha de Telegram 24/7, que además propone la historia de Facebook a las 06:30)
+**Snapshot:** 2026-11-10 | **Versión:** v0.81.0 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 de clips + timer 06:00 de la efeméride + escucha de Telegram 24/7, que además propone la historia de Facebook a las 06:30)
 
 > **SI ESTÁS EMPEZANDO UNA SESIÓN NUEVA, LEÉ §10.** Ahí está qué está hecho, qué quedó a medias,
 > qué falta, y las trampas que ya nos mordieron.
@@ -137,6 +137,18 @@ servicio systemd separado: `clips-bot`).
   (13:00/18:00/21:30 los clips; `efemerides.hora_publicacion` la efeméride); un clip con partido en
   pantalla va privado SIN fecha (§3 paso 4). TikTok/IG siguen manuales; Facebook (Pequeña Historia)
   por su propia API.
+- **Prueba manual vs API en Rots (11/11 → 17/11, pedido de Santi del 2026-11-10;
+  `clips_bot/prueba_manual.py`).** Desde que sube la API, el feed de Shorts pasó de 84 % a 6 % de
+  las vistas: hay que descartar que la causa sea subir por la API. Cada día, UN clip de la entrega
+  diaria va con "📱 SUBILO VOS DESDE EL CELU": sin 📤 (el botón dice "📱 Lo subís vos" y el
+  callback se niega a subirlo), con la descripción y los hashtags juntos en un bloque para pegar.
+  La posición rota con el día (#1, #2, #3…) para que no sea siempre el mejor ni el mismo horario, y
+  saltea los que tienen partido en pantalla. Registro en `bot_estado.prueba_manual`; el video que
+  sube Santi se encuentra por el título (`metricas.emparejar`, 05:00). El 18/11, después de las
+  métricas, le llega a Santi el informe (una vez, `prueba_manual_informe`): % de vistas del feed
+  de Shorts (`insightTrafficSourceType` = SHORTS) a mano contra los subidos por la API esos mismos
+  días. CLI `prueba-manual` lo arma en cualquier momento sin mandarlo. Config:
+  `publicacion.prueba_manual_desde` / `prueba_manual_dias`.
 - **Feedback loop obligatorio:** el bot mide cómo rinde cada video y usa eso para elegir mejor
   (ver §4b). Sin métricas el proyecto es ciego.
 - **Valor agregado obligatorio en cada Short**: subtítulos quemados, layout vertical con cámara
@@ -678,6 +690,7 @@ clips_bot/claude.py      texto con Claude (SDK oficial `anthropic`, ANTHROPIC_AP
                          que GeminiClient.json; schema de Gemini → JSON Schema; uso en gemini_uso
                          con clave "claude"; Sonnet con fallbacks "default"
 clips_bot/locales.py     §3d: historias de Facebook (Wikipedia en español por día, Haiku, Sonnet)
+clips_bot/prueba_manual.py prueba manual vs API (§1): el clip del día a mano, registro e informe del feed
 clips_bot/envivo.py      modo en vivo (§3b): quién está al aire, momentos por creadores distintos,
                          alertas en la DB (no repetir, tope, vencer) y el resumen de tiempos
 tests/                   549 tests sin red ni video (conftest.py: nada sale a YouTube) (test_reglas_fijas.py: las 3 reglas de §1)
@@ -873,6 +886,10 @@ Problemas abiertos:
 
 ## 9. CHANGELOG
 
+- v0.81.0 (2026-11-10) — **Prueba manual vs API en Rots** (§1, `prueba_manual.py`): del 11 al 17/11,
+  1 clip por día de la entrega diaria va "📱 SUBILO VOS" (sin 📤, la descripción con los hashtags
+  en un bloque), rotando la posición; el 18/11 el informe del % del feed de Shorts, a mano contra
+  API. `tests/test_prueba_manual.py`. 855 tests OK.
 - docs (2026-11-10) — Content ID en Rots (Santi, Studio): 3 reclamos, los 3 de Auronplay sobre sus
   directos, públicos y sin efecto en la visibilidad; Auron se sigue subiendo, marcado como
   "reclama" en los análisis y con menos prioridad para monetizar (§1).
@@ -2032,6 +2049,11 @@ aparte de Pequeña Historia a las 06:00 (`clips-bot-efemeride`) y la escucha de 
 - Mensajes míos por Telegram empiezan con "🔧 Claude Code:".
 
 ### Esperando respuesta de Santi (NO programar sin su OK)
+
+0. **Prueba manual vs API (11/11 → 17/11):** Santi sube a mano el clip "📱 SUBILO VOS" de cada día
+   (PÚBLICO, en el horario sugerido, el título tal cual). El 18/11 llega el informe solo; si un
+   video no aparece, es que no se subió o se cambió el título. Con el resultado se decide si se
+   vuelve a la subida manual o se buscan las otras causas (hashtags, categoría, streamers).
 
 1. **Diseño del algoritmo de ROTS y Pequeña Historia** (mandado el 2026-11-05): `/analisis`;
    ponderación del rendimiento 40/40/20 (vistas / % que llega al final / comentarios cada 1.000

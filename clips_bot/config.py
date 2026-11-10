@@ -424,6 +424,9 @@ class Seleccion:
 @dataclass(frozen=True)
 class Publicacion:
     horarios: tuple[str, ...] = ("13:00", "18:00", "21:30")
+    # Prueba manual vs API (prueba_manual.py): un clip por día lo sube Santi desde el celular.
+    prueba_manual_desde: str = ""      # AAAA-MM-DD; vacío = sin prueba
+    prueba_manual_dias: int = 7
 
 
 @dataclass(frozen=True)
