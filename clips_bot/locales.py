@@ -126,13 +126,29 @@ def leer_dia(wiki: ef.Wiki, dia: date) -> tuple[list[Candidato], list[str], set[
     return out, conmemoraciones, homenajeados
 
 
+_TRATAMIENTO = re.compile(r"^(sor|san|santa|santo|beato|beata|fray|don|doña)\s+")
+
+
+def _persona(titulo: str) -> str:
+    """El nombre para comparar: sin tildes, sin "Sor/San/…" y sin la aclaración entre paréntesis."""
+    return _TRATAMIENTO.sub("", re.sub(r"\s*\(.*?\)", "", ef._norm(titulo))).strip()
+
+
+def homenajeado(titulo: str, homenajeados: set[str]) -> bool:
+    """¿La conmemoración del día homenajea a esta persona? Los enlaces no siempre coinciden: el 12/11
+    el nacimiento enlaza "Juana Inés de la Cruz" y el Día Nacional del Libro, la redirección
+    "Sor Juana Inés de la Cruz" (por eso no entraba, medido el 2026-11-09)."""
+    p = _persona(titulo)
+    return bool(p) and any(_persona(h) == p for h in homenajeados)
+
+
 def motivo_local(c: Candidato, hoy: date, homenajeados: set[str]) -> str | None:
     """Por qué el candidato no llega ni a Haiku."""
     if not c.paginas:
         return "sin artículo"
     if c.anio > hoy.year:
         return "fecha rara"
-    if c.seccion != "acontecimientos" and not set(c.paginas[:1]) & homenajeados:
+    if c.seccion != "acontecimientos" and not homenajeado(c.paginas[0], homenajeados):
         return "nacimiento o muerte sin conmemoración"
     if not LUGAR_RE.search(c.texto):
         return "sin lugar de Latinoamérica"

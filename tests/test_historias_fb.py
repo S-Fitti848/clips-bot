@@ -321,3 +321,30 @@ def test_un_hecho_elegido_a_mano_no_lo_descarta_haiku(tmp_path, monkeypatch):
     assert len(haiku.llamadas) == 1 and "Tierrita" in haiku.llamadas[0][1]   # el día entero
     assert [c.anio for c in vistos] == [1985]
     assert vistos[0].clasif["lugar"] == "Laguna Epecuén"     # sin lugar: el primer artículo
+
+
+def test_sor_juana_entra_aunque_el_enlace_sea_otra_redireccion():
+    """12/11: el nacimiento enlaza "Juana Inés de la Cruz" y el Día Nacional del Libro, la
+    redirección "Sor Juana Inés de la Cruz". Antes no coincidían y Sor Juana no era candidata."""
+    c = locales.Candidato("nacimientos", 1651, "sor Juana Inés de la Cruz, poetisa mexicana (f. 1695).",
+                          ["Juana Inés de la Cruz"])
+    assert locales.motivo_local(c, date(2026, 11, 12), {"Sor Juana Inés de la Cruz"}) is None
+    assert locales.motivo_local(c, date(2026, 11, 12), {"Juana de Arco"}) == \
+        "nacimiento o muerte sin conmemoración"
+    assert locales.homenajeado("Policarpa Salavarrieta", {"Policarpa Salavarrieta"})
+    assert not locales.homenajeado("Juana", {"Juana Azurduy"})
+
+
+def test_fb_tick_con_un_hecho_fijado_para_un_dia(conn, monkeypatch):
+    import clips_bot.__main__ as m
+    from clips_bot.config import load_settings
+
+    monkeypatch.setattr(db, "destinos", lambda c: ["-100"])
+    db.set_valor(conn, m.FB_FECHA_FIJA, json.dumps({"dia": "2026-11-10", "hecho": "Epecuén"}))
+    db.set_valor(conn, f"{m.FB_FECHA_FIJA}:2026-11-12", "Juana Inés")
+    hechos = []
+    proponer = lambda conn_, tg, chats, dia, s, hecho="": hechos.append((dia.day, hecho))
+    for dia in (10, 11, 12):
+        m._fb_tick(conn, TG(), load_settings(), ahora=datetime(2026, 11, dia, 6, 35, tzinfo=m.AR),
+                   proponer=proponer)
+    assert hechos == [(10, "Epecuén"), (11, ""), (12, "Juana Inés")]

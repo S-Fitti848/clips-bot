@@ -3377,8 +3377,11 @@ def _fb_tick(conn, tg: TelegramClient, settings: Settings, ahora=None, proponer=
         return
     db.set_valor(conn, FB_DIA, hoy)    # una por día, aunque falle: si no, reintentaría en cada vuelta
     chats = [c.strip() for c in cfg.chat.split(",") if c.strip()] or db.destinos(conn)
+    # El hecho fijado a mano: {"dia", "hecho"} en historias_fb_hecho, o el texto en
+    # historias_fb_hecho:<día> (para dejar fijados varios días; el 12/11, Sor Juana y no Newbery).
     fijo = json.loads(db.get_valor(conn, FB_FECHA_FIJA) or "{}")
-    hecho = fijo.get("hecho", "") if fijo.get("dia") == hoy else ""
+    hecho = (db.get_valor(conn, f"{FB_FECHA_FIJA}:{hoy}") or
+             (fijo.get("hecho", "") if fijo.get("dia") == hoy else ""))
     log.info("historia de Facebook: propongo la de hoy a %s%s", chats, f" ({hecho})" if hecho else "")
     try:
         error = ((proponer or _fb_proponer)(conn, tg, chats, ahora.date(), settings, hecho=hecho)
