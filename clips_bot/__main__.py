@@ -1051,7 +1051,12 @@ def cmd_hashtags_rots(args: argparse.Namespace) -> int:
         if actual is None:
             print(f"  {s['video_id']}: ya no está en el canal")
             continue
-        nueva = _para_youtube(meta, "rots")[0]
+        # Sobre la descripción PUBLICADA (y5TBZ5OwxoI se corrigió a mano a Kick después de subirlo;
+        # la del json todavía decía Twitch): solo se le ponen los hashtags antes del crédito.
+        from .textos import descripcion_youtube
+
+        nueva = descripcion_youtube(meta, load_settings().camara.categorias_charla,
+                                    base=actual.get("description") or "")
         if (actual.get("description") == nueva and actual.get("categoryId") == CATEGORIA["rots"]
                 and not actual.get("tags")):
             continue

@@ -203,24 +203,42 @@ def hashtags_youtube(meta: dict, categorias_charla: tuple = ()) -> list[str]:
     if categoria and categoria.lower() not in charla:
         tema = _tag(categoria)
     else:
+        # Solo lo que Gemini vio en el clip: el aviso de fútbol sale de palabras del título del
+        # STREAM y daba #futbol a una charla sobre otra cosa (el corpiño de La Cobra).
         gemini = " ".join((meta.get("textos") or {}).get("hashtags") or []).lower()
-        if "habla de fútbol" in (meta.get("aviso") or "") or "futbol" in _tag(gemini) or "fútbol" in gemini:
+        if "futbol" in _tag(gemini):
             tema = "futbol"
     if tema and f"#{tema}" not in out:
         out.append(f"#{tema}")
     return out
 
 
-def descripcion_youtube(meta: dict, categorias_charla: tuple = ()) -> str:
-    """La descripción con el formato de los Shorts subidos a mano: texto, hashtags y el crédito."""
+_CREDITO = re.compile(r"^(Clips? de\b|Video original:)", re.M)
+
+
+def insertar_hashtags(desc: str, hashtags: list[str], credito: str = "") -> str:
+    """`desc` con los hashtags entre el texto y el crédito (el formato de los subidos a mano).
+    Los hashtags que ya hubiera al final del texto o después del crédito se reemplazan."""
+    desc = desc.strip()
+    if credito and credito in desc:
+        i = desc.index(credito)
+    else:
+        m = _CREDITO.search(desc)
+        i = m.start() if m else len(desc)
+    cuerpo, cred = desc[:i], desc[i:]
+    limpiar = r"(?:\s*#\w+)+\s*$"
+    cuerpo = re.sub(limpiar, "", cuerpo.rstrip()).rstrip()
+    cred = re.sub(limpiar, "", cred.rstrip()).rstrip()
+    return "\n\n".join(p for p in (cuerpo, " ".join(hashtags), cred) if p)
+
+
+def descripcion_youtube(meta: dict, categorias_charla: tuple = (), base: str | None = None) -> str:
+    """La descripción con el formato de los Shorts subidos a mano: texto, hashtags y el crédito.
+    `base`: otra descripción a la que ponerle los hashtags (la que YA está publicada, que pudo
+    haberse corregido a mano después de subirla)."""
     t = meta.get("textos") or {}
-    desc, cred = (t.get("descripcion") or "").rstrip(), t.get("credito") or ""
-    cuerpo = desc.replace(cred, "").rstrip() if cred else desc
-    cuerpo = re.sub(r"(\s*#\w+)+\s*$", "", cuerpo).rstrip()      # sin hashtags viejos al final
-    partes = [cuerpo, " ".join(hashtags_youtube(meta, categorias_charla))]
-    if cred:
-        partes.append(cred)
-    return "\n\n".join(p for p in partes if p)
+    desc = (t.get("descripcion") or "") if base is None else base
+    return insertar_hashtags(desc, hashtags_youtube(meta, categorias_charla), t.get("credito") or "")
 
 
 def credito_cc(canal: str, link: str) -> str:

@@ -31,12 +31,13 @@ def test_streamer_plataforma_tema_y_shorts():
 
 def test_charla_sin_tema_o_futbol():
     assert hashtags_youtube(_meta(categoria="Just Chatting"), CHARLA) == ["#Shorts", "#auronplay", "#twitch"]
-    futbol = _meta(streamer="lacobraaa", plataforma="kick", categoria="Just Chatting",
-                   aviso="⚽ habla de fútbol (Boca): no se descarta por eso; mirá que no se vea el partido")
-    assert hashtags_youtube(futbol, CHARLA) == ["#Shorts", "#lacobraaa", "#kick", "#futbol"]
-    por_gemini = _meta(categoria="Just Chatting",
-                       textos={**_meta()["textos"], "hashtags": ["#Shorts", "#Fútbol"]})
-    assert hashtags_youtube(por_gemini, CHARLA)[-1] == "#futbol"
+    por_gemini = _meta(streamer="lacobraaa", plataforma="kick", categoria="Just Chatting",
+                       textos={**_meta()["textos"], "hashtags": ["#Shorts", "#Fútbol", "#Boca"]})
+    assert hashtags_youtube(por_gemini, CHARLA) == ["#Shorts", "#lacobraaa", "#kick", "#futbol"]
+    # el aviso de fútbol sale del título del STREAM: solo no alcanza (el corpiño de La Cobra)
+    solo_aviso = _meta(categoria="Just Chatting", textos={**_meta()["textos"], "hashtags": ["#Humor"]},
+                       aviso="⚽ habla de fútbol (Boca): no se descarta por eso; mirá que no se vea el partido")
+    assert hashtags_youtube(solo_aviso, CHARLA) == ["#Shorts", "#auronplay", "#twitch"]
 
 
 def test_entre_3_y_5_y_sin_repetir():
@@ -99,7 +100,8 @@ def test_corregir_publicados(monkeypatch, tmp_path):
             assert canal == "rots"
 
         def snippet(self, vid):
-            return {"title": "Auron se ríe", "description": "Auron se ríe en Minecraft.\n\n" + CRED,
+            # la publicada se corrigió a mano después de subirla: se respeta, no se vuelve al json
+            return {"title": "Auron se ríe", "description": "Auron se ríe (corregido).\n\n" + CRED,
                     "categoryId": "20", "tags": ["Shorts", "auronplay"], "defaultLanguage": "es"}
 
         def cambiar_snippet(self, vid, sn):
@@ -112,7 +114,23 @@ def test_corregir_publicados(monkeypatch, tmp_path):
     assert [v for v, _ in cambios] == ["V1"]   # sin json no se toca; Pequeña Historia tampoco
     sn = cambios[0][1]
     assert sn["title"] == "Auron se ríe" and sn["categoryId"] == "22" and sn["tags"] == []
-    assert sn["description"].endswith(f"#Shorts #auronplay #twitch #minecraft\n\n{CRED}")
+    assert sn["description"] == f"Auron se ríe (corregido).\n\n#Shorts #auronplay #twitch #minecraft\n\n{CRED}"
+
+
+def test_insertar_hashtags_en_lo_publicado():
+    from clips_bot.textos import insertar_hashtags
+
+    h = ["#Shorts", "#coker", "#kick"]
+    # crédito de Kick aunque el json dijera otra cosa: se busca la línea "Clip de"
+    assert insertar_hashtags("Texto.\n\nClip de coker — kick.com/coker", h, "Clip de coker — twitch.tv/coker") \
+        == "Texto.\n\n#Shorts #coker #kick\n\nClip de coker — kick.com/coker"
+    # hashtags viejos después del crédito (la prueba pública de oct.): se reemplazan
+    assert insertar_hashtags("Texto.\n\nClip de coker — kick.com/coker\n\n#Shorts #Davo #Kick", h) \
+        == "Texto.\n\n#Shorts #coker #kick\n\nClip de coker — kick.com/coker"
+    # multi-POV
+    assert insertar_hashtags("Texto.\n\nClips de:\n· a — twitch.tv/a", h) \
+        == "Texto.\n\n#Shorts #coker #kick\n\nClips de:\n· a — twitch.tv/a"
+    assert insertar_hashtags("Solo texto.", h) == "Solo texto.\n\n#Shorts #coker #kick"
 
 
 def test_cambiar_snippet_manda_titulo_y_categoria():

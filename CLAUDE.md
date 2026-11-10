@@ -142,10 +142,10 @@ servicio systemd separado: `clips-bot`).
   en la categoría 20; los 40 subidos a mano (los que salían en el feed) tenían
   `<texto>\n\n#Shorts #streamer #tema\n\nClip de X — url`, sin tags y en la 22. Ahora
   (`textos.hashtags_youtube` / `descripcion_youtube`, `_para_youtube`): `#Shorts #<login>
-  #<twitch|kick>` + el tema si hay (el juego si no es una categoría de charla, o `#futbol`), entre
+  #<twitch|kick>` + el tema si hay (el juego si no es una categoría de charla, o `#futbol` si Gemini lo vio en el clip; el aviso de fútbol solo no alcanza), entre
   el texto y el crédito; sin tags; categoría 22. Los arma el código, no Gemini (traían
   "#Davoeneize" o "#Shorts射"). Pequeña Historia no cambia. `python -m clips_bot hashtags-rots
-  [--aplicar]` corrige por `videos.update` los ya subidos (sin `--aplicar` solo muestra).
+  [--aplicar]` corrige por `videos.update` los ya subidos (sin `--aplicar` solo muestra): sobre la descripción PUBLICADA (no la del json, que en `y5TBZ5OwxoI` seguía diciendo Twitch), solo le mete los hashtags antes del crédito.
 - **Prueba manual vs API en Rots (11/11 → 17/11, pedido de Santi del 2026-11-10;
   `clips_bot/prueba_manual.py`).** Desde que sube la API, el feed de Shorts pasó de 84 % a 6 % de
   las vistas: hay que descartar que la causa sea subir por la API. Cada día, UN clip de la entrega
