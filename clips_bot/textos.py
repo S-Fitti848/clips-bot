@@ -178,6 +178,51 @@ def credito(canal: str, login: str, plataforma: str = "twitch") -> str:
     return f"Clip de {canal} — {DOMINIO.get(plataforma, 'twitch.tv')}/{login}"
 
 
+# ---- hashtags de YouTube (2026-11-10) ------------------------------------------------------------
+# Los Shorts subidos a mano (sept-oct, los que salían en el feed) tenían en la descripción:
+# "<texto>\n\n#Shorts #streamer #tema …\n\nClip de X — url", sin tags y en la categoría 22. Los de
+# la API salían sin ningún hashtag en la descripción (iban solo como tags) y en la 20. Ahora los
+# hashtags los arma el código (los de Gemini traían "#Davoeneize" o "#Shorts射"): #Shorts, el
+# streamer, la plataforma y el tema si hay (el juego, o #futbol).
+
+def _tag(texto: str) -> str:
+    """'Rocket League' → 'rocketleague'; 'Age of Empires II: Definitive Edition' → 'ageofempiresii'."""
+    texto = texto.split(":")[0]
+    plano = unicodedata.normalize("NFKD", texto).encode("ascii", "ignore").decode()
+    return re.sub(r"[^a-z0-9]", "", plano.lower())[:30]
+
+
+def hashtags_youtube(meta: dict, categorias_charla: tuple = ()) -> list[str]:
+    """3 o 4 hashtags: #Shorts #<login> #<twitch|kick> [#<tema>]."""
+    login = _tag(str(meta.get("streamer") or ""))
+    plataforma = _tag(str(meta.get("plataforma") or "twitch"))
+    out = ["#Shorts"] + [f"#{x}" for x in (login, plataforma) if x]
+    categoria = str(meta.get("categoria") or "")
+    charla = {c.lower() for c in categorias_charla}
+    tema = ""
+    if categoria and categoria.lower() not in charla:
+        tema = _tag(categoria)
+    else:
+        gemini = " ".join((meta.get("textos") or {}).get("hashtags") or []).lower()
+        if "habla de fútbol" in (meta.get("aviso") or "") or "futbol" in _tag(gemini) or "fútbol" in gemini:
+            tema = "futbol"
+    if tema and f"#{tema}" not in out:
+        out.append(f"#{tema}")
+    return out
+
+
+def descripcion_youtube(meta: dict, categorias_charla: tuple = ()) -> str:
+    """La descripción con el formato de los Shorts subidos a mano: texto, hashtags y el crédito."""
+    t = meta.get("textos") or {}
+    desc, cred = (t.get("descripcion") or "").rstrip(), t.get("credito") or ""
+    cuerpo = desc.replace(cred, "").rstrip() if cred else desc
+    cuerpo = re.sub(r"(\s*#\w+)+\s*$", "", cuerpo).rstrip()      # sin hashtags viejos al final
+    partes = [cuerpo, " ".join(hashtags_youtube(meta, categorias_charla))]
+    if cred:
+        partes.append(cred)
+    return "\n\n".join(p for p in partes if p)
+
+
 def credito_cc(canal: str, link: str) -> str:
     """Crédito de un video Creative Commons (formato pedido el 2026-09-27)."""
     return f"Video original: {canal or '(completar canal)'} – {link}, licencia CC BY"

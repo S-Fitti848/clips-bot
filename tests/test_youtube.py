@@ -139,7 +139,7 @@ def test_prendida_programa_una_sola_vez(conn, prendida):
     assert m._programar_subida(conn, prendida, META, "rots", "18:00") == ""    # ya estaba
     (s,) = db.subidas(conn)
     assert (s["estado"], s["video_id"], s["canal"]) == ("programada", "VID", "rots")
-    assert ClienteFalso.subidos[0][3] == "20"
+    assert ClienteFalso.subidos[0][3] == "22"   # People & Blogs, como los subidos a mano (2026-11-10)
 
 
 @pytest.mark.parametrize("hora_aprobacion,esperado", [

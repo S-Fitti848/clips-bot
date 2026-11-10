@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-11-10 | **Versión:** v0.81.0 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 de clips + timer 06:00 de la efeméride + escucha de Telegram 24/7, que además propone la historia de Facebook a las 06:30)
+**Snapshot:** 2026-11-10 | **Versión:** v0.82.0 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 de clips + timer 06:00 de la efeméride + escucha de Telegram 24/7, que además propone la historia de Facebook a las 06:30)
 
 > **SI ESTÁS EMPEZANDO UNA SESIÓN NUEVA, LEÉ §10.** Ahí está qué está hecho, qué quedó a medias,
 > qué falta, y las trampas que ya nos mordieron.
@@ -137,6 +137,15 @@ servicio systemd separado: `clips-bot`).
   (13:00/18:00/21:30 los clips; `efemerides.hora_publicacion` la efeméride); un clip con partido en
   pantalla va privado SIN fecha (§3 paso 4). TikTok/IG siguen manuales; Facebook (Pequeña Historia)
   por su propia API.
+  **Formato de la subida a Rots = el de los Shorts subidos a mano (2026-11-10, v0.82.0):** los de
+  la API salían SIN ningún hashtag en la descripción (los hashtags iban solo como tags), con tags y
+  en la categoría 20; los 40 subidos a mano (los que salían en el feed) tenían
+  `<texto>\n\n#Shorts #streamer #tema\n\nClip de X — url`, sin tags y en la 22. Ahora
+  (`textos.hashtags_youtube` / `descripcion_youtube`, `_para_youtube`): `#Shorts #<login>
+  #<twitch|kick>` + el tema si hay (el juego si no es una categoría de charla, o `#futbol`), entre
+  el texto y el crédito; sin tags; categoría 22. Los arma el código, no Gemini (traían
+  "#Davoeneize" o "#Shorts射"). Pequeña Historia no cambia. `python -m clips_bot hashtags-rots
+  [--aplicar]` corrige por `videos.update` los ya subidos (sin `--aplicar` solo muestra).
 - **Prueba manual vs API en Rots (11/11 → 17/11, pedido de Santi del 2026-11-10;
   `clips_bot/prueba_manual.py`).** Desde que sube la API, el feed de Shorts pasó de 84 % a 6 % de
   las vistas: hay que descartar que la causa sea subir por la API. Cada día, UN clip de la entrega
@@ -886,6 +895,10 @@ Problemas abiertos:
 
 ## 9. CHANGELOG
 
+- v0.82.0 (2026-11-10) — **Hashtags, tags y categoría de Rots como los subidos a mano** (§1): la
+  descripción termina con `#Shorts #<streamer> #<plataforma> [#tema]` antes del crédito, sin tags,
+  categoría 22 (era 20). El clip de la prueba manual lleva la misma descripción. CLI `hashtags-rots`
+  para los ya subidos. `tests/test_hashtags_youtube.py`. 863 tests OK.
 - v0.81.0 (2026-11-10) — **Prueba manual vs API en Rots** (§1, `prueba_manual.py`): del 11 al 17/11,
   1 clip por día de la entrega diaria va "📱 SUBILO VOS" (sin 📤, la descripción con los hashtags
   en un bloque), rotando la posición; el 18/11 el informe del % del feed de Shorts, a mano contra

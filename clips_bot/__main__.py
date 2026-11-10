@@ -656,7 +656,7 @@ def enviar_clip(tg: TelegramClient, chat_id, conn, clip_id: str, meta: dict, num
     a_mano = prueba_manual.es_manual(conn, clip_id)
     if a_mano:
         # Para pegar en la app: la descripción (con el crédito) y los hashtags en UN bloque.
-        textos = {**textos, "descripcion": prueba_manual.descripcion_para_pegar(textos),
+        textos = {**textos, "descripcion": _para_youtube(meta, "rots")[0],
                   "hashtags": [], "credito": ""}
         cfg = load_settings().publicacion
         n_dia = len(prueba_manual.registro(conn))
@@ -1026,6 +1026,46 @@ def _informe_prueba_manual(settings: Settings, simular: bool = False, forzar: bo
         return texto
     finally:
         conn.close()
+
+
+def cmd_hashtags_rots(args: argparse.Namespace) -> int:
+    """Los Shorts de Rots que subió la API salieron sin hashtags en la descripción, con tags y en la
+    categoría 20. Les pone la descripción con el formato de los subidos a mano, la categoría 22 y
+    les saca los tags (videos.update, sin volver a subirlos). El título no se toca."""
+    from . import youtube
+
+    cliente = youtube.Cliente("rots")
+    conn = db.connect(DB_PATH)
+    try:
+        filas = [s for s in db.subidas(conn, ("programada", "publicada", "privada"))
+                 if s["canal"] == "rots" and s["video_id"]]
+    finally:
+        conn.close()
+    cambios, sin_meta = 0, []
+    for s in filas:
+        meta = _meta_de(s["clip_id"])
+        if not meta.get("textos"):
+            sin_meta.append(s["video_id"])
+            continue
+        actual = cliente.snippet(s["video_id"])
+        if actual is None:
+            print(f"  {s['video_id']}: ya no está en el canal")
+            continue
+        nueva = _para_youtube(meta, "rots")[0]
+        if (actual.get("description") == nueva and actual.get("categoryId") == CATEGORIA["rots"]
+                and not actual.get("tags")):
+            continue
+        print(f"\n{s['video_id']} ({actual.get('title')}): cat {actual.get('categoryId')} -> "
+              f"{CATEGORIA['rots']}, tags {actual.get('tags')} -> ninguno\n  descripción nueva: {nueva!r}")
+        if args.aplicar:
+            cliente.cambiar_snippet(s["video_id"], {**actual, "description": nueva,
+                                                    "categoryId": CATEGORIA["rots"], "tags": []})
+            print("  actualizado")
+        cambios += 1
+    if sin_meta:
+        print(f"\nSin el json del clip (no se tocan): {', '.join(sin_meta)}")
+    print(f"\n{cambios} {'actualizados' if args.aplicar else 'para actualizar (falta --aplicar)'}")
+    return 0
 
 
 def cmd_prueba_manual(args: argparse.Namespace) -> int:
@@ -3875,7 +3915,20 @@ def cmd_historia_fb(args: argparse.Namespace) -> int:
 # efeméride, 👍 de un clip) se sube en privado con publishAt en su horario, y /subidas lista y
 # cancela lo programado.
 
-CATEGORIA = {"rots": "20", "pequena_historia": "27"}   # 20 = Gaming, 27 = Education
+# 22 = People & Blogs: la de los Shorts subidos a mano que salían en el feed (los 40 de sept-oct);
+# la API los subía en 20 (Gaming). 27 = Education.
+CATEGORIA = {"rots": "22", "pequena_historia": "27"}
+
+
+def _para_youtube(meta: dict, canal: str) -> tuple[str, list[str]]:
+    """(descripción, tags) de la subida. Rots, con el formato de los Shorts subidos a mano: los
+    hashtags al final del texto y antes del crédito, y SIN tags (no tenían). El resto, como antes."""
+    from .textos import descripcion_youtube
+
+    t = meta["textos"]
+    if canal == "rots":
+        return descripcion_youtube(meta, load_settings().camara.categorias_charla), []
+    return t["descripcion"], list(t.get("hashtags") or [])
 
 
 def _programar_subida(conn, settings: Settings, meta: dict, canal: str, hora: str,
@@ -3910,9 +3963,10 @@ def _programar_subida(conn, settings: Settings, meta: dict, canal: str, hora: st
             cuando = max(min(hoy + timedelta(minutes=30), limite), hoy + timedelta(minutes=5))
             cuando = cuando.replace(second=0, microsecond=0)
         t = meta["textos"]
+        desc, tags = _para_youtube(meta, canal)
         cliente = youtube.Cliente(canal)
-        video_id = cliente.subir(Path(meta["salida"]), t["titulo"], t["descripcion"],
-                                 t.get("hashtags") or [], cuando, CATEGORIA.get(canal, "24"))
+        video_id = cliente.subir(Path(meta["salida"]), t["titulo"], desc, tags, cuando,
+                                 CATEGORIA.get(canal, "24"))
         img = _portada_de(meta)
         if img is not None:
             try:
@@ -3943,9 +3997,10 @@ def _subir_publico_ya(conn, meta: dict, canal: str) -> str:
 
     clip_id, t = meta["clip_id"], meta["textos"]
     try:
+        desc, tags = _para_youtube(meta, canal)
         cliente = youtube.Cliente(canal)
-        video_id = cliente.subir(Path(meta["salida"]), t["titulo"], t["descripcion"],
-                                 t.get("hashtags") or [], None, CATEGORIA.get(canal, "24"), publico=True)
+        video_id = cliente.subir(Path(meta["salida"]), t["titulo"], desc, tags, None,
+                                 CATEGORIA.get(canal, "24"), publico=True)
     except (youtube.YouTubeError, requests.RequestException) as e:
         db.crear_subida(conn, clip_id, canal, "error", error=str(e)[:500])
         return f"⚠️ No pude subirlo a YouTube ({html.escape(youtube.CANALES[canal])}): {html.escape(str(e)[:300])}"
@@ -3963,9 +4018,10 @@ def _subir_privado_a_revisar(conn, meta: dict, canal: str) -> str:
 
     clip_id, t = meta["clip_id"], meta["textos"]
     try:
+        desc, tags = _para_youtube(meta, canal)
         cliente = youtube.Cliente(canal)
-        video_id = cliente.subir(Path(meta["salida"]), t["titulo"], t["descripcion"],
-                                 t.get("hashtags") or [], None, CATEGORIA.get(canal, "24"))
+        video_id = cliente.subir(Path(meta["salida"]), t["titulo"], desc, tags, None,
+                                 CATEGORIA.get(canal, "24"))
     except (youtube.YouTubeError, requests.RequestException) as e:
         db.crear_subida(conn, clip_id, canal, "error", error=str(e)[:500])
         return f"⚠️ No pude subirlo a YouTube ({html.escape(youtube.CANALES[canal])}): {html.escape(str(e)[:300])}"
@@ -5494,6 +5550,11 @@ def main(argv: list[str] | None = None) -> int:
     ph.add_argument("--contar-mes", type=int, default=0,
                     help="contar cuántas historias locales buenas hay por día, N días desde --fecha")
     ph.set_defaults(func=cmd_historia_fb)
+
+    ph2 = sub.add_parser("hashtags-rots", help="pone los hashtags (y la categoría 22, sin tags) a los "
+                                               "Shorts de Rots subidos por la API que no los tienen")
+    ph2.add_argument("--aplicar", action="store_true", help="sin esto solo muestra lo que cambiaría")
+    ph2.set_defaults(func=cmd_hashtags_rots)
 
     pm = sub.add_parser("prueba-manual", help="informe de la prueba manual vs API (solo lectura)")
     pm.set_defaults(func=cmd_prueba_manual)

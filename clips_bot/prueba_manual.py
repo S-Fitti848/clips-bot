@@ -62,14 +62,6 @@ def anotar(conn: sqlite3.Connection, clip_id: str, hoy: date, streamer: str, hor
     db.set_valor(conn, REGISTRO, json.dumps(filas, ensure_ascii=False))
 
 
-def descripcion_para_pegar(textos: dict) -> str:
-    """En la era manual (los Shorts que rendían) los hashtags iban en la descripción: acá van juntos,
-    en un solo bloque para copiar y pegar en la app."""
-    desc = (textos.get("descripcion") or "").strip()
-    tags = " ".join(textos.get("hashtags") or [])
-    return f"{desc}\n\n{tags}".strip() if tags else desc
-
-
 ENCABEZADO = ("📱 <b>SUBILO VOS DESDE EL CELU</b> (prueba manual vs API, día {n} de {total}). "
               "El bot NO lo sube. Subilo en el horario sugerido, PÚBLICO, con el título y la "
               "descripción de abajo tal cual (el bot lo encuentra por el título).")

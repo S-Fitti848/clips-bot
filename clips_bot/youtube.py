@@ -293,6 +293,30 @@ class Cliente:
             raise YouTubeError(f"No pude publicar {video_id}: {r.status_code} {r.text[:200]}")
         return self.respuesta_publicar
 
+    def snippet(self, video_id: str) -> dict | None:
+        """El snippet actual del video (None si ya no está)."""
+        r = self.session.get(f"{API}/videos", params={"part": "snippet", "id": video_id},
+                             headers=self._headers(), timeout=30)
+        if r.status_code != 200:
+            raise YouTubeError(f"videos.list {video_id}: {r.status_code} {r.text[:200]}")
+        items = (r.json() or {}).get("items") or []
+        return items[0]["snippet"] if items else None
+
+    def cambiar_snippet(self, video_id: str, snippet: dict) -> dict:
+        """videos.update part=snippet: título, descripción, tags y categoría (sin volver a subirlo).
+        YouTube pide el título y la categoría siempre; los tags que no se mandan se borran."""
+        campos = ("title", "description", "categoryId", "tags", "defaultLanguage", "defaultAudioLanguage")
+        cuerpo = {k: snippet[k] for k in campos if snippet.get(k) not in (None, [])}
+        r = self.session.put(f"{API}/videos", params={"part": "snippet"},
+                             headers={**self._headers(), "Content-Type": "application/json"},
+                             data=json.dumps({"id": video_id, "snippet": cuerpo}), timeout=30)
+        self.respuesta_snippet = {"http": r.status_code, "cuerpo": _json_o_texto(r)}
+        log.info("videos.update (snippet) %s %s: %s", self.canal, video_id,
+                 json.dumps(self.respuesta_snippet, ensure_ascii=False)[:2000])
+        if r.status_code != 200:
+            raise YouTubeError(f"No pude cambiar {video_id}: {r.status_code} {r.text[:200]}")
+        return self.respuesta_snippet
+
     def poner_portada(self, video_id: str, imagen: Path) -> dict:
         """thumbnails.set (JPEG < 2 MB). Necesita el canal verificado; si YouTube la rechaza, YouTubeError."""
         r = self.session.post(THUMBNAILS, params={"videoId": video_id}, data=imagen.read_bytes(),

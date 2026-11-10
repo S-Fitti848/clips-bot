@@ -31,13 +31,6 @@ def test_ventana_y_rotacion():
     assert idx == [0, 1, 2, 0, 1, 2, 0]      # cae en los tres horarios, no siempre en el #1
 
 
-def test_descripcion_lleva_los_hashtags():
-    t = {"descripcion": "Davo se ríe.\n\nClip de Davo — kick.com/davooxeneize",
-         "hashtags": ["#Davo", "#Shorts"]}
-    assert pm.descripcion_para_pegar(t) == ("Davo se ríe.\n\nClip de Davo — kick.com/davooxeneize"
-                                            "\n\n#Davo #Shorts")
-
-
 def test_un_manual_por_dia_rotando_y_sin_partido(tmp_path, monkeypatch):
     conn = db.connect(tmp_path / "t.db")
     s = _settings()
@@ -94,11 +87,18 @@ def test_el_callback_de_subir_no_sube_un_manual(tmp_path, monkeypatch):
     assert not subio and "lo subís vos" in respuestas[0]
 
 
-def test_mensaje_para_copiar_sin_bloque_de_hashtags():
-    t = {"titulo": "Davo se ríe", "descripcion": pm.descripcion_para_pegar(
-        {"descripcion": "d", "hashtags": ["#Davo", "#Shorts"]}), "hashtags": [], "credito": ""}
-    texto = mensaje_textos(1, "davo", "clipM", "13:00", t)
-    assert "#Davo #Shorts" in texto and "<b>Hashtags:</b>" not in texto
+def test_el_manual_trae_la_misma_descripcion_que_la_api():
+    """Para que la prueba compare SOLO la forma de subir, el clip a mano lleva la misma descripción
+    (hashtags incluidos) que el bot le pone a uno subido por la API."""
+    meta = {"clip_id": "clipM", "streamer": "davooxeneize", "plataforma": "kick",
+            "categoria": "Just Chatting",
+            "textos": {"titulo": "Davo se ríe", "descripcion": "Texto.\n\nClip de Davo — kick.com/davooxeneize",
+                       "credito": "Clip de Davo — kick.com/davooxeneize", "hashtags": ["#Davoeneize"]}}
+    desc, tags = m._para_youtube(meta, "rots")
+    t = {**meta["textos"], "descripcion": desc, "hashtags": [], "credito": ""}
+    texto = mensaje_textos(1, "davooxeneize", "clipM", "13:00", t)
+    assert "#Shorts #davooxeneize #kick" in texto and "<b>Hashtags:</b>" not in texto
+    assert tags == []
 
 
 class Cliente:
