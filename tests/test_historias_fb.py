@@ -296,3 +296,28 @@ def test_historia_en_la_ayuda():
     import clips_bot.__main__ as m
 
     assert any(c[0].startswith("/historia") for c in m.COMANDOS)
+
+
+def test_un_hecho_elegido_a_mano_no_lo_descarta_haiku(tmp_path, monkeypatch):
+    """/historia 10/11 Epecuén: aunque Haiku diga que no es una historia humana, se usa (lo eligió
+    una persona). Haiku clasifica el día entero, no solo ese hecho."""
+    haiku = Falso([{"hechos": [
+        {"n": 1, "humana": True, "lugar": "Tierrita Blanca", "region": "", "pais": "Venezuela",
+         "tipo": "otro", "tragedia_sola": False, "conmemora": "", "interes": 3},
+        {"n": 2, "humana": False, "lugar": "", "region": "", "pais": "Argentina", "tipo": "otro",
+         "tragedia_sola": False, "conmemora": "", "interes": 2},
+        {"n": 3, "humana": True, "lugar": "Bogotá", "region": "", "pais": "Colombia", "tipo": "otro",
+         "tragedia_sola": False, "conmemora": "", "interes": 5}]}])
+    vistos = []
+
+    def elegir(sonnet, lista, cuantos=8):
+        vistos.extend(lista)
+        raise ef.NarrarError("corto acá")
+
+    monkeypatch.setattr(locales, "elegir", elegir)
+    monkeypatch.setattr(locales.ef, "MAX_GUIONES", 0)
+    with pytest.raises(ef.NarrarError):
+        locales.proponer(WikiFalsa(), None, haiku, None, date(2026, 11, 10), tmp_path, hecho="Epecuén")
+    assert len(haiku.llamadas) == 1 and "Tierrita" in haiku.llamadas[0][1]   # el día entero
+    assert [c.anio for c in vistos] == [1985]
+    assert vistos[0].clasif["lugar"] == "Laguna Epecuén"     # sin lugar: el primer artículo

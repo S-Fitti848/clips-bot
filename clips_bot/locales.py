@@ -192,8 +192,8 @@ SCHEMA_CLASIFICAR = {
 
 
 def clasificar(haiku, cands: list[Candidato], conmemoraciones: list[str]) -> list[Candidato]:
-    """Una llamada a Haiku para todos. Deja `clasif` en cada candidato."""
-    if not cands:
+    """Una llamada a Haiku para todos. Deja `clasif` en cada candidato (None = ya clasificados)."""
+    if not cands or haiku is None:
         return cands
     lineas = [f"{i + 1}. ({c.anio}, {c.seccion}) {c.texto[:300]}" for i, c in enumerate(cands)]
     prompt = ("CONMEMORACIONES DE HOY:\n" + ("\n".join(f"- {x}" for x in conmemoraciones) or "(ninguna)")
@@ -331,7 +331,11 @@ def proponer(wiki: ef.Wiki, sonnet, haiku, gemini, dia: date, carpeta: Path, avi
     todos, conmemoraciones, homenajeados = leer_dia(wiki, dia)
     cands, motivos = filtrar(todos, date.today(), homenajeados)
     if hecho:
+        # Haiku clasifica igual el día entero (solo, un hecho lo juzga distinto); después se queda
+        # con los que lo mencionan.
+        clasificar(haiku, cands, conmemoraciones)
         cands = [c for c in cands if ef._norm(hecho) in ef._norm(c.texto)]
+        haiku = None
     avisar(f"{len(todos)} hechos del {dia:%d/%m} en es.wikipedia; {len(cands)} con lugar de "
            f"Latinoamérica {motivos}")
     if not cands:
@@ -339,6 +343,14 @@ def proponer(wiki: ef.Wiki, sonnet, haiku, gemini, dia: date, carpeta: Path, avi
                              (f" (con «{hecho}»)" if hecho else ""))
     clasificar(haiku, cands, conmemoraciones)
     lista = buenos(cands)
+    if hecho:
+        # Lo eligió una persona (/historia 10/11 Epecuén, o el fijado para el día): Haiku no lo
+        # descarta. Medido el 2026-11-09: con Epecuén solo en la lista dijo "no es una historia
+        # humana"; con el día entero, "gente común, interés 8". Sin lugar, el del primer artículo.
+        lista = lista + [c for c in cands if c not in lista]
+        for c in lista:
+            if not str(c.clasif.get("lugar") or "").strip():
+                c.clasif["lugar"] = c.paginas[0]
     avisar(f"Haiku: {len(lista)} historias humanas con lugar concreto")
     if not lista:
         raise ef.NarrarError("Ningún hecho de hoy es una historia humana con un lugar concreto")
