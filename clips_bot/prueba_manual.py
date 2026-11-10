@@ -144,6 +144,8 @@ def comparar(conn: sqlite3.Connection, cliente, desde: str, n: int,
     def linea(nombre: str, r: dict) -> str:
         if not r["videos"]:
             return f"{nombre}: sin videos"
+        if not r["vistas"]:
+            return f"{nombre}: {r['videos']} videos, sin vistas todavía"
         return (f"{nombre}: {r['videos']} videos, {num(r['vistas'])} vistas, "
                 f"<b>{r['pct_feed']} % del feed de Shorts</b> (mediana por video "
                 f"{r['pct_feed_mediana']} %; vistas por video, mediana {num(r['vistas_mediana'])})")
