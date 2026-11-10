@@ -1055,8 +1055,12 @@ def cmd_hashtags_rots(args: argparse.Namespace) -> int:
         # la del json todavía decía Twitch): solo se le ponen los hashtags antes del crédito.
         from .textos import descripcion_youtube
 
-        nueva = descripcion_youtube(meta, load_settings().camara.categorias_charla,
-                                    base=actual.get("description") or "")
+        base = actual.get("description") or ""
+        login = str(meta.get("streamer") or "")
+        if meta.get("plataforma") == "kick" and login:
+            # Los procesados antes del 29/10 salían con "twitch.tv/<login>" aunque fueran de Kick.
+            base = re.sub(rf"twitch\.tv/{re.escape(login)}\b", f"kick.com/{login}", base, flags=re.I)
+        nueva = descripcion_youtube(meta, load_settings().camara.categorias_charla, base=base)
         if (actual.get("description") == nueva and actual.get("categoryId") == CATEGORIA["rots"]
                 and not actual.get("tags")):
             continue

@@ -117,6 +117,32 @@ def test_corregir_publicados(monkeypatch, tmp_path):
     assert sn["description"] == f"Auron se ríe (corregido).\n\n#Shorts #auronplay #twitch #minecraft\n\n{CRED}"
 
 
+def test_corregir_publicados_arregla_el_credito_de_kick(monkeypatch, tmp_path):
+    conn = db.connect(tmp_path / "t.db")
+    db.crear_subida(conn, "b1", "rots", "programada", video_id="VB", publish_at="2026-11-01T16:00:00Z")
+    monkeypatch.setattr(m, "DB_PATH", tmp_path / "t.db")
+    meta = _meta(streamer="brunenger", plataforma="kick", categoria="IRL",
+                 textos={"titulo": "t", "descripcion": "x", "credito": "Clip de brunenger — twitch.tv/brunenger",
+                         "hashtags": []})
+    monkeypatch.setattr(m, "_meta_de", lambda cid: meta)
+    cambios = []
+
+    class Cliente:
+        def __init__(self, canal):
+            pass
+
+        def snippet(self, vid):
+            return {"title": "t", "description": "Texto.\n\nClip de brunenger — twitch.tv/brunenger",
+                    "categoryId": "20"}
+
+        def cambiar_snippet(self, vid, sn):
+            cambios.append(sn["description"])
+
+    monkeypatch.setattr(youtube, "Cliente", Cliente)
+    m.cmd_hashtags_rots(SimpleNamespace(aplicar=True))
+    assert cambios == ["Texto.\n\n#Shorts #brunenger #kick\n\nClip de brunenger — kick.com/brunenger"]
+
+
 def test_insertar_hashtags_en_lo_publicado():
     from clips_bot.textos import insertar_hashtags
 

@@ -898,7 +898,7 @@ Problemas abiertos:
 - v0.82.0 (2026-11-10) — **Hashtags, tags y categoría de Rots como los subidos a mano** (§1): la
   descripción termina con `#Shorts #<streamer> #<plataforma> [#tema]` antes del crédito, sin tags,
   categoría 22 (era 20). El clip de la prueba manual lleva la misma descripción. CLI `hashtags-rots`
-  para los ya subidos. `tests/test_hashtags_youtube.py`. 863 tests OK.
+  para los ya subidos. `tests/test_hashtags_youtube.py`. 865 tests OK. Al corregir los ya subidos, un clip de Kick con "twitch.tv/<login>" en el crédito (los procesados antes del 29/10) pasa a kick.com.
 - v0.81.0 (2026-11-10) — **Prueba manual vs API en Rots** (§1, `prueba_manual.py`): del 11 al 17/11,
   1 clip por día de la entrega diaria va "📱 SUBILO VOS" (sin 📤, la descripción con los hashtags
   en un bloque), rotando la posición; el 18/11 el informe del % del feed de Shorts, a mano contra
