@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-11-06 | **Versión:** v0.77.0 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 de clips + timer 06:00 de la efeméride + escucha de Telegram 24/7)
+**Snapshot:** 2026-11-09 | **Versión:** v0.77.0 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 de clips + timer 06:00 de la efeméride + escucha de Telegram 24/7)
 
 > **SI ESTÁS EMPEZANDO UNA SESIÓN NUEVA, LEÉ §10.** Ahí está qué está hecho, qué quedó a medias,
 > qué falta, y las trampas que ya nos mordieron.
@@ -805,6 +805,9 @@ Problemas abiertos:
 
 ## 9. CHANGELOG
 
+- docs (2026-11-09) — §10 reescrito con el estado real de la Pi, lo que espera respuesta de Santi
+  (diseño del algoritmo, foto del HTC Dream, análisis del Reel de Facebook, voces) y los problemas
+  vistos sin arreglar (403 de miniaturas en Pequeña Historia, el relleno de fotos de la regla k).
 - v0.77.0 (2026-11-06) — **Dos fallas del 5/11.** (1) **/ya no andaba nunca**: armaba los args con
   `max_procesar=None` y `_diario` comparaba `procesados >= None` apenas había un candidato
   (TypeError; falló igual el 30/10 dos veces y el 5/11 a las 07:03). No tenía que ver con las
@@ -1890,76 +1893,87 @@ Problemas abiertos:
 
 ## 10. DÓNDE ESTAMOS (leer primero en una sesión nueva)
 
-**Snapshot del 2026-09-28 (madrugada).** El bot corre solo en la Raspberry: timer a las 05:00 AR
-(clips + la propuesta de Pequeña Historia) y la escucha de Telegram 24/7 (comandos y modo en vivo).
+**Snapshot del 2026-11-09.** El bot corre solo en la Raspberry: timer de clips a las 05:00 AR, timer
+aparte de Pequeña Historia a las 06:00 (`clips-bot-efemeride`) y la escucha de Telegram 24/7
+(comandos, modo en vivo, reintentos de la efeméride, "pegó" a las 02:00).
 
-### Estado real de la Pi (verificado el 2026-09-28 ~00:00)
+### Estado real de la Pi (verificado el 2026-11-09)
 
 | | |
 |---|---|
-| commit | el último de `main` (v0.28.2, `4293b2a`); 391 tests OK en la Pi; escucha reiniciada |
-| `clips-bot.timer` | activo, próxima 05:00 AR (clips y después la efeméride) |
-| `clips-bot-telegram` | activo; modo en vivo PRENDIDO por Santi en el grupo el 27/09 |
-| carpetas | Argentinos y Famosos (en vivo sí, diarios sí), Catálogo (en vivo no, diarios sí), Dedsafío (en vivo no, diarios no): el modo en vivo vigila 9 de 64 |
-| música de Pequeña Historia | 29 temas en `musica/` (9 de la Biblioteca de YouTube de Santi, 10 Kevin MacLeod, 10 Openverse), 157 MB, fuera de git |
-| subida a YouTube | APAGADA (`youtube_upload_enabled: false`); Rots conectado (token en la Pi, app de OAuth en producción: no vence; métricas andando desde el 2026-09-29); Pequeña Historia sin conectar |
-| sudoers | instalado (`/etc/sudoers.d/clips-bot`) |
-| destinos de la entrega diaria (y de la propuesta de efeméride) | el grupo **Rots clips** (`-5453399767`) |
-| chats conocidos | Rots clips (grupo), Santiago Fittipaldi (`8668060171`) y Tommy Bildo (privados) |
-| `cantidad_diaria` | 3 |
-| multi-POV | APAGADO desde el 2026-09-28 (`multipov.activo: false`) |
+| commit | `5e56bcf` (v0.77.0); 811 tests OK en la compu y en la Pi |
+| timers y escucha | `clips-bot.timer`, `clips-bot-efemeride.timer` y `clips-bot-telegram` activos; 56 °C en reposo |
+| corrida del 09/11 | clips 05:02 (tope 6, entrega, métricas: 66 clips con métricas, "pegó": 7 Shorts sin original); efeméride 06:00 propuesta al grupo |
+| subida a YouTube | PRENDIDA (`youtube_upload_enabled: true`, desde 2026-10-30): 📤 programa en Rots o en Pequeña Historia; los dos canales conectados (tokens en `config/`, fuera de git) |
+| Facebook (Pequeña Historia) | `facebook.activo: true`; la app de Meta seguía en modo desarrollo el 20/10 (el público no ve los Reels): pasarla a Live lo hace Santi en el panel |
+| ajustes que cambiaron con datos | `textos.puntaje_min` 7, `seleccion.peso_momento` 1,0, `pego.activo`, `peso_chat` 0,5, `ejemplos_gusto` 3, `render.zoom_picos`, `efemerides.videos`, `efecto_fotos: fija` |
+| destinos de la entrega diaria y de la efeméride | el grupo **Rots clips** (`-5453399767`) |
+| chats conocidos | Rots clips (grupo), Santi (`8668060171`, `DUENO`), Tommy Bildo y Micheal Lanlin (`8988378175`) |
+| multi-POV | APAGADO desde el 2026-09-28 |
+| música de Pequeña Historia | `musica/` fuera de git |
 
-### Hecho y andando en producción
+### Lo que se hizo en la última sesión (2026-11-01 → 2026-11-09)
 
-- Pipeline completo de clips (§3) con todos los filtros: co-stream, programas de terceros, deportes,
-  datos en pantalla (OCR), tono sensible, calidad con puntaje, duración, idioma, música por audio.
-- Layout `split` / `fullcam` / `fit_blur` con chequeo post-render, y `layout_forzado` por streamer.
-- Entrega por Telegram con 👍/👎 por persona, relleno marcado y aviso de "0 clips hoy".
-- Comandos: `/ya`, `/buscar`, `/streamers` (carpetas con interruptores), `/agregar` (pregunta la
-  carpeta), `/quitar`, `/cantidad`, `/reclamo`, `/destinos`, `/aca`, `/ayuda`, `/editar`,
-  `/narrar`, `/serie`, `/efemeride`, `/envivo`, `/subidas`.
-- Modo en vivo con umbral relativo (§3b), solo sobre carpetas con 🔴 En vivo.
-- Pequeña Historia (§3c): propuesta diaria a las 05:00 con aprobación ✅/✏️/🔁, voz de Gemini TTS
-  (Laomedeia) con respaldo de Piper, música con ducking elegida por tono, créditos automáticos.
-- Turno de trabajo pesado + cola: nunca hay dos clips procesándose a la vez, y un comando que
-  explota avisa sin tumbar el servicio.
-- Deploy: systemd, logrotate, alerta por Telegram con `OnFailure`, sudoers acotado.
+- v0.73.0 a v0.77.0 (ver changelog): 🔥 SUBIR YA público al instante, "📅 En diarios" por streamer
+  (Brunenger), clips aburridos (`momento` obligatorio, corte 7), /buscar viejos = lo que pegó
+  cortado del stream, y las dos fallas del 05/11 (/ya con `max_procesar=None`; el video de Android
+  sin botones por el CSS de Commons en los créditos).
+- **Android (05/11) reenviado a mano** con botones: la foto de la frase 4 ("inversores", billetes de
+  rupias de Pexels que el relleno repitió de otra frase) se cambió por "File:HTC Dream opened.jpg"
+  (Marcus Sümnick, CC BY 3.0). El video viejo quedó como `.antes.mp4` al lado del nuevo.
+- Portadas e ilustraciones con IA: **en pausa** (`docs/portadas-ia.md`). Sigue "nada de IA".
 
-### A medias (el código está, la prueba real no)
+### Decisiones de Santi vigentes (además de §1)
 
-- **La efeméride automática de las 05:00** nunca corrió sola todavía (la primera es la del 28/09).
-- **La voz de Gemini con el recorte de lo leído antes del guion**: el recorte está probado con
-  tests; la voz sin instrucción se probó en la Pi con una frase, no con un video entero.
-- **La subida a YouTube**: Rots ya está conectado y las métricas se leen, pero nunca se subió nada
-  (apagada hasta la auditoría). Pequeña Historia sin `youtube-auth` todavía.
-- **`/narrar` y `/serie` con videos reales de proceso** (hasta ahora, sintéticos y Gemini falso).
-- **La mezcla nueva (2 argentinos + 1 Auron, votos) nunca corrió de verdad**: la primera es la
-  del 05:00 del 2026-09-29.
+- Nada de imágenes generadas con IA en ningún video; una foto mala se reemplaza por otra real
+  (Commons/Wikipedia o stock con licencia), nunca por IA. Nada pago activado sin que lo diga.
+- Antes de programar algo de algoritmo o formato: **diseño corto primero y esperar su OK**; si hace
+  falta volver a autorizar YouTube/Meta (permisos nuevos), avisar ANTES.
+- No tocar el turno de render compartido salvo que lo pida.
+- Mensajes míos por Telegram empiezan con "🔧 Claude Code:".
 
-### Pendiente, en orden
+### Esperando respuesta de Santi (NO programar sin su OK)
 
-1. **Mirar la primera efeméride automática.** La de las 05:00 del 2026-09-28 falló (429 de
-   Wikimedia, arreglado en v0.28.3 y corrida a mano ese día). Falta ver: que ✅ arme el video con
-   la voz de Gemini (¿arranca limpio, sin leer nada antes?) y con música, y que no tape la voz; y
-   que un reintento de las 07:00/10:00 ande solo cuando pase de verdad.
-2. **Modo en vivo:** ahora vigila solo Argentinos (8 canales). Las 4,7 alertas/día simuladas eran
-   con los 63: van a ser menos. Mirar `/envivo` en unos días.
-3. **Probar `/narrar` y `/serie` con un video real de proceso** (pasos, etapas, aviso de música,
-   `sin audio`, tiempos en la Pi).
-4. **Auditoría de YouTube** (docs/auditoria-youtube.md): proyecto, credencial, conectar los dos
-   canales, formulario. Recién con la aprobación, `youtube_upload_enabled: true`.
-5. **Decidir si se paga Gemini** (≈ US$4/mes hasta dic. 2026; docs/costo-gemini.md).
-6. **Modo recortar**: pedido el 2026-09-24 y nunca especificado: preguntar qué es.
-7. **Revisión del corte de calidad (lo del "9 de 10").** El corte está en `textos.puntaje_min: 5`,
-   puesto a mano. El trato es elegirlo con datos: el puntaje desde el cual Santi vota más 👍 que 👎
-   (`db.votos_por_puntaje`). Arrancó el 2026-09-24, así que a partir del **2026-10-08** hay que
-   mirarlo. Con 2 votos todavía no alcanza para nada. Los mismos votos ahora también pesan en la
-   selección por streamer: cuantos más vote Santi, mejor elige.
-8. **Métricas de YouTube (§4b) → vistas en el peso por streamer.** El lugar ya está
-   (`seleccion.factores_votos`); falta leer las métricas.
-9. **Listas de streamers por persona.** Pedido y después postergado explícitamente por Santi el
-   2026-09-27 ("las listas por persona no las hagas por ahora"). El diseño pensado: una corrida de
-   candidatos compartida, selección POR destino, y procesado deduplicado; el grupo usa la unión.
+1. **Diseño del algoritmo de ROTS y Pequeña Historia** (mandado el 2026-11-05): `/analisis`;
+   ponderación del rendimiento 40/40/20 (vistas / % que llega al final / comentarios cada 1.000
+   vistas); recortar el relleno del arranque (máx. 3 s, nunca debajo de 15 s); títulos con postura o
+   pregunta; en Pequeña Historia primera frase = el dato más sorprendente (ejemplos: Roundhay 14/10
+   y Cardiff 16/10), formato y tono fijos, cierre con una pregunta de ≤ 12 palabras; `/stats_fb`
+   (puede pedir el permiso `read_insights` del token de la página: avisar antes).
+2. **Foto del HTC Dream en el video de Android**: en la pantalla se leen palabras chicas en alemán
+   (regla (g) de §1). Se le ofreció cambiarla por una de Andy Rubin de 2008 (Commons, CC BY 2.0).
+   También la frase 3 ("creado para cámaras digitales") muestra un joystick de OUYA: no se tocó.
+3. **Análisis del Reel de Pequeña Historia que más pegó en Facebook** (pedido el 2026-11-09, NO
+   empezado): el Reel con más vistas contra el resto (vistas, tiempo medio, retención, reacciones,
+   comentarios, compartidos), orgánico vs. pago (¿es el promocionado?), ciudades/países y
+   compartidos en grupos si Meta lo da, leer los comentarios (¿gente del lugar, etiquetas,
+   recuerdos?) y conclusión: anuncio, lo local u otra cosa. Si es lo local, PROPONER (sin programar)
+   cómo priorizar efemérides de pueblos y ciudades de Argentina y Latinoamérica sin dejar de ser
+   verdaderas ni cambiar el formato. Si falta `read_insights`, darle los pasos para el token.
+4. **Pruebas de voz** (v0.72.0): muestras A / B / B+ mandadas; falta que elija. La C (ElevenLabs)
+   necesita una clave que no está.
+
+### Problemas vistos y no arreglados
+
+- **`thumbnails.set` da 403 en Pequeña Historia** (06/11, la de Arcane): "doesn't have permissions to
+  upload and set custom video thumbnails". Probablemente el canal no está verificado (YouTube pide
+  verificar con el teléfono para miniaturas propias). La subida sigue igual, sin portada. Lo
+  resuelve Santi en youtube.com/verify.
+- **El relleno de fotos (regla k) repite una foto sin mirar si va con la frase nueva**: así salieron
+  los billetes de rupias en "inversores". Además `de_epoca`/`seguro`/`contradice` solo sacan la
+  PRIMERA foto del ranking de cada frase. Arreglo posible (solo propuesta, la regla es de Santi):
+  que el relleno use solo fotos que Gemini marcó como válidas para ESA frase, y si no hay, tarjeta.
+
+### Pendiente de antes, sin fecha
+
+- Probar `/narrar` y `/serie` con un video real de proceso.
+- **Modo recortar**: pedido el 2026-09-24 y nunca especificado: preguntar qué es.
+- Listas de streamers por persona: postergado por Santi el 2026-09-27.
+- `gameplay/` en la Pi sigue vacía (el botón 🎮 no aparece hasta que haya videos).
+- Capa `librosa` del filtro de música (§4); Kick en el catálogo; links de TikTok/IG/FB → `posts`.
+- Decidir si se paga Gemini (docs/costo-gemini.md).
+- (Otro repo, bot-videos) el audio con la voz original de la persona en ✂️ Recortar y 🔁 Rearmar:
+  Santi lo pidió y lo cortó antes de empezar; no hacerlo salvo que lo vuelva a pedir.
 
 ### Trampas que ya nos mordieron
 
