@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-11-09 | **Versión:** v0.77.0 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 de clips + timer 06:00 de la efeméride + escucha de Telegram 24/7)
+**Snapshot:** 2026-11-09 | **Versión:** v0.78.0 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 de clips + timer 06:00 de la efeméride + escucha de Telegram 24/7)
 
 > **SI ESTÁS EMPEZANDO UNA SESIÓN NUEVA, LEÉ §10.** Ahí está qué está hecho, qué quedó a medias,
 > qué falta, y las trampas que ya nos mordieron.
@@ -77,7 +77,11 @@ servicio systemd separado: `clips-bot`).
      elegidas con el modelo de respaldo: revisalas"; (j) hechos desde 2000 (o frases de hoy):
      Pexels/Unsplash antes que Commons; (k) una frase sin foto buena repite una buena y, si ya no
      se puede repetir, va una **tarjeta** (la clave de la frase o el año, grande sobre una buena
-     difuminada) antes que una foto mala.
+     difuminada) antes que una foto mala. **Relleno (2026-11-09, los billetes de rupias de
+     Android):** una frase SIN foto propia nunca usa la que Gemini eligió para OTRA frase puntual:
+     usa una del tema general del video (`efemerides.generales`: las del artículo del hecho, sin
+     descartadas ni modernas) o alarga la de la frase anterior; si ni así se cumple lo de 6 s, la
+     tarjeta (`tests/test_relleno_fotos.py`).
      La época le gana a la cantidad: si no hay 6 fotos de época, el mínimo baja a las que haya
      (4 o 5, con aviso). **Con menos de 4 (`ilustrar.MIN_FOTOS_ABSOLUTO`) el hecho no se usa y se
      pasa al siguiente del día** (pedido de Santi, 2026-09-29: antes que repetir fotos); solo si
@@ -90,6 +94,15 @@ servicio systemd separado: `clips-bot`).
      se pegan tramos, y después del render un chequeo que avisa si hay un pico arriba de −3 dB en
      el último segundo o si audio y video no terminan juntos (en `enviar_clip`, el aviso sale en
      el mensaje de Telegram).
+- **Pequeña Historia en Facebook: Nacozari es el caso de referencia de lo que funciona (2026-11-09,
+  confirmado por Santi: 100 % ORGÁNICO, sin promoción).** Reel del 07/11, "El héroe que salvó a su
+  pueblo en un tren en llamas" (Jesús García, Nacozari, Sonora, 1907; el 7/11 es el Día del
+  Ferrocarrilero en México): 597 reacciones (557 👍, 32 ❤️), 12 comentarios y 86 compartidos,
+  contra 0-13 reacciones de los otros 25 Reels, con una página de 100 seguidores. Los comentarios
+  son de mexicanos con un lazo propio (un abuelo salvado, familias ferrocarrileras, uno que trabajó
+  en el puente de Nacozari). Lo que funcionó: historia humana real, lugar concreto, en el día en
+  que ese lugar la conmemora, acto heroico (no tragedia sola). **YouTube NO se toca** (las
+  efemérides andan ahí, ~1.000 vistas cada una): cualquier prueba con esto es solo en Facebook.
 - **Videos largos: NO por ahora (decisión de Santi, 2026-09-28).** No quiere videos largos con voz
   de IA. Si más adelante se hacen, van con SU voz grabada, no con Gemini TTS ni Piper.
 - **Sin música agregada en los clips.** Cualquier música es riesgo de Content ID. Si el clip trae
@@ -805,6 +818,12 @@ Problemas abiertos:
 
 ## 9. CHANGELOG
 
+- v0.78.0 (2026-11-09) — **Relleno de fotos sin la foto de otra frase** (regla de Santi, a partir
+  de los billetes de rupias de Android): en `ilustrar.asignar`, `completar_distintas` y `tramos`,
+  una frase sin foto propia solo usa las `generales` (las del artículo del hecho) o alarga la de la
+  frase anterior; las frases con fotos propias siguen igual. En efemérides, si con eso un tramo
+  pasa de 6 s, la frase vacía va con la tarjeta. `tests/test_relleno_fotos.py` con el caso de los
+  billetes. Nacozari anotado en §1 como caso de referencia de Facebook (orgánico).
 - docs (2026-11-09) — §10 reescrito con el estado real de la Pi, lo que espera respuesta de Santi
   (diseño del algoritmo, foto del HTC Dream, análisis del Reel de Facebook, voces) y los problemas
   vistos sin arreglar (403 de miniaturas en Pequeña Historia, el relleno de fotos de la regla k).
@@ -1901,7 +1920,7 @@ aparte de Pequeña Historia a las 06:00 (`clips-bot-efemeride`) y la escucha de 
 
 | | |
 |---|---|
-| commit | `5e56bcf` (v0.77.0); 811 tests OK en la compu y en la Pi |
+| commit | v0.78.0 (relleno de fotos); 817 tests OK en la compu |
 | timers y escucha | `clips-bot.timer`, `clips-bot-efemeride.timer` y `clips-bot-telegram` activos; 56 °C en reposo |
 | corrida del 09/11 | clips 05:02 (tope 6, entrega, métricas: 66 clips con métricas, "pegó": 7 Shorts sin original); efeméride 06:00 propuesta al grupo |
 | subida a YouTube | PRENDIDA (`youtube_upload_enabled: true`, desde 2026-10-30): 📤 programa en Rots o en Pequeña Historia; los dos canales conectados (tokens en `config/`, fuera de git) |
@@ -1943,14 +1962,15 @@ aparte de Pequeña Historia a las 06:00 (`clips-bot-efemeride`) y la escucha de 
 2. **Foto del HTC Dream en el video de Android**: en la pantalla se leen palabras chicas en alemán
    (regla (g) de §1). Se le ofreció cambiarla por una de Andy Rubin de 2008 (Commons, CC BY 2.0).
    También la frase 3 ("creado para cámaras digitales") muestra un joystick de OUYA: no se tocó.
-3. **Análisis del Reel de Pequeña Historia que más pegó en Facebook** (2026-11-09, hecho con lo
-   que da el token, mandado a Santi): el del 07/11, Jesús García y Nacozari (México, 1907; el 7/11
-   es el Día del Ferrocarrilero allá): 597 reacciones, 12 comentarios y 86 compartidos, contra
-   0-13 reacciones de los otros 25 Reels; la página tiene 100 seguidores. Los comentarios son de
-   mexicanos con un lazo personal (abuelo salvado, familia ferrocarrilera, uno que trabajó en el
-   puente de Nacozari). El token NO tiene `read_insights` (vistas, retención, pago vs. orgánico):
-   pasos mandados; si Santi pega un token de usuario nuevo como FB_USER_TOKEN, se canjea por el
-   de página. Propuesta de priorizar lo local mandada, sin programar.
+3. **Prueba de Facebook de 2 semanas** (pedida el 2026-11-09, NO programada: Santi pidió primero
+   render extra en la Pi, voces de Gemini por día y los próximos 7 hechos): un video APARTE por día
+   solo para Facebook, historias humanas reales con un lugar concreto de Latinoamérica (México
+   incluido), en lo posible en su aniversario o conmemoración; fuentes: las páginas de cada día de
+   Wikipedia en español + días nacionales por país; el lugar en título, primera frase y hashtags;
+   fotos primero del lugar real; mismos filtros con el criterio de Nacozari; registrar el tipo de
+   historia y, a las 2 semanas, comparar reacciones/comentarios/compartidos contra las 2 anteriores.
+   YouTube sigue igual. El token de la página no tiene `read_insights` (las reacciones,
+   comentarios y compartidos sí se leen).
 4. **Pruebas de voz** (v0.72.0): muestras A / B / B+ mandadas; falta que elija. La C (ElevenLabs)
    necesita una clave que no está.
 

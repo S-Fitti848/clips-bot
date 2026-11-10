@@ -1425,14 +1425,17 @@ def fotos_para_guion(wiki: Wiki, cliente, e: Evento, g: Guion, fotos_articulo: l
     g.minimo_fotos = min(ilustrar.MIN_FOTOS_DISTINTAS, disponibles)
     if g.minimo_fotos < ilustrar.MIN_FOTOS_RESPALDO:
         raise NarrarError(f"solo {disponibles} fotos de época que sirvan")
-    g.fotos = ilustrar.completar_distintas(ilustrar.asignar(rankings, reserva), rankings, reserva,
-                                           g.minimo_fotos)
+    gen = generales(g)
+    g.fotos = ilustrar.completar_distintas(ilustrar.asignar(rankings, reserva, gen), rankings, reserva,
+                                           g.minimo_fotos, gen)
     errores = ilustrar.errores_plan(plan_estimado(g, len(pool)), g.minimo_fotos)
-    # Una frase sin una foto buena (2026-10-21): antes que una mala, repetir una buena (lo de arriba)
-    # y, si ya no se puede repetir más, la tarjeta con el año o una palabra clave sobre una buena.
+    # Una frase sin una foto buena (2026-10-21): antes que una mala, una del tema general o la de la
+    # frase anterior alargada (2026-11-09: nunca la foto de OTRA frase puntual, como los billetes de
+    # rupias de Android) y, si ya no se puede, la tarjeta con el año o una palabra clave.
     vacias = [i for i, r in enumerate(rankings) if not r]
     base = next(iter(dict.fromkeys(list(reserva) + [x for r in rankings for x in r])), None)
-    while vacias and base is not None and any("aparecen más de" in x for x in errores):
+    while vacias and base is not None and any("aparecen más de" in x or "seguidos" in x
+                                              for x in errores):
         i = vacias.pop()
         t = tarjeta(pool[base], texto_tarjeta(g, i, e.anio), carpeta / f"tarjeta_{i + 1:02d}.jpg")
         pool.append(t)
@@ -1441,8 +1444,8 @@ def fotos_para_guion(wiki: Wiki, cliente, e: Evento, g: Guion, fotos_articulo: l
         avisar(f"    frase {i + 1}: sin foto buena → tarjeta «{t.epigrafe}»")
         g.ranking = rankings
         reserva = de_reserva(g, len(pool))
-        g.fotos = ilustrar.completar_distintas(ilustrar.asignar(rankings, reserva), rankings, reserva,
-                                               g.minimo_fotos)
+        g.fotos = ilustrar.completar_distintas(ilustrar.asignar(rankings, reserva, gen), rankings,
+                                               reserva, g.minimo_fotos, gen)
         errores = ilustrar.errores_plan(plan_estimado(g, len(pool)), g.minimo_fotos)
     if any("aparecen más de" in e for e in errores):
         # Pocas fotos para tantas frases sin repetir más de 2 veces: como con menos de 4, al siguiente.
@@ -1520,13 +1523,22 @@ def de_reserva(g: Guion, n_pool: int) -> list[int]:
         [i for i in range(n_pool) if i not in malas and i not in modernas]
 
 
+def generales(g: Guion) -> list[int]:
+    """Las fotos del tema general del video: las del artículo del hecho (sin descartadas ni
+    modernas). Son las únicas que puede usar una frase sin foto propia, además de alargar la de la
+    frase anterior (regla de Santi, 2026-11-09)."""
+    malas, modernas = set(g.descartadas), set(g.modernas)
+    return [x for x in g.del_hecho if x not in malas and x not in modernas]
+
+
 def duraciones_estimadas(g: Guion) -> list[float]:
     return [max(1.0, len(f.split()) / PALABRAS_POR_S_VOZ) for f in g.frases]
 
 
 def plan_estimado(g: Guion, n_pool: int) -> list[tuple[int, int, float]]:
     """(frase, foto, segundos) con la duración estimada de cada frase: lo que muestra la hoja."""
-    return ilustrar.tramos(g.fotos, duraciones_estimadas(g), g.rankings(), de_reserva(g, n_pool))
+    return ilustrar.tramos(g.fotos, duraciones_estimadas(g), g.rankings(), de_reserva(g, n_pool),
+                           generales=generales(g))
 
 
 # ---- 4. la hoja para aprobar -----------------------------------------------------------
@@ -1950,7 +1962,8 @@ def plan_de(p: Propuesta, duraciones: list[float] | None = None) -> list[tuple[i
     g = Guion.de_dict(p.guion)
     if duraciones is None:
         return con_videos(plan_estimado(g, len(p.fotos)), g)
-    return con_videos(ilustrar.tramos(g.fotos, duraciones, g.rankings(), de_reserva(g, len(p.fotos))), g)
+    return con_videos(ilustrar.tramos(g.fotos, duraciones, g.rankings(), de_reserva(g, len(p.fotos)),
+                                      generales=generales(g)), g)
 
 
 def videos_en_orden(p: Propuesta, plan: list[tuple[int, int, float]] | None = None):

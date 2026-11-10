@@ -9,6 +9,11 @@ Santi, 2026-09-28). Hoy lo usa Pequeña Historia; cualquier narración con fotos
    - `tramos`: ninguna foto más de MAX_TRAMO_S seguidos. Una frase larga se parte y la segunda
      parte lleva otra foto de su lista; dos frases seguidas con la misma foto cuentan juntas.
    - `errores_plan`: mínimo MIN_FOTOS_DISTINTAS fotos distintas y ningún tramo largo.
+
+Una frase SIN foto propia (lista vacía) nunca usa la foto que Gemini eligió para OTRA frase puntual
+(regla de Santi, 2026-11-09: en el video de Android, "inversores" repitió los billetes de rupias de
+"10.000 dólares en efectivo"). Usa una del tema general del video (`generales`: las del artículo del
+hecho) o alarga la foto de la frase anterior.
 """
 
 from __future__ import annotations
@@ -41,40 +46,57 @@ def apariciones(plan: list[tuple[int, int, float]]) -> dict[int, int]:
     return out
 
 
-def asignar(rankings: list[list[int]], pool: list[int]) -> list[int]:
+def asignar(rankings: list[list[int]], pool: list[int],
+            generales: list[int] | None = None) -> list[int]:
     """La foto de cada frase. `rankings[i]`: las que sirven para la frase i, de mejor a peor.
-    `pool`: las que se pueden usar si una frase no tiene ninguna (las fotos del hecho).
+    `pool`: las que se pueden usar si a una frase se le acaban las suyas.
+    `generales`: las del tema general del video, las únicas que puede usar una frase sin foto
+    propia (None = `pool`, como antes del 2026-11-09).
 
-    Orden de preferencia: la mejor de su lista que no salió todavía → una del pool que no salió →
-    repetir la de su lista que salió hace más tiempo (y no es la de la frase anterior)."""
+    Con fotos propias: la mejor de su lista que no salió todavía → repetir la de su lista que
+    salió hace más tiempo (y no es la de la frase anterior).
+    Sin fotos propias: una general que no salió → alargar la de la frase anterior → la general que
+    salió hace más tiempo."""
     ultimo_uso: dict[int, int] = {}
     out: list[int] = []
     for i, rk in enumerate(rankings):
-        elegida = next((f for f in rk if f not in ultimo_uso), None)
-        if elegida is None and not rk:
-            elegida = next((f for f in pool if f not in ultimo_uso), None)
-        if elegida is None:
-            opciones = rk or pool
-            if not opciones:
+        if rk:
+            elegida = next((f for f in rk if f not in ultimo_uso), None)
+            if elegida is None:
+                distintas = [f for f in rk if not out or f != out[-1]] or rk
+                elegida = min(distintas, key=lambda f: ultimo_uso.get(f, -1))
+        else:
+            gen = pool if generales is None else generales
+            elegida = next((f for f in gen if f not in ultimo_uso), None)
+            if elegida is None and generales is not None and out:
+                elegida = out[-1]                       # alargar la foto anterior
+            if elegida is None and gen:
+                distintas = [f for f in gen if not out or f != out[-1]] or gen
+                elegida = min(distintas, key=lambda f: ultimo_uso.get(f, -1))
+            if elegida is None and pool:
+                # Primera frase sin nada propio ni general: no hay anterior que alargar.
+                elegida = next((f for f in pool if f not in ultimo_uso), pool[0])
+            if elegida is None:
                 raise ValueError(f"la frase {i + 1} no tiene ninguna foto posible")
-            distintas = [f for f in opciones if not out or f != out[-1]] or opciones
-            elegida = min(distintas, key=lambda f: ultimo_uso.get(f, -1))
         ultimo_uso[elegida] = i
         out.append(elegida)
     return out
 
 
 def completar_distintas(fotos: list[int], rankings: list[list[int]], pool: list[int],
-                        minimo: int = MIN_FOTOS_DISTINTAS) -> list[int]:
+                        minimo: int = MIN_FOTOS_DISTINTAS,
+                        generales: list[int] | None = None) -> list[int]:
     """Si hay menos de `minimo` fotos distintas, cambia las repeticiones por fotos que todavía no
-    salieron: primero las que Gemini puso para esa frase, después las del pool."""
+    salieron: primero las que Gemini puso para esa frase, después las del pool (una frase sin
+    fotos propias, solo las `generales`)."""
     fotos = list(fotos)
     vistas: set[int] = set()
     for i, f in enumerate(fotos):
         if len(set(fotos)) >= minimo:
             break
         if f in vistas:
-            nueva = next((x for x in rankings[i] + pool if x not in fotos), None)
+            otras = pool if rankings[i] or generales is None else generales
+            nueva = next((x for x in rankings[i] + otras if x not in fotos), None)
             if nueva is not None:
                 fotos[i] = nueva
         vistas.add(fotos[i])
@@ -93,9 +115,11 @@ def _otra(ranking: list[int], pool: list[int], evitar: int | None, ya: set[int])
 
 def tramos(fotos: list[int], duraciones: list[float], rankings: list[list[int]],
            pool: list[int], max_s: float = MAX_TRAMO_S,
-           max_apariciones: int = MAX_APARICIONES) -> list[tuple[int, int, float]]:
+           max_apariciones: int = MAX_APARICIONES,
+           generales: list[int] | None = None) -> list[tuple[int, int, float]]:
     """(frase, foto, segundos) en orden. Ninguna foto se ve más de `max_s` seguidos ni aparece más
-    de `max_apariciones` veces (si hay otra que la reemplace)."""
+    de `max_apariciones` veces (si hay otra que la reemplace). Una frase sin fotos propias solo
+    cambia a una de las `generales` (None = `pool`)."""
     out: list[tuple[int, int, float]] = []
     ya = set(fotos)
     veces: dict[int, int] = {}
@@ -106,6 +130,7 @@ def tramos(fotos: list[int], duraciones: list[float], rankings: list[list[int]],
         partes = max(1, math.ceil(dur / max_s - 1e-9))
         seg = dur / partes
         rk = rankings[i] if i < len(rankings) else []
+        otras = pool if rk or generales is None else generales
         for k in range(partes):
             foto = f if k == 0 else None
             previa = out[-1][1] if out else None
@@ -115,12 +140,12 @@ def tramos(fotos: list[int], duraciones: list[float], rankings: list[list[int]],
                     break
                 corrido += s
             if foto is None or (foto == previa and corrido + seg > max_s + 1e-6):
-                foto = _otra(rk, pool, previa, ya) if previa is not None else f
+                foto = _otra(rk, otras, previa, ya) if previa is not None else f
                 if foto is None:
                     foto = f
             if foto != previa and gastada(foto):
                 # Ya apareció las veces permitidas: otra de su lista o del pool que no esté gastada.
-                otra = next((g for g in rk + pool if g != previa and not gastada(g)), None)
+                otra = next((g for g in rk + otras if g != previa and not gastada(g)), None)
                 foto = otra if otra is not None else foto
             if foto != previa:
                 veces[foto] = veces.get(foto, 0) + 1
