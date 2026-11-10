@@ -1943,13 +1943,14 @@ aparte de Pequeña Historia a las 06:00 (`clips-bot-efemeride`) y la escucha de 
 2. **Foto del HTC Dream en el video de Android**: en la pantalla se leen palabras chicas en alemán
    (regla (g) de §1). Se le ofreció cambiarla por una de Andy Rubin de 2008 (Commons, CC BY 2.0).
    También la frase 3 ("creado para cámaras digitales") muestra un joystick de OUYA: no se tocó.
-3. **Análisis del Reel de Pequeña Historia que más pegó en Facebook** (pedido el 2026-11-09, NO
-   empezado): el Reel con más vistas contra el resto (vistas, tiempo medio, retención, reacciones,
-   comentarios, compartidos), orgánico vs. pago (¿es el promocionado?), ciudades/países y
-   compartidos en grupos si Meta lo da, leer los comentarios (¿gente del lugar, etiquetas,
-   recuerdos?) y conclusión: anuncio, lo local u otra cosa. Si es lo local, PROPONER (sin programar)
-   cómo priorizar efemérides de pueblos y ciudades de Argentina y Latinoamérica sin dejar de ser
-   verdaderas ni cambiar el formato. Si falta `read_insights`, darle los pasos para el token.
+3. **Análisis del Reel de Pequeña Historia que más pegó en Facebook** (2026-11-09, hecho con lo
+   que da el token, mandado a Santi): el del 07/11, Jesús García y Nacozari (México, 1907; el 7/11
+   es el Día del Ferrocarrilero allá): 597 reacciones, 12 comentarios y 86 compartidos, contra
+   0-13 reacciones de los otros 25 Reels; la página tiene 100 seguidores. Los comentarios son de
+   mexicanos con un lazo personal (abuelo salvado, familia ferrocarrilera, uno que trabajó en el
+   puente de Nacozari). El token NO tiene `read_insights` (vistas, retención, pago vs. orgánico):
+   pasos mandados; si Santi pega un token de usuario nuevo como FB_USER_TOKEN, se canjea por el
+   de página. Propuesta de priorizar lo local mandada, sin programar.
 4. **Pruebas de voz** (v0.72.0): muestras A / B / B+ mandadas; falta que elija. La C (ElevenLabs)
    necesita una clave que no está.
 
