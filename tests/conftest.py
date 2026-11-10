@@ -74,3 +74,13 @@ def _sin_fuentes_de_fotos(monkeypatch):
 
     monkeypatch.setattr(fuentes_fotos, "BUSCAR_REAL", fuentes_fotos.Fuentes.buscar, raising=False)
     monkeypatch.setattr(fuentes_fotos.Fuentes, "buscar", lambda self, *a, **k: [])
+
+
+@pytest.fixture(autouse=True)
+def _sin_claude(monkeypatch):
+    """Ningún test habla con la API de Claude (2026-11-09: el texto del video de Facebook). El SDK no
+    usa requests, así que se corta en el armado del cliente: `claude.cliente` da None y los tests
+    pasan un cliente falso."""
+    from clips_bot import claude
+
+    monkeypatch.setattr(claude, "cliente", lambda *a, **k: None)

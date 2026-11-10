@@ -2507,6 +2507,7 @@ def escuchar_telegram(settings: Settings, timeout_poll: int = 50) -> int:
                     _envivo_tick, conn, tg, settings, reloj_envivo)
             _seguro(tg, str(chat_ultimo or ""), "el reintento de la efeméride",
                     _efe_reintento_tick, conn, tg, settings)
+            _seguro(tg, str(chat_ultimo or ""), "la historia de Facebook", _fb_tick, conn, tg, settings)
             _seguro(tg, str(chat_ultimo or ""), "el reintento de los clips",
                     _clips_reintento_tick, conn, settings)
             _seguro(tg, str(chat_ultimo or ""), "la búsqueda de lo que pegó",
@@ -2745,7 +2746,7 @@ def _despachar(conn, tg: TelegramClient, c: dict, settings: Settings, cola: list
           f"(chat {c['chat_id']})")
     if c["comando"] == "/buscar" and _preguntar_buscar(conn, tg, c["chat_id"], list(c["args"])):
         return   # faltaba el período o la cantidad: se preguntó con botones
-    if c["comando"] in ("/buscar", "/ya", "/editar", "/narrar", "/serie", "/efemeride"):
+    if c["comando"] in ("/buscar", "/ya", "/editar", "/narrar", "/serie", "/efemeride", "/historia"):
         if len(cola) >= MAX_BUSQUEDAS:
             tg.send_message(c["chat_id"], f"Ya tengo {len(cola)} búsquedas en cola. Esperá a que "
                                           "salgan esas y probá de nuevo.")
@@ -2937,6 +2938,8 @@ def _pesado(conn, tg: TelegramClient, chat_id: str, comando: str, args: list[str
         return _serie_voces(conn, tg, chat_id, args[0], settings)
     if comando == "/efemeride":
         return _efemeride(conn, tg, chat_id, args, settings)
+    if comando == "/historia":      # el video aparte de Facebook (locales.py)
+        return _historia(conn, tg, chat_id, args, settings)
     if comando == "efe:video":      # ✅ de la efeméride
         return _efe_video(conn, tg, chat_id, args[0], settings)
     if comando == "gp:video":       # 🎮 Versión con gameplay
@@ -3214,7 +3217,17 @@ def _efe_mostrar(conn, tg: TelegramClient, chat_id: str, token: str, estado: dic
     texto = ef.texto_aprobacion(ef.Evento(**p.evento), g, ef.usadas_en_orden(p, plan),
                                 date.fromisoformat(p.fecha), plan,
                                 [ef.Foto.de_dict(f) for f in p.fotos])
+    if p.destino == "facebook":
+        texto = (_encabezado_fb(p.local) + "\n" + texto)[:4000]
     tg.send_message(chat_id, texto, teclado={"inline_keyboard": filas})
+
+
+def _encabezado_fb(local: dict) -> str:
+    """Arriba de la propuesta y del video de Facebook: que no se confunda con la de YouTube."""
+    lugar = ", ".join(x for x in (local.get("lugar"), local.get("region"), local.get("pais")) if x)
+    conm = f" · hoy: {local['conmemora']}" if local.get("conmemora") else ""
+    return (f"📘 <b>SOLO FACEBOOK</b> (no va a YouTube) · {html.escape(lugar)} · "
+            f"{html.escape(str(local.get('tipo') or '').replace('_', ' '))}{html.escape(conm)}")
 
 
 def _args_efemeride(args: list) -> tuple[str | None, str]:
@@ -3278,6 +3291,108 @@ def _efe_proponer(conn, tg: TelegramClient, chats: list[str], dia, settings: Set
     for chat in chats:
         _efe_mostrar(conn, tg, chat, token, estado)   # el mismo token: se aprueba desde cualquiera
     return None
+
+
+# ---- /historia: el video aparte de Facebook (locales.py, prueba de 2 semanas desde el 2026-11-10) --
+
+def _claude_textos(settings: Settings):
+    """(Sonnet, Haiku) para el texto del video de Facebook; (None, None) sin ANTHROPIC_API_KEY."""
+    from . import claude
+
+    cfg = settings.historias_fb
+    return claude.cliente(cfg.modelo_texto), claude.cliente(cfg.modelo_simple, esfuerzo="low")
+
+
+def _fb_proponer(conn, tg: TelegramClient, chats: list[str], dia, settings: Settings,
+                 hecho: str = "") -> str | None:
+    """Propone la historia de Facebook y manda la aprobación (la misma de la efeméride: ✅ ✏️ 🔁).
+    NO toma el turno pesado: lo toma quien llama. Devuelve el error, o None."""
+    import secrets
+
+    from . import efemerides as ef, locales
+    from .config import OUTPUT_DIR
+
+    sonnet, haiku = _claude_textos(settings)
+    if sonnet is None or haiku is None:
+        return "Falta ANTHROPIC_API_KEY en el .env (el texto va con Claude)."
+    gemini = _gemini(settings)
+    if gemini is None:
+        return "Sin GEMINI_API_KEY no puedo elegir las fotos."
+    token = secrets.token_hex(3)
+    carpeta = OUTPUT_DIR / "efemerides" / f"fb_{dia:%m%d}_{token}"
+    try:
+        p = locales.proponer(ef.Wiki(), sonnet, haiku, gemini, dia, carpeta, avisar=log.info,
+                             hecho=hecho, videos=settings.efemerides.videos,
+                             tope_fotos_s=settings.efemerides.tope_fotos_min * 60)
+    except (NarrarError, ef.WikiError, GeminiError) as e:
+        return f"No salió la historia de Facebook: {html.escape(str(e)[:400])}"
+    estado = {"propuesta": p.__dict__, "carpeta": str(carpeta), "chat_id": chats[0]}
+    for chat in chats:
+        _efe_mostrar(conn, tg, chat, token, estado)
+    return None
+
+
+def _historia(conn, tg: TelegramClient, chat_id: str, args: list, settings: Settings):
+    """/historia [día/mes] [tema]: la historia de Facebook a mano (como /efemeride)."""
+    import secrets
+
+    from . import efemerides as ef
+
+    fecha, tema = _args_efemeride(args)
+    try:
+        dia = _fecha_efemeride(fecha)
+    except ValueError as e:
+        return str(e)
+    turno = f"historia_fb:{secrets.token_hex(3)}"
+    if not db.tomar_turno(conn, db.RECURSO_PESADO, turno, maximo=1, vencimiento_s=VENCIMIENTO_PESADO_S):
+        return OCUPADO
+    try:
+        sobre = f" (sobre «{html.escape(tema)}»)" if tema else ""
+        tg.send_message(chat_id, f"📘 Buscando una historia de Latinoamérica del {dia.day} de "
+                                 f"{ef.MESES[dia.month - 1]}{sobre}…")
+        return _fb_proponer(conn, tg, [chat_id], dia, settings, hecho=tema)
+    finally:
+        db.soltar_turno(conn, db.RECURSO_PESADO, turno, VENCIMIENTO_PESADO_S)
+
+
+FB_DIA = "historias_fb_dia"   # bot_estado: el día (AR) en que ya se propuso la de Facebook
+FB_FECHA_FIJA = "historias_fb_hecho"   # bot_estado: {"dia": ..., "hecho": ...} para elegir uno a mano
+
+
+def _fb_tick(conn, tg: TelegramClient, settings: Settings, ahora=None, proponer=None) -> None:
+    """Corre en cada vuelta de la escucha: desde historias_fb.hora (06:30), una vez por día, con el
+    turno pesado libre, propone la historia de Facebook. Una falla se avisa y no se reintenta sola
+    (para eso está /historia)."""
+    cfg = settings.historias_fb
+    if not cfg.activo:
+        return
+    ahora = ahora or datetime.now(AR)
+    hoy = ahora.date().isoformat()
+    if not cfg.hora <= ahora.strftime("%H:%M") < "21:00" or db.get_valor(conn, FB_DIA) == hoy:
+        return
+    if db.hay_trabajo_pesado(conn, VENCIMIENTO_PESADO_S):
+        return
+    turno = "historia_fb:diaria"
+    if not db.tomar_turno(conn, db.RECURSO_PESADO, turno, maximo=1, vencimiento_s=VENCIMIENTO_PESADO_S):
+        return
+    db.set_valor(conn, FB_DIA, hoy)    # una por día, aunque falle: si no, reintentaría en cada vuelta
+    chats = [c.strip() for c in cfg.chat.split(",") if c.strip()] or db.destinos(conn)
+    fijo = json.loads(db.get_valor(conn, FB_FECHA_FIJA) or "{}")
+    hecho = fijo.get("hecho", "") if fijo.get("dia") == hoy else ""
+    log.info("historia de Facebook: propongo la de hoy a %s%s", chats, f" ({hecho})" if hecho else "")
+    try:
+        error = ((proponer or _fb_proponer)(conn, tg, chats, ahora.date(), settings, hecho=hecho)
+                 if chats else "no hay a quién mandarla (ni historias_fb.chat ni /destinos)")
+    except Exception as e:
+        log.exception("la historia de Facebook falló")
+        error = f"No salió la historia de Facebook: {html.escape(str(e)[:400])}"
+    finally:
+        db.soltar_turno(conn, db.RECURSO_PESADO, turno, VENCIMIENTO_PESADO_S)
+    if error:
+        log.info("historia de Facebook: %s", error)
+        for chat in chats:
+            tg.send_message(chat, f"📘 <b>Pequeña Historia · Facebook</b>: hoy no hay propuesta. {error}\n"
+                                  "Probá a mano con <code>/historia</code>.")
 
 
 EFE_REINTENTO = "efemeride_reintento"   # bot_estado: la propuesta de hoy que falló y espera turno
@@ -3502,8 +3617,16 @@ def _efe_corregir(conn, tg: TelegramClient, t: dict, token: str, settings: Setti
     p = ef.Propuesta(**estado["propuesta"])
     tg.send_message(t["chat_id"], "Lo reescribo y busco las fotos de nuevo…")
     try:
-        p = ef.rehacer_guion(p, ef.Wiki(), gemini, Path(estado["carpeta"]), t["texto"],
-                             hablado=settings.efemerides.guion_hablado)
+        if p.destino == "facebook":
+            from . import locales
+
+            sonnet, _ = _claude_textos(settings)
+            if sonnet is None:
+                return tg.send_message(t["chat_id"], "Falta ANTHROPIC_API_KEY en el .env.")
+            p = locales.rehacer(p, ef.Wiki(), sonnet, gemini, Path(estado["carpeta"]), t["texto"])
+        else:
+            p = ef.rehacer_guion(p, ef.Wiki(), gemini, Path(estado["carpeta"]), t["texto"],
+                                 hablado=settings.efemerides.guion_hablado)
     except (NarrarError, GeminiError, ef.WikiError) as e:
         db.set_valor(conn, f"{ESPERA_EFE}:{t['user_id']}", token)   # que pueda probar otra vez
         return tg.send_message(t["chat_id"], f"No salió: {html.escape(str(e)[:300])}\n"
@@ -3526,10 +3649,11 @@ def _efe_video(conn, tg: TelegramClient, chat_id: str, token: str, settings: Set
         return OCUPADO
     try:
         tg.send_message(chat_id, "Poniendo la voz y armando el video. En la Pi son unos 3 minutos.")
+        prop = ef.Propuesta(**estado["propuesta"])
+        fb = getattr(prop, "destino", "") == "facebook"
         try:
-            meta = ef.hacer_video(ef.Propuesta(**estado["propuesta"]), settings,
-                                  Path(estado["carpeta"]), avisar=log.info, conn=conn,
-                                  cliente=_gemini(settings))
+            meta = ef.hacer_video(prop, settings, Path(estado["carpeta"]), avisar=log.info, conn=conn,
+                                  cliente=(_claude_textos(settings)[0] if fb else None) or _gemini(settings))
         except NarrarError as e:
             return f"No pude armar el video: {html.escape(str(e)[:300])}"
         motor = meta.get("efemeride", {}).get("voz", "")
@@ -3537,9 +3661,11 @@ def _efe_video(conn, tg: TelegramClient, chat_id: str, token: str, settings: Set
         # cuando vuelva la cuota. Por eso la propuesta se guarda hasta que salga con Laomedeia.
         extra = ([[{"text": "🔁 Rehacer con Laomedeia", "callback_data": f"efe:voz:{token}"}]]
                  if ef.es_piper(motor) else [])
+        encabezado = (_encabezado_fb(prop.local) + "\n📤 sale en la página a las "
+                      + settings.historias_fb.hora_publicacion if fb else
+                      "📅 <b>Pequeña Historia</b> — subilo al canal de efemérides")
         enviar_clip(tg, chat_id, conn, meta["clip_id"], meta, 1, None,
-                    encabezado="📅 <b>Pequeña Historia</b> — subilo al canal de efemérides\n"
-                               f"🎙 {html.escape(ef.texto_voz(motor))}", extra_filas=extra)
+                    encabezado=f"{encabezado}\n🎙 {html.escape(ef.texto_voz(motor))}", extra_filas=extra)
         if not extra:
             db.borrar_valor(conn, f"efe:{token}")
         # El ✅ arma el video; subirlo es aparte, con "📤 Subir" debajo del video (2026-09-30).
@@ -3624,6 +3750,52 @@ def cmd_efemeride(args: argparse.Namespace) -> int:
     (carpeta / f"{meta['clip_id']}.json").write_text(json.dumps(meta, ensure_ascii=False, indent=2),
                                                     encoding="utf-8")
     print(f"\nListo: {meta['salida']} ({meta['duracion_s']} s)")
+    return 0
+
+
+def cmd_historia_fb(args: argparse.Namespace) -> int:
+    """El video de Facebook sin Telegram: `--contar-mes N` cuenta cuántas historias locales buenas
+    hay por día (Haiku sobre las páginas de cada día); si no, propone la del día (deja propuesta,
+    hoja y aprobación en output/efemerides/fb_<mmdd>/)."""
+    from datetime import timedelta
+
+    from . import efemerides as ef, locales
+    from .config import OUTPUT_DIR
+
+    settings = load_settings()
+    sonnet, haiku = _claude_textos(settings)
+    if sonnet is None:
+        print("Falta ANTHROPIC_API_KEY en el .env", file=sys.stderr)
+        return 2
+    dia = _fecha_efemeride(args.fecha)
+    if args.contar_mes:
+        filas = locales.contar_mes(ef.Wiki(), haiku, dia, args.contar_mes)
+        salida = OUTPUT_DIR / "efemerides" / f"fb_conteo_{dia:%m%d}_{args.contar_mes}d.json"
+        salida.parent.mkdir(parents=True, exist_ok=True)
+        salida.write_text(json.dumps(filas, ensure_ascii=False, indent=1), encoding="utf-8")
+        n = len(filas)
+        print(f"\n{n} días desde el {dia:%d/%m}: buenos por día {sum(f['buenos'] for f in filas) / n:.1f} "
+              f"(fuertes {sum(f['fuertes'] for f in filas) / n:.1f}, con conmemoración "
+              f"{sum(f['con_conmemoracion'] for f in filas) / n:.1f}); días sin ninguno bueno: "
+              f"{sum(1 for f in filas if not f['buenos'])}, sin ninguno fuerte: "
+              f"{sum(1 for f in filas if not f['fuertes'])}\n{salida}")
+        return 0
+    gemini = _gemini(settings)
+    carpeta = OUTPUT_DIR / "efemerides" / f"fb_{dia:%m%d}"
+    p = locales.proponer(ef.Wiki(), sonnet, haiku, gemini, dia, carpeta, avisar=print,
+                         hecho=args.hecho or "", videos=settings.efemerides.videos,
+                         tope_fotos_s=settings.efemerides.tope_fotos_min * 60)
+    (carpeta / "propuesta.json").write_text(json.dumps(p.__dict__, ensure_ascii=False, indent=2),
+                                           encoding="utf-8")
+    g = ef.Guion.de_dict(p.guion)
+    plan = ef.plan_de(p)
+    ef.hoja_de_guion([ef.Foto.de_dict(f) for f in p.fotos], ef.filas_de_hoja(plan, g.frases),
+                     carpeta / "hoja.jpg", aviso=ef.AVISO_RESPALDO if g.fotos_respaldo else "")
+    texto = _encabezado_fb(p.local) + "\n" + ef.texto_aprobacion(
+        ef.Evento(**p.evento), g, ef.usadas_en_orden(p, plan), dia, plan, [ef.Foto.de_dict(f) for f in p.fotos])
+    plano = html.unescape(re.sub(r"<[^>]+>", "", texto))
+    (carpeta / "aprobacion.txt").write_text(plano, encoding="utf-8")
+    print("\n" + plano + f"\n\nHoja: {carpeta / 'hoja.jpg'}\nPropuesta: {carpeta / 'propuesta.json'}")
     return 0
 
 
@@ -4099,6 +4271,12 @@ def _subir(conn, settings: Settings, meta: dict, canal: str) -> list[str]:
     """📤: YouTube (programado en su horario, si la subida está prendida) y, para Pequeña
     Historia, Facebook (si está prendido). Devuelve los avisos para Telegram."""
     avisos = []
+    if _solo_facebook(meta):
+        # El video aparte de Facebook (2026-11-09): YouTube no se toca.
+        if not settings.facebook.activo:
+            return ["📘 La subida a Facebook está apagada (facebook.activo)."]
+        aviso = _subir_facebook(conn, settings, meta, hora=settings.historias_fb.hora_publicacion)
+        return [aviso] if aviso else []
     if settings.youtube_upload_enabled:
         aviso = _programar_subida(conn, settings, meta, canal, _hora_de(settings, canal, meta))
         if aviso:
@@ -4110,6 +4288,25 @@ def _subir(conn, settings: Settings, meta: dict, canal: str) -> list[str]:
                 avisos.append("YouTube: " + APAGADA.split("YouTube ", 1)[1] + ".")
             avisos.append(aviso)
     return avisos
+
+
+def _solo_facebook(meta: dict) -> bool:
+    return (meta.get("efemeride") or {}).get("destino") == "facebook"
+
+
+HISTORIAS_FB_REGISTRO = "historias_fb_registro"   # bot_estado: lo que salió en la prueba, con su tipo
+
+
+def _registrar_historia_fb(conn, meta: dict, video_id: str, cuando: str) -> None:
+    """Para la comparación de las 2 semanas: cada historia de Facebook con su tipo y su lugar."""
+    ef_ = meta.get("efemeride") or {}
+    lista = json.loads(db.get_valor(conn, HISTORIAS_FB_REGISTRO) or "[]")
+    lista = [x for x in lista if x.get("clip_id") != meta["clip_id"]]
+    lista.append({"clip_id": meta["clip_id"], "video_id": video_id, "fecha": ef_.get("fecha"),
+                  "publica": cuando, "anio": ef_.get("anio"), "titulo": meta["textos"]["titulo"],
+                  **{k: (ef_.get("local") or {}).get(k) for k in ("lugar", "region", "pais", "tipo",
+                                                                  "conmemora")}})
+    db.set_valor(conn, HISTORIAS_FB_REGISTRO, json.dumps(lista, ensure_ascii=False))
 
 
 def _portada_de(meta: dict) -> Path | None:
@@ -4128,8 +4325,10 @@ def _portada_de(meta: dict) -> Path | None:
         return None
 
 
-def _subir_facebook(conn, settings: Settings, meta: dict, ahora: datetime | None = None) -> str:
-    """El Reel a la página de Facebook, a la misma hora que YouTube (o ya, si esa hora pasó)."""
+def _subir_facebook(conn, settings: Settings, meta: dict, ahora: datetime | None = None,
+                    hora: str | None = None) -> str:
+    """El Reel a la página de Facebook, a la misma hora que YouTube (o ya, si esa hora pasó).
+    `hora`: otra hora (el video aparte de Facebook sale a historias_fb.hora_publicacion)."""
     import requests
 
     from . import facebook, youtube
@@ -4138,7 +4337,7 @@ def _subir_facebook(conn, settings: Settings, meta: dict, ahora: datetime | None
     if any(s["canal"] == "facebook" for s in db.subidas(conn, ("programada", "publicada"), clip_id=clip_id)):
         return ""
     hoy = (ahora or datetime.now(timezone.utc)).astimezone(AR)
-    cuando = youtube.proximo_horario(settings.efemerides.hora_publicacion, ahora=hoy)
+    cuando = youtube.proximo_horario(hora or settings.efemerides.hora_publicacion, ahora=hoy)
     if cuando.date() != hoy.date():          # "un día como hoy": nunca mañana
         cuando = None
     t = meta["textos"]
@@ -4156,9 +4355,13 @@ def _subir_facebook(conn, settings: Settings, meta: dict, ahora: datetime | None
             log.warning("Facebook: el Reel %s salió sin la portada del año: %s", vid, e)
     if cuando is None or (cuando - hoy).total_seconds() < facebook.MIN_PROGRAMAR_S:
         db.crear_subida(conn, clip_id, "facebook", "publicada", video_id=vid)
+        if _solo_facebook(meta):
+            _registrar_historia_fb(conn, meta, vid, hoy.isoformat())
         return "📘 Publicado en Facebook (Reels de la página)."
     iso = cuando.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     db.crear_subida(conn, clip_id, "facebook", "programada", video_id=vid, publish_at=iso)
+    if _solo_facebook(meta):
+        _registrar_historia_fb(conn, meta, vid, iso)
     return f"📘 Programado en Facebook para las {cuando:%H:%M}."
 
 
@@ -4275,6 +4478,12 @@ SECCIONES = [
          "hechos que lo mencionan. Te mando cada frase con su foto: ✅ lo armo, ✏️ cambio el guion, "
          "🔁 cambio una foto. Los créditos de las fotos van solos en la descripción.",
          "/efemeride 28/09 penicilina"),
+        ("/historia [día/mes] [tema]",
+         "el video APARTE solo para Facebook (sale solo a las 06:30): una historia humana real de un "
+         "pueblo o ciudad de Latinoamérica, en lo posible en su aniversario, con el lugar en el título, "
+         "la primera frase y los hashtags. El texto lo escribe Claude; se aprueba igual que la efeméride "
+         "y 📤 la sube solo a la página de Facebook.",
+         "/historia 10/11 Epecuén"),
     ]),
     ("⚙️ Configuración", [
         ("/subidas",
@@ -5197,6 +5406,13 @@ def main(argv: list[str] | None = None) -> int:
     pf.add_argument("--videos", action="store_true",
                     help="con video en las frases de acción aunque efemerides.videos esté apagado (muestra)")
     pf.set_defaults(func=cmd_efemeride)
+
+    ph = sub.add_parser("historia-fb", help="el video de Pequeña Historia para Facebook, sin Telegram")
+    ph.add_argument("--fecha", help="10/11 (día/mes); default hoy")
+    ph.add_argument("--hecho", help="solo los hechos que contienen esto (ej. Epecuén)")
+    ph.add_argument("--contar-mes", type=int, default=0,
+                    help="contar cuántas historias locales buenas hay por día, N días desde --fecha")
+    ph.set_defaults(func=cmd_historia_fb)
 
     pb = sub.add_parser("benchmark", help="cuánto tarda un clip completo en esta máquina")
     pb.add_argument("--clips", type=int, default=2, help="cuántos mp4 de output/raw/ medir (default 2)")

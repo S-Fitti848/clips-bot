@@ -947,19 +947,24 @@ def frases_de_accion(frases: list[dict]) -> list[int]:
 
 
 def escribir_guion(cliente, e: Evento, fuente: str, correccion: str = "", anterior: str = "",
-                   reintentos: int = 2, hablado: bool = False) -> Guion:
-    """Gemini con el artículo, SIN fotos: el guion y qué mostrar en cada frase. Las fotos se buscan
-    después para cada frase (`fotos_para_guion`). Reintenta con los errores de la validación."""
-    prompt = (f"Hecho ({e.anio}): {e.texto}\n\nTEXTO DEL ARTÍCULO (lo único que podés usar):\n"
+                   reintentos: int = 2, hablado: bool = False, sistema: str | None = None,
+                   validar_extra=None, contexto: str = "") -> Guion:
+    """Gemini (o Claude, en el video de Facebook) con el artículo, SIN fotos: el guion y qué mostrar
+    en cada frase. Las fotos se buscan después para cada frase (`fotos_para_guion`). Reintenta con
+    los errores de la validación. `sistema`/`validar_extra`/`contexto`: los del video de Facebook
+    (el lugar en el título, la primera frase y los hashtags)."""
+    prompt = (f"Hecho ({e.anio}): {e.texto}\n{contexto}\nTEXTO DEL ARTÍCULO (lo único que podés usar):\n"
               f"{fuente[:12000]}")
     if correccion:
         prompt += f"\n\nEl guion anterior no sirvió:\n{anterior}\nLo que hay que cambiar: {correccion}"
     errores: list[str] = []
     for _ in range(reintentos + 1):
         extra = f"\n\nTu respuesta anterior tenía estos errores: {'; '.join(errores)}" if errores else ""
-        sistema = SISTEMA_GUION_HABLADO if hablado else SISTEMA_GUION   # efemerides.guion_hablado
-        d = json.loads(cliente.json(sistema, prompt + extra, SCHEMA_GUION, temperatura=0.5))
+        base = sistema or (SISTEMA_GUION_HABLADO if hablado else SISTEMA_GUION)   # efemerides.guion_hablado
+        d = json.loads(cliente.json(base, prompt + extra, SCHEMA_GUION, temperatura=0.5))
         errores = validar_guion(d, e.anio, fuente + "\n" + e.texto + f" {e.anio}")
+        if validar_extra and not errores:
+            errores = validar_extra(d)
         if not errores:
             return Guion(frases=[f["texto"].strip() for f in d["frases"]], fotos=[],
                          descartadas=[], titulo=d["titulo"].strip(),
@@ -1820,6 +1825,8 @@ class Propuesta:
     guion: dict
     fuente: str = ""
     descartes: dict = field(default_factory=dict)
+    destino: str = ""        # "facebook": el video aparte de Facebook (locales.py), no va a YouTube
+    local: dict = field(default_factory=dict)   # lugar, país, tipo de historia, conmemoración
 
 
 def proponer(wiki: Wiki, cliente, dia: date, carpeta: Path, avisar=log.info,
@@ -2209,7 +2216,7 @@ def ecualizar_locutor(wav: Path) -> Path:
 
 
 def voz_efemeride(frases: list[str], settings, carpeta: Path, avisar=log.info,
-                  tts=None) -> tuple[Path, list[float] | None, str]:
+                  tts=None, segunda_primero: bool = False) -> tuple[Path, list[float] | None, str]:
     """La voz del guion: (wav, duración de cada frase o None, motor que se usó).
 
     Gemini TTS da un solo audio para todo el guion, así que no sabe dónde empieza cada frase:
@@ -2226,6 +2233,10 @@ def voz_efemeride(frases: list[str], settings, carpeta: Path, avisar=log.info,
     if cfg.voz_motor == "gemini":
         try:
             claves = claves_activas() if env("GEMINI_API_KEY", requerido=False) else []
+            if segunda_primero:
+                # El video de Facebook (2026-11-09): su voz va por la segunda clave, así no le saca
+                # cupo a la efeméride de YouTube ni a Lo Encontré; la principal queda de respaldo.
+                claves = sorted(claves, key=lambda c: c[0] == "principal")
             if not claves:
                 raise GeminiError("sin GEMINI_API_KEY")
             kw = dict(instruccion=cfg.tts_instruccion, voz=cfg.tts_voz, modelo=cfg.tts_modelo)
@@ -2351,7 +2362,8 @@ def hacer_video(p: Propuesta, settings, carpeta: Path, avisar=log.info, conn=Non
     g, e = Guion.de_dict(p.guion), Evento(**p.evento)
     t0 = time.time()
     cfg_v = settings.efemerides
-    wav, duraciones, motor = voz_efemeride(g.frases, settings, carpeta, avisar)
+    fb = p.destino == "facebook"
+    wav, duraciones, motor = voz_efemeride(g.frases, settings, carpeta, avisar, segunda_primero=fb)
     # Duración (2026-10-04): atempo hasta ×1,1 y nada más. Si no entra ni así, se acorta el GUION
     # (`cliente`: Gemini) y se vuelve a sintetizar; la voz nunca se acelera más ni cambia de tono.
     dur = narrar.duracion_wav(wav)
@@ -2364,7 +2376,8 @@ def hacer_video(p: Propuesta, settings, carpeta: Path, avisar=log.info, conn=Non
         if corto is not None:
             g = corto
             p = _replace(p, guion=g.a_dict())
-            wav, duraciones, motor = voz_efemeride(g.frases, settings, carpeta, avisar)
+            wav, duraciones, motor = voz_efemeride(g.frases, settings, carpeta, avisar,
+                                                   segunda_primero=fb)
     duraciones, _ = ajustar_duracion(wav, duraciones, cfg_v.tts_max_s, cfg_v.tts_acelerar_max, avisar)
     fin = narrar.duracion_wav(wav)
     avisar(f"voz ({motor}): {fin:.1f} s en {time.time() - t0:.0f} s")
@@ -2464,7 +2477,7 @@ def hacer_video(p: Propuesta, settings, carpeta: Path, avisar=log.info, conn=Non
             avisar(f"mapa: no salió ({str(err)[:100]})")
     t0 = time.time()
     dia = date.fromisoformat(p.fecha)
-    clip_id = f"efemeride_{dia:%m%d}_{e.anio}"
+    clip_id = f"{'historia_fb' if fb else 'efemeride'}_{dia:%m%d}_{e.anio}"
     salida = armar_video(tramos, audio, carpeta, carpeta / f"{clip_id}.mp4", settings.render,
                          parallax=cfg_ef.parallax, mapa=mapa, encuadres=encuadres,
                          efecto=cfg_ef.efecto_fotos)
@@ -2489,7 +2502,8 @@ def hacer_video(p: Propuesta, settings, carpeta: Path, avisar=log.info, conn=Non
                        "hashtags": g.hashtags, "credito": cred},
             "efemeride": {"fecha": p.fecha, "anio": e.anio, "evento": e.texto,
                           "articulo": e.paginas[0], "lang": e.lang, "guion": g.frases,
-                          "musica": tema.ruta if tema else None, "tono": g.tono, "voz": motor}}
+                          "musica": tema.ruta if tema else None, "tono": g.tono, "voz": motor,
+                          "destino": p.destino, "local": p.local}}
 
 
 def _jpeg_chico(ruta: Path, ancho: int = 512) -> bytes:

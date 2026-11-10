@@ -14,5 +14,7 @@ opencv-python-headless>=4.8,<5; platform_machine == "aarch64"
 #   Windows: winget install UB-Mannheim.TesseractOCR · Pi/Debian: sudo apt install tesseract-ocr
 # Si no está, la capa se saltea con un warning y la corrida sigue.
 pytesseract>=0.3.10
+# Texto del video de Pequeña Historia para Facebook (claude.py), con ANTHROPIC_API_KEY en el .env.
+anthropic>=2.7
 pytest>=8.0
 # Además: ffmpeg con libass en el PATH (Windows: winget install Gyan.FFmpeg · Pi: apt install ffmpeg)

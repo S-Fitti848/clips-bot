@@ -471,6 +471,23 @@ facebook:
   activo: true
   version: "v23.0"         # la que muestre el Graph API Explorer
 
+# Pequeña Historia, video APARTE solo para Facebook (prueba de 2 semanas desde el 2026-11-10, a
+# partir del Reel de Nacozari: 100 % orgánico, 16.841 reproducciones contra ~200 del resto).
+# Historias humanas reales con un lugar concreto de Latinoamérica, en lo posible en su aniversario.
+# Fuentes: la página de cada día de Wikipedia en español (acontecimientos y, para las personas que
+# se conmemoran ese día, nacimientos y fallecimientos). Texto con Claude (Sonnet elige y escribe,
+# Haiku clasifica); Gemini solo para las fotos y la voz (la voz por la SEGUNDA clave, Piper de
+# respaldo). YouTube no cambia nada.
+historias_fb:
+  activo: true
+  hora: "06:30"              # AR: la escucha la propone a esta hora (después de la efeméride de las 06:00)
+  hora_publicacion: "19:00"  # AR: el Reel sale a esta hora (16 h en Colombia, 15 h en el centro de México)
+  chat: ""                   # vacío = los destinos de la entrega diaria
+  modelo_texto: "claude-sonnet-5-5"
+  modelo_simple: "claude-haiku-5-5"
+  prueba_desde: "2026-11-10"
+  prueba_dias: 14
+
 # Lo que pega en otros canales → el clip original (pego.py, 2026-09-29). Una vez por día (y en
 # /buscar): Shorts de OTROS canales que nombran a cada streamer de las carpetas con diarios,
 # ordenados por vistas; para los que pegaron, el mismo momento entre sus clips originales,

@@ -365,6 +365,21 @@ class Facebook:
 
 
 @dataclass(frozen=True)
+class HistoriasFb:
+    """Pequeña Historia, video APARTE solo para Facebook (prueba de 2 semanas pedida el 2026-11-09,
+    a partir del Reel de Nacozari): historias humanas reales con un lugar concreto de Latinoamérica,
+    en lo posible en su aniversario. Texto con Claude; Gemini solo para las fotos y la voz."""
+    activo: bool = True
+    hora: str = "06:30"                    # AR: cuándo la escucha propone la del día
+    hora_publicacion: str = "19:00"        # AR: a qué hora sale el Reel (el de YouTube sale a las 12)
+    chat: str = ""                         # a dónde va la aprobación; vacío = los destinos diarios
+    modelo_texto: str = "claude-sonnet-5-5"    # elegir el hecho y escribir el guion
+    modelo_simple: str = "claude-haiku-5-5"    # clasificar candidatos
+    prueba_desde: str = "2026-11-10"       # para comparar contra las 2 semanas anteriores
+    prueba_dias: int = 14
+
+
+@dataclass(frozen=True)
 class EnVivo:
     """Modo /envivo: detectar un momento mientras el stream sigue al aire (§3 modo en vivo)."""
     intervalo_twitch_s: int = 300     # /streams va en lote: una llamada para todos los de Twitch
@@ -431,6 +446,7 @@ class Settings:
     envivo: EnVivo = EnVivo()
     pego: Pego = Pego()
     facebook: Facebook = Facebook()
+    historias_fb: HistoriasFb = HistoriasFb()
     efemerides: EfemeridesCfg = EfemeridesCfg()
     youtube_upload_enabled: bool = False
 
@@ -505,6 +521,7 @@ def load_settings(path: Path = CONFIG_DIR / "settings.yaml") -> Settings:
         efemerides=_seccion(EfemeridesCfg, raw, "efemerides", path),
         pego=_seccion(Pego, raw, "pego", path),
         facebook=_seccion(Facebook, raw, "facebook", path),
+        historias_fb=_seccion(HistoriasFb, raw, "historias_fb", path),
         youtube_upload_enabled=bool(raw.get("youtube_upload_enabled", False)),
     )
 
