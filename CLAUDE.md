@@ -39,6 +39,13 @@ servicio systemd separado: `clips-bot`).
 - **Un reclamo o strike excluye al streamer, automáticamente.** Queda en la DB (`streamer_estado`)
   y ninguna corrida lo vuelve a usar hasta sacarlo a mano. Hoy se dispara con `/reclamo <id>` por
   Telegram; cuando exista el módulo de métricas (§4b) se llama igual desde ahí.
+- **Auronplay reclama sus directos por Content ID (revisado por Santi en Studio, 2026-11-10).**
+  Solo 3 Shorts de Rots tienen reclamo: los 3 son de Auron (01/11, 08/11 y 09/11), "audiovisual"
+  de sus propios directos (ej. "1_HABLAMOS_Y_JUGAMOS…"). Siguen públicos y no afectan la
+  visibilidad: NO explican las pocas vistas de Rots. Ningún otro streamer reclama. Auron se sigue
+  subiendo (NO usar `/reclamo` con estos: lo excluiría); en los análisis por streamer, marcarlo
+  como "reclama" y, para monetizar a futuro, priorizar a los streamers que no reclaman (la plata de
+  un video reclamado va al dueño y podría pasar a bloqueo).
 - **Sin IA generativa de video.** Gemini se usa solo para texto: título, descripción, hashtags,
   `depende_de_fecha`, y elegir entre candidatos cuando hay empate.
 - **Mezcla diaria de Rots (2026-09-28, con datos de lo subido):** lo que rinde es Davoo, Auron,
@@ -866,6 +873,9 @@ Problemas abiertos:
 
 ## 9. CHANGELOG
 
+- docs (2026-11-10) — Content ID en Rots (Santi, Studio): 3 reclamos, los 3 de Auronplay sobre sus
+  directos, públicos y sin efecto en la visibilidad; Auron se sigue subiendo, marcado como
+  "reclama" en los análisis y con menos prioridad para monetizar (§1).
 - v0.79.2 (2026-11-09) — Sor Juana no entraba el 12/11 (el nacimiento enlaza "Juana Inés de la
   Cruz" y el Día Nacional del Libro, "Sor Juana Inés de la Cruz"): `locales.homenajeado` compara
   sin "Sor/San/…", tildes ni paréntesis. Un hecho se puede fijar por día
