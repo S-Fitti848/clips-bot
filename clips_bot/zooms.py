@@ -94,11 +94,20 @@ def filtro_frente(W: int, h: int, fps: int, tr: list[tuple[float, float]], zoom:
 
 
 def planear(rms: list[float], ventana_s: float, duracion: float, frames, W: int, H: int,
-            zoom: float, max_n: int) -> tuple[list[tuple[float, float]], float, float, float]:
-    """Todo junto: (tramos, zoom, cx, cy). Sin tramos si no hay picos o si las caras no entran."""
+            zoom: float, max_n: int, extra: list[float] | tuple = (),
+            separacion_s: float = 6.0) -> tuple[list[tuple[float, float]], float, float, float]:
+    """Todo junto: (tramos, zoom, cx, cy). Sin tramos si no hay picos o si las caras no entran.
+    `extra`: otros momentos de reacción (las risas de la transcripción, edición nueva de Rots), que
+    van primero y respetan la misma separación y el mismo máximo."""
     z, cx, cy = encuadre(zona(frames, W, H), zoom)
     if z <= 1.0:
         return [], 1.0, 0.5, 0.5
-    tr = tramos(picos(rms, ventana_s, duracion, max_n), duracion)
+    segundos: list[float] = []
+    for t in list(extra) + picos(rms, ventana_s, duracion, max_n, separacion_s):
+        if len(segundos) >= max_n:
+            break
+        if 1.0 <= t <= duracion - 1.5 and all(abs(t - o) >= separacion_s for o in segundos):
+            segundos.append(t)
+    tr = tramos(sorted(segundos), duracion)
     return tr, z, cx, cy
 

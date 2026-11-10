@@ -15,6 +15,12 @@ from .pantalla import datos_en_texto, tapar_datos
 GANCHOS = ("reaccion", "frase_textual", "pregunta", "situacion", "resultado")
 CAMPOS = ("titulo", "descripcion", "hashtags", "gancho", "depende_de_fecha", "sensible",
           "momento", "puntaje")
+# Edición nueva de Rots (2026-11-10, aprobada por Santi; render.edicion_rots): el texto de contexto
+# del primer segundo y la pregunta del cierre. Gemini los manda siempre (misma llamada); si faltan
+# (respuestas viejas), no es un error.
+OPCIONALES = ("frase_inicio", "pregunta")
+FRASE_INICIO_MAX = 6       # palabras
+PREGUNTA_MAX = 12          # palabras
 # Sin un momento concreto (remate, reacción fuerte, algo que pasa) el clip no pasa de esto
 # (pedido de Santi, 2026-11-01: "clips aburridos").
 TOPE_SIN_MOMENTO = 5
@@ -36,9 +42,11 @@ SCHEMA = {
         "sensible": {"type": "BOOLEAN"},
         "momento": {"type": "STRING"},
         "puntaje": {"type": "INTEGER"},
+        "frase_inicio": {"type": "STRING"},
+        "pregunta": {"type": "STRING"},
     },
-    "required": list(CAMPOS),
-    "propertyOrdering": list(CAMPOS),
+    "required": list(CAMPOS + OPCIONALES),
+    "propertyOrdering": list(CAMPOS + OPCIONALES),
 }
 
 SISTEMA = """Escribís los textos de YouTube Shorts hechos con clips de streamers de Twitch y Kick.
@@ -75,6 +83,13 @@ Reglas:
   diga nada. SIN momento concreto, el puntaje es 5 como mucho, aunque se entienda y sea simpático.
   10 = un momento fuerte y claro que se entiende solo. 1 = no pasa nada ni se entiende qué es.
   Sé exigente: la mayoría de los clips de un stream son aburridos.
+- frase_inicio: el texto que se ve grande en el PRIMER segundo del video, para que quien pasa sepa de
+  qué va y se quede: hasta 6 palabras, con el nombre del streamer o de quien protagoniza, sin
+  emojis ni hashtags, sin contar el remate ("Auron no esperaba esto…", "Lo traicionaron en vivo",
+  "Davo y la peor excusa"). Solo lo que de verdad pasa en el clip.
+- pregunta: una pregunta corta al público para el cierre (hasta 12 palabras, termina con "?"), sobre
+  lo que pasa en el clip, que invite a comentar una opinión ("¿Vos lo hubieras perdonado?",
+  "¿Quién tenía razón?"). Nada de "suscribite" ni "dejá tu like".
 Respondé solo con el JSON pedido."""
 
 
@@ -93,6 +108,8 @@ class TextosClip:
     sensible: bool = False   # muerte, duelo, enfermedad, violencia real, salud mental
     puntaje: int = 0         # 1 a 10: se entiende solo + tiene remate
     momento: str = ""        # el remate / la reacción / lo que pasa ("" = no hay: puntaje ≤ 5)
+    frase_inicio: str = ""   # el texto del primer segundo (edición nueva de Rots)
+    pregunta: str = ""       # la pregunta del cierre (pantalla final y descripción)
 
     def to_dict(self) -> dict:
         d = asdict(self)
@@ -103,7 +120,8 @@ class TextosClip:
     def from_dict(cls, d: dict) -> "TextosClip":
         return cls(d["titulo"], d["descripcion"], tuple(d["hashtags"]), d["gancho"], d["credito"],
                    bool(d.get("depende_de_fecha", False)), bool(d.get("sensible", False)),
-                   int(d.get("puntaje", 0)), str(d.get("momento") or ""))
+                   int(d.get("puntaje", 0)), str(d.get("momento") or ""),
+                   str(d.get("frase_inicio") or ""), str(d.get("pregunta") or ""))
 
 
 # Palabras que arrancan en mayúscula pero no nombran nada: pronombres, días, y el arranque de una
@@ -238,6 +256,11 @@ def descripcion_youtube(meta: dict, categorias_charla: tuple = (), base: str | N
     haberse corregido a mano después de subirla)."""
     t = meta.get("textos") or {}
     desc = (t.get("descripcion") or "") if base is None else base
+    pregunta = (t.get("pregunta") or "").strip()
+    if meta.get("edicion") and pregunta and pregunta not in desc:
+        # Edición nueva (2026-11-10): la pregunta del cierre también abre la descripción, para
+        # que se conteste en los comentarios.
+        desc = f"{pregunta}\n\n{desc}"
     return insertar_hashtags(desc, hashtags_youtube(meta, categorias_charla), t.get("credito") or "")
 
 
@@ -263,7 +286,7 @@ def validar(data: object, cfg: Textos, contexto: str = "") -> list[str]:
         return ["la respuesta no es un objeto JSON"]
     errores = []
     faltan = [c for c in CAMPOS if c not in data]
-    sobran = [c for c in data if c not in CAMPOS]
+    sobran = [c for c in data if c not in CAMPOS + OPCIONALES]
     if faltan:
         errores.append(f"faltan campos: {faltan}")
     if sobran:
@@ -321,6 +344,25 @@ def validar(data: object, cfg: Textos, contexto: str = "") -> list[str]:
     p = data.get("puntaje")
     if not isinstance(p, int) or isinstance(p, bool) or not 1 <= p <= 10:
         errores.append("puntaje tiene que ser un entero de 1 a 10")
+    inicio = data.get("frase_inicio")
+    if inicio is not None:
+        if not isinstance(inicio, str) or not inicio.strip():
+            errores.append("frase_inicio tiene que ser un texto no vacío")
+        elif len(inicio.split()) > FRASE_INICIO_MAX or "#" in inicio or chr(10) in inicio:
+            errores.append(f"frase_inicio: hasta {FRASE_INICIO_MAX} palabras, sin hashtags ni saltos de línea")
+        else:
+            _datos_personales(inicio, "frase_inicio", errores)
+            inventados = nombres_sin_respaldo(inicio, contexto) if contexto else []
+            if inventados:
+                errores.append(f"frase_inicio nombra {inventados}, que no aparece en el clip")
+    pregunta = data.get("pregunta")
+    if pregunta is not None:
+        if not isinstance(pregunta, str) or not pregunta.strip().endswith("?"):
+            errores.append('pregunta tiene que ser una pregunta que termine con "?"')
+        elif len(pregunta.split()) > PREGUNTA_MAX or "#" in pregunta or chr(10) in pregunta:
+            errores.append(f"pregunta: hasta {PREGUNTA_MAX} palabras, sin hashtags ni saltos de línea")
+        else:
+            _datos_personales(pregunta, "pregunta", errores)
     return errores
 
 
@@ -366,6 +408,8 @@ def parsear(texto: str, cfg: Textos, canal: str, login: str,
             sensible=data["sensible"],
             puntaje=puntaje_con_momento(data["puntaje"], data["momento"]),
             momento=data["momento"].strip(),
+            frase_inicio=str(data.get("frase_inicio") or "").strip(),
+            pregunta=str(data.get("pregunta") or "").strip(),
         ),
         [],
     )

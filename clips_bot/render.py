@@ -23,10 +23,14 @@ SUBS_ARCHIVO = "subs.ass"
 TITULO_ARCHIVO = "titulo.ass"
 
 
-def filtro(layout: Layout, render: Render, con_subs: bool, con_titulo: bool = False) -> str:
+def filtro(layout: Layout, render: Render, con_subs: bool, con_titulo: bool = False,
+           congelar_s: float = 0.0) -> str:
+    """`congelar_s`: el último cuadro queda quieto esos segundos al final (la pantalla de la pregunta
+    de la edición nueva de Rots); los subtítulos y el título van encima, así se ven sobre él."""
     W, H = render.ancho, render.alto
     escalar = "scale={w}:{h}:flags=lanczos,setsar=1"
-    final = f"fps={render.fps}" + (f",ass={SUBS_ARCHIVO}" if con_subs else "") \
+    congelar = f",tpad=stop_mode=clone:stop_duration={congelar_s:.2f}" if congelar_s > 0 else ""
+    final = f"fps={render.fps}{congelar}" +(f",ass={SUBS_ARCHIVO}" if con_subs else "") \
         + (f",ass={TITULO_ARCHIVO}" if con_titulo else "")
     if layout.tipo == "sigue":
         # Charla o IRL: el recorte 9:16 se mueve con la cara (layout.ffmpeg_crop_movil).
@@ -70,15 +74,16 @@ def filtro(layout: Layout, render: Render, con_subs: bool, con_titulo: bool = Fa
 
 
 def renderizar(entrada: Path, salida: Path, layout: Layout, render: Render, dir_subs: Path | None,
-               dir_titulo: Path | None = None) -> None:
+               dir_titulo: Path | None = None, congelar_s: float = 0.0) -> None:
     """dir_subs: carpeta que contiene subs.ass (ffmpeg corre ahí para no pelear con el escapado
     de rutas de Windows dentro del filtro). None = sin subtítulos. `dir_titulo`: la carpeta con
     titulo.ass (el título grande); es la misma carpeta de trabajo que la de los subtítulos."""
     salida.parent.mkdir(parents=True, exist_ok=True)
-    grafo, audio = filtro(layout, render, dir_subs is not None, dir_titulo is not None), []
+    grafo, audio = filtro(layout, render, dir_subs is not None, dir_titulo is not None, congelar_s), []
     info = probe(entrada)
     if info.tiene_audio:   # audio limpio (media.cola_audio): fundidos y termina con el video
-        dur = min(info.duracion, render.duracion_max_s) if info.duracion else render.duracion_max_s
+        dur = (min(info.duracion + congelar_s, render.duracion_max_s) if info.duracion
+               else render.duracion_max_s)
         grafo += f";[0:a]{cola_audio(dur)}[a]"
         audio = ["-map", "[a]"]
     args = [

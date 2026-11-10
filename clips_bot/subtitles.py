@@ -254,3 +254,99 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         eventos.insert(0, f"Dialogue: 1,{_t_ass(0)},{_t_ass(cartel_s)},Cartel,,0,0,0,,"
                           f"{_escapar_ass(cartel)}")
     path.write_text(cabecera + "\n".join(eventos) + "\n", encoding="utf-8")
+
+
+# ---- karaoke (edición nueva, 2026-11-10) ---------------------------------------------------------
+# Subtítulos grandes de pocas palabras con la palabra que se está diciendo resaltada en otro color.
+# Rots: letra gruesa blanca con borde negro y la palabra activa amarilla (el estilo propio del canal);
+# Pequeña Historia (la historia corta de Facebook): la activa dorada.
+KARAOKE_ROTS = "&H0000E5FF"        # &HAABBGGRR: amarillo anaranjado
+KARAOKE_PH = "&H0040C8F0"          # dorado
+KARAOKE_MAX_PALABRAS = 3
+KARAOKE_MAX_CHARS = 18
+KARAOKE_PAUSA_S = 0.5
+
+
+def grupos_karaoke(palabras: list[Palabra], max_palabras: int = KARAOKE_MAX_PALABRAS,
+                   max_chars: int = KARAOKE_MAX_CHARS, pausa_s: float = KARAOKE_PAUSA_S) -> list[list[Palabra]]:
+    """De a 3 palabras como mucho (o menos si no entran en una línea), cortando en las pausas y
+    después de un signo de puntuación."""
+    grupos: list[list[Palabra]] = []
+    actual: list[Palabra] = []
+    for p in palabras:
+        if actual:
+            largo = len(" ".join(x.texto for x in actual + [p]))
+            if (len(actual) >= max_palabras or largo > max_chars or p.inicio - actual[-1].fin > pausa_s
+                    or actual[-1].texto.rstrip()[-1:] in ".?!,;:…"):
+                grupos.append(actual)
+                actual = []
+        actual.append(p)
+    if actual:
+        grupos.append(actual)
+    return grupos
+
+
+def eventos_karaoke(palabras: list[Palabra], color_activo: str, mayusculas: bool = True,
+                    estilo: str = "Karaoke", x: int = 540, y: int = 1536) -> list[str]:
+    """Un evento por palabra: el grupo entero, con la palabra que suena en `color_activo` y un poco
+    más grande. El grupo se queda hasta que arranca el siguiente si el hueco es chico."""
+    grupos = grupos_karaoke(palabras)
+    eventos = []
+    for gi, g in enumerate(grupos):
+        fin_grupo = g[-1].fin + 0.15
+        if gi + 1 < len(grupos) and grupos[gi + 1][0].inicio - fin_grupo < HUECO_UNIR_S:
+            fin_grupo = grupos[gi + 1][0].inicio
+        textos = [(w.texto.upper() if mayusculas else w.texto) for w in g]
+        for k, w in enumerate(g):
+            a = g[0].inicio if k == 0 else w.inicio
+            b = g[k + 1].inicio if k + 1 < len(g) else fin_grupo
+            if b - a < 0.04:
+                b = a + 0.04
+            partes = []
+            for j, t in enumerate(textos):
+                t = _escapar_ass(t)
+                partes.append(f"{{\\c{color_activo}&\\fscx112\\fscy112}}{t}{{\\r}}" if j == k else t)
+            eventos.append(f"Dialogue: 0,{_t_ass(a)},{_t_ass(b)},{estilo},,0,0,0,,"
+                           f"{{\\an5\\pos({x},{y})}}" + " ".join(partes))
+    return eventos
+
+
+def escribir_ass_karaoke(palabras: list[Palabra], path: Path, cfg: Subtitulos, render: Render,
+                         color_activo: str = KARAOKE_ROTS, tamano: int = 82, mayusculas: bool = True,
+                         posicion_y: float | None = None) -> None:
+    """El .ass de los subtítulos karaoke (reemplaza a `escribir_ass` en la edición nueva)."""
+    y = round(render.alto * (cfg.posicion_y if posicion_y is None else posicion_y))
+    cabecera = f"""[Script Info]
+ScriptType: v4.00+
+PlayResX: {render.ancho}
+PlayResY: {render.alto}
+WrapStyle: 2
+ScaledBorderAndShadow: yes
+
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+Style: Karaoke,{cfg.fuente},{tamano},&H00FFFFFF,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,1,0,1,7,3,5,40,40,0,1
+
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+"""
+    eventos = eventos_karaoke(palabras, color_activo, mayusculas, x=render.ancho // 2, y=y)
+    path.write_text(cabecera + "\n".join(eventos) + "\n", encoding="utf-8")
+
+
+def agregar_pregunta(path: Path, pregunta: str, desde: float, hasta: float, cfg: Subtitulos,
+                     render: Render) -> None:
+    """La pregunta del cierre, grande y en el medio, sobre una caja (edición nueva de Rots): se
+    suma al .ass del título, sobre el último cuadro congelado."""
+    texto = titulo_quemable(pregunta)
+    lineas = textwrap.wrap(texto, 20)[:4]
+    tamano = 76 if len(lineas) <= 3 else 64
+    estilo = (f"Style: Pregunta,{cfg.fuente},{tamano},&H00FFFFFF,&H000000FF,&H30000000,&H30000000,"
+              f"-1,0,0,0,100,100,0,0,3,26,0,5,60,60,0,1\n")
+    s = path.read_text(encoding="utf-8")
+    s = s.replace("\n[Events]", estilo + "\n[Events]", 1)
+    s = s.rstrip("\n") + "\n" + (
+        f"Dialogue: 4,{_t_ass(desde)},{_t_ass(hasta)},Pregunta,,0,0,0,,"
+        f"{{\\an5\\pos({render.ancho // 2},{round(render.alto * 0.42)})\\fad(150,0)}}"
+        + "\\N".join(_escapar_ass(l) for l in lineas) + "\n")
+    path.write_text(s, encoding="utf-8")

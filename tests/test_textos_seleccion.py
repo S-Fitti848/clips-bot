@@ -35,7 +35,8 @@ def test_valido_pasa_y_agrega_credito():
     assert t.descripcion.endswith("\n\nClip de elxokas — twitch.tv/elxokas")
     assert t.hashtags == ("#Shorts", "#elxokas", "#WoW")
     assert set(t.to_dict()) == {"titulo", "descripcion", "hashtags", "gancho", "credito",
-                                "depende_de_fecha", "sensible", "puntaje", "momento"}
+                                "depende_de_fecha", "sensible", "puntaje", "momento",
+                                "frase_inicio", "pregunta"}
     assert t.depende_de_fecha is False
     assert t.sensible is False and t.puntaje == 7
 
@@ -82,8 +83,10 @@ def test_faltan_campos_y_no_json():
 
 
 def test_schema_coincide_con_validacion():
-    assert set(SCHEMA["required"]) == set(VALIDO)
-    assert set(SCHEMA["properties"]) == set(VALIDO)
+    from clips_bot.textos import OPCIONALES   # frase_inicio y pregunta: los manda siempre, no son obligatorios
+
+    assert set(SCHEMA["required"]) == set(VALIDO) | set(OPCIONALES)
+    assert set(SCHEMA["properties"]) == set(VALIDO) | set(OPCIONALES)
 
 
 class FakeGemini:

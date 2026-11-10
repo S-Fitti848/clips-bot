@@ -446,6 +446,12 @@ def cmd_seleccionar(args: argparse.Namespace) -> int:
     return ejecutar_seleccion(settings, _gemini(settings), enviar=args.enviar, n=args.n)
 
 
+def _factor_pego(settings: Settings) -> float:
+    """Un clip cuyo momento ya subió otro canal: bonus (pegó) o, con la edición nueva de Rots,
+    castigo (Santi, 2026-11-10: "elegir momentos que otros no subieron")."""
+    return settings.pego.peso_copiado if settings.render.edicion_rots else settings.pego.peso
+
+
 def ejecutar_seleccion(settings: Settings, gemini: GeminiClient | None, enviar: bool,
                        n: int | None = None, destinos: list[str] | None = None,
                        subir: bool = False) -> int:
@@ -521,7 +527,7 @@ def ejecutar_seleccion(settings: Settings, gemini: GeminiClient | None, enviar: 
                      key=lambda o: o.meta.get("puntaje", 0), reverse=True)
     # Por clip: votos de su streamer × métricas de su tipo (streamer, duración, layout, cámara).
     por_clip = {o.clip_id: factores.get(o.streamer.lower(), 1.0) * metricas.factor_de(o.meta, tabla_metricas)
-                * (settings.pego.peso if (o.meta.get("pego") or {}).get("vistas") else 1.0)
+                * (_factor_pego(settings) if (o.meta.get("pego") or {}).get("vistas") else 1.0)
                 * factor_pico(o.meta.get("chat_pico"), cfg.peso_chat)
                 for o in opciones}
     elegidos = seleccionar(buenos, cfg, ahora, desempate_gemini(gemini) if gemini else None,
@@ -3417,7 +3423,8 @@ def _efe_proponer(conn, tg: TelegramClient, chats: list[str], dia, settings: Set
         p = ef.proponer(ef.Wiki(), gemini, dia, carpeta, avisar=log.info, hecho=hecho,
                         videos=settings.efemerides.videos,
                         tope_fotos_s=settings.efemerides.tope_fotos_min * 60,
-                        hablado=settings.efemerides.guion_hablado)
+                        hablado=settings.efemerides.guion_hablado,
+                        imagen_frase=settings.efemerides.imagen_frase)
     except (NarrarError, ef.WikiError, GeminiError) as e:
         error = f"No salió la efeméride: {html.escape(str(e)[:400])}"
         return ErrorPasajero(error) if getattr(e, "pasajero", False) else error
@@ -3457,7 +3464,9 @@ def _fb_proponer(conn, tg: TelegramClient, chats: list[str], dia, settings: Sett
     try:
         p = locales.proponer(ef.Wiki(), sonnet, haiku, gemini, dia, carpeta, avisar=log.info,
                              hecho=hecho, videos=settings.efemerides.videos,
-                             tope_fotos_s=settings.efemerides.tope_fotos_min * 60)
+                             tope_fotos_s=settings.efemerides.tope_fotos_min * 60,
+                             imagen_frase=settings.efemerides.imagen_frase,
+                             corto=settings.historias_fb.formato_corto)
     except (NarrarError, ef.WikiError, GeminiError) as e:
         return f"No salió la historia de Facebook: {html.escape(str(e)[:400])}"
     estado = {"propuesta": p.__dict__, "carpeta": str(carpeta), "chat_id": chats[0]}

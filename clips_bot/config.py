@@ -144,6 +144,9 @@ class Render:
     # Antes de mandar, Gemini mira 2 cuadros del 9:16 (revision.py): ¿arriba está la cámara?, ¿hay
     # subtítulos dobles?, ¿algo cortado? Si falla, se rehace (2026-10-25, el clip de Auron).
     chequeo_visual: bool = True
+    # Edición nueva de Rots (aprobada por Santi el 2026-11-10; edicion.py): sin silencios (15-35 s),
+    # zoom también en las risas, texto de contexto el primer segundo, karaoke y la pregunta al final.
+    edicion_rots: bool = False
 
 
 @dataclass(frozen=True)
@@ -293,6 +296,9 @@ class EfemeridesCfg:
     # fija | zoom | parallax. "fija" desde el 2026-10-04 (Santi): el movimiento sale de los cortes,
     # los videos y los gráficos. Vacío = lo que diga `parallax`.
     efecto_fotos: str = "fija"
+    # Imagen = lo que se dice (Santi, 2026-11-10): por frase, foto del hecho o del lugar → del objeto
+    # en Commons → del objeto en Pexels (con Gemini confirmando la época); la tarjeta al final.
+    imagen_frase: bool = False
     graficos: bool = True       # año contando, mapa, palabras clave grandes y whoosh (graficos.py)
     carpeta_musica: str = "musica"
     musica_volumen: float = 0.12
@@ -334,6 +340,9 @@ class Pego:
     max_originales: int = 60          # clips del streamer que se comparan por Short (huella en caché)
     umbral: float = 0.55              # audio_huella: calibrado con clips reales (ver pego.py)
     peso: float = 3.0                 # bonus en la selección para un original que pegó
+    # Con la edición nueva de Rots (render.edicion_rots) es al revés: un momento que otro canal ya
+    # subió se multiplica por esto (Santi, 2026-11-10: "elegir momentos que otros no subieron").
+    peso_copiado: float = 0.5
     canales_propios: tuple = ("Rots", "Pequeña Historia")
     # Corre APARTE de la corrida diaria (2026-09-30: dentro de ella tardó 90 min y systemd la mató
     # sin entregar nada): en la escucha, a esta hora, con este tope TOTAL. La de las 05:00 solo usa
@@ -380,6 +389,9 @@ class HistoriasFb:
     modelo_simple: str = "claude-haiku-5-5"    # clasificar candidatos
     prueba_desde: str = "2026-11-10"       # para comparar contra las 2 semanas anteriores
     prueba_dias: int = 14
+    # Formato corto (Santi, 2026-11-10): 20-30 s, gancho primero, cortes de 1,5-2,5 s con movimiento,
+    # karaoke e imagen = lo que se dice. Apagado hasta que apruebe el ejemplo.
+    formato_corto: bool = False
 
 
 @dataclass(frozen=True)

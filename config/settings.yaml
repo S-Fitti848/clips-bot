@@ -111,6 +111,10 @@ render:
   zoom_picos: true
   zoom_max: 1.35
   zoom_max_n: 3
+  # Edición nueva de Rots (aprobada el 2026-11-10, edicion.py): sin silencios ni partes muertas
+  # (15-35 s), zoom también en las risas, texto de contexto el primer segundo, subtítulos karaoke y
+  # 2 s finales con una pregunta (también en la descripción). APAGADA hasta que Santi apruebe el ejemplo.
+  edicion_rots: false
   # 2026-10-20 (Santi: "los videos tardan en cargar en Telegram"): medium + crf 22 + tope 3500 kbps.
   # Medido con VMAF (modelo de celular) contra una referencia casi sin pérdida, sobre los clips más
   # pesados de las entregas: 33,6 → 26,7 MB (VMAF 96,7 → 96,6) y 36,5 → 26,9 MB (93,3 → 92,7). Con
@@ -323,6 +327,10 @@ efemerides:
   # Fotos QUIETAS desde el 2026-10-04 (pedido de Santi): el movimiento sale de los cortes, los
   # videos y los gráficos. Opciones: fija | zoom | parallax.
   efecto_fotos: fija
+  # Imagen = lo que se dice (2026-11-10): foto del hecho o el lugar → del objeto en Commons → del
+  # objeto en Pexels (Gemini confirma que no se ve nada fuera de época). Vale para la efeméride de
+  # YouTube (y su Reel) y para la historia de Facebook. APAGADA hasta que Santi apruebe el ejemplo.
+  imagen_frase: false
   graficos: true
   # Si no sale a las 05:00 (el 2026-09-28: 429 de upload.wikimedia.org), la escucha de Telegram
   # reintenta sola a estas horas (AR). Recién si falla la última avisa que hoy no hay propuesta.
@@ -499,6 +507,9 @@ historias_fb:
   modelo_simple: "claude-haiku-5-5"
   prueba_desde: "2026-11-10"
   prueba_dias: 14
+  # Formato corto (2026-11-10): 20-30 s, gancho primero, cortes de 1,5-2,5 s con movimiento, karaoke
+  # e imagen = lo que se dice. APAGADO hasta que Santi apruebe el ejemplo.
+  formato_corto: false
 
 # Lo que pega en otros canales → el clip original (pego.py, 2026-09-29). Una vez por día (y en
 # /buscar): Shorts de OTROS canales que nombran a cada streamer de las carpetas con diarios,
@@ -515,6 +526,7 @@ pego:
   max_originales: 60       # 15 → 60 (v0.41.0): la huella de cada clip se guarda, se baja una vez
   umbral: 0.55             # calibrado: 0,70-0,95 contra su clip, ≤ 0,39 contra los demás
   peso: 3.0
+  peso_copiado: 0.5        # con render.edicion_rots: un momento que otro canal ya subió, ×0,5
   canales_propios: ["Rots", "Pequeña Historia"]
   # Aparte de la corrida diaria (el 30/09 se comió los 90 min de la de las 05:00 y no salió nada):
   # corre en la escucha a esta hora, con este tope total; la de las 05:00 usa lo ya encontrado.

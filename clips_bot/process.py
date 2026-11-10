@@ -83,6 +83,10 @@ class Resultado:
     descartado: str | None = None
     salida: str | None = None
     raw: str | None = None  # el mp4 original, para re-renderizar (/narrar)
+    # Edición nueva de Rots (render.edicion_rots, 2026-11-10): sin silencios, texto de contexto,
+    # karaoke y pregunta al final. `recorte`: {original_s, final_s, tramos, risas, pregunta}.
+    edicion: bool = False
+    recorte: dict | None = None
     tiempos: dict[str, float] = field(default_factory=dict)
 
 
@@ -286,15 +290,39 @@ def procesar(url: str, cfg: Settings, streamers: list[Streamer], forzar: bool = 
 
     work = WORK_DIR / d.clip_id
     work.mkdir(parents=True, exist_ok=True)
+    # Edición nueva de Rots (edicion.py): desde acá todo trabaja sobre el clip SIN silencios (`src`),
+    # con los tiempos de las palabras ya pasados al video cortado.
+    src, dur_src = d.path, info.duracion
+    edicion = bool(cfg.render.edicion_rots and not aporte and palabras and info.tiene_audio)
+    risas: list[float] = []
+    if edicion:
+        from . import edicion as ed
+        from .multipov import VENTANA_RMS_S
+
+        with crono.etapa("edición: recorte sin silencios"):
+            tramos = ed.tramos_a_dejar(palabras, info.duracion, _rms(d.path, info.duracion), VENTANA_RMS_S)
+            if len(tramos) > 1 or info.duracion - sum(b - a for a, b in tramos) > 0.8:
+                src = ed.cortar(d.path, tramos, info.duracion, work / "cortado.mp4")
+                palabras = ed.mapear(palabras, tramos)
+                dur_src = probe(src).duracion or sum(b - a for a, b in tramos)
+        risas = ed.risas(palabras)
+        res.edicion = True
+        res.recorte = {"original_s": round(info.duracion, 2), "final_s": round(dur_src, 2),
+                       "tramos": [list(t) for t in tramos], "risas": risas}
+        avisar(f"  edición: {info.duracion:.1f} s → {dur_src:.1f} s en {len(tramos)} tramos"
+               + (f", {len(risas)} risas" if risas else ""))
     subs = sub.armar_subtitulos(palabras, cfg.subtitulos)
     sub.escribir_srt(subs, work / "subs.srt")  # siempre: sirve para el título y como pista en YouTube
-    sub.escribir_ass(subs, work / "subs.ass", cfg.subtitulos, cfg.render)
+    if edicion:
+        sub.escribir_ass_karaoke(palabras, work / "subs.ass", cfg.subtitulos, cfg.render)
+    else:
+        sub.escribir_ass(subs, work / "subs.ass", cfg.subtitulos, cfg.render)
     if not res.subtitulos_quemados:
         avisar(f"  {d.streamer} tiene subtitulos_propios: no se queman los nuestros (el .srt se guarda igual)")
     elif subs and cfg.subtitulos.detectar_quemados:
         # El clip puede traer subtítulos quemados aunque el streamer no esté marcado (2026-10-25).
         with crono.etapa("subtítulos del clip"):
-            traidos, res.subtitulos_del_clip = pant.subtitulos_en_video(d.path, palabras, cfg.pantalla.idioma)
+            traidos, res.subtitulos_del_clip = pant.subtitulos_en_video(src, palabras, cfg.pantalla.idioma)
         if traidos:
             res.subtitulos_quemados = False
             avisar(f"  el clip ya trae subtítulos (se leen en {res.subtitulos_del_clip} cuadros): "
@@ -302,20 +330,20 @@ def procesar(url: str, cfg: Settings, streamers: list[Streamer], forzar: bool = 
 
     forzado = streamer.layout_forzado if streamer else ""
     with crono.etapa("detectar cámara"):
-        W, H, frames, imagenes = lay.detectar_caras(d.path, cfg.camara.frames_muestra)
+        W, H, frames, imagenes = lay.detectar_caras(src, cfg.camara.frames_muestra)
         # Charla o IRL: la trayectoria de la cara, para el zoom que la sigue (layout "sigue").
         charla = (d.categoria or "") in cfg.camara.categorias_charla
-        puntos = lay.trayectoria(d.path)[1] if cfg.camara.seguir_cara and not forzado else None
+        puntos = lay.trayectoria(src)[1] if cfg.camara.seguir_cara and not forzado else None
         layout = lay.decidir_layout(W, H, frames, cfg.camara, cfg.render, forzado=forzado,
                                     charla=charla, puntos=puntos, imagenes=imagenes,
                                     facecams=streamer.facecam if streamer else ())
         if imagenes:
             lay.guardar_debug(imagenes[len(imagenes) // 2], layout, DEBUG_DIR / f"{d.clip_id}_layout.jpg")
-    rms = _rms(d.path, info.duracion) if info.tiene_audio else []
+    rms = _rms(src, dur_src) if info.tiene_audio else []
     # Los picos de volumen son SOLO un dato para el mensaje (📊 "2 picos") y para los zooms: no
     # cambian qué clip se elige (Santi, 2026-10-04).
-    res.picos_volumen = len(_picos(rms, info.duracion, cfg))
-    layout = _con_zooms(layout, rms, info.duracion, frames, W, H, cfg)
+    res.picos_volumen = len(_picos(rms, dur_src, cfg))
+    layout = _con_zooms(layout, rms, dur_src, frames, W, H, cfg, risas)
     res.layout, res.presencia_cara = layout.tipo, round(layout.presencia, 2)
     res.zooms = list(layout.zooms)
     res.layout_forzado = forzado
@@ -323,16 +351,36 @@ def procesar(url: str, cfg: Settings, streamers: list[Streamer], forzar: bool = 
            + f" (cara estable en {layout.presencia:.0%} de los frames)")
 
     quemar = bool(subs) and res.subtitulos_quemados
-    # El título del clip grande arriba y el streamer chiquito encima (2026-09-30), si hay título.
-    titulo_dir = None
-    if cfg.render.titulo_arriba and res.textos and res.textos.get("titulo"):
-        sub.escribir_titulo_ass(work / "titulo.ass", res.textos["titulo"], d.canal or d.streamer,
-                                cfg.subtitulos, cfg.render,
-                                y_centro=cfg.render.alto_camara if layout.tipo == "split" else None)
-        titulo_dir = work
+    # El título del clip grande arriba y el streamer chiquito encima (2026-09-30), si hay título. En la
+    # edición nueva: el texto de contexto los primeros 2 s y, al final, 2 s quietos con la pregunta.
+    t = res.textos or {}
+    titulo = (t.get("frase_inicio") or t.get("titulo")) if edicion else t.get("titulo")
+    pregunta = (t.get("pregunta") or "").strip() if edicion else ""
+    congelar = 0.0
+    if pregunta:
+        from .edicion import CONGELAR_S
+
+        if dur_src + CONGELAR_S <= cfg.render.duracion_max_s:
+            congelar = CONGELAR_S
+    titulo_dir = work if (cfg.render.titulo_arriba or edicion) and titulo else None
+
+    def poner_titulo(tipo: str) -> None:
+        if not titulo_dir:
+            return
+        sub.escribir_titulo_ass(work / "titulo.ass", titulo, d.canal or d.streamer, cfg.subtitulos,
+                                cfg.render, y_centro=cfg.render.alto_camara if tipo == "split" else None,
+                                duracion=2.0 if edicion else None)
+        if congelar:
+            sub.agregar_pregunta(work / "titulo.ass", pregunta, dur_src, dur_src + congelar,
+                                 cfg.subtitulos, cfg.render)
+
+    poner_titulo(layout.tipo)
+    if edicion:
+        res.duracion_s = round(dur_src + congelar, 2)
+        res.recorte["pregunta"] = bool(congelar)
     salida = READY_DIR / f"{d.clip_id}.mp4"
     with crono.etapa("render 9:16" + (" + subtítulos" if quemar else "")):
-        renderizar(d.path, salida, layout, cfg.render, work if quemar else None, titulo_dir)
+        renderizar(src, salida, layout, cfg.render, work if quemar else None, titulo_dir, congelar)
 
     # Chequeo post-render: si el recorte partió una cara, se rehace con fit_blur (que no recorta).
     # Atrapa lo que la decisión previa no vio, ej. la persona que se corre a un costado a mitad del clip.
@@ -344,13 +392,11 @@ def procesar(url: str, cfg: Settings, streamers: list[Streamer], forzar: bool = 
             avisar(f"  ⚠ {detalle} → re-render con fit_blur")
             res.rerender_fit_blur = detalle
             layout = lay.layout_fit_blur(W, H, cfg.render, layout.presencia, layout.cara)
-            layout = _con_zooms(layout, rms, info.duracion, frames, W, H, cfg)
+            layout = _con_zooms(layout, rms, dur_src, frames, W, H, cfg, risas)
             res.layout, res.zooms = layout.tipo, list(layout.zooms)
-            if titulo_dir:   # en fit_blur el título va arriba, no en la línea del split
-                sub.escribir_titulo_ass(work / "titulo.ass", res.textos["titulo"], d.canal or d.streamer,
-                                        cfg.subtitulos, cfg.render)
+            poner_titulo(layout.tipo)   # en fit_blur el título va arriba, no en la línea del split
             with crono.etapa("re-render fit_blur"):
-                renderizar(d.path, salida, layout, cfg.render, work if quemar else None, titulo_dir)
+                renderizar(src, salida, layout, cfg.render, work if quemar else None, titulo_dir, congelar)
 
     # Chequeo visual con Gemini del video TERMINADO (2026-10-25): ¿arriba está la cámara?, ¿subtítulos
     # dobles?, ¿algo cortado? Se rehace UNA vez, sin volver a preguntar (cuota).
@@ -363,11 +409,9 @@ def procesar(url: str, cfg: Settings, streamers: list[Streamer], forzar: bool = 
             avisar(f"  ⚠ chequeo visual: {rev.detalle or 'la cámara o el encuadre no están bien'} → fit_blur")
             res.rerender_fit_blur = f"chequeo visual: {rev.detalle}"[:200]
             layout = lay.layout_fit_blur(W, H, cfg.render, layout.presencia, layout.cara)
-            layout = _con_zooms(layout, rms, info.duracion, frames, W, H, cfg)
+            layout = _con_zooms(layout, rms, dur_src, frames, W, H, cfg, risas)
             res.layout, res.zooms = layout.tipo, list(layout.zooms)
-            if titulo_dir:
-                sub.escribir_titulo_ass(work / "titulo.ass", res.textos["titulo"], d.canal or d.streamer,
-                                        cfg.subtitulos, cfg.render)
+            poner_titulo(layout.tipo)
             rehacer = True
         if rev.falla_subtitulos and quemar:
             avisar(f"  ⚠ chequeo visual: subtítulos dobles ({rev.detalle}) → sin los nuestros")
@@ -376,7 +420,7 @@ def procesar(url: str, cfg: Settings, streamers: list[Streamer], forzar: bool = 
             rehacer = True
         if rehacer:
             with crono.etapa("re-render por el chequeo visual"):
-                renderizar(d.path, salida, layout, cfg.render, work if quemar else None, titulo_dir)
+                renderizar(src, salida, layout, cfg.render, work if quemar else None, titulo_dir, congelar)
         elif rev.error:
             avisar(f"  (chequeo visual salteado: {rev.error[:80]})")
 
@@ -401,8 +445,10 @@ def _picos(rms: list[float], duracion: float, cfg: Settings) -> list[float]:
                        cfg.render.zoom_max_n)
 
 
-def _con_zooms(layout, rms: list[float], duracion: float, frames, W: int, H: int, cfg: Settings):
-    """fit_blur + `render.zoom_picos`: el zoom de reacción en los picos de volumen (zooms.py)."""
+def _con_zooms(layout, rms: list[float], duracion: float, frames, W: int, H: int, cfg: Settings,
+               risas: list[float] | tuple = ()):
+    """fit_blur + `render.zoom_picos`: el zoom de reacción en los picos de volumen (zooms.py) y, en la
+    edición nueva, también en las risas."""
     if layout.tipo != "fit_blur" or not cfg.render.zoom_picos or not duracion or not rms:
         return layout
     from dataclasses import replace
@@ -410,7 +456,7 @@ def _con_zooms(layout, rms: list[float], duracion: float, frames, W: int, H: int
     from . import multipov, zooms
 
     tr, z, cx, cy = zooms.planear(rms, multipov.VENTANA_RMS_S, min(duracion, cfg.render.duracion_max_s),
-                                  frames, W, H, cfg.render.zoom_max, cfg.render.zoom_max_n)
+                                  frames, W, H, cfg.render.zoom_max, cfg.render.zoom_max_n, extra=risas)
     if not tr:
         return layout
     log.info("zooms en %s (×%.2f hacia %.2f, %.2f)", tr, z, cx, cy)

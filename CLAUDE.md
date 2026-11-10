@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-11-10 | **Versión:** v0.83.0 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 de clips + timer 06:00 de la efeméride + escucha de Telegram 24/7, que además propone la historia de Facebook a las 06:30)
+**Snapshot:** 2026-11-10 | **Versión:** v0.84.0 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 de clips + timer 06:00 de la efeméride + escucha de Telegram 24/7, que además propone la historia de Facebook a las 06:30)
 
 > **SI ESTÁS EMPEZANDO UNA SESIÓN NUEVA, LEÉ §10.** Ahí está qué está hecho, qué quedó a medias,
 > qué falta, y las trampas que ya nos mordieron.
@@ -713,7 +713,7 @@ clips_bot/locales.py     §3d: historias de Facebook (Wikipedia en español por 
 clips_bot/prueba_manual.py prueba manual vs API (§1): el clip del día a mano, registro e informe del feed
 clips_bot/envivo.py      modo en vivo (§3b): quién está al aire, momentos por creadores distintos,
                          alertas en la DB (no repetir, tope, vencer) y el resumen de tiempos
-tests/                   549 tests sin red ni video (conftest.py: nada sale a YouTube) (test_reglas_fijas.py: las 3 reglas de §1)
+tests/                   887 tests sin red ni video (conftest.py: nada sale a YouTube) (test_reglas_fijas.py: las 3 reglas de §1)
 ```
 
 Comandos:
@@ -906,6 +906,30 @@ Problemas abiertos:
 
 ## 9. CHANGELOG
 
+- v0.84.0 (2026-11-10) — **Edición nueva, programada y APAGADA** (propuesta aprobada por Santi;
+  los ejemplos se arman en la Pi con los interruptores prendidos solo en memoria, sin tocar los
+  timers). (1) **Imagen = lo que se dice** (`efemerides.imagen_frase`, efeméride de YouTube y su
+  Reel + historia de Facebook): el guion trae `objeto` por frase (la cosa genérica, sin año); por
+  frase se buscan hasta 2 fotos del hecho o el lugar (Commons y las otras fuentes de archivo), 1 del
+  objeto en Commons y 1 del objeto en Pexels (`FOTOS_*_FRASE`, pool hasta 52); Gemini ve de dónde
+  sale cada una y el orden de preferencia (`ORDEN_FOTOS`) y dice por foto `anacronismo`: una de
+  Pexels en una frase del pasado sale salvo que confirme false. La tarjeta, como antes, al final.
+  En este modo no corre la regla (j) (stock primero desde 2000): Pexels va último. (2) **Historia
+  de Facebook corta** (`historias_fb.formato_corto`): `locales.SISTEMA_GUION_CORTO` (50-70
+  palabras, el GANCHO primero sin fecha, "En <año>, en <lugar>," en la segunda: `validar_guion(corto)`
+  y `validar_lugar(corto)`), voz hasta 30 s (`CORTO_MAX_S`), `plan_rapido` (cortes de 1,5-2,5 s que
+  alternan entre las fotos de ESA frase y, si hay una sola, la misma con otro movimiento), efecto
+  "mov" (`filtro_movimiento`: acercarse/alejarse/paneo sobre el cuadro armado al doble), karaoke
+  dorado y sin el año grande al principio; whoosh solo al cambiar de frase. La efeméride de YouTube
+  mantiene largo, arranque y formato. (3) **Rots** (`render.edicion_rots`, `edicion.py`): sin el
+  principio y el final muertos ni pausas de más de 0,6 s (salvo ruido fuerte: risa o grito), 15-35
+  s (si sobra, el bloque con el pico de volumen), cortado ANTES del layout y con los tiempos de las
+  palabras mapeados (no se vuelve a transcribir); zoom también en las risas (`zooms.planear(extra)`);
+  en la misma llamada de textos `frase_inicio` (≤ 6 palabras, los primeros 2 s en lugar del título)
+  y `pregunta` (≤ 12, 2 s finales con el último cuadro congelado, `render(congelar_s)`, y arriba de
+  la descripción); karaoke amarillo (`subtitles.escribir_ass_karaoke`); un momento que otro canal
+  ya subió pasa a ×0,5 en la selección (`pego.peso_copiado`, con los Shorts que ya encuentra "pegó":
+  sin búsquedas nuevas). `tests/test_edicion_nueva.py`. 887 tests OK.
 - v0.83.0 (2026-11-10) — (1) Prueba manual vs API cancelada (`prueba_manual_desde: ""`).
   (2) **Rots se sube solo** (`publicacion.subir_solo`): la entrega diaria, antes de mandarse, se
   programa en su horario. (3) La efeméride en Facebook a las 12:00 (`facebook.hora_efemeride`) y
@@ -2079,11 +2103,14 @@ aparte de Pequeña Historia a las 06:00 (`clips-bot-efemeride`) y la escucha de 
 
 ### Esperando respuesta de Santi (NO programar sin su OK)
 
-0. **Propuesta de EDICIÓN (2026-11-10, mandada, NO programar sin su OK):** videos más cortos y
-   entretenidos en Rots y en Pequeña Historia (fotos = lo que dice la frase, 20-30 s, cortes de
-   1,5-2,5 s, subtítulos karaoke; en Rots recortes sin silencios, zoom en reacciones, texto de
-   contexto, pregunta al cierre). Santi pidió ver un ejemplo de cada canal antes de activarlo en
-   los timers.
+0. **Edición nueva (v0.84.0): programada y APAGADA, esperando que Santi apruebe los 3 ejemplos**
+   (mandados a su privado el 2026-11-10: historia de Facebook corta, efeméride de YouTube con imagen
+   = lo que se dice, y un clip de Rots antes/después). Decisiones de Santi: Pexels solo para objetos
+   genéricos y con Gemini confirmando la época; el formato corto SOLO en la historia de Facebook (la
+   efeméride de YouTube y su Reel de las 12:00 solo cambian la imagen; si Facebook rinde mejor,
+   después se pasa); Rots todo, con la pregunta en la pantalla final y en la descripción. Con su OK
+   se prenden `efemerides.imagen_frase`, `historias_fb.formato_corto` y `render.edicion_rots`.
+   El script de los ejemplos: `~/clips/ejemplos_edicion.py fb|efe|rots <clip_id>` (fuera de git).
 
 1. **Diseño del algoritmo de ROTS y Pequeña Historia** (mandado el 2026-11-05): `/analisis`;
    ponderación del rendimiento 40/40/20 (vistas / % que llega al final / comentarios cada 1.000

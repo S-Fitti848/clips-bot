@@ -491,6 +491,28 @@ SISTEMA_GUION_LOCAL = ef.SISTEMA_GUION.replace(
     "el NOMBRE DEL LUGAR (el pueblo o la ciudad), para que la foto sea de ese lugar y de ese momento.")
 
 
+# Formato corto (Santi, 2026-11-10; historias_fb.formato_corto): 20-30 s, el gancho primero y la fecha
+# en la segunda frase. Lo demás (solo el artículo, claridad, lugar en título y hashtag) igual.
+SISTEMA_GUION_CORTO = SISTEMA_GUION_LOCAL.replace(
+    "un video vertical de 35 a 45 segundos", "un video vertical de 20 a 30 segundos").replace(
+    '- La primera frase arranca EXACTAMENTE con "Un día como hoy, en <año>, en <lugar>," (el pueblo o\n'
+    '  la ciudad, escrito igual que te lo paso) y sigue con el gancho.',
+    '- La PRIMERA frase es el GANCHO: el dato más sorprendente o el momento más fuerte de la historia,\n'
+    '  en 14 palabras como mucho, SIN fecha ("Un maquinista llevó un tren en llamas lejos de su pueblo.").\n'
+    '  Nada de "Un día como hoy".\n'
+    '- La SEGUNDA frase arranca EXACTAMENTE con "En <año>, en <lugar>," (el pueblo o la ciudad, escrito\n'
+    '  igual que te lo paso) y cuenta dónde y cuándo.').replace(
+    "- Entre 80 y 100 palabras en total (contalas: menos de 70 queda corto y más de 105 se pasa de\n"
+    "  45 segundos), en 8 a 14 frases, habladas, no escritas.",
+    "- Entre 50 y 70 palabras en total (contalas: menos de 45 queda corto y más de 72 se pasa de\n"
+    "  30 segundos), en 7 a 11 frases, habladas, no escritas. Directo a lo interesante: nada de\n"
+    "  contexto que no haga falta para entender.").replace(
+    '- "Menos datos" NO es un guion más corto: sigue siendo de 80 a 100 palabras.',
+    '- "Menos datos" NO es un guion más corto que 50 palabras.')
+assert (SISTEMA_GUION_CORTO.count("20 a 30 segundos") == 1 and "Entre 50 y 70" in SISTEMA_GUION_CORTO
+        and "La PRIMERA frase es el GANCHO" in SISTEMA_GUION_CORTO and "más corto que 50" in SISTEMA_GUION_CORTO)
+
+
 def _sin_tildes(t: str) -> str:
     t = unicodedata.normalize("NFKD", t)
     return "".join(ch for ch in t if not unicodedata.combining(ch)).lower()
@@ -500,15 +522,18 @@ def _compacto(t: str) -> str:
     return re.sub(r"[^a-z0-9]", "", _sin_tildes(t))
 
 
-def validar_lugar(lugar: str):
-    """El lugar en el título, en la primera frase y en un hashtag (regla de Santi, 2026-11-09)."""
+def validar_lugar(lugar: str, corto: bool = False):
+    """El lugar en el título, en la primera frase y en un hashtag (regla de Santi, 2026-11-09). En
+    el formato corto (gancho primero), en la primera o la segunda ("En <año>, en <lugar>,")."""
     def validar(d: dict) -> list[str]:
         errores = []
         clave = _sin_tildes(lugar).strip()
         frases = d.get("frases") or []
-        primera = _sin_tildes(str((frases[0] or {}).get("texto") or "")) if frases else ""
+        n = 2 if corto else 1
+        primera = " ".join(_sin_tildes(str((f or {}).get("texto") or "")) for f in frases[:n])
         if clave not in primera:
-            errores.append(f'la primera frase tiene que nombrar el lugar: "Un día como hoy, en <año>, en {lugar},"')
+            errores.append(f'la segunda frase tiene que nombrar el lugar: "En <año>, en {lugar},"' if corto
+                           else f'la primera frase tiene que nombrar el lugar: "Un día como hoy, en <año>, en {lugar},"')
         if clave not in _sin_tildes(str(d.get("titulo") or "")):
             errores.append(f"el título tiene que nombrar el lugar ({lugar})")
         if not any(_compacto(lugar) == _compacto(str(h)) for h in d.get("hashtags") or []):
@@ -530,7 +555,8 @@ def local_de(c: Candidato) -> dict:
 
 
 def proponer(wiki: ef.Wiki, sonnet, haiku, gemini, dia: date, carpeta: Path, avisar=log.info,
-             videos: bool = False, tope_fotos_s: float | None = None, hecho: str = "") -> ef.Propuesta:
+             videos: bool = False, tope_fotos_s: float | None = None, hecho: str = "",
+             imagen_frase: bool = False, corto: bool = False) -> ef.Propuesta:
     """La propuesta del día para Facebook. Mismo armado que la efeméride (fotos, hoja, aprobación),
     con otra fuente de hechos y Claude para el texto."""
     from . import fuentes_fotos
@@ -585,8 +611,10 @@ def proponer(wiki: ef.Wiki, sonnet, haiku, gemini, dia: date, carpeta: Path, avi
         lugar = str(c.clasif.get("lugar") or "").strip()
         avisar(f"{e.anio} {lugar}: {len(fotos)} fotos del hecho y del lugar")
         try:
-            g = ef.escribir_guion(sonnet, e, fuente, sistema=SISTEMA_GUION_LOCAL,
-                                  validar_extra=validar_lugar(lugar), contexto=contexto_de(c))
+            g = ef.escribir_guion(sonnet, e, fuente, sistema=SISTEMA_GUION_CORTO if corto else SISTEMA_GUION_LOCAL,
+                                  validar_extra=validar_lugar(lugar, corto), contexto=contexto_de(c),
+                                  corto=corto)
+            g.imagen_frase = imagen_frase or corto
             pool, g = ef.fotos_para_guion(wiki, gemini, e, g, fotos, carpeta, avisar, videos=videos,
                                           tope_s=tope_fotos_s)
         except ef.PocasFotos as pocas:
@@ -620,9 +648,11 @@ def rehacer(p: ef.Propuesta, wiki: ef.Wiki, sonnet, gemini, carpeta: Path, corre
     anterior = ef.Guion.de_dict(p.guion)
     lugar = str(p.local.get("lugar") or "")
     c = Candidato(p.local.get("seccion") or "acontecimientos", e.anio, e.texto, e.paginas, dict(p.local))
+    corto = anterior.corto
     g = ef.escribir_guion(sonnet, e, p.fuente, correccion=correccion, anterior=anterior.texto,
-                          sistema=SISTEMA_GUION_LOCAL, validar_extra=validar_lugar(lugar),
-                          contexto=contexto_de(c))
+                          sistema=SISTEMA_GUION_CORTO if corto else SISTEMA_GUION_LOCAL,
+                          validar_extra=validar_lugar(lugar, corto), contexto=contexto_de(c), corto=corto)
+    g.imagen_frase = anterior.imagen_frase
     fotos, _ = ef.fotos_del_evento(wiki, e)
     try:
         pool, g = ef.fotos_para_guion(wiki, gemini, e, g, fotos, carpeta, avisar,
