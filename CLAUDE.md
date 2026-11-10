@@ -1920,7 +1920,7 @@ aparte de Pequeña Historia a las 06:00 (`clips-bot-efemeride`) y la escucha de 
 
 | | |
 |---|---|
-| commit | v0.78.0 (relleno de fotos); 817 tests OK en la compu |
+| commit | v0.78.0 (relleno de fotos), desplegado el 2026-11-09; 817 tests OK en la compu y en la Pi |
 | timers y escucha | `clips-bot.timer`, `clips-bot-efemeride.timer` y `clips-bot-telegram` activos; 56 °C en reposo |
 | corrida del 09/11 | clips 05:02 (tope 6, entrega, métricas: 66 clips con métricas, "pegó": 7 Shorts sin original); efeméride 06:00 propuesta al grupo |
 | subida a YouTube | PRENDIDA (`youtube_upload_enabled: true`, desde 2026-10-30): 📤 programa en Rots o en Pequeña Historia; los dos canales conectados (tokens en `config/`, fuera de git) |
