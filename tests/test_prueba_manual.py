@@ -133,6 +133,20 @@ def test_comparar_feed_a_mano_contra_api(tmp_path):
     assert "11-12 coker" in texto and "la API parece ser parte del problema" in texto
 
 
+def test_comparar_antes_de_arrancar_no_pide_un_rango_al_reves(tmp_path):
+    conn = db.connect(tmp_path / "t.db")
+    db.crear_subida(conn, "a1", "rots", "programada", video_id="VA1", publish_at="2026-11-11T21:00:00Z")
+    pedidos = []
+
+    class C:
+        def _analytics(self, params):
+            pedidos.append((params["startDate"], params["endDate"]))
+            return []
+
+    pm.comparar(conn, C(), "2026-11-11", 7, hoy=date(2026, 11, 10))
+    assert pedidos == [("2026-11-11", "2026-11-11")]
+
+
 def test_informe_una_sola_vez_desde_el_dia_8(tmp_path):
     conn = db.connect(tmp_path / "t.db")
     assert not pm.toca_informe(conn, date(2026, 11, 17), "2026-11-11", 7)

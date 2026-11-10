@@ -133,7 +133,8 @@ def comparar(conn: sqlite3.Connection, cliente, desde: str, n: int,
     hoy = hoy or datetime.now(timezone.utc).date()
     manuales, api, sin_video = grupos(conn, desde, n)
     inicio = date.fromisoformat(desde)
-    datos = fuentes(cliente, list(manuales) + list(api), inicio, hoy)
+    # Antes de que arranque (o el mismo día) el rango sería al revés: YouTube lo rechaza.
+    datos = fuentes(cliente, list(manuales) + list(api), inicio, max(hoy, inicio))
     m = resumen({v: datos.get(v, {}) for v in manuales})
     a = resumen({v: datos.get(v, {}) for v in api})
 
