@@ -273,7 +273,7 @@ def test_la_historia_sube_solo_a_facebook_a_su_hora(conn, monkeypatch):
     monkeypatch.setattr(m, "_subir_facebook", subir_fb)
     avisos = m._subir(conn, settings, meta, "pequena_historia")
     assert avisos == ["📘 Programado en Facebook para las 19:00."]
-    assert horas == [settings.historias_fb.hora_publicacion]
+    assert horas == [m.hora_historia_fb(settings, "Argentina", datetime.now(m.AR).date())]  # su país
     [r] = json.loads(db.get_valor(conn, m.HISTORIAS_FB_REGISTRO))
     assert r["tipo"] == "momento_emotivo" and r["lugar"] == "Villa Epecuén" and r["video_id"] == "123"
 

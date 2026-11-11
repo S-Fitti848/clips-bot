@@ -387,7 +387,10 @@ def hablar(api_key: str, texto: str, instruccion: str = "", voz: str = "Puck",
     import re
 
     cuerpo = {
-        "contents": [{"parts": [{"text": f"{instruccion}\n\n{texto}" if instruccion else texto}]}],
+        # "Say in an energetic … voice: <texto>" pegado (así gemini-2.5-flash-preview-tts sigue el tono
+        # SIN leerlo, medido el 2026-11-11; los 3.x lo leen en voz alta igual).
+        "contents": [{"parts": [{"text": (f"{instruccion} {texto}" if instruccion.rstrip().endswith(":")
+                                          else f"{instruccion}\n\n{texto}") if instruccion else texto}]}],
         "generationConfig": {
             "responseModalities": ["AUDIO"],
             "speechConfig": {"voiceConfig": {"prebuiltVoiceConfig": {"voiceName": voz}}},

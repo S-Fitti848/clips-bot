@@ -3872,7 +3872,8 @@ def _efe_video(conn, tg: TelegramClient, chat_id: str, token: str, settings: Set
         extra = ([[{"text": "🔁 Rehacer con Laomedeia", "callback_data": f"efe:voz:{token}"}]]
                  if ef.es_piper(motor) else [])
         encabezado = (_encabezado_fb(prop.local) + "\n📤 sale en la página a las "
-                      + settings.historias_fb.hora_publicacion if fb else
+                      + hora_historia_fb(settings, (prop.local or {}).get("pais"), datetime.now(AR).date())
+                      + " (AR)" if fb else
                       "📅 <b>Pequeña Historia</b> — subilo al canal de efemérides")
         enviar_clip(tg, chat_id, conn, meta["clip_id"], meta, 1, None,
                     encabezado=f"{encabezado}\n🎙 {html.escape(ef.texto_voz(motor))}", extra_filas=extra)
@@ -4535,7 +4536,9 @@ def _subir(conn, settings: Settings, meta: dict, canal: str) -> list[str]:
         # El video aparte de Facebook (2026-11-09): YouTube no se toca.
         if not settings.facebook.activo:
             return ["📘 La subida a Facebook está apagada (facebook.activo)."]
-        aviso = _subir_facebook(conn, settings, meta, hora=settings.historias_fb.hora_publicacion)
+        pais = ((meta.get("efemeride") or {}).get("local") or {}).get("pais")
+        aviso = _subir_facebook(conn, settings, meta,
+                                hora=hora_historia_fb(settings, pais, datetime.now(AR).date()))
         return [aviso] if aviso else []
     if settings.youtube_upload_enabled:
         aviso = _programar_subida(conn, settings, meta, canal, _hora_de(settings, canal, meta))
@@ -4588,6 +4591,84 @@ def _portada_de(meta: dict) -> Path | None:
         return None
 
 
+# Horarios de Facebook (Santi, 2026-11-11): la historia a las 08:00-09:00 de la mañana del país de
+# la historia (historias_fb.hora_local), para que circule todo el día de la fecha; sin país claro, a
+# historias_fb.hora_sin_pais AR. La efeméride a facebook.hora_efemeride (19:00 AR). Entre una y otra,
+# al menos historias_fb.separacion_h (4 h).
+HUSOS_FB = {"México": "America/Mexico_City", "Colombia": "America/Bogota", "Perú": "America/Lima",
+            "Argentina": "America/Argentina/Buenos_Aires", "Chile": "America/Santiago",
+            "Venezuela": "America/Caracas", "Uruguay": "America/Montevideo", "Paraguay": "America/Asuncion",
+            "Bolivia": "America/La_Paz", "Ecuador": "America/Guayaquil", "Cuba": "America/Havana",
+            "Brasil": "America/Sao_Paulo", "Guatemala": "America/Guatemala",
+            "Honduras": "America/Tegucigalpa", "Nicaragua": "America/Managua",
+            "Costa Rica": "America/Costa_Rica", "Panamá": "America/Panama",
+            "El Salvador": "America/El_Salvador", "Puerto Rico": "America/Puerto_Rico",
+            "República Dominicana": "America/Santo_Domingo"}
+
+
+def huso_de(pais) -> str | None:
+    from .locales import _sin_tildes
+
+    p = _sin_tildes(str(pais or "")).strip()
+    if not p:
+        return None
+    for nombre, tz in HUSOS_FB.items():
+        if _sin_tildes(nombre) in p or p in _sin_tildes(nombre):
+            return tz
+    return None
+
+
+def hora_historia_fb(settings: Settings, pais, dia) -> str:
+    """La hora (AR, "HH:MM") a la que sale la historia: historias_fb.hora_local en el huso del país
+    de la historia ese día (con su horario de verano), o hora_sin_pais si no hay país claro."""
+    from datetime import time as dtime
+    from zoneinfo import ZoneInfo
+
+    cfg = settings.historias_fb
+    tz = huso_de(pais)
+    if not tz:
+        return cfg.hora_sin_pais
+    hh, mm = (int(x) for x in cfg.hora_local.split(":"))
+    local = datetime.combine(dia, dtime(hh, mm), tzinfo=ZoneInfo(tz))
+    return local.astimezone(AR).strftime("%H:%M")
+
+
+def separar_de_otras(cuando: datetime, otras: list[datetime], ahora: datetime, horas: float,
+                     margen_s: float = 1200) -> datetime:
+    """Corre `cuando` para que quede a `horas` o más de cada una de `otras` (los Reels del día),
+    sin salir del día (AR) ni quedar en el pasado: primero después de la otra, si no antes. Si no
+    hay lugar, la deja como estaba."""
+    sep = timedelta(hours=horas)
+
+    def libre(t):
+        return all(abs((t - o).total_seconds()) >= sep.total_seconds() - 1 for o in otras)
+
+    if libre(cuando):
+        return cuando
+    candidatas = sorted({o + sep for o in otras} | {o - sep for o in otras})
+    validas = [t for t in candidatas if t.date() == ahora.date() and t >= ahora + timedelta(seconds=margen_s)
+               and libre(t)]
+    if not validas:
+        return cuando
+    return min(validas, key=lambda t: abs((t - cuando).total_seconds()))
+
+
+def _fb_del_dia(conn, clip_id: str, hoy: datetime) -> list[datetime]:
+    """Cuándo salen (o salieron) hoy los otros Reels de la página."""
+    out = []
+    for s in db.subidas(conn, ("programada", "publicada")):
+        if s["canal"] != "facebook" or s["clip_id"] == clip_id:
+            continue
+        iso = s.get("publish_at") or (str(s.get("creada") or "").replace(" ", "T") + "Z")
+        try:
+            t = datetime.fromisoformat(iso.replace("Z", "+00:00")).astimezone(AR)
+        except ValueError:
+            continue
+        if t.date() == hoy.date():
+            out.append(t)
+    return out
+
+
 def _subir_facebook(conn, settings: Settings, meta: dict, ahora: datetime | None = None,
                     hora: str | None = None) -> str:
     """El Reel a la página de Facebook, a la misma hora que YouTube (o ya, si esa hora pasó).
@@ -4609,6 +4690,13 @@ def _subir_facebook(conn, settings: Settings, meta: dict, ahora: datetime | None
                                      or settings.efemerides.hora_publicacion, ahora=hoy)
     if cuando.date() != hoy.date():          # "un día como hoy": nunca mañana
         cuando = None
+    # Al menos historias_fb.separacion_h entre los dos Reels del día (Santi, 2026-11-11).
+    otras = _fb_del_dia(conn, clip_id, hoy)
+    if otras:
+        base = cuando or hoy
+        movida = separar_de_otras(base, otras, hoy, settings.historias_fb.separacion_h)
+        if movida != base:
+            cuando = movida
     t = meta["textos"]
     texto = f"{t['titulo']}\n\n{t['descripcion']}\n\n{' '.join(t.get('hashtags') or [])}"
     try:

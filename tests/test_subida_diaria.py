@@ -69,7 +69,7 @@ def test_settings_del_10_11():
     s = load_settings()
     assert s.publicacion.prueba_manual_desde == ""          # cancelada: no marca nada a mano
     assert s.publicacion.subir_solo is True
-    assert s.facebook.hora_efemeride == "12:00"
+    assert s.facebook.hora_efemeride == "19:00"     # Santi, 2026-11-11
     assert s.historias_fb.hora_publicacion == "19:00"
 
 
@@ -86,7 +86,7 @@ def _efe(clip_id, destino=""):
             "textos": {"titulo": "T", "descripcion": "D", "hashtags": ["#Historia"]}}
 
 
-def test_la_efemeride_sale_en_facebook_a_las_12_y_queda_registrada(monkeypatch, tmp_path):
+def test_la_efemeride_sale_en_facebook_a_las_19_y_queda_registrada(monkeypatch, tmp_path):
     conn = db.connect(tmp_path / "t.db")
     horas = []
     monkeypatch.setattr(facebook, "subir_reel", lambda video, texto, cuando, version:
@@ -96,9 +96,22 @@ def test_la_efemeride_sale_en_facebook_a_las_12_y_queda_registrada(monkeypatch, 
     ahora = datetime(2026, 11, 11, 12, 0, tzinfo=timezone.utc)          # 09:00 AR
     m._subir_facebook(conn, s, _efe("efemeride_1111_1918"), ahora=ahora)
     m._subir_facebook(conn, s, _efe("historia_fb_1111_1985", "facebook"), ahora=ahora,
-                      hora=s.historias_fb.hora_publicacion)
-    assert [h.astimezone(m.AR).strftime("%H:%M") for h in horas] == ["12:00", "19:00"]
+                      hora=m.hora_historia_fb(s, "México", ahora.date()))
+    assert [h.astimezone(m.AR).strftime("%H:%M") for h in horas] == ["19:00", "11:30"]
     reg = json.loads(db.get_valor(conn, m.HISTORIAS_FB_REGISTRO))
     assert [(r["clip_id"], r["reel"]) for r in reg] == [("efemeride_1111_1918", "efemeride"),
                                                         ("historia_fb_1111_1985", "historia")]
     assert reg[1]["lugar"] == "Epecuén" and reg[0]["video_id"] == "FB1"
+
+
+def test_la_historia_aprobada_tarde_queda_a_4_h_de_la_efemeride(monkeypatch, tmp_path):
+    conn = db.connect(tmp_path / "t.db")
+    horas = []
+    monkeypatch.setattr(facebook, "subir_reel", lambda video, texto, cuando, version:
+                        horas.append(cuando) or f"FB{len(horas)}")
+    monkeypatch.setattr(m, "_portada_de", lambda meta: None)
+    s = load_settings()
+    ahora = datetime(2026, 11, 11, 19, 30, tzinfo=timezone.utc)         # 16:30 AR
+    m._subir_facebook(conn, s, _efe("efemeride_1111_1918"), ahora=ahora)                 # 19:00
+    m._subir_facebook(conn, s, _efe("historia_fb_1111_1985", "facebook"), ahora=ahora, hora="17:00")
+    assert [h.astimezone(m.AR).strftime("%H:%M") for h in horas] == ["19:00", "23:00"]

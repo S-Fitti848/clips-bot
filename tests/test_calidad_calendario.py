@@ -256,3 +256,73 @@ def test_sonnet_no_puede_saltear_el_calendario():
                                             {"n": 2, "articulo": "A3", "articulo_lugar": "", "motivo": ""}]})
 
     assert [c for c, *_ in locales.elegir(Sonnet(), [comun, cal])] == [cal, comun]
+
+
+# ---- feedback del 11/11: fotos del corto, ruido final, ficción, karaoke, horarios de Facebook ----
+
+def test_ninguna_foto_mas_de_4_s_y_el_gancho_2_5():
+    g = _guion(frases=["a", "b"], ranking=[[0], [1]], del_hecho=[5, 6])
+    plan, _ = ef.plan_rapido([(0, 0, 6.0), (1, 1, 4.1)], g)
+    seguido, primera = ef.seguidos_max(plan)
+    assert seguido <= ef.FOTO_MAX_S and primera <= ef.GANCHO_MAX_S
+    assert sum(s for *_, s in plan) == pytest.approx(10.1)
+
+
+def test_ruido_al_final_de_la_voz_se_silencia(tmp_path):
+    import wave
+
+    import numpy as np
+
+    from clips_bot import narrar
+
+    sr = 48000
+    voz = 0.3 * np.sin(np.linspace(0, 2000, sr * 2))
+    x = np.concatenate([voz, np.zeros(int(sr * 0.2)), 0.6 * np.random.default_rng(1).standard_normal(int(sr * 0.15))])
+    ruta = tmp_path / "v.wav"
+    with wave.open(str(ruta), "wb") as w:
+        w.setnchannels(1); w.setsampwidth(2); w.setframerate(sr)
+        w.writeframes((x.clip(-1, 1) * 32767).astype("<i2").tobytes())
+    antes = narrar.duracion_wav(ruta)
+    assert narrar.limpiar_cola(ruta) == pytest.approx(0.15, abs=0.03)
+    assert narrar.duracion_wav(ruta) == antes
+    assert narrar.limpiar_cola(ruta) == 0.0          # la voz sola, sin golpe: no se toca
+
+
+def test_la_ficcion_se_cuenta_como_ficcion():
+    assert "FICCIÓN" in ef.SISTEMA_GUION and "nunca como si fuera una persona" in ef.SISTEMA_GUION
+    assert "FICCIÓN" in locales.SISTEMA_GUION_CORTO
+
+
+def test_la_efemeride_de_youtube_va_con_karaoke():
+    import inspect
+
+    fuente = inspect.getsource(ef.hacer_video)
+    assert fuente.count("escribir_ass_karaoke") == 2
+
+
+def test_la_historia_sale_a_la_manana_de_su_pais():
+    import clips_bot.__main__ as m
+    from clips_bot.config import load_settings
+
+    s = load_settings()
+    d = date(2026, 11, 12)
+    assert [m.hora_historia_fb(s, p, d) for p in ("México", "Colombia", "Perú", "Argentina", "Venezuela")] == \
+        ["11:30", "10:30", "10:30", "08:30", "09:30"]
+    assert m.hora_historia_fb(s, "", d) == m.hora_historia_fb(s, "España", d) == "11:00"
+    assert s.facebook.hora_efemeride == "19:00"
+
+
+def test_cuatro_horas_entre_los_dos_reels():
+    import clips_bot.__main__ as m
+
+    ahora = datetime(2026, 11, 12, 9, 0, tzinfo=m.AR)
+    efe = datetime(2026, 11, 12, 19, 0, tzinfo=m.AR)
+    assert m.separar_de_otras(datetime(2026, 11, 12, 11, 30, tzinfo=m.AR), [efe], ahora, 4) == \
+        datetime(2026, 11, 12, 11, 30, tzinfo=m.AR)                      # ya está lejos
+    tarde = datetime(2026, 11, 12, 17, 0, tzinfo=m.AR)                  # aprobada tarde: 23:00
+    assert m.separar_de_otras(tarde, [efe], datetime(2026, 11, 12, 16, 50, tzinfo=m.AR), 4) == \
+        datetime(2026, 11, 12, 23, 0, tzinfo=m.AR)
+    # sin lugar en el día: queda como estaba
+    otra = datetime(2026, 11, 12, 21, 30, tzinfo=m.AR)
+    t = datetime(2026, 11, 12, 22, 0, tzinfo=m.AR)
+    assert m.separar_de_otras(t, [otra], datetime(2026, 11, 12, 21, 50, tzinfo=m.AR), 4) == t

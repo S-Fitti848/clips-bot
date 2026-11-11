@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-11-11 | **Versión:** v0.86.0 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 de clips + timer 06:00 de la efeméride + escucha de Telegram 24/7, que además propone la historia de Facebook a las 06:30)
+**Snapshot:** 2026-11-11 | **Versión:** v0.87.0 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 de clips + timer 06:00 de la efeméride + escucha de Telegram 24/7, que además propone la historia de Facebook a las 06:30)
 
 > **SI ESTÁS EMPEZANDO UNA SESIÓN NUEVA, LEÉ §10.** Ahí está qué está hecho, qué quedó a medias,
 > qué falta, y las trampas que ya nos mordieron.
@@ -118,10 +118,10 @@ servicio systemd separado: `clips-bot`).
   lo posible en su aniversario. **Texto con Claude** (Sonnet 5.5 elige el hecho y escribe el
   guion, Haiku 5.5 clasifica): deja de depender del cupo de Gemini. **Gemini solo para las fotos y
   la voz**; la voz va por la SEGUNDA clave (Piper de respaldo). YouTube no cambia nada. La escucha
-  la propone a las 06:30; 📤 la sube SOLO a la página de Facebook a las 19:00 AR
-  (`historias_fb.hora_publicacion`, la hora la eligió Claude). **2 Reels por día (Santi,
+  la propone a las 06:30; 📤 la sube SOLO a la página de Facebook a las 08:30 del país de la
+  historia (11:00 AR sin país; Santi, 2026-11-11, antes 19:00 AR). **2 Reels por día (Santi,
   2026-11-10):** la efeméride de YouTube (✅ y 📤, como siempre) sale también en la página a las
-  12:00 (`facebook.hora_efemeride`; ya salía desde el 30/10 a la hora de YouTube). Las dos quedan
+  19:00 AR (`facebook.hora_efemeride`, desde el 11/11; antes 12:00), con 4 h como mínimo entre los dos. Las dos quedan
   en `bot_estado.historias_fb_registro` con `reel` = `efemeride` | `historia` para la comparación
   del 24/11 (las entradas sin `reel`, anteriores a esto, son historias).
 - **Calendario de fechas de Latinoamérica (Santi, 2026-11-11; `calendario.py`):** aniversarios de
@@ -727,7 +727,7 @@ clips_bot/calendario.py  §3d: calendario de 90 días de fechas de Latinoaméric
 clips_bot/prueba_manual.py prueba manual vs API (§1): el clip del día a mano, registro e informe del feed
 clips_bot/envivo.py      modo en vivo (§3b): quién está al aire, momentos por creadores distintos,
                          alertas en la DB (no repetir, tope, vencer) y el resumen de tiempos
-tests/                   910 tests sin red ni video (conftest.py: nada sale a YouTube) (test_reglas_fijas.py: las 3 reglas de §1)
+tests/                   917 tests sin red ni video (conftest.py: nada sale a YouTube) (test_reglas_fijas.py: las 3 reglas de §1)
 ```
 
 Comandos:
@@ -920,6 +920,27 @@ Problemas abiertos:
 
 ## 9. CHANGELOG
 
+- v0.87.0 (2026-11-11) — **Feedback de Santi sobre Cartagena y Ash Ketchum.** Cartagena (historia
+  de Facebook) aprobada. (1) **Ficción** (`SISTEMA_GUION`, vale para la historia de Facebook): series,
+  animé, juegos, películas → lo real primero ("el animé de Pokémon cerró la historia de Ash después
+  de 25 años") y el personaje como personaje, nunca como si existiera. (2) **Karaoke también en la
+  efeméride de YouTube** (con el año contando y las claves de siempre). (3) **Corto: ninguna foto
+  más de 4 s seguida** aunque el corte quede de menos de 2,5 s, y **la del gancho hasta 2,5 s**
+  (`FOTO_MAX_S`, `GANCHO_MAX_S`, `plan_rapido`, `seguidos_max`): si seguiría la misma, va otra de la
+  frase o una del tema general; antes un tramo de 4,1 s quedaba entero. (4) **El ruido del final:**
+  era de Gemini TTS (la voz termina, ~0,2 s de silencio y un golpe de -5 dB de 0,14 s, en los dos
+  ejemplos); `narrar.limpiar_cola` lo pasa a silencio sin cambiar el largo. (5) **Voz:** probado
+  cómo darle tono sin que lo lea: con `gemini-3.8-flash-tts` la instrucción en el texto (en inglés o
+  castellano) se lee en voz alta, `systemInstruction` da 400 y una etiqueta [energetic] hace que
+  improvise ("Es increíble."); con **`gemini-2.5-flash-preview-tts` y "Say in an energetic, warm
+  and natural storytelling voice…: <texto>" sigue el tono SIN leerlo** (Whisper lo confirmó en las
+  4 pruebas). Muestras de Fenrir, Puck y Sadachbia con el guion de Cartagena mandadas a Santi; NO
+  cambia la voz hasta que elija (`hablar` ya pega la instrucción que termina en ":"). (6)
+  **Horarios de Facebook:** la historia a las 08:30 del país de la historia (`hora_historia_fb`,
+  `HUSOS_FB` con horario de verano: México 11:30 AR, Colombia y Perú 10:30, Venezuela 09:30,
+  Argentina y Chile 08:30; sin país claro 11:00 AR); la efeméride a las 19:00 AR
+  (`facebook.hora_efemeride`, antes 12:00); al menos 4 h entre las dos (`separar_de_otras`, sin
+  salir del día). 917 tests OK.
 - v0.86.0 (2026-11-11) — **Control de calidad de las fotos y calendario de fechas** (pedidos 9 y 10
   de Santi). (1) **70 % de fotos reales** (`efemerides.UMBRAL_FOTOS_REALES`, vale para la efeméride
   y la historia de Facebook, prendida o no la edición nueva): con el plan estimado, si menos del

@@ -233,6 +233,47 @@ def sintetizar_frases(frases: list[str], modelo: Path, salida: Path,
     return salida, duraciones
 
 
+def limpiar_cola(wav: Path, ventana_s: float = 0.02, umbral_db: float = -45.0,
+                 silencio_min_s: float = 0.08, golpe_max_s: float = 0.5, buscar_s: float = 1.5) -> float:
+    """Gemini TTS a veces termina con un golpe corto DESPUÉS de la última palabra (un clic o un
+    ruido de ~0,2 s a -5 dB, medido en los dos ejemplos del 11/11). Si en el último `buscar_s` hay
+    un silencio de al menos `silencio_min_s` y después solo un ruido de hasta `golpe_max_s` hasta
+    el final, ese ruido pasa a silencio (el largo del audio no cambia: los subtítulos y los cortes
+    siguen igual). Devuelve los segundos silenciados (0 si no había nada). Solo PCM de 16 bits."""
+    import numpy as np
+
+    with wave.open(str(wav)) as w:
+        params = w.getparams()
+        datos = w.readframes(w.getnframes())
+    if params.sampwidth != 2 or not params.nframes:
+        return 0.0
+    x = np.frombuffer(datos, dtype="<i2").reshape(-1, params.nchannels).astype(np.float32) / 32768.0
+    sr, n = params.framerate, len(x)
+    paso = max(1, int(sr * ventana_s))
+    desde = max(0, n - int(sr * buscar_s))
+    bloques = [(i, float(np.sqrt(np.mean(x[i:i + paso] ** 2)) + 1e-9)) for i in range(desde, n, paso)]
+    alto = [20 * math.log10(r) > umbral_db for _, r in bloques]
+    if not alto or not alto[-1]:
+        return 0.0
+    k = len(alto) - 1
+    while k >= 0 and alto[k]:
+        k -= 1
+    golpe = (len(alto) - 1 - k) * paso / sr
+    j = k
+    while j >= 0 and not alto[j]:
+        j -= 1
+    silencio = (k - j) * paso / sr
+    if k < 0 or golpe > golpe_max_s or silencio < silencio_min_s:
+        return 0.0
+    corte = bloques[k + 1][0]
+    y = (x * 32768.0).clip(-32768, 32767).astype("<i2")
+    y[corte:] = 0
+    with wave.open(str(wav), "wb") as w:
+        w.setparams(params)
+        w.writeframes(y.tobytes())
+    return (n - corte) / sr
+
+
 def duracion_wav(path: Path) -> float:
     with wave.open(str(path)) as w:
         return w.getnframes() / float(w.getframerate() or 1)

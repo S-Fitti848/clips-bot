@@ -373,7 +373,7 @@ class Facebook:
     version: str = "v23.0"     # la versión de la Graph API (la que muestre el Graph API Explorer)
     # La efeméride de YouTube también sale como Reel en la página (2 Reels por día con la historia
     # de las 19:00). Vacío = la misma hora que YouTube (efemerides.hora_publicacion).
-    hora_efemeride: str = "12:00"
+    hora_efemeride: str = "19:00"
 
 
 @dataclass(frozen=True)
@@ -395,6 +395,11 @@ class HistoriasFb:
     # Calendario de fechas de Latinoamérica (Santi, 2026-11-11): cada lunes desde esta hora, la lista
     # de la semana a Santi por Telegram (calendario.py).
     calendario_hora: str = "08:00"
+    # Horarios de Facebook (Santi, 2026-11-11): la historia a esta hora del país de la historia (sin
+    # país claro, hora_sin_pais AR) y al menos separacion_h con la efeméride (facebook.hora_efemeride).
+    hora_local: str = "08:30"
+    hora_sin_pais: str = "11:00"
+    separacion_h: float = 4.0
 
 
 @dataclass(frozen=True)

@@ -489,7 +489,7 @@ facebook:
   # La efeméride de YouTube (con ✅ y 📤, como siempre) sale también como Reel de la página a esta
   # hora; la historia aparte de Facebook, a historias_fb.hora_publicacion (19:00). Las dos quedan en
   # bot_estado.historias_fb_registro con `reel` = efemeride | historia, para la comparación del 24/11.
-  hora_efemeride: "12:00"
+  hora_efemeride: "19:00"     # Santi, 2026-11-11 (antes 12:00)
 
 # Pequeña Historia, video APARTE solo para Facebook (prueba de 2 semanas desde el 2026-11-10, a
 # partir del Reel de Nacozari: 100 % orgánico, 16.841 reproducciones contra ~200 del resto).
@@ -513,6 +513,12 @@ historias_fb:
   # Calendario de fechas de Latinoamérica (2026-11-11): cada lunes desde esta hora, la lista de la
   # semana a Santi; esos días la historia va primero con la fecha que se recuerda (calendario.py).
   calendario_hora: "08:00"
+  # Horarios (2026-11-11): la historia a las 08:30 del país de la historia (México 11:30 AR,
+  # Colombia y Perú 10:30, Venezuela 09:30, Argentina y Chile 08:30); sin país claro, 11:00 AR.
+  # Al menos 4 h con la efeméride (19:00). hora_publicacion ya no se usa para la historia.
+  hora_local: "08:30"
+  hora_sin_pais: "11:00"
+  separacion_h: 4
 
 # Lo que pega en otros canales → el clip original (pego.py, 2026-09-29). Una vez por día (y en
 # /buscar): Shorts de OTROS canales que nombran a cada streamer de las carpetas con diarios,

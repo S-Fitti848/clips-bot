@@ -633,6 +633,10 @@ nombre, ni un número, ni una fecha que no esté ahí. Si el artículo no lo dic
 - Números: solo los que están en el artículo, escritos igual. Nada de "hoy tiene millones de…"
   si el artículo no lo dice con esas palabras.
 - Sin emojis, sin hashtags, sin "suscribite".
+- FICCIÓN (series, animé, juegos, películas, libros): lo que pasó de verdad es algo de la VIDA REAL
+  (se estrenó, terminó, salió, lo vio tanta gente). Decilo desde la primera frase con lo real ("el
+  animé de Pokémon cerró la historia de Ash después de 25 años") y hablá del personaje como
+  personaje ("en la serie, Ash…"), nunca como si fuera una persona que existió.
 """ + REGLAS_CLARIDAD + """
 - "Menos datos" NO es un guion más corto: sigue siendo de 80 a 100 palabras. Las palabras que
   dejás de gastar en fechas y nombres van a explicar el cómo y el porqué.
@@ -2250,6 +2254,8 @@ def con_videos(plan: list[tuple[int, int, float]], g: Guion) -> list[tuple[int, 
 
 
 CORTE_MAX_S, CORTE_MIN_S = 4.0, 2.5     # formato corto: un cambio de imagen cada 2,5-4 s (Santi, 2026-11-10)
+FOTO_MAX_S = 4.0       # ninguna foto más que esto seguida (Santi, 2026-11-11)
+GANCHO_MAX_S = 2.5     # la primera, la del gancho
 MOVIMIENTOS = ("in", "der", "out", "izq")
 
 
@@ -2257,23 +2263,38 @@ def plan_rapido(plan: list[tuple[int, int, float]], g: Guion,
                 max_apariciones: int = ilustrar.MAX_APARICIONES) -> tuple[list[tuple[int, int, float]], list[str]]:
     """Formato corto: cada tramo se parte en cortes de 2,5 a 4 s. Los cortes de una frase alternan
     entre SUS fotos (las que el modelo puso para esa frase: la imagen sigue siendo lo que se dice)
-    mientras ninguna pase de `max_apariciones` en el video; si no hay otra, sigue la misma foto con
-    otro movimiento (acercarse, alejarse, paneo), que es la misma aparición.
-    Devuelve el plan y el movimiento de cada corte ("" en los videos)."""
+    mientras ninguna pase de `max_apariciones` en el video.
+
+    Topes duros (Santi, 2026-11-11, la independencia de Cartagena): NINGUNA foto más de
+    FOTO_MAX_S (4 s) seguida en pantalla, aunque el corte quede de menos de 2,5 s, y la primera (la
+    del gancho) hasta GANCHO_MAX_S (2,5 s). Cuando la misma foto seguiría, va otra de esa frase o
+    una del tema general del hecho (`generales`); recién si no hay ninguna, la misma con otro
+    movimiento. Devuelve el plan y el movimiento de cada corte ("" en los videos)."""
     rk = g.rankings()
+    gen = [x for x in generales(g) if x not in set(g.tarjetas or [])]
     out, movs = [], []
     veces: dict[int, int] = {}
     m = 0
+    seguido = 0.0          # cuánto lleva en pantalla la foto de ahora, sin cortar a otra
+
+    def partes(s: float) -> list[float]:
+        n = max(1, math.ceil(s / CORTE_MAX_S - 1e-9))
+        while n > 1 and s / n < CORTE_MIN_S and s / (n - 1) <= CORTE_MAX_S + 1e-9:
+            n -= 1
+        return [round(s / n, 3)] * n
+
     for i, f, s in plan:
         if f == VIDEO:
             out.append((i, f, s))
             movs.append("")
+            seguido = 0.0
             continue
-        n = max(1, math.ceil(s / CORTE_MAX_S - 1e-9))
-        while n > 1 and s / n < CORTE_MIN_S:
-            n -= 1
+        if not out and s > GANCHO_MAX_S + 1e-9:
+            trozos = [GANCHO_MAX_S] + partes(round(s - GANCHO_MAX_S, 3))
+        else:
+            trozos = partes(s)
         propias = [f] + [x for x in (rk[i] if i < len(rk) else []) if x != f]
-        for k in range(n):
+        for k, t in enumerate(trozos):
             previa = out[-1][1] if out else None
             quiere = propias[k % len(propias)]
             if quiere != previa and veces.get(quiere, 0) >= max_apariciones:
@@ -2281,16 +2302,40 @@ def plan_rapido(plan: list[tuple[int, int, float]], g: Guion,
                               None)
             if quiere is None:      # no hay otra que no esté gastada: sigue la anterior (alargarla)
                 quiere = previa if previa is not None and previa != VIDEO else f
+            tope = GANCHO_MAX_S if len(out) == sum(1 for x in out if x[1] == quiere) and \
+                all(x[1] == quiere for x in out) else FOTO_MAX_S
+            if quiere == previa and seguido + t > tope + 1e-9:
+                otra = next((x for x in propias + gen if x != previa and x != VIDEO
+                             and veces.get(x, 0) < max_apariciones), None)
+                if otra is not None:
+                    quiere = otra
             if quiere != previa:
                 veces[quiere] = veces.get(quiere, 0) + 1
+                seguido = 0.0
+            seguido += t
             mov = MOVIMIENTOS[m % len(MOVIMIENTOS)]
             m += 1
             if out and out[-1][1] == quiere and movs[-1] == mov:
                 mov = MOVIMIENTOS[m % len(MOVIMIENTOS)]
                 m += 1
-            out.append((i, quiere, round(s / n, 3)))
+            out.append((i, quiere, t))
             movs.append(mov)
     return out, movs
+
+
+def seguidos_max(plan: list[tuple[int, int, float]]) -> tuple[float, float]:
+    """(lo más que una foto queda seguida en pantalla, lo que dura la primera): para el control."""
+    largos, actual, previa = [], 0.0, object()
+    for _, f, s in plan:
+        if f == previa and f != VIDEO:
+            actual += s
+        else:
+            if actual:
+                largos.append(actual)
+            actual, previa = s, f
+    if actual:
+        largos.append(actual)
+    return (max(largos) if largos else 0.0), (largos[0] if largos else 0.0)
 
 
 def filtro_movimiento(frames: int, fx: float, fy: float, mov: str, W: int, H: int, fps: int = 30,
@@ -2596,6 +2641,10 @@ def voz_efemeride(frases: list[str], settings, carpeta: Path, avisar=log.info,
                         raise
                     avisar("Gemini TTS tardó demasiado: pruebo una vez más")
             wav = narrar.a_48k(_escribir_wav(pcm, sr, carpeta / "voz.wav"))
+            # El ruido del final (Santi, 2026-11-11: "los dos videos tienen un ruido al final").
+            limpio = narrar.limpiar_cola(wav)
+            if limpio:
+                avisar(f"voz: saqué un ruido de {limpio:.2f} s al final")
             return wav, None, f"gemini:{cfg.tts_voz}"
         except GeminiError as e:
             avisar(f"Gemini TTS no anduvo ({str(e)[:120]}): sigo con Piper")
@@ -2755,6 +2804,11 @@ def hacer_video(p: Propuesta, settings, carpeta: Path, avisar=log.info, conn=Non
             gr.agregar_al_ass(carpeta / "subs.ass",
                               gr.estilos(settings.render.ancho, settings.render.alto, settings.subtitulos.fuente),
                               gr.claves_en_tiempo(palabras, g.claves))
+    elif cfg_ef.graficos:
+        # La efeméride de YouTube también con karaoke (Santi, 2026-11-11: "me gustan y no cambian
+        # nada de lo que funciona"); el año contando y las palabras clave grandes, igual que antes.
+        sub.escribir_ass_karaoke(palabras, carpeta / "subs.ass", settings.subtitulos, settings.render,
+                                 color_activo=sub.KARAOKE_PH, tamano=78)
     else:
         sub.escribir_ass(subs, carpeta / "subs.ass", settings.subtitulos, settings.render,
                          cartel=str(e.anio), cartel_s=2.0, cartel_grande=True)
@@ -2762,7 +2816,6 @@ def hacer_video(p: Propuesta, settings, carpeta: Path, avisar=log.info, conn=Non
         # El año contando (en vez de quieto) y las palabras clave grandes cuando la voz las dice.
         from . import graficos as gr
 
-        gr.sacar_cartel(carpeta / "subs.ass")
         gr.agregar_al_ass(carpeta / "subs.ass",
                           gr.estilos(settings.render.ancho, settings.render.alto, settings.subtitulos.fuente),
                           gr.anio_contando(e.anio) + gr.claves_en_tiempo(palabras, g.claves))
