@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-11-11 | **Versión:** v0.87.1 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 de clips + timer 06:00 de la efeméride + escucha de Telegram 24/7, que además propone la historia de Facebook a las 06:30)
+**Snapshot:** 2026-11-11 | **Versión:** v0.88.0 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 de clips + timer 06:00 de la efeméride + escucha de Telegram 24/7, que además propone la historia de Facebook a las 06:30)
 
 > **SI ESTÁS EMPEZANDO UNA SESIÓN NUEVA, LEÉ §10.** Ahí está qué está hecho, qué quedó a medias,
 > qué falta, y las trampas que ya nos mordieron.
@@ -132,6 +132,10 @@ servicio systemd separado: `clips-bot`).
 - **Control de calidad de todo video de Pequeña Historia (Santi, 2026-11-11):** menos del 70 % del
   tiempo con fotos reales (no tarjetas) = NO se arma; primero otra búsqueda con Claude, después otro
   hecho del día, y si ninguno llega, aviso por Telegram en vez del video.
+- **Ficción (Santi, 2026-11-11, Ash Ketchum):** NO se eligen hechos que pasan dentro de una ficción
+  (lo que le pasa a un personaje en un episodio, juego o película). Cultura pop sí, solo desde la vida
+  real: estreno, lanzamiento, quién lo creó, cómo se hizo, impacto, récords. Nunca la trama. Vale para
+  la efeméride y la historia de Facebook, y está en el chequeo del guion.
 - **Videos largos: NO por ahora (decisión de Santi, 2026-09-28).** No quiere videos largos con voz
   de IA. Si más adelante se hacen, van con SU voz grabada, no con Gemini TTS ni Piper.
 - **Sin música agregada en los clips.** Cualquier música es riesgo de Content ID. Si el clip trae
@@ -727,7 +731,7 @@ clips_bot/calendario.py  §3d: calendario de 90 días de fechas de Latinoaméric
 clips_bot/prueba_manual.py prueba manual vs API (§1): el clip del día a mano, registro e informe del feed
 clips_bot/envivo.py      modo en vivo (§3b): quién está al aire, momentos por creadores distintos,
                          alertas en la DB (no repetir, tope, vencer) y el resumen de tiempos
-tests/                   918 tests sin red ni video (conftest.py: nada sale a YouTube) (test_reglas_fijas.py: las 3 reglas de §1)
+tests/                   921 tests sin red ni video (conftest.py: nada sale a YouTube) (test_reglas_fijas.py: las 3 reglas de §1)
 ```
 
 Comandos:
@@ -920,6 +924,24 @@ Problemas abiertos:
 
 ## 9. CHANGELOG
 
+- v0.88.0 (2026-11-11) — **Feedback del ejemplo nuevo** (Santi: "mejoró mucho"; le gustaron el
+  karaoke, la info, las fotos y la tarjeta de una palabra tipo "2022"). (1) **Ninguna foto en más de
+  2 cortes** del corto (`plan_rapido`: cada corte cuenta, aunque sea la misma foto con otro
+  movimiento; el acta de Cartagena salía en 3 cortes y 5,9 s seguidos al principio): si no queda
+  otra, una **tarjeta** (`fabrica_tarjetas`: la clave de la frase, el año, otra clave; base que
+  rota) y el 70 % se mide sobre el corto tal cual sale. Las tarjetas vuelven a llevar el año si la
+  frase no tiene clave. (2) **Frases sin foto propia → segunda búsqueda** (con la edición nueva):
+  en Cartagena la frase 1 solo tenía una vista actual de la ciudad (afuera por época), la 3 pedía
+  una bandera española y la 8 una bandera ondeando (ninguna foto); ahora eso, o un corto que
+  repetiría fotos, dispara la segunda búsqueda (Commons en general sin la regla de época, Pexels
+  para lo que se nombra al pasar) antes que la tarjeta. (3) **Ficción** (efeméride e historia de
+  Facebook): NO hechos que pasan dentro de una ficción (`motivo_evento`/`locales.motivo`: "trama de
+  una ficción", `_TRAMA`, y en los prompts de elegir); cultura pop solo desde la vida real
+  (estreno, lanzamiento, creador, cómo se hizo, impacto, récords); el chequeo del guion la frena
+  (`_TRAMA_GUION` "en la serie, Ash…" y `cuenta_trama`). (4) **Voz:** muestras de Fenrir más calmo
+  y Achird, Sadaltager y Charon con energía media (`gemini-2.5-flash-preview-tts` + instrucción);
+  la de Fenrir salió cortada la primera vez (20,5 de 32 s) y se rehízo. Se aplica cuando Santi
+  elija. 921 tests OK.
 - v0.87.1 (2026-11-11) — Las fotos que no cumplen la regla fija 1 (menos de 6 distintas, una más
   de 6 s seguidos) ahora también pasan por la segunda búsqueda con Claude antes del hecho siguiente
   (`FotosNoAlcanzan`; el Ash Ketchum del ejemplo se la salteaba). 918 tests OK.

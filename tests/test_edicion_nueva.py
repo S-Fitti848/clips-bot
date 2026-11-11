@@ -150,12 +150,19 @@ def test_plan_rapido_corta_cada_2_5_a_4_s_con_las_fotos_de_la_frase():
 
 
 def test_plan_rapido_ninguna_foto_mas_de_2_veces():
-    # una frase larga con dos fotos: A B A B A… pasaría las 2 apariciones; sigue la misma foto
+    # una frase larga con dos fotos: A B A B A… pasaría los 2 cortes por foto (Santi, 2026-11-11:
+    # cada corte cuenta, aunque sea la misma foto con otro movimiento) → tarjetas.
     g = _guion(frases=["uno"], ranking=[[0, 1]])
-    plan, movs = ef.plan_rapido([(0, 0, 18.0)], g)
-    from clips_bot import ilustrar
-    assert max(ilustrar.apariciones(plan).values()) <= 2
+    hechas = iter(range(10, 20))
+    plan, movs = ef.plan_rapido([(0, 0, 18.0)], g, nueva_tarjeta=lambda i: next(hechas))
+    veces = {}
+    for _, f, _s in plan:
+        veces[f] = veces.get(f, 0) + 1
+    assert max(veces.values()) <= 2
     assert len(plan) >= 5 and sum(s for *_, s in plan) == pytest.approx(18.0)
+    faltas = []
+    ef.plan_rapido([(0, 0, 18.0)], g, faltas=faltas)     # sin tarjetas: queda anotado
+    assert faltas
 
 
 def test_sin_tarjeta_con_un_texto_que_no_tiene_que_ver():

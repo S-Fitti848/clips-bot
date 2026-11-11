@@ -370,6 +370,8 @@ def motivo_local(c: Candidato, hoy: date, homenajeados: set[str]) -> str | None:
         return "tema sensible"
     if c.anio >= 1945 and ef._GUERRA.search(c.texto):
         return "guerra reciente"
+    if ef._TRAMA.search(c.texto):
+        return "trama de una ficción"
     return None
 
 
@@ -481,7 +483,10 @@ Ordená del mejor al peor (hasta 8) los que más se parecen a eso:
   Argentina, Perú, Chile y Venezuela (es cuando la gente lo comparte);
 - que se pueda contar en 40 segundos y se entienda sin saber historia;
 - nada de tragedias solas (muertes, desastres, crímenes sin un acto heroico), ni política
-  partidaria, ni guerras recientes.
+  partidaria, ni guerras recientes;
+- nada que pase DENTRO de una ficción (lo que le pasa a un personaje de una serie, telenovela,
+  juego o película): la cultura pop solo si se cuenta desde la vida real (estreno, quién lo creó,
+  cómo se hizo, impacto, récords).
 Para cada uno: `articulo` = el título EXACTO, de la lista de artículos del hecho, del artículo que
 cuenta ESE hecho (no el del país ni el de una fecha); `articulo_lugar` = el título, de la misma
 lista, del artículo del pueblo o ciudad (vacío si no está). Respondé solo con el JSON pedido."""

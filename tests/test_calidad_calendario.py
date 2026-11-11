@@ -305,9 +305,81 @@ def test_ruido_al_final_de_la_voz_se_silencia(tmp_path):
     assert narrar.limpiar_cola(ruta) == 0.0          # la voz sola, sin golpe: no se toca
 
 
-def test_la_ficcion_se_cuenta_como_ficcion():
-    assert "FICCIÓN" in ef.SISTEMA_GUION and "nunca como si fuera una persona" in ef.SISTEMA_GUION
-    assert "FICCIÓN" in locales.SISTEMA_GUION_CORTO
+def test_la_ficcion_solo_desde_la_vida_real():
+    # Santi, 2026-11-11 (Ash Ketchum): nada que pase DENTRO de una ficción; cultura pop solo lo real.
+    assert "NUNCA la trama" in ef.SISTEMA_GUION and "NUNCA la trama" in locales.SISTEMA_GUION_CORTO
+    assert "DENTRO de una ficción" in ef.SISTEMA_ELEGIR and "DENTRO de una ficción" in locales.SISTEMA_ELEGIR
+    hoy = date(2026, 11, 11)
+    ash = ef.Evento(anio=2022, texto="En el anime de Pokémon, Ash Ketchum se proclama como el campeón "
+                    "mundial.", paginas=["Ash_Ketchum"], lang="es")
+    assert ef.motivo_evento(ash, hoy) == "trama de una ficción"
+    for real in ("Se estrena en Japón el anime de Pokémon.",
+                 "En Estados Unidos, la cantante Taylor Swift publica su álbum Fearless.",
+                 "Sony lanza la PlayStation 3 en Japón."):
+        e = ef.Evento(anio=2006, texto=real, paginas=["X"], lang="es")
+        assert ef.motivo_evento(e, hoy) is None, real
+
+
+def _guion_dict(frases):
+    return {"frases": [{"texto": f, "mostrar": "1997 Pokemon anime Japan", "presente": False,
+                        "accion": False} for f in frases]}
+
+
+def test_el_chequeo_del_guion_frena_la_trama():
+    trama = ef.validar_guion(_guion_dict(["Un día como hoy, en 2022, terminó una etapa.",
+                                          "En la serie, Ash salió tarde de Pueblo Paleta."]), 2022, "")
+    assert any("trama de una ficción" in x and "[2]" in x for x in trama)
+    real = ef.validar_guion(_guion_dict(["Un día como hoy, en 1997, se estrenó el anime de Pokémon.",
+                                         "Lo vieron millones de chicos en Japón."]), 1997, "")
+    assert not any("trama" in x for x in real)
+    marcada = ef.validar_guion({**_guion_dict(["Un día como hoy, en 1997, pasó algo."]),
+                                "cuenta_trama": True}, 1997, "")
+    assert any("trama de una ficción" in x for x in marcada)
+
+
+def test_ninguna_foto_en_mas_de_2_cortes_y_si_no_hay_una_tarjeta(tmp_path):
+    # Cartagena (11/11): el acta en 3 cortes, 5,9 s seguidos al principio.
+    g = _guion(frases=["a", "b", "c"], ranking=[[], [0], [1]], del_hecho=[0], claves=["Acta"])
+    tarjetas = []
+
+    def nueva(i):
+        tarjetas.append(i)
+        return 100 + len(tarjetas)
+
+    plan, _ = ef.plan_rapido([(0, 0, 4.0), (1, 0, 6.0), (2, 1, 8.0)], g, nueva_tarjeta=nueva)
+    cuenta = {}
+    for _, f, _s in plan:
+        cuenta[f] = cuenta.get(f, 0) + 1
+    assert max(cuenta.values()) <= 2, plan
+    assert tarjetas, "sin fotos que alcancen, tiene que haber tarjetas"
+    seguido, primera = ef.seguidos_max(plan)
+    assert seguido <= ef.FOTO_MAX_S and primera <= ef.GANCHO_MAX_S
+    # sin fábrica de tarjetas, los cortes que no tienen foto quedan anotados
+    faltas = []
+    ef.plan_rapido([(0, 0, 4.0), (1, 0, 6.0), (2, 1, 8.0)], g, faltas=faltas)
+    assert faltas
+
+
+def test_la_fabrica_de_tarjetas_usa_la_clave_y_despues_el_anio(tmp_path):
+    from PIL import Image
+
+    rutas = []
+    for i in range(2):
+        r = tmp_path / f"f{i}.jpg"
+        Image.new("RGB", (800, 600), (40 * i, 80, 120)).save(r)
+        rutas.append(r)
+    pool = [ef.Foto(archivo=f"F{i}.jpg", url="", ancho=800, alto=600, licencia="CC0", autor="x",
+                    epigrafe="e", pagina="", articulo="A", ruta=str(r)) for i, r in enumerate(rutas)]
+    g = _guion(frases=["El acta se firmó.", "Fue rápido."], ranking=[[0], [1]], del_hecho=[0, 1],
+               claves=["acta"])
+    nueva = ef.fabrica_tarjetas(g, 1811, tmp_path, lambda k: pool[k],
+                                lambda f: (pool.append(f), len(pool) - 1)[1])
+    a = nueva(0)
+    b = nueva(1)
+    c = nueva(1)
+    assert [pool[a].epigrafe, pool[b].epigrafe] == ["tarjeta: ACTA", "tarjeta: 1811"]
+    assert c is None                       # sin más textos distintos, no inventa
+    assert g.tarjetas_fotos == [a, b]
 
 
 def test_la_efemeride_de_youtube_va_con_karaoke():

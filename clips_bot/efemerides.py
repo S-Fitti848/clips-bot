@@ -91,6 +91,17 @@ _HABLA_DE_WEB = re.compile(r"p[aá]gina|sitio|web|foro|forum|internet|red(es)? s
 _SIN_FECHA = re.compile(r"\b(durante siglos|over centuries|se construy\w*|was built|"
                         r"a lo largo de|over the course of)\b", re.I)
 
+# Ficción (Santi, 2026-11-11, Ash Ketchum): NO hechos que pasan DENTRO de una ficción (lo que le pasa
+# a un personaje en un episodio, juego o película). Cultura pop sí, solo desde la vida real.
+_FICCION = (r"(anim[eé]|manga|serie|episodio|cap[ií]tulo|videojuego|juego|pel[ií]cula|c[oó]mic|"
+            r"historieta|novela|telenovela|saga|anime|series|episode|video ?game|game|film|movie|"
+            r"comic|novel|show)")
+_TRAMA = re.compile(rf"^\s*(en|in)\s+(el|la|los|las|un|una|the|an?)?\s*([\w'’.:-]+\s+){{0,3}}{_FICCION}\b"
+                    rf"[^,.;]{{0,60}},", re.I)
+# En el guion: "en la serie, Ash…" = la trama contada adentro (la regla dice: solo lo real).
+_TRAMA_GUION = re.compile(rf"\b(en|dentro de)\s+(el|la|los|las)\s+([\w'’.:-]+\s+){{0,2}}{_FICCION}"
+                          rf"(\s+de\s+[\w'’.:-]+){{0,3}}\s*,", re.I)
+
 # Fotos que no sirven aunque la licencia sea libre. Se busca en el nombre del archivo, el epígrafe
 # y las categorías de Commons.
 _NO_FOTO = re.compile(
@@ -374,6 +385,8 @@ def motivo_evento(e: Evento, hoy: date) -> str | None:
         return "guerra reciente"
     if _SIN_FECHA.search(e.texto):
         return "sin fecha exacta"
+    if _TRAMA.search(e.texto):
+        return "trama de una ficción"
     return None
 
 
@@ -385,6 +398,10 @@ ciencia, espacio, inventos, cultura pop, deportes, récords, cosas curiosas. Tie
 - Fecha EXACTA: algo que pasó ESE día (un lanzamiento, un estreno, un descubrimiento, un récord).
   Nada de procesos largos ("se construyó durante siglos") ni de "en esta década".
 - NADA sensible: guerras recientes, atentados, masacres, muertes trágicas, accidentes, desastres.
+- NADA que pase DENTRO de una ficción: lo que le pasa a un personaje en un episodio, un juego, una
+  película o un libro ("en el animé, Ash se proclama campeón") NO es un hecho. La cultura pop SÍ,
+  pero solo lo que pasó en la vida real: el estreno, el lanzamiento, quién lo creó, cómo se hizo,
+  qué impacto tuvo, récords.
 - Que se pueda contar en 40 segundos y se entienda sin saber historia.
 Respondé solo con el JSON pedido."""
 
@@ -633,10 +650,11 @@ nombre, ni un número, ni una fecha que no esté ahí. Si el artículo no lo dic
 - Números: solo los que están en el artículo, escritos igual. Nada de "hoy tiene millones de…"
   si el artículo no lo dice con esas palabras.
 - Sin emojis, sin hashtags, sin "suscribite".
-- FICCIÓN (series, animé, juegos, películas, libros): lo que pasó de verdad es algo de la VIDA REAL
-  (se estrenó, terminó, salió, lo vio tanta gente). Decilo desde la primera frase con lo real ("el
-  animé de Pokémon cerró la historia de Ash después de 25 años") y hablá del personaje como
-  personaje ("en la serie, Ash…"), nunca como si fuera una persona que existió.
+- FICCIÓN (series, animé, juegos, películas, libros): contá SOLO la vida real: el estreno o el
+  lanzamiento, quién lo creó, cómo se hizo, qué impacto tuvo, récords. NUNCA la trama: nada de lo
+  que hace o le pasa a un personaje ("en la serie, Ash viajó…", "Pikachu lo salvó"). Si el hecho
+  es algo que pasa dentro de la historia, no sirve. Poné `cuenta_trama` en true si alguna frase
+  cuenta la trama (y entonces reescribila).
 """ + REGLAS_CLARIDAD + """
 - "Menos datos" NO es un guion más corto: sigue siendo de 80 a 100 palabras. Las palabras que
   dejás de gastar en fechas y nombres van a explicar el cómo y el porqué.
@@ -709,6 +727,7 @@ SCHEMA_GUION = {
         "descripcion": {"type": "STRING"},
         "hashtags": {"type": "ARRAY", "items": {"type": "STRING"}},
         "tono": {"type": "STRING", "enum": ["alegre", "epico", "misterioso", "curioso", "emotivo"]},
+        "cuenta_trama": {"type": "BOOLEAN"},
     },
     "required": ["frases", "idea_clave", "titulo", "descripcion", "hashtags"],
 }
@@ -877,6 +896,8 @@ class Guion:
     # si es la segunda búsqueda (con Claude, sin la regla de época, documentos del hecho permitidos).
     fotos_reales: float = 0.0
     segunda_busqueda: bool = False
+    # Las tarjetas que ya están en el pool (índices): el corto las usa antes de repetir una foto.
+    tarjetas_fotos: list[int] = field(default_factory=list)
 
     @property
     def texto(self) -> str:
@@ -958,6 +979,12 @@ def validar_guion(d: dict, anio: int, fuente: str, corto: bool = False) -> list[
                        f"década del hecho ({anio}) y el lugar, ej. \"{anio} ... <país>\"")
     if not str(d.get("idea_clave") or "").strip():
         errores.append("falta `idea_clave`: qué tiene que entender un chico de 15 años al final")
+    # Ficción (Santi, 2026-11-11): nunca la trama, solo la vida real.
+    trama = [i + 1 for i, f in enumerate(frases) if _TRAMA_GUION.search(f)]
+    if trama or d.get("cuenta_trama") is True:
+        errores.append("contaste la trama de una ficción" + (f" (frases {trama})" if trama else "")
+                       + ": contá SOLO la vida real (estreno, lanzamiento, quién lo creó, cómo se hizo, "
+                         "impacto, récords), nada de lo que hace o le pasa a un personaje")
     faltan = no_respaldados(texto, fuente, anio)
     if faltan:
         errores.append("esto NO está en el artículo, sacalo o cambialo por lo que dice el artículo: "
@@ -1486,6 +1513,7 @@ def fotos_para_guion(wiki: Wiki, cliente, e: Evento, g: Guion, fotos_articulo: l
 
     g.segunda_busqueda = segunda
     g.tarjetas = []
+    g.tarjetas_fotos = []
     del_hecho = [i for i in sumar(fotos_articulo, FOTOS_ARTICULO_MAX) if i not in descartadas]
     if segunda:
         # Fotos reales del protagonista y del lugar: Commons con el título de cada artículo del hecho.
@@ -1615,19 +1643,19 @@ def fotos_para_guion(wiki: Wiki, cliente, e: Evento, g: Guion, fotos_articulo: l
     # frase anterior alargada (2026-11-09: nunca la foto de OTRA frase puntual, como los billetes de
     # rupias de Android) y, si ya no se puede, la tarjeta con el año o una palabra clave.
     vacias = [i for i, r in enumerate(rankings) if not r]
+    sin_propia = list(vacias)
     base = next(iter(dict.fromkeys(list(reserva) + [x for r in rankings for x in r])), None)
     while vacias and base is not None and any("aparecen más de" in x or "seguidos" in x
                                               for x in errores):
         i = vacias.pop()
-        texto = texto_tarjeta(g, i, e.anio, solo_clave=g.imagen_frase)
-        if texto is None:
-            # Imagen = lo que se dice (Santi, 2026-11-10): nada de tarjetas con un texto que no tiene
-            # que ver ("2022"); esa frase alarga la foto anterior (asignar).
-            continue
+        # La palabra clave de la frase o, si no tiene, el año (Santi, 2026-11-11: la de "2022"
+        # queda bien; el 2026-11-10 se había sacado el año).
+        texto = texto_tarjeta(g, i, e.anio)
         t = tarjeta(pool[base], texto, carpeta / f"tarjeta_{i + 1:02d}.jpg")
         pool.append(t)
         rankings[i] = [len(pool) - 1]
         g.tarjetas = sorted(set(g.tarjetas) | {i})
+        g.tarjetas_fotos = list(g.tarjetas_fotos or []) + [len(pool) - 1]
         avisar(f"    frase {i + 1}: sin foto buena → tarjeta «{t.epigrafe}»")
         g.ranking = rankings
         reserva = de_reserva(g, len(pool))
@@ -1645,7 +1673,28 @@ def fotos_para_guion(wiki: Wiki, cliente, e: Evento, g: Guion, fotos_articulo: l
         raise FotosNoAlcanzan(pool, g, errores)
     if g.minimo_fotos < ilustrar.MIN_FOTOS_ABSOLUTO:
         raise PocasFotos(pool, g, disponibles)
-    control_calidad(pool, g, plan_estimado(g, len(pool)))
+    plan = plan_estimado(g, len(pool))
+    if g.imagen_frase and not segunda:
+        # Santi, 2026-11-11 (Cartagena): frases sin foto propia, o un corto que tendría que repetir
+        # una foto en más de 2 cortes → primero buscar más (la segunda búsqueda: Commons en general,
+        # sin la regla de época, y Pexels para lo que se nombra al pasar).
+        faltas: list = []
+        if g.corto:
+            plan_rapido(plan, g, faltas=faltas)
+        if sin_propia or faltas:
+            motivo = []
+            if sin_propia:
+                motivo.append(f"frases sin foto propia: {[i + 1 for i in sin_propia]}")
+            if faltas:
+                motivo.append(f"el corto repetiría fotos en {len(faltas)} cortes")
+            raise FotosNoAlcanzan(pool, g, motivo)
+    if g.corto:
+        # Lo que todavía falte, con tarjetas (la clave de la frase o el año), y el 70 % se mide sobre
+        # el corto tal cual va a salir.
+        nueva = fabrica_tarjetas(g, e.anio, carpeta, lambda k: pool[k],
+                                 lambda f: (pool.append(f), len(pool) - 1)[1])
+        plan, _ = plan_rapido(plan, g, nueva_tarjeta=nueva)
+    control_calidad(pool, g, plan)
     return pool, g
 
 
@@ -1763,6 +1812,36 @@ def tarjeta(base: Foto, texto: str, salida: Path) -> Foto:
     return Foto(archivo=f"tarjeta:{salida.stem}", url="", ancho=W, alto=H, licencia=base.licencia,
                 autor=base.autor, epigrafe=f"tarjeta: {texto}", pagina=base.pagina, articulo="tarjeta",
                 ruta=str(salida), anio=base.anio)
+
+
+def fabrica_tarjetas(g: Guion, anio: int, carpeta: Path, foto_de, agregar):
+    """Para el corto (plan_rapido): una tarjeta nueva cuando ya no queda una foto que se pueda usar
+    sin pasar de 2 cortes ni de 4 s seguidos (Santi, 2026-11-11: "usá una tarjeta como la de
+    2022"). El texto, en orden y sin repetir: la palabra clave de ESA frase, el año, otra clave del
+    guion. La base va rotando entre las fotos buenas del hecho. `foto_de(índice) -> Foto` y
+    `agregar(Foto) -> índice` son del pool de quien llama (Fotos en la propuesta, dicts en el video)."""
+    usados = set()
+    for k in g.tarjetas_fotos or []:
+        try:
+            usados.add(foto_de(k).epigrafe.removeprefix("tarjeta: "))
+        except (IndexError, AttributeError):
+            pass
+
+    def nueva(i: int) -> int | None:
+        textos = [texto_tarjeta(g, i, anio, solo_clave=True), str(anio)] + [c.upper() for c in g.claves]
+        texto = next((t for t in textos if t and t not in usados), None)
+        bases = [x for x in dict.fromkeys(generales(g) + [x for r in g.rankings() for x in r])
+                 if x not in set(g.tarjetas_fotos or []) and x != VIDEO]
+        if texto is None or not bases:
+            return None
+        base = foto_de(bases[len(usados) % len(bases)])
+        t = tarjeta(base, texto, carpeta / f"tarjeta_extra_{len(usados) + 1:02d}.jpg")
+        usados.add(texto)
+        idx = agregar(t)
+        g.tarjetas_fotos = list(g.tarjetas_fotos or []) + [idx]
+        return idx
+
+    return nueva
 
 
 class SinFotosReales(NarrarError):
@@ -2270,18 +2349,22 @@ MOVIMIENTOS = ("in", "der", "out", "izq")
 
 
 def plan_rapido(plan: list[tuple[int, int, float]], g: Guion,
-                max_apariciones: int = ilustrar.MAX_APARICIONES) -> tuple[list[tuple[int, int, float]], list[str]]:
+                max_apariciones: int = ilustrar.MAX_APARICIONES, nueva_tarjeta=None,
+                faltas: list | None = None) -> tuple[list[tuple[int, int, float]], list[str]]:
     """Formato corto: cada tramo se parte en cortes de 2,5 a 4 s. Los cortes de una frase alternan
-    entre SUS fotos (las que el modelo puso para esa frase: la imagen sigue siendo lo que se dice)
-    mientras ninguna pase de `max_apariciones` en el video.
+    entre SUS fotos (las que el modelo puso para esa frase: la imagen sigue siendo lo que se dice).
 
-    Topes duros (Santi, 2026-11-11, la independencia de Cartagena): NINGUNA foto más de
-    FOTO_MAX_S (4 s) seguida en pantalla, aunque el corte quede de menos de 2,5 s, y la primera (la
-    del gancho) hasta GANCHO_MAX_S (2,5 s). Cuando la misma foto seguiría, va otra de esa frase o
-    una del tema general del hecho (`generales`); recién si no hay ninguna, la misma con otro
-    movimiento. Devuelve el plan y el movimiento de cada corte ("" en los videos)."""
+    Topes duros (Santi, 2026-11-11): NINGUNA foto más de FOTO_MAX_S (4 s) seguida en pantalla,
+    aunque el corte quede de menos de 2,5 s; la primera (la del gancho) hasta GANCHO_MAX_S (2,5 s);
+    y ninguna en más de `max_apariciones` (2) CORTES en todo el video (el acta de Cartagena salía
+    en 3 cortes, 5,9 s seguidos al principio: con otro movimiento se ve igual la misma foto). Para
+    cada corte: otra foto de esa frase, una del tema general del hecho (`generales`), una tarjeta
+    ya hecha o, con `nueva_tarjeta(frase) -> índice | None`, una tarjeta nueva (palabra clave o
+    año, "como la de 2022"). Recién si no queda nada, la que menos se usó, y ese corte va a
+    `faltas`. Devuelve el plan y el movimiento de cada corte ("" en los videos)."""
     rk = g.rankings()
-    gen = [x for x in generales(g) if x not in set(g.tarjetas or [])]
+    hechas = [x for x in (g.tarjetas_fotos or [])]
+    gen = [x for x in generales(g) if x not in set(hechas)]
     out, movs = [], []
     veces: dict[int, int] = {}
     m = 0
@@ -2292,6 +2375,14 @@ def plan_rapido(plan: list[tuple[int, int, float]], g: Guion,
         while n > 1 and s / n < CORTE_MIN_S and s / (n - 1) <= CORTE_MAX_S + 1e-9:
             n -= 1
         return [round(s / n, 3)] * n
+
+    def tope_de(x) -> float:
+        return GANCHO_MAX_S if all(o[1] == x for o in out) else FOTO_MAX_S
+
+    def sirve(x, t, previa) -> bool:
+        if x is None or x == VIDEO or veces.get(x, 0) >= max_apariciones:
+            return False
+        return x != previa or seguido + t <= tope_de(x) + 1e-9
 
     for i, f, s in plan:
         if f == VIDEO:
@@ -2306,21 +2397,22 @@ def plan_rapido(plan: list[tuple[int, int, float]], g: Guion,
         propias = [f] + [x for x in (rk[i] if i < len(rk) else []) if x != f]
         for k, t in enumerate(trozos):
             previa = out[-1][1] if out else None
-            quiere = propias[k % len(propias)]
-            if quiere != previa and veces.get(quiere, 0) >= max_apariciones:
-                quiere = next((x for x in propias if x != previa and veces.get(x, 0) < max_apariciones),
-                              None)
-            if quiere is None:      # no hay otra que no esté gastada: sigue la anterior (alargarla)
-                quiere = previa if previa is not None and previa != VIDEO else f
-            tope = GANCHO_MAX_S if len(out) == sum(1 for x in out if x[1] == quiere) and \
-                all(x[1] == quiere for x in out) else FOTO_MAX_S
-            if quiere == previa and seguido + t > tope + 1e-9:
-                otra = next((x for x in propias + gen if x != previa and x != VIDEO
-                             and veces.get(x, 0) < max_apariciones), None)
-                if otra is not None:
-                    quiere = otra
+            rot = propias[k % len(propias):] + propias[:k % len(propias)]
+            orden = [x for x in rot if x != previa] + [x for x in gen if x != previa] + \
+                [x for x in hechas if x != previa] + [previa]
+            quiere = next((x for x in orden if sirve(x, t, previa)), None)
+            if quiere is None and nueva_tarjeta is not None:
+                nueva = nueva_tarjeta(i)
+                if nueva is not None:
+                    hechas.append(nueva)
+                    quiere = nueva
+            if quiere is None:      # no queda nada: la que menos se usó (y queda anotado)
+                if faltas is not None:
+                    faltas.append(i)
+                opciones = [x for x in dict.fromkeys(propias + gen + hechas) if x != previa] or [f]
+                quiere = min(opciones, key=lambda x: veces.get(x, 0))
+            veces[quiere] = veces.get(quiere, 0) + 1
             if quiere != previa:
-                veces[quiere] = veces.get(quiere, 0) + 1
                 seguido = 0.0
             seguido += t
             mov = MOVIMIENTOS[m % len(MOVIMIENTOS)]
@@ -2878,7 +2970,17 @@ def hacer_video(p: Propuesta, settings, carpeta: Path, avisar=log.info, conn=Non
                              f"{UMBRAL_FOTOS_REALES * 100:.0f} %): no armo el video")
     movimientos = None
     if g.corto:
-        plan, movimientos = plan_rapido(plan, g)
+        nueva = fabrica_tarjetas(g, e.anio, carpeta, lambda k: Foto.de_dict(p.fotos[k]),
+                                 lambda f: (p.fotos.append(f.a_dict()), len(p.fotos) - 1)[1])
+        faltas: list = []
+        plan, movimientos = plan_rapido(plan, g, nueva_tarjeta=nueva, faltas=faltas)
+        p.guion = g.a_dict()
+        if faltas:
+            avisar(f"⚠️ fotos: en {len(faltas)} cortes no quedaba otra foto ni tarjeta: se repite")
+        pct = fraccion_real(p.fotos, plan)
+        if pct < UMBRAL_FOTOS_REALES:
+            raise SinFotosReales(f"solo {pct * 100:.0f} % del tiempo con fotos reales (mínimo "
+                                 f"{UMBRAL_FOTOS_REALES * 100:.0f} %): no armo el video")
         avisar(f"formato corto: {len(plan)} cortes de {min(s for *_, s in plan):.1f} a "
                f"{max(s for *_, s in plan):.1f} s")
     tramos = [(rutas_video[i] if f == VIDEO else Path(p.fotos[f]["ruta"]), s) for i, f, s in plan]
