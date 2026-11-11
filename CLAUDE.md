@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-11-10 | **Versión:** v0.85.0 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 de clips + timer 06:00 de la efeméride + escucha de Telegram 24/7, que además propone la historia de Facebook a las 06:30)
+**Snapshot:** 2026-11-11 | **Versión:** v0.86.0 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 de clips + timer 06:00 de la efeméride + escucha de Telegram 24/7, que además propone la historia de Facebook a las 06:30)
 
 > **SI ESTÁS EMPEZANDO UNA SESIÓN NUEVA, LEÉ §10.** Ahí está qué está hecho, qué quedó a medias,
 > qué falta, y las trampas que ya nos mordieron.
@@ -124,6 +124,14 @@ servicio systemd separado: `clips-bot`).
   12:00 (`facebook.hora_efemeride`; ya salía desde el 30/10 a la hora de YouTube). Las dos quedan
   en `bot_estado.historias_fb_registro` con `reel` = `efemeride` | `historia` para la comparación
   del 24/11 (las entradas sin `reel`, anteriores a esto, son historias).
+- **Calendario de fechas de Latinoamérica (Santi, 2026-11-11; `calendario.py`):** aniversarios de
+  fundación, días nacionales, de héroes locales, fiestas patronales y conmemoraciones, con fuente
+  (Wikipedia en español), sin inventar fechas. Esos días la historia de Facebook va con esa fecha
+  antes que cualquier otro hecho (México, Colombia, Argentina, Perú, Chile y Venezuela primero), el
+  día exacto y nunca después; cada lunes, la lista de la semana a Santi.
+- **Control de calidad de todo video de Pequeña Historia (Santi, 2026-11-11):** menos del 70 % del
+  tiempo con fotos reales (no tarjetas) = NO se arma; primero otra búsqueda con Claude, después otro
+  hecho del día, y si ninguno llega, aviso por Telegram en vez del video.
 - **Videos largos: NO por ahora (decisión de Santi, 2026-09-28).** No quiere videos largos con voz
   de IA. Si más adelante se hacen, van con SU voz grabada, no con Gemini TTS ni Piper.
 - **Sin música agregada en los clips.** Cualquier música es riesgo de Content ID. Si el clip trae
@@ -513,6 +521,11 @@ Pedido 2026-11-09 (§1). Prueba de 2 semanas desde el 2026-11-10. Config en `his
    (`clip_id` historia_fb_…, `meta.efemeride.destino = "facebook"`) con la voz por la segunda clave;
    📤 → `_subir_facebook(hora=19:00)` y nada a YouTube; cada subida queda en
    `bot_estado.historias_fb_registro` (lugar, país, tipo, conmemoración, video_id) para comparar.
+5b. **Calendario y calidad (2026-11-11):** los hechos del calendario de hoy (conmemoración con
+   año, fundación, o `conmemora`) van primero (`locales.buenos`, `en_calendario`,
+   `prioridad_pais`); `_calendario_tick` arma los 90 días y manda la semana los lunes; cada video
+   pasa el control del 70 % de fotos reales (`ef.fotos_con_control`), y 📤 no sube a Facebook
+   nada de un día que ya pasó.
 6. **La escucha** (`_fb_tick`): desde las 06:30 y hasta las 21:00, una vez por día
    (`historias_fb_dia`), con el turno pesado libre. Un hecho fijado a mano: `historias_fb_hecho`
    = {"dia","hecho"} o `historias_fb_hecho:<AAAA-MM-DD>` = texto. Una falla se avisa y no se
@@ -710,10 +723,11 @@ clips_bot/claude.py      texto con Claude (SDK oficial `anthropic`, ANTHROPIC_AP
                          que GeminiClient.json; schema de Gemini → JSON Schema; uso en gemini_uso
                          con clave "claude"; Sonnet con fallbacks "default"
 clips_bot/locales.py     §3d: historias de Facebook (Wikipedia en español por día, Haiku, Sonnet)
+clips_bot/calendario.py  §3d: calendario de 90 días de fechas de Latinoamérica + la lista de los lunes
 clips_bot/prueba_manual.py prueba manual vs API (§1): el clip del día a mano, registro e informe del feed
 clips_bot/envivo.py      modo en vivo (§3b): quién está al aire, momentos por creadores distintos,
                          alertas en la DB (no repetir, tope, vencer) y el resumen de tiempos
-tests/                   894 tests sin red ni video (conftest.py: nada sale a YouTube) (test_reglas_fijas.py: las 3 reglas de §1)
+tests/                   909 tests sin red ni video (conftest.py: nada sale a YouTube) (test_reglas_fijas.py: las 3 reglas de §1)
 ```
 
 Comandos:
@@ -906,6 +920,30 @@ Problemas abiertos:
 
 ## 9. CHANGELOG
 
+- v0.86.0 (2026-11-11) — **Control de calidad de las fotos y calendario de fechas** (pedidos 9 y 10
+  de Santi). (1) **70 % de fotos reales** (`efemerides.UMBRAL_FOTOS_REALES`, vale para la efeméride
+  y la historia de Facebook, prendida o no la edición nueva): con el plan estimado, si menos del
+  70 % del tiempo va con fotos o videos reales (no tarjetas), `FotosInsuficientes`;
+  `fotos_con_control` hace una SEGUNDA búsqueda siempre con Claude (`_elector_fotos(reintento=True)`):
+  Commons con el título de cada artículo del hecho, sin la regla de época, y en las frases centrales
+  vale el retrato del protagonista, el lugar, un monumento o el documento o dibujo del hecho
+  (`TIPOS_DEL_HECHO`: la patente). Si tampoco, el hecho siguiente; el de respaldo (menos de 4
+  fotos) solo si igual pasa el 70 % (`respaldo_sirve`); si ninguno, `SinFotosReales` → aviso por
+  Telegram, SIN video y sin los reintentos de las 07:00/10:00 (`ErrorDefinitivo`). `hacer_video`
+  lo vuelve a medir con los tiempos reales de la voz. Visto en el ejemplo del refrigerador de
+  Einstein (10/11): ~27 de 37 s con «PATENTE»/«HELADERA» sobre la misma llama difuminada, y la
+  palabra cortada a los costados: la tarjeta ahora achica la letra hasta que entre. (2)
+  **Calendario** (`calendario.py`): 90 días de fechas de Latinoamérica con su fuente (celebraciones
+  con país de la página de cada día de es.wikipedia, el anexo de Venezuela y las fundaciones de
+  ciudades), en `bot_estado.calendario_conmemoraciones`; la escucha suma los días que faltan (3 por
+  vuelta) y cada lunes desde `historias_fb.calendario_hora` (08:00) le manda a Santi la lista de la
+  semana. CLI `calendario [--enviar]`. (3) **Historia de Facebook: el calendario primero**
+  (`locales.buenos`/`elegir`): las fechas que se recuerdan hoy (conmemoración, fundación o
+  `conmemora` de Haiku) van antes que cualquier otro hecho aunque Haiku no las vea como historia
+  humana, y entre ellas México, Colombia, Argentina, Perú, Chile y Venezuela; Sonnet las ve con
+  ★ CALENDARIO y el código las pone primero aunque no lo respete. (4) **El día exacto:**
+  `_subir_facebook` no sube una historia (ni la efeméride) de un día que ya pasó.
+  `tests/test_calidad_calendario.py`. 909 tests OK.
 - v0.85.0 (2026-11-10) — **Feedback de Santi sobre los 3 ejemplos.** (1) **Rots: aprobado y
   PRENDIDO** (`render.edicion_rots: true`). (2) Pequeña Historia (sigue APAGADO hasta que apruebe
   los ejemplos nuevos): **Claude (Sonnet) elige y verifica las fotos** (`claude.ClaudeClient.json`
@@ -2117,8 +2155,9 @@ aparte de Pequeña Historia a las 06:00 (`clips-bot-efemeride`) y la escucha de 
 
 ### Esperando respuesta de Santi (NO programar sin su OK)
 
-0. **Edición nueva (v0.84.0-v0.85.0): Rots APROBADO y prendido; Pequeña Historia esperando los
-   ejemplos rehechos** (historia de Facebook y efeméride, con Claude eligiendo las fotos y los
+0. **Edición nueva (v0.84.0-v0.86.0): Rots APROBADO y prendido; Pequeña Historia esperando los
+   ejemplos rehechos** (los de v0.85.0 salieron flojos: Hatuey con 2 tarjetas, Einstein con 4; desde
+   v0.86.0 un video así no se arma) (historia de Facebook y efeméride, con Claude eligiendo las fotos y los
    cambios de v0.85.0). Con su OK se prenden `efemerides.imagen_frase` (también activa Claude para
    las fotos) e `historias_fb.formato_corto`. Santi aprobó de Pequeña Historia: karaoke,
    movimiento de las fotos y el gancho primero. Decisiones de Santi: Pexels solo para objetos

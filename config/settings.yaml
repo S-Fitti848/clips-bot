@@ -510,6 +510,9 @@ historias_fb:
   # Formato corto (2026-11-10): 20-30 s, gancho primero, cortes de 1,5-2,5 s con movimiento, karaoke
   # e imagen = lo que se dice. APAGADO hasta que Santi apruebe el ejemplo.
   formato_corto: false
+  # Calendario de fechas de Latinoamérica (2026-11-11): cada lunes desde esta hora, la lista de la
+  # semana a Santi; esos días la historia va primero con la fecha que se recuerda (calendario.py).
+  calendario_hora: "08:00"
 
 # Lo que pega en otros canales → el clip original (pego.py, 2026-09-29). Una vez por día (y en
 # /buscar): Shorts de OTROS canales que nombran a cada streamer de las carpetas con diarios,

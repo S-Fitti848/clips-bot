@@ -392,6 +392,9 @@ class HistoriasFb:
     # Formato corto (Santi, 2026-11-10): 20-30 s, gancho primero, cortes de 1,5-2,5 s con movimiento,
     # karaoke e imagen = lo que se dice. Apagado hasta que apruebe el ejemplo.
     formato_corto: bool = False
+    # Calendario de fechas de Latinoamérica (Santi, 2026-11-11): cada lunes desde esta hora, la lista
+    # de la semana a Santi por Telegram (calendario.py).
+    calendario_hora: str = "08:00"
 
 
 @dataclass(frozen=True)

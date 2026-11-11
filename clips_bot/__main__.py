@@ -315,6 +315,11 @@ def _gemini(settings: Settings) -> GeminiClient | None:
                         cache_dir=DATA_DIR / "cache_gemini")
 
 
+class ErrorDefinitivo(str):
+    """Un error que no se arregla reintentando el mismo día (ningún hecho llega al 70 % de fotos
+    reales, Santi 2026-11-11): se avisa enseguida, sin los reintentos de las 07:00 y las 10:00."""
+
+
 class ErrorPasajero(str):
     """Un mensaje de error que viene de una falla que se arregla sola (Gemini con 503 después de
     todos sus reintentos). Es un str: los que solo lo muestran no se enteran de la diferencia."""
@@ -2648,6 +2653,7 @@ def escuchar_telegram(settings: Settings, timeout_poll: int = 50) -> int:
             _seguro(tg, str(chat_ultimo or ""), "el reintento de la efeméride",
                     _efe_reintento_tick, conn, tg, settings)
             _seguro(tg, str(chat_ultimo or ""), "la historia de Facebook", _fb_tick, conn, tg, settings)
+            _seguro(tg, str(chat_ultimo or ""), "el calendario", _calendario_tick, conn, tg, settings)
             _seguro(tg, str(chat_ultimo or ""), "el reintento de los clips",
                     _clips_reintento_tick, conn, settings)
             _seguro(tg, str(chat_ultimo or ""), "la búsqueda de lo que pegó",
@@ -3425,9 +3431,12 @@ def _efe_proponer(conn, tg: TelegramClient, chats: list[str], dia, settings: Set
                         tope_fotos_s=settings.efemerides.tope_fotos_min * 60,
                         hablado=settings.efemerides.guion_hablado,
                         imagen_frase=settings.efemerides.imagen_frase,
-                        elector=_elector_fotos(settings))
+                        elector=_elector_fotos(settings),
+                        elector_reintento=_elector_fotos(settings, reintento=True))
     except (NarrarError, ef.WikiError, GeminiError) as e:
         error = f"No salió la efeméride: {html.escape(str(e)[:400])}"
+        if isinstance(e, ef.SinFotosReales):
+            return ErrorDefinitivo(error)
         return ErrorPasajero(error) if getattr(e, "pasajero", False) else error
     estado = {"propuesta": p.__dict__, "carpeta": str(carpeta), "chat_id": chats[0]}
     for chat in chats:
@@ -3437,11 +3446,13 @@ def _efe_proponer(conn, tg: TelegramClient, chats: list[str], dia, settings: Set
 
 # ---- /historia: el video aparte de Facebook (locales.py, prueba de 2 semanas desde el 2026-11-10) --
 
-def _elector_fotos(settings: Settings):
+def _elector_fotos(settings: Settings, reintento: bool = False):
     """Sonnet para elegir y verificar las fotos de Pequeña Historia (Santi, 2026-11-10: "así no
     dependemos de la cuota gratis"; Gemini queda de respaldo). Va con la regla de imagen = lo que se
-    dice (`efemerides.imagen_frase`); apagada, o sin ANTHROPIC_API_KEY, None (Gemini, como antes)."""
-    if not settings.efemerides.imagen_frase:
+    dice (`efemerides.imagen_frase`); apagada, o sin ANTHROPIC_API_KEY, None (Gemini, como antes).
+    `reintento`: la segunda búsqueda del control de calidad, que va SIEMPRE con Claude (Santi,
+    2026-11-11: "primero reintentá buscar fotos con Claude")."""
+    if not settings.efemerides.imagen_frase and not reintento:
         return None
     from . import claude
 
@@ -3479,7 +3490,8 @@ def _fb_proponer(conn, tg: TelegramClient, chats: list[str], dia, settings: Sett
                              tope_fotos_s=settings.efemerides.tope_fotos_min * 60,
                              imagen_frase=settings.efemerides.imagen_frase,
                              corto=settings.historias_fb.formato_corto,
-                             elector=_elector_fotos(settings))
+                             elector=_elector_fotos(settings),
+                             elector_reintento=_elector_fotos(settings, reintento=True))
     except (NarrarError, ef.WikiError, GeminiError) as e:
         return f"No salió la historia de Facebook: {html.escape(str(e)[:400])}"
     estado = {"propuesta": p.__dict__, "carpeta": str(carpeta), "chat_id": chats[0]}
@@ -3509,6 +3521,37 @@ def _historia(conn, tg: TelegramClient, chat_id: str, args: list, settings: Sett
         return _fb_proponer(conn, tg, [chat_id], dia, settings, hecho=tema)
     finally:
         db.soltar_turno(conn, db.RECURSO_PESADO, turno, VENCIMIENTO_PESADO_S)
+
+
+CAL_SEMANA = "calendario_semana_enviada"   # bot_estado: el lunes (ISO) cuya lista ya se mandó
+CAL_POR_VUELTA = 3      # días del calendario que arma cada vuelta de la escucha (~6 s cada uno)
+
+
+def _calendario_tick(conn, tg: TelegramClient, settings: Settings, ahora=None, wiki=None) -> None:
+    """Corre en cada vuelta de la escucha (con la historia de Facebook prendida): suma al calendario
+    de 90 días los que falten, de a pocos, y cada lunes desde historias_fb.calendario_hora le manda a
+    Santi la lista de la semana (una vez)."""
+    from . import calendario
+    from . import efemerides as ef
+
+    cfg = settings.historias_fb
+    if not cfg.activo:
+        return
+    ahora = ahora or datetime.now(AR)
+    hoy = ahora.date()
+    lunes = hoy - timedelta(days=hoy.weekday())
+    if calendario.falta(conn, hoy, calendario.DIAS) and not db.hay_trabajo_pesado(conn, VENCIMIENTO_PESADO_S):
+        calendario.actualizar(conn, wiki or ef.Wiki(), hoy, max_nuevos=CAL_POR_VUELTA)
+    if hoy.weekday() != 0 or ahora.strftime("%H:%M") < cfg.calendario_hora \
+            or db.get_valor(conn, CAL_SEMANA) == lunes.isoformat():
+        return
+    if calendario.falta(conn, lunes, 7):
+        return      # que termine de armar la semana antes de mandarla
+    db.set_valor(conn, CAL_SEMANA, lunes.isoformat())
+    from .telegram import partir_html
+
+    for parte in partir_html(calendario.texto_semana(conn, lunes)):
+        tg.send_message(DUENO, parte)
 
 
 FB_DIA = "historias_fb_dia"   # bot_estado: el día (AR) en que ya se propuso la de Facebook
@@ -3570,7 +3613,10 @@ def _efe_horas_que_faltan(horas, ahora: datetime) -> list[str]:
 
 def _con_reintento_pasajero(horas: list[str], error, settings: Settings, ahora: datetime) -> list[str]:
     """Si el error es pasajero (Gemini caído), suma un intento dentro de una hora, en vez de avisar
-    la falla: las fotos ya están en la caché, así que el reintento solo depende de Gemini."""
+    la falla: las fotos ya están en la caché, así que el reintento solo depende de Gemini. Si es
+    definitivo (sin fotos reales), ningún reintento más: se avisa ya."""
+    if isinstance(error, ErrorDefinitivo):
+        return []
     if not isinstance(error, ErrorPasajero):
         return horas
     h = _en_un_rato(settings, ahora)
@@ -3784,11 +3830,13 @@ def _efe_corregir(conn, tg: TelegramClient, t: dict, token: str, settings: Setti
             if sonnet is None:
                 return tg.send_message(t["chat_id"], "Falta ANTHROPIC_API_KEY en el .env.")
             p = locales.rehacer(p, ef.Wiki(), sonnet, gemini, Path(estado["carpeta"]), t["texto"],
-                                elector=_elector_fotos(settings))
+                                elector=_elector_fotos(settings),
+                                elector_reintento=_elector_fotos(settings, reintento=True))
         else:
             p = ef.rehacer_guion(p, ef.Wiki(), gemini, Path(estado["carpeta"]), t["texto"],
                                  hablado=settings.efemerides.guion_hablado,
-                                 elector=_elector_fotos(settings))
+                                 elector=_elector_fotos(settings),
+                                 elector_reintento=_elector_fotos(settings, reintento=True))
     except (NarrarError, GeminiError, ef.WikiError) as e:
         db.set_valor(conn, f"{ESPERA_EFE}:{t['user_id']}", token)   # que pueda probar otra vez
         return tg.send_message(t["chat_id"], f"No salió: {html.escape(str(e)[:300])}\n"
@@ -3912,6 +3960,30 @@ def cmd_efemeride(args: argparse.Namespace) -> int:
     (carpeta / f"{meta['clip_id']}.json").write_text(json.dumps(meta, ensure_ascii=False, indent=2),
                                                     encoding="utf-8")
     print(f"\nListo: {meta['salida']} ({meta['duracion_s']} s)")
+    return 0
+
+
+def cmd_calendario(args: argparse.Namespace) -> int:
+    """Arma (o completa) el calendario y muestra la semana; con --enviar la manda a Santi."""
+    from . import calendario
+    from . import efemerides as ef
+
+    hoy = datetime.now(AR).date()
+    conn = db.connect(DB_PATH)
+    try:
+        n = calendario.actualizar(conn, ef.Wiki(), hoy, dias=args.dias, avisar=print)
+        lunes = _fecha_efemeride(args.desde) if args.desde else hoy - timedelta(days=hoy.weekday())
+        texto = calendario.texto_semana(conn, lunes)
+        print(f"{n} días armados\n")
+        print(html.unescape(re.sub(r"<[^>]+>", "", texto)))
+        if args.enviar:
+            from .telegram import partir_html
+
+            tg = TelegramClient(env("TELEGRAM_BOT_TOKEN"))
+            for parte in partir_html(texto):
+                tg.send_message(DUENO, parte)
+    finally:
+        conn.close()
     return 0
 
 
@@ -4528,6 +4600,11 @@ def _subir_facebook(conn, settings: Settings, meta: dict, ahora: datetime | None
     if any(s["canal"] == "facebook" for s in db.subidas(conn, ("programada", "publicada"), clip_id=clip_id)):
         return ""
     hoy = (ahora or datetime.now(timezone.utc)).astimezone(AR)
+    # El día exacto de la fecha, nunca después (Santi, 2026-11-11): un "un día como hoy" de ayer no sale.
+    fecha = str((meta.get("efemeride") or {}).get("fecha") or "")
+    if fecha and fecha < hoy.date().isoformat():
+        return (f"📘 No lo subo a Facebook: es del {fecha[8:10]}/{fecha[5:7]} y hoy ya es otro día "
+                "(sale el día exacto, nunca después).")
     cuando = youtube.proximo_horario(hora or settings.facebook.hora_efemeride
                                      or settings.efemerides.hora_publicacion, ahora=hoy)
     if cuando.date() != hoy.date():          # "un día como hoy": nunca mañana
@@ -5603,6 +5680,13 @@ def main(argv: list[str] | None = None) -> int:
     ph.add_argument("--contar-mes", type=int, default=0,
                     help="contar cuántas historias locales buenas hay por día, N días desde --fecha")
     ph.set_defaults(func=cmd_historia_fb)
+
+    pc = sub.add_parser("calendario", help="arma el calendario de fechas de Latinoamérica (90 días) y "
+                                            "muestra la semana")
+    pc.add_argument("--desde", help="día/mes del lunes a mostrar; default el de esta semana")
+    pc.add_argument("--dias", type=int, default=90, help="cuántos días armar desde hoy")
+    pc.add_argument("--enviar", action="store_true", help="manda la semana a Santi por Telegram")
+    pc.set_defaults(func=cmd_calendario)
 
     ph2 = sub.add_parser("hashtags-rots", help="pone los hashtags (y la categoría 22, sin tags) a los "
                                                "Shorts de Rots subidos por la API que no los tienen")

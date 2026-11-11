@@ -96,38 +96,53 @@ def _secciones(wikitexto: str) -> dict[str, str]:
     return out
 
 
+def titulo_dia(dia: date) -> str:
+    return f"{dia.day} de {ef.MESES[dia.month - 1]}"
+
+
+def _wikitexto_dia(wiki: ef.Wiki, dia: date) -> str:
+    d = wiki._get(ef.API.format(lang="es"), {"action": "parse", "page": titulo_dia(dia), "prop": "wikitext",
+                                              "format": "json", "formatversion": 2, "redirects": 1})
+    texto = (d.get("parse") or {}).get("wikitext") or ""
+    return texto.get("*", "") if isinstance(texto, dict) else texto
+
+
+def celebraciones(secs: dict[str, str]) -> list[dict]:
+    """Las líneas de las secciones de celebraciones del día: {pais (None = de afuera o sin país),
+    texto, enlaces, linea}."""
+    out = []
+    for nombre, cuerpo in secs.items():
+        if not nombre.startswith(("celebraciones", "fiestas", "conmemoraciones")):
+            continue
+        pais = None
+        for linea in cuerpo.splitlines():
+            m = re.match(r"^\*\s*\{\{([A-Z]{3})\}\}", linea.strip())
+            if m:
+                pais = PAISES_PLANTILLA.get(m.group(1))    # None = país de afuera
+                continue
+            if not linea.lstrip().startswith("*") or len(_limpiar(linea.lstrip("*: "))) <= 3:
+                continue
+            out.append({"pais": pais, "texto": _limpiar(linea.lstrip("*: ")), "enlaces": _enlaces(linea)})
+    return out
+
+
 def leer_dia(wiki: ef.Wiki, dia: date) -> tuple[list[Candidato], list[str], set[str]]:
     """(candidatos, conmemoraciones del día en texto, personas homenajeadas ese día). Los
     candidatos todavía sin filtrar."""
-    titulo = f"{dia.day} de {ef.MESES[dia.month - 1]}"
-    d = wiki._get(ef.API.format(lang="es"), {"action": "parse", "page": titulo, "prop": "wikitext",
-                                              "format": "json", "formatversion": 2, "redirects": 1})
-    texto = (d.get("parse") or {}).get("wikitext") or ""
-    if isinstance(texto, dict):
-        texto = texto.get("*", "")
-    secs = _secciones(texto)
+    secs = _secciones(_wikitexto_dia(wiki, dia))
     conmemoraciones, homenajeados = [], set()
     out: list[Candidato] = []
-    for nombre, cuerpo in secs.items():
-        if nombre.startswith(("celebraciones", "fiestas", "conmemoraciones")):
-            pais = None
-            for linea in cuerpo.splitlines():
-                m = re.match(r"^\*\s*\{\{([A-Z]{3})\}\}", linea.strip())
-                if m:
-                    pais = PAISES_PLANTILLA.get(m.group(1))    # None = país de afuera
-                    continue
-                if not linea.lstrip().startswith("*") or len(_limpiar(linea.lstrip("*: "))) <= 3:
-                    continue
-                limpio = _limpiar(linea.lstrip("*: "))
-                conmemoraciones.append(((pais + ": ") if pais else "") + limpio[:220])
-                homenajeados.update(_enlaces(linea))
-                # Fuente 1 (2026-11-10): la conmemoración de un lugar que trae el año del hecho
-                # ("Independencia de Ambato… ocurrida el 12 de noviembre de 1820") es un candidato
-                # aunque Acontecimientos no tenga la línea.
-                anio = anio_celebracion(limpio, dia)
-                if anio and (pais or LUGAR_RE.search(limpio)) and _enlaces(linea):
-                    out.append(Candidato("celebracion", anio, ((pais + ": ") if pais else "") + limpio[:400],
-                                         _enlaces(linea)))
+    for c in celebraciones(secs):
+        pais, limpio = c["pais"], c["texto"]
+        conmemoraciones.append(((pais + ": ") if pais else "") + limpio[:220])
+        homenajeados.update(c["enlaces"])
+        # Fuente 1 (2026-11-10): la conmemoración de un lugar que trae el año del hecho
+        # ("Independencia de Ambato… ocurrida el 12 de noviembre de 1820") es un candidato
+        # aunque Acontecimientos no tenga la línea.
+        anio = anio_celebracion(limpio, dia)
+        if anio and (pais or LUGAR_RE.search(limpio)) and c["enlaces"]:
+            out.append(Candidato("celebracion", anio, ((pais + ": ") if pais else "") + limpio[:400],
+                                 c["enlaces"]))
     for nombre, cuerpo in secs.items():
         seccion = next((s for s in ("acontecimientos", "nacimientos", "fallecimientos")
                         if nombre.startswith(s)), None)
@@ -414,13 +429,34 @@ def clasificar(haiku, cands: list[Candidato], conmemoraciones: list[str]) -> lis
     return cands
 
 
+# Los países con más público (Santi, 2026-11-11), en este orden.
+PAISES_PRIORIDAD = ("México", "Colombia", "Argentina", "Perú", "Chile", "Venezuela")
+
+
+def prioridad_pais(pais: str | None) -> int:
+    """0 = México … 5 = Venezuela; el resto, 6."""
+    p = _sin_tildes(str(pais or "")).strip()
+    for k, x in enumerate(PAISES_PRIORIDAD):
+        if _sin_tildes(x) in p:
+            return k
+    return len(PAISES_PRIORIDAD)
+
+
+def en_calendario(c: Candidato) -> bool:
+    """¿Es una fecha del calendario de hoy? Una conmemoración (con el año del hecho), un aniversario de
+    fundación, o un hecho que Haiku dice que se conmemora hoy."""
+    return c.seccion in ("celebracion", "fundacion") or bool(str(c.clasif.get("conmemora") or "").strip())
+
+
 def buenos(cands: list[Candidato]) -> list[Candidato]:
-    """Historias humanas con un lugar concreto, sin tragedias solas, de mejor a peor (los que
-    coinciden con una conmemoración del día, primero)."""
-    ok = [c for c in cands if c.clasif.get("humana") and str(c.clasif.get("lugar") or "").strip()
-          and not c.clasif.get("tragedia_sola")]
-    return sorted(ok, key=lambda c: (bool(c.clasif.get("conmemora")), int(c.clasif.get("interes") or 0)),
-                  reverse=True)
+    """Historias con un lugar concreto, sin tragedias solas, de mejor a peor. Calendario (Santi,
+    2026-11-11: "esos días tienen prioridad sobre cualquier otro hecho"): primero las fechas que se
+    recuerdan hoy (aunque Haiku no las vea como historia humana), y entre ellas los países con más
+    público; después, el interés."""
+    ok = [c for c in cands if (c.clasif.get("humana") or en_calendario(c))
+          and str(c.clasif.get("lugar") or "").strip() and not c.clasif.get("tragedia_sola")]
+    return sorted(ok, key=lambda c: (not en_calendario(c), prioridad_pais(c.clasif.get("pais")),
+                                     -int(c.clasif.get("interes") or 0)))
 
 
 # ---- 3. Sonnet elige -------------------------------------------------------------------------
@@ -433,7 +469,9 @@ gente de ese lugar se siente identificada, la comparte y cuenta sus recuerdos.
 Ordená del mejor al peor (hasta 8) los que más se parecen a eso:
 - gente concreta que hizo algo notable (héroes de pueblo, gente común, anécdotas, momentos
   emotivos), en un pueblo o ciudad que se pueda nombrar;
-- mejor si HOY ese lugar lo conmemora (aniversario, día nacional): es cuando la gente lo comparte;
+- los marcados ★ CALENDARIO se recuerdan HOY (aniversario, fundación, día nacional, fiesta del
+  lugar): van SIEMPRE primero, antes que cualquier otro, y entre ellos primero México, Colombia,
+  Argentina, Perú, Chile y Venezuela (es cuando la gente lo comparte);
 - que se pueda contar en 40 segundos y se entienda sin saber historia;
 - nada de tragedias solas (muertes, desastres, crímenes sin un acto heroico), ni política
   partidaria, ni guerras recientes.
@@ -457,7 +495,8 @@ def elegir(sonnet, cands: list[Candidato], cuantos: int = 8) -> list[tuple[Candi
     lineas = []
     for i, c in enumerate(cands):
         k = c.clasif
-        lineas.append(f"{i + 1}. ({c.anio}) {c.texto[:300]}\n   lugar: {k.get('lugar')}, {k.get('region')}, "
+        marca = "★ CALENDARIO " if en_calendario(c) else ""
+        lineas.append(f"{i + 1}. {marca}({c.anio}) {c.texto[:300]}\n   lugar: {k.get('lugar')}, {k.get('region')}, "
                       f"{k.get('pais')} · tipo: {k.get('tipo')} · conmemora hoy: {k.get('conmemora') or 'no'}"
                       f"\n   artículos: {' | '.join(c.paginas[:8])}")
     d = json.loads(sonnet.json(SISTEMA_ELEGIR, "\n".join(lineas), SCHEMA_ELEGIR, temperatura=0.2))
@@ -471,6 +510,8 @@ def elegir(sonnet, cands: list[Candidato], cuantos: int = 8) -> list[tuple[Candi
         lug = x.get("articulo_lugar") if x.get("articulo_lugar") in c.paginas else ""
         vistos.add(n)
         out.append((c, art, lug if lug != art else ""))
+    # El calendario manda aunque Sonnet no lo respete (sorted es estable: dentro de cada grupo, su orden).
+    out.sort(key=lambda x: not en_calendario(x[0]))
     return out[:cuantos]
 
 
@@ -556,7 +597,8 @@ def local_de(c: Candidato) -> dict:
 
 def proponer(wiki: ef.Wiki, sonnet, haiku, gemini, dia: date, carpeta: Path, avisar=log.info,
              videos: bool = False, tope_fotos_s: float | None = None, hecho: str = "",
-             imagen_frase: bool = False, corto: bool = False, elector=None) -> ef.Propuesta:
+             imagen_frase: bool = False, corto: bool = False, elector=None,
+             elector_reintento=None) -> ef.Propuesta:
     """La propuesta del día para Facebook. Mismo armado que la efeméride (fotos, hoja, aprobación),
     con otra fuente de hechos y Claude para el texto."""
     from . import fuentes_fotos
@@ -576,6 +618,9 @@ def proponer(wiki: ef.Wiki, sonnet, haiku, gemini, dia: date, carpeta: Path, avi
         raise ef.NarrarError("Ningún hecho de hoy tiene un lugar de Latinoamérica" +
                              (f" (con «{hecho}»)" if hecho else ""))
     clasificar(haiku, cands, conmemoraciones)
+    for c in cands:     # un aniversario de fundación: el lugar es la ciudad misma
+        if c.seccion == "fundacion" and c.clasif and not str(c.clasif.get("lugar") or "").strip():
+            c.clasif["lugar"] = c.paginas[0]
     lista = buenos(cands)
     if hecho:
         # Lo eligió una persona (/historia 10/11 Epecuén, o el fijado para el día): Haiku no lo
@@ -615,12 +660,13 @@ def proponer(wiki: ef.Wiki, sonnet, haiku, gemini, dia: date, carpeta: Path, avi
                                   validar_extra=validar_lugar(lugar, corto), contexto=contexto_de(c),
                                   corto=corto)
             g.imagen_frase = imagen_frase or corto
-            pool, g = ef.fotos_para_guion(wiki, gemini, e, g, fotos, carpeta, avisar, videos=videos,
-                                          tope_s=tope_fotos_s, elector=elector)
+            pool, g = ef.fotos_con_control(wiki, gemini, e, g, fotos, carpeta, avisar, videos=videos,
+                                           tope_s=tope_fotos_s, elector=elector,
+                                           elector_reintento=elector_reintento)
         except ef.PocasFotos as pocas:
             avisar(f"  {pocas}")
             fallas.append(f"{e.anio}: {pocas}")
-            if respaldo is None or pocas.disponibles > respaldo[3]:
+            if ef.respaldo_sirve(pocas) and (respaldo is None or pocas.disponibles > respaldo[3]):
                 respaldo = (e, fuente, pocas, pocas.disponibles, c)
             continue
         except ef.NarrarError as err:
@@ -637,11 +683,12 @@ def proponer(wiki: ef.Wiki, sonnet, haiku, gemini, dia: date, carpeta: Path, avi
         return ef.Propuesta(fecha=dia.isoformat(), evento=e.a_dict(), fotos=[f.a_dict() for f in pocas.pool],
                             reserva=[], guion=pocas.guion.a_dict(), fuente=fuente[:20000],
                             descartes=descartes, destino="facebook", local=local_de(c))
-    raise ef.NarrarError("Ninguna historia de hoy salió: " + " | ".join(fallas)[:600])
+    raise ef.SinFotosReales("Ninguna historia de hoy salió, no armo un video malo: "
+                            + " | ".join(fallas)[:600])
 
 
 def rehacer(p: ef.Propuesta, wiki: ef.Wiki, sonnet, gemini, carpeta: Path, correccion: str,
-            avisar=log.info, elector=None) -> ef.Propuesta:
+            avisar=log.info, elector=None, elector_reintento=None) -> ef.Propuesta:
     """✏️ del video de Facebook: el guion de nuevo con Sonnet (mismas reglas del lugar) y las fotos
     de sus frases con Gemini; el pool de antes se conserva."""
     e = ef.Evento(**p.evento)
@@ -655,13 +702,17 @@ def rehacer(p: ef.Propuesta, wiki: ef.Wiki, sonnet, gemini, carpeta: Path, corre
     g.imagen_frase = anterior.imagen_frase
     fotos, _ = ef.fotos_del_evento(wiki, e)
     try:
-        pool, g = ef.fotos_para_guion(wiki, gemini, e, g, fotos, carpeta, avisar,
-                                      pool=[ef.Foto.de_dict(f) for f in p.fotos],
-                                      descartadas=set(anterior.descartadas), videos=anterior.con_videos,
-                                      elector=elector)
+        pool, g = ef.fotos_con_control(wiki, gemini, e, g, fotos, carpeta, avisar,
+                                       pool=[ef.Foto.de_dict(f) for f in p.fotos],
+                                       descartadas=set(anterior.descartadas), videos=anterior.con_videos,
+                                       elector=elector, elector_reintento=elector_reintento)
     except ef.PocasFotos as pocas:
+        if not ef.respaldo_sirve(pocas):
+            raise ef.SinFotosReales(f"{pocas}; ni con la segunda búsqueda llega al 70 % de fotos reales")
         pool, g = pocas.pool, pocas.guion
         g.sin_alternativa = anterior.sin_alternativa
+    except ef.FotosInsuficientes as f:
+        raise ef.SinFotosReales(f"{f}, también con la segunda búsqueda: no armo el video") from f
     return ef.Propuesta(fecha=p.fecha, evento=p.evento, fotos=[f.a_dict() for f in pool],
                         reserva=p.reserva, guion=g.a_dict(), fuente=p.fuente, descartes=p.descartes,
                         destino=p.destino, local=p.local)

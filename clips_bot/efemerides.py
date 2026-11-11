@@ -869,6 +869,10 @@ class Guion:
     central: list[bool] = field(default_factory=list)   # cuenta el hecho mismo: foto real obligatoria
     imagen_frase: bool = False
     corto: bool = False
+    # Control de calidad (Santi, 2026-11-11): qué parte del tiempo va con fotos reales (no tarjetas) y
+    # si es la segunda búsqueda (con Claude, sin la regla de época, documentos del hecho permitidos).
+    fotos_reales: float = 0.0
+    segunda_busqueda: bool = False
 
     @property
     def texto(self) -> str:
@@ -1145,6 +1149,11 @@ def fraccion_texto(ruta: Path) -> float:
     return area / float(im.width * im.height or 1)
 
 
+# Segunda búsqueda (2026-11-11): en una frase central valen el documento o el dibujo del hecho mismo
+# (los planos de la patente del refrigerador de Einstein salían como "diagrama").
+TIPOS_DEL_HECHO = ("documento", "diagrama", "planilla")
+
+
 def sirve_para(frase: str, tipo: str, mucho_texto: bool, otro_idioma: bool) -> bool:
     """¿Esta imagen puede ir en esta frase? Nunca con texto en otro idioma; un tipo que no es foto
     (o con mucho texto) solo si la frase habla justo de eso."""
@@ -1197,6 +1206,8 @@ def es_central(g: "Guion", i: int) -> bool:
 def sin_epoca(g: "Guion") -> list[bool]:
     """Por frase, si la regla de época NO aplica: las que hablan de hoy y, con imagen = lo que se
     dice, las que nombran algo al pasar (Santi, 2026-11-10: "un Pikachu sirve")."""
+    if g.segunda_busqueda:
+        return [True] * len(g.frases)
     return [(i < len(g.presente) and g.presente[i]) or (g.imagen_frase and not es_central(g, i))
             for i in range(len(g.frases))]
 
@@ -1251,7 +1262,11 @@ def elegir_fotos(cliente, g: Guion, pool: list[Foto], candidatas: list[list[int]
         suyas = propias[i - 1] if propias else []
         hoy = " (habla de hoy)" if i - 1 < len(g.presente) and g.presente[i - 1] else ""
         if g.imagen_frase:
-            if es_central(g, i - 1):
+            if es_central(g, i - 1) and g.segunda_busqueda:
+                hoy += (" (CENTRAL, segunda búsqueda: sirve una foto REAL del protagonista, del lugar,"
+                        " de un monumento o del documento o dibujo del hecho, como la patente o el acta,"
+                        " aunque sea de otra época; nunca una foto genérica o de stock)")
+            elif es_central(g, i - 1):
                 hoy += " (CENTRAL: tiene que ser una foto real del hecho o del lugar)"
             else:
                 obj = g.objeto[i - 1] if i - 1 < len(g.objeto) else ""
@@ -1336,9 +1351,12 @@ def elegir_fotos(cliente, g: Guion, pool: list[Foto], candidatas: list[list[int]
         for i, rk in enumerate(rankings):
             frase = f"{g.frases[i]} {g.mostrar[i] if i < len(g.mostrar) else ''}"
             antes = list(rk)
+            doc_ok = g.segunda_busqueda and es_central(g, i)
             rankings[i] = [x for x in rk if sirve_para(frase, tipos.get(x, ("foto", False))[0],
                                                      ocr.get(x, 0.0) > UMBRAL_TEXTO_OCR,
-                                                     tipos.get(x, ("foto", False))[1])]
+                                                     tipos.get(x, ("foto", False))[1])
+                           or (doc_ok and tipos.get(x, ("foto", False))[0] in TIPOS_DEL_HECHO
+                               and not tipos.get(x, ("foto", False))[1])]
             for x in antes:
                 if x not in rankings[i]:
                     t, idi = tipos.get(x, ("foto", False))
@@ -1437,8 +1455,11 @@ def fotos_para_guion(wiki: Wiki, cliente, e: Evento, g: Guion, fotos_articulo: l
                      carpeta: Path, avisar=log.info, pool: list[Foto] | None = None,
                      descartadas: set[int] | None = None, videos: bool = False,
                      buscador=None, fuentes=None,
-                     tope_s: float | None = None, elector=None) -> tuple[list[Foto], Guion]:
-    """Busca candidatas para cada frase (las del artículo + Commons con su `mostrar`), las baja,
+                     tope_s: float | None = None, elector=None,
+                     segunda: bool = False) -> tuple[list[Foto], Guion]:
+    """`segunda`: la segunda búsqueda del control de calidad (ver fotos_con_control).
+
+    Busca candidatas para cada frase (las del artículo + Commons con su `mostrar`), las baja,
     Gemini elige, y arma la foto de cada frase con las reglas de `ilustrar`. Devuelve el pool (las
     fotos que se bajaron, en su numeración) y el guion con `fotos`, `ranking` y `descartadas`.
 
@@ -1459,7 +1480,16 @@ def fotos_para_guion(wiki: Wiki, cliente, e: Evento, g: Guion, fotos_articulo: l
             pool.append(f)
         return [por_archivo[f.archivo] for f in fotos if f.archivo in por_archivo][:cuantas]
 
+    g.segunda_busqueda = segunda
+    g.tarjetas = []
     del_hecho = [i for i in sumar(fotos_articulo, FOTOS_ARTICULO_MAX) if i not in descartadas]
+    if segunda:
+        # Fotos reales del protagonista y del lugar: Commons con el título de cada artículo del hecho.
+        for titulo in e.paginas[:3]:
+            nuevas, _ = filtrar_infos(wiki, "commons", wiki.buscar_commons(titulo), f"Commons: {titulo}",
+                                      e.anio)
+            del_hecho += [i for i in sumar(nuevas, FOTOS_BUSQUEDA_MAX)
+                          if i not in descartadas and i not in del_hecho]
     propias, descartes = [], {}
     from . import fuentes_fotos
     from .videos_libres import consultas as achicar_consultas, es_de_espacio, sin_anios
@@ -1524,14 +1554,15 @@ def fotos_para_guion(wiki: Wiki, cliente, e: Evento, g: Guion, fotos_articulo: l
     # Regla fija de época: las fotos sacadas más de MARGEN_EPOCA años después del hecho no son
     # candidatas de las frases del pasado. Las del artículo del hecho quedan de respaldo igual
     # (de_reserva): antes una del artículo repetida que una moderna.
-    modernas = {i for i, f in enumerate(pool) if f.anio and f.anio > e.anio + MARGEN_EPOCA}
+    modernas = set() if segunda else \
+        {i for i, f in enumerate(pool) if f.anio and f.anio > e.anio + MARGEN_EPOCA}
     presente = [i < len(g.presente) and g.presente[i] for i in range(len(g.frases))]
     avisar(f"  fotos: {len(pool)} bajadas ({len(del_hecho)} del artículo, {len(modernas)} de más de "
            f"{MARGEN_EPOCA} años después de {e.anio}); descartes {descartes}")
     # Cada frase puede elegir CUALQUIER foto del pool, empezando por las de su búsqueda: en la
     # prueba del 28/09 la frase "el hongo mataba a las bacterias" solo podía elegir entre lo que
     # trajo su búsqueda (mala) y no las placas de Petri que había traído otra frase.
-    todas = [i for i in range(len(pool)) if i not in descartadas]
+    todas = [i for i in range(len(pool)) if i not in descartadas and not es_tarjeta(pool[i])]
     # Capturas de páginas web o redes: solo para las frases que hablan de una página (2026-10-02).
     capturas = {i for i, f in enumerate(pool) if _CAPTURA.search(f"{f.archivo} {f.epigrafe}")}
     de_web = [bool(_HABLA_DE_WEB.search(f"{g.frases[i]} {g.mostrar[i] if i < len(g.mostrar) else ''}"))
@@ -1610,7 +1641,74 @@ def fotos_para_guion(wiki: Wiki, cliente, e: Evento, g: Guion, fotos_articulo: l
         raise NarrarError("las fotos no alcanzan: " + "; ".join(errores))
     if g.minimo_fotos < ilustrar.MIN_FOTOS_ABSOLUTO:
         raise PocasFotos(pool, g, disponibles)
+    control_calidad(pool, g, plan_estimado(g, len(pool)))
     return pool, g
+
+
+# ---- control de calidad (Santi, 2026-11-11) --------------------------------------------------
+# "Si menos del 70 % del tiempo tiene fotos reales (no tarjetas), NO lo armes. Primero reintentá
+# buscar fotos con Claude; si sigue sin alcanzar, elegí otro hecho del día. Si ninguno alcanza,
+# avisame." El ejemplo del refrigerador de Einstein (10/11) pasó ~27 de 37 s con tarjetas.
+UMBRAL_FOTOS_REALES = 0.70
+
+
+def es_tarjeta(f) -> bool:
+    """Una tarjeta (texto sobre una foto difuminada), como Foto o como dict de una Propuesta."""
+    articulo = f.get("articulo") if isinstance(f, dict) else getattr(f, "articulo", "")
+    archivo = f.get("archivo") if isinstance(f, dict) else getattr(f, "archivo", "")
+    return articulo == "tarjeta" or str(archivo or "").startswith("tarjeta:")
+
+
+def fraccion_real(pool: list, plan: list[tuple[int, int, float]]) -> float:
+    """Qué parte del tiempo del plan va con una foto real o un video (no una tarjeta)."""
+    total = sum(s for *_, s in plan)
+    if total <= 0:
+        return 0.0
+    reales = sum(s for _, f, s in plan if f == VIDEO or (0 <= f < len(pool) and not es_tarjeta(pool[f])))
+    return reales / total
+
+
+class FotosInsuficientes(NarrarError):
+    """Menos del UMBRAL_FOTOS_REALES del tiempo con fotos reales: ese hecho no se arma."""
+
+    def __init__(self, pool: list, g: "Guion", pct: float):
+        super().__init__(f"solo {pct * 100:.0f} % del tiempo con fotos reales (mínimo "
+                         f"{UMBRAL_FOTOS_REALES * 100:.0f} %)")
+        self.pool, self.guion, self.pct = pool, g, pct
+
+
+def control_calidad(pool: list, g: "Guion", plan: list[tuple[int, int, float]]) -> float:
+    pct = fraccion_real(pool, plan)
+    g.fotos_reales = round(pct, 3)
+    if pct < UMBRAL_FOTOS_REALES:
+        raise FotosInsuficientes(pool, g, pct)
+    return pct
+
+
+def fotos_con_control(wiki: "Wiki", cliente, e: "Evento", g: "Guion", fotos_articulo: list,
+                      carpeta: Path, avisar=log.info, elector=None, elector_reintento=None,
+                      **k) -> tuple[list, "Guion"]:
+    """fotos_para_guion con el control de calidad: si no llega al 70 % de fotos reales (o a 4 fotos),
+    una SEGUNDA búsqueda con Claude: más fotos reales (Commons con el título de cada artículo del
+    hecho), sin la regla de época, y en las frases centrales también el retrato del protagonista, el
+    lugar, un monumento o el documento del hecho. Si tampoco llega, la excepción sigue de largo
+    (FotosInsuficientes, o PocasFotos) y quien llama pasa al hecho siguiente."""
+    try:
+        return fotos_para_guion(wiki, cliente, e, g, fotos_articulo, carpeta, avisar, elector=elector, **k)
+    except (FotosInsuficientes, PocasFotos) as err:
+        avisar(f"  {err}: segunda búsqueda de fotos con Claude")
+        anterior, pool_antes = err.guion, err.pool
+    k = {**k, "pool": pool_antes, "descartadas": set(anterior.descartadas)}
+    return fotos_para_guion(wiki, cliente, e, anterior, fotos_articulo, carpeta, avisar,
+                            elector=elector_reintento or elector, segunda=True, **k)
+
+
+def respaldo_sirve(pocas: "PocasFotos") -> bool:
+    """El hecho de respaldo (el de más fotos, cuando ninguno llegó a 4) solo si igual pasa el 70 %."""
+    try:
+        return fraccion_real(pocas.pool, plan_estimado(pocas.guion, len(pocas.pool))) >= UMBRAL_FOTOS_REALES
+    except (IndexError, ValueError, NarrarError):
+        return False
 
 
 def texto_tarjeta(g: Guion, i: int, anio: int, solo_clave: bool = False) -> str | None:
@@ -1639,6 +1737,10 @@ def tarjeta(base: Foto, texto: str, salida: Path) -> Foto:
     tam = 260 if len(texto) <= 4 else max(90, int(1700 / max(len(texto), 1)))
     fuente = _fuente_ttf(tam)
     caja = d.textbbox((0, 0), texto, font=fuente, stroke_width=8)
+    while caja[2] - caja[0] > W - 140 and tam > 40:     # que entre con margen (HELADERA se cortaba)
+        tam = int(tam * 0.9)
+        fuente = _fuente_ttf(tam)
+        caja = d.textbbox((0, 0), texto, font=fuente, stroke_width=8)
     x = (W - (caja[2] - caja[0])) // 2 - caja[0]
     y = (H - (caja[3] - caja[1])) // 2 - caja[1]
     d.text((x, y), texto, font=fuente, fill=(255, 255, 255), stroke_width=8, stroke_fill=(0, 0, 0))
@@ -1647,6 +1749,10 @@ def tarjeta(base: Foto, texto: str, salida: Path) -> Foto:
     return Foto(archivo=f"tarjeta:{salida.stem}", url="", ancho=W, alto=H, licencia=base.licencia,
                 autor=base.autor, epigrafe=f"tarjeta: {texto}", pagina=base.pagina, articulo="tarjeta",
                 ruta=str(salida), anio=base.anio)
+
+
+class SinFotosReales(NarrarError):
+    """Ningún hecho del día llegó: se avisa y NO se reintenta solo (sería el mismo resultado)."""
 
 
 class PocasFotos(NarrarError):
@@ -2002,7 +2108,7 @@ class Propuesta:
 def proponer(wiki: Wiki, cliente, dia: date, carpeta: Path, avisar=log.info,
              correccion: str = "", saltear: int = 0, hecho: str = "", videos: bool = False,
              tope_fotos_s: float | None = None, hablado: bool = False,
-             imagen_frase: bool = False, elector=None) -> Propuesta:
+             imagen_frase: bool = False, elector=None, elector_reintento=None) -> Propuesta:
     """Elige el evento, escribe el guion (con qué mostrar en cada frase), busca y elige las fotos
     de cada frase. Si un evento no llega a ilustrar.MIN_FOTOS_DISTINTAS fotos distintas que
     sirvan, pasa al siguiente del ranking.
@@ -2051,14 +2157,14 @@ def proponer(wiki: Wiki, cliente, dia: date, carpeta: Path, avisar=log.info,
         try:
             g = escribir_guion(cliente, e, fuente, correccion, hablado=hablado)
             g.imagen_frase = imagen_frase      # efemerides.imagen_frase (2026-11-10)
-            pool, g = fotos_para_guion(wiki, cliente, e, g, fotos, carpeta, avisar, videos=videos,
-                                       elector=elector,
-                                       tope_s=tope_fotos_s)
+            pool, g = fotos_con_control(wiki, cliente, e, g, fotos, carpeta, avisar, videos=videos,
+                                        elector=elector, elector_reintento=elector_reintento,
+                                        tope_s=tope_fotos_s)
         except PocasFotos as pocas:
             # Menos de 4 fotos de época: al siguiente. Se guarda el que más tenga, por si ninguno llega.
             avisar(f"  {pocas}")
             fallas.append(f"{e.anio}: {pocas}")
-            if respaldo is None or pocas.disponibles > respaldo[3]:
+            if respaldo_sirve(pocas) and (respaldo is None or pocas.disponibles > respaldo[3]):
                 respaldo = (e, fuente, pocas, pocas.disponibles)
             continue
         except NarrarError as err:
@@ -2079,8 +2185,8 @@ def proponer(wiki: Wiki, cliente, dia: date, carpeta: Path, avisar=log.info,
                          fotos=[f.a_dict() for f in pocas.pool], reserva=[],
                          guion=pocas.guion.a_dict(), fuente=fuente[:20000], descartes=descartes)
     # Con la causa de cada uno: el 28/09 decía "no llegó a 6 fotos" cuando lo que falló fue el guion.
-    raise NarrarError(f"Ninguno de los {len(elegidos)} hechos elegidos salió ({guiones} intentados). "
-                      + " | ".join(fallas)[:600])
+    raise SinFotosReales(f"Ninguno de los {len(elegidos)} hechos elegidos salió ({guiones} intentados): "
+                         "no armo un video malo. " + " | ".join(fallas)[:600])
 
 
 def texto_fuente(wiki: Wiki, e: Evento) -> str:
@@ -2095,7 +2201,8 @@ def texto_fuente(wiki: Wiki, e: Evento) -> str:
 
 
 def rehacer_guion(p: Propuesta, wiki: Wiki, cliente, carpeta: Path, correccion: str,
-                  avisar=log.info, hablado: bool = False, elector=None) -> Propuesta:
+                  avisar=log.info, hablado: bool = False, elector=None,
+                  elector_reintento=None) -> Propuesta:
     """✏️: el guion de nuevo con la corrección, y las fotos de sus frases otra vez. El pool de antes
     se conserva (los números no cambian) y lo ya descartado sigue descartado."""
     e = Evento(**p.evento)
@@ -2105,13 +2212,17 @@ def rehacer_guion(p: Propuesta, wiki: Wiki, cliente, carpeta: Path, correccion: 
     g.imagen_frase = anterior.imagen_frase
     fotos, _ = fotos_del_evento(wiki, e)
     try:
-        pool, g = fotos_para_guion(wiki, cliente, e, g, fotos, carpeta, avisar,
-                                   pool=[Foto.de_dict(f) for f in p.fotos],
-                                   descartadas=set(anterior.descartadas), videos=anterior.con_videos,
-                                   elector=elector)
+        pool, g = fotos_con_control(wiki, cliente, e, g, fotos, carpeta, avisar,
+                                    pool=[Foto.de_dict(f) for f in p.fotos],
+                                    descartadas=set(anterior.descartadas), videos=anterior.con_videos,
+                                    elector=elector, elector_reintento=elector_reintento)
     except PocasFotos as pocas:   # es el hecho que ya se eligió: se sigue con lo que haya, con aviso
+        if not respaldo_sirve(pocas):
+            raise SinFotosReales(f"{pocas}; ni con la segunda búsqueda llega al 70 % de fotos reales")
         pool, g = pocas.pool, pocas.guion
         g.sin_alternativa = anterior.sin_alternativa
+    except FotosInsuficientes as f:
+        raise SinFotosReales(f"{f}, también con la segunda búsqueda: no armo el video") from f
     return Propuesta(fecha=p.fecha, evento=p.evento, fotos=[f.a_dict() for f in pool],
                      reserva=p.reserva, guion=g.a_dict(), fuente=p.fuente, descartes=p.descartes)
 
@@ -2696,6 +2807,12 @@ def hacer_video(p: Propuesta, settings, carpeta: Path, avisar=log.info, conn=Non
         plan = plan_de(p, duraciones)
     for problema in ilustrar.errores_plan([x for x in plan if x[1] != VIDEO], g.minimo_fotos):
         avisar(f"⚠️ fotos: {problema}")
+    # Control de calidad con los tiempos REALES de la voz (Santi, 2026-11-11): sin 70 % de fotos
+    # reales, no se arma.
+    pct = fraccion_real(p.fotos, plan)
+    if pct < UMBRAL_FOTOS_REALES:
+        raise SinFotosReales(f"solo {pct * 100:.0f} % del tiempo con fotos reales (mínimo "
+                             f"{UMBRAL_FOTOS_REALES * 100:.0f} %): no armo el video")
     movimientos = None
     if g.corto:
         plan, movimientos = plan_rapido(plan, g)
