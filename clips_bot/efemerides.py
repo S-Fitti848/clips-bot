@@ -653,6 +653,9 @@ nombre, ni un número, ni una fecha que no esté ahí. Si el artículo no lo dic
   2 a 4 palabras, SIN año ni lugar ni nombres propios: "steam locomotive", "burning train wagon",
   "flooded town street", "nun writing letter". Es para buscar una foto del objeto cuando no hay una
   del hecho, así que tiene que ser algo que se pueda fotografiar.
+- Cada frase lleva `central`: true si cuenta el HECHO MISMO, su lugar o su protagonista (ahí va una
+  foto real de eso: el pueblo inundado, el tren en llamas, la persona); false si nombra una cosa AL
+  PASAR para explicar (un muro, un juego, un animal, un objeto): ahí alcanza una foto genérica.
 - Cada frase lleva `presente`: true SOLO si la frase habla de HOY (algo que sigue existiendo o
   pasa ahora: "hoy ese avión está en un museo"); si no, false. Con false, las fotos de mucho
   después del hecho no se usan.
@@ -693,7 +696,7 @@ SCHEMA_GUION = {
         "frases": {"type": "ARRAY", "items": {
             "type": "OBJECT",
             "properties": {"texto": {"type": "STRING"}, "mostrar": {"type": "STRING"},
-                           "objeto": {"type": "STRING"},
+                           "objeto": {"type": "STRING"}, "central": {"type": "BOOLEAN"},
                            "presente": {"type": "BOOLEAN"}, "accion": {"type": "BOOLEAN"}},
             "required": ["texto", "mostrar", "presente", "accion"]}},
         "idea_clave": {"type": "STRING"},
@@ -863,6 +866,7 @@ class Guion:
     # `imagen_frase` = fotos en orden hecho/lugar → objeto en Commons → objeto en Pexels;
     # `corto` = la historia de Facebook de 20-30 s (gancho primero, cortes de 1,5-2,5 s, karaoke).
     objeto: list[str] = field(default_factory=list)
+    central: list[bool] = field(default_factory=list)   # cuenta el hecho mismo: foto real obligatoria
     imagen_frase: bool = False
     corto: bool = False
 
@@ -1007,6 +1011,7 @@ def escribir_guion(cliente, e: Evento, fuente: str, correccion: str = "", anteri
                          idea_clave=str(d["idea_clave"]).strip(),
                          presente=[bool(f.get("presente")) for f in d["frases"]],
                          objeto=[str(f.get("objeto") or "").strip() for f in d["frases"]],
+                         central=[f.get("central") is not False for f in d["frases"]],
                          corto=corto,
                          accion=frases_de_accion(d["frases"]),
                          claves=claves_del_guion(d.get("claves"), [f["texto"] for f in d["frases"]]))
@@ -1064,11 +1069,17 @@ hecho, fotos de otro tema, y cualquier imagen violenta o con muertos o heridos. 
 ninguna frase.
 Respondé solo con el JSON pedido."""
 
-ORDEN_FOTOS = """ORDEN DE PREFERENCIA (regla de Santi): para cada frase, primero una foto DEL HECHO o DEL
-LUGAR que muestre lo que dice la frase; si no hay, una foto DEL OBJETO o de la acción que se nombra
-(marcadas "foto del objeto"); y solo si tampoco, una de stock (marcadas "foto de stock del objeto"),
-que en una frase del pasado sirve solo si no se ve nada fuera de época. La imagen tiene que ser LO
-QUE SE DICE en esa frase, no algo del mismo tema.
+ORDEN_FOTOS = """REGLAS DE SANTI PARA ESTE VIDEO (le ganan a lo que diga más abajo):
+- Frases marcadas CENTRAL (cuentan el hecho mismo, su lugar o su protagonista): solo una foto REAL
+  de eso. Si habla del pueblo inundado, una foto de ESE pueblo inundado; no otro pueblo, no un
+  objeto parecido, no una foto de stock. Si no hay, dejá la lista vacía.
+- Frases marcadas AL PASAR (nombran una cosa de pasada: un muro, Pokémon, un tren): sirve una foto
+  genérica de esa cosa, de Commons o de stock, aunque no sea del hecho ni de la época. Si la frase
+  dice "Pokémon", un Pikachu o unas cartas de Pokémon sirven: ahí `seguro` va true. `de_epoca` no
+  importa en esas frases.
+- En las dos, la imagen es LO QUE SE DICE en esa frase, no algo del mismo tema en general. Entre
+  dos que sirven igual, preferí la del hecho o del lugar, después "foto del objeto" y por último
+  "foto de stock del objeto".
 
 """
 
@@ -1163,10 +1174,11 @@ FOTOS_BUSQUEDA_MAX = 4     # de Commons, por frase
 POOL_MAX = 40              # las que ve Gemini en la llamada (cada una ~250 tokens)
 # Orden nuevo de las fotos (efemerides.imagen_frase, 2026-11-10): por frase, hasta 2 del hecho o el
 # lugar, 1 del objeto en Commons y 1 del objeto en Pexels. Gemini ve hasta POOL_MAX_ORDEN.
-FOTOS_HECHO_FRASE = 2
-FOTOS_OBJETO_FRASE = 1
-FOTOS_PEXELS_FRASE = 1
-POOL_MAX_ORDEN = 52
+FOTOS_HECHO_FRASE = 3          # frase central: solo del hecho o del lugar
+FOTOS_HECHO_AL_PASAR = 1       # frase que nombra algo al pasar: 1 del hecho, 2 del objeto, 2 de Pexels
+FOTOS_OBJETO_FRASE = 2
+FOTOS_PEXELS_FRASE = 2
+POOL_MAX_ORDEN = 56
 
 
 def _foto_de(h: dict, busqueda: str) -> "Foto":
@@ -1175,6 +1187,18 @@ def _foto_de(h: dict, busqueda: str) -> "Foto":
                 licencia=h["licencia"], autor=h["autor"] or "autor desconocido",
                 epigrafe=h["epigrafe"][:160], pagina=h["pagina"],
                 articulo=f"{h['fuente']}: {busqueda}", anio=h["anio"])
+
+
+def es_central(g: "Guion", i: int) -> bool:
+    """La frase cuenta el hecho mismo (foto real obligatoria). Sin el dato (guiones viejos), sí."""
+    return g.central[i] if i < len(g.central) else True
+
+
+def sin_epoca(g: "Guion") -> list[bool]:
+    """Por frase, si la regla de época NO aplica: las que hablan de hoy y, con imagen = lo que se
+    dice, las que nombran algo al pasar (Santi, 2026-11-10: "un Pikachu sirve")."""
+    return [(i < len(g.presente) and g.presente[i]) or (g.imagen_frase and not es_central(g, i))
+            for i in range(len(g.frases))]
 
 
 def es_stock(f: "Foto") -> bool:
@@ -1213,8 +1237,10 @@ def elegir_fotos(cliente, g: Guion, pool: list[Foto], candidatas: list[list[int]
                  propias: list[list[int]] | None = None, reintentos: int = 1,
                  avisar=log.info, anio: int | None = None, videos: dict | None = None,
                  elegidos: dict | None = None, ocr: dict[int, float] | None = None,
-                 extra: dict | None = None) -> tuple[list[list[int]], set[int]]:
-    """UNA llamada: Gemini ve todas las fotos y ordena las que sirven para cada frase.
+                 extra: dict | None = None, elector=None) -> tuple[list[list[int]], set[int]]:
+    """UNA llamada: el modelo ve todas las fotos y ordena las que sirven para cada frase.
+    `elector`: Claude (Sonnet) para elegir y verificar (Santi, 2026-11-10: "así no dependemos de la
+    cuota gratis"); si falla, Gemini (`cliente`) de respaldo.
     `propias`: las que salieron de la búsqueda de esa frase (se le muestran primero). `anio`: el
     del hecho; junto con el año de cada foto, para que confirme la época (`de_epoca`).
     `videos`: {frase: [Video con sus cuadros]} de las frases de acción; en la MISMA llamada Gemini
@@ -1224,6 +1250,12 @@ def elegir_fotos(cliente, g: Guion, pool: list[Foto], candidatas: list[list[int]
         mostrar = g.mostrar[i - 1] if i - 1 < len(g.mostrar) else ""
         suyas = propias[i - 1] if propias else []
         hoy = " (habla de hoy)" if i - 1 < len(g.presente) and g.presente[i - 1] else ""
+        if g.imagen_frase:
+            if es_central(g, i - 1):
+                hoy += " (CENTRAL: tiene que ser una foto real del hecho o del lugar)"
+            else:
+                obj = g.objeto[i - 1] if i - 1 < len(g.objeto) else ""
+                hoy += f" (AL PASAR: sirve una foto genérica de «{obj or mostrar}», de cualquier época)"
         lineas.append(f"frase {i}{hoy}: {frase}\n  mostrar: {mostrar}\n  candidatas: "
                       + ", ".join(str(c + 1) for c in cands)
                       + (f"\n  de su búsqueda: {', '.join(str(c + 1) for c in suyas)}" if suyas else ""))
@@ -1263,6 +1295,11 @@ def elegir_fotos(cliente, g: Guion, pool: list[Foto], candidatas: list[list[int]
     respaldo = getattr(cliente, "modelo_fallback", None)
 
     def pedir(texto: str) -> str:
+        if elector is not None and len(imagenes) <= 100:
+            try:
+                return elector.json(SISTEMA_FOTOS, texto, SCHEMA_FOTOS, imagenes=imagenes)
+            except GeminiError as e:     # ClaudeError hereda de GeminiError
+                avisar(f"    fotos: Claude no respondió ({str(e)[:80]}): uso Gemini")
         if not principal:
             return cliente.json(SISTEMA_FOTOS, texto, SCHEMA_FOTOS, temperatura=0.2, imagenes=imagenes)
         try:
@@ -1283,7 +1320,7 @@ def elegir_fotos(cliente, g: Guion, pool: list[Foto], candidatas: list[list[int]
         texto_error = f"\n\nTu respuesta anterior no servía: {error}" if error else ""
         d = json.loads(pedir(prompt + texto_error))
         try:
-            rankings, malas = rankings_de(d, candidatas, g.presente)
+            rankings, malas = rankings_de(d, candidatas, sin_epoca(g))
         except ValueError as e:
             error = str(e)
             continue
@@ -1313,8 +1350,9 @@ def elegir_fotos(cliente, g: Guion, pool: list[Foto], candidatas: list[list[int]
             # nada fuera de época.
             anac = {t.get("foto") - 1: t.get("anacronismo") for t in (d.get("tipos") or [])
                     if isinstance(t, dict) and isinstance(t.get("foto"), int)}
+            libres = sin_epoca(g)
             for i, rk in enumerate(rankings):
-                if i < len(g.presente) and g.presente[i]:
+                if i < len(libres) and libres[i]:
                     continue
                 for x in [x for x in rk if es_stock(pool[x]) and anac.get(x) is not False]:
                     rk.remove(x)
@@ -1331,7 +1369,7 @@ def elegir_fotos(cliente, g: Guion, pool: list[Foto], candidatas: list[list[int]
             avisar(f"    frase {i}: {[x + 1 for x in rk]} — se ve: "
                    f"{str((f or {}).get('se_ve'))[:80]}{epoca}")
         if elegidos is not None:
-            elegidos.update(video_elegido(d["frases"], videos, g.presente, avisar))
+            elegidos.update(video_elegido(d["frases"], videos, sin_epoca(g), avisar))
         return rankings, malas
     raise NarrarError(f"Gemini no eligió bien las fotos: {error}")
 
@@ -1399,7 +1437,7 @@ def fotos_para_guion(wiki: Wiki, cliente, e: Evento, g: Guion, fotos_articulo: l
                      carpeta: Path, avisar=log.info, pool: list[Foto] | None = None,
                      descartadas: set[int] | None = None, videos: bool = False,
                      buscador=None, fuentes=None,
-                     tope_s: float | None = None) -> tuple[list[Foto], Guion]:
+                     tope_s: float | None = None, elector=None) -> tuple[list[Foto], Guion]:
     """Busca candidatas para cada frase (las del artículo + Commons con su `mostrar`), las baja,
     Gemini elige, y arma la foto de cada frase con las reglas de `ilustrar`. Devuelve el pool (las
     fotos que se bajaron, en su numeración) y el guion con `fotos`, `ranking` y `descartadas`.
@@ -1450,7 +1488,10 @@ def fotos_para_guion(wiki: Wiki, cliente, e: Evento, g: Guion, fotos_articulo: l
         # Orden nuevo (2026-11-10, Santi): (a) foto del hecho o del lugar (Commons y las otras
         # fuentes de archivo, con `mostrar`), (b) foto del OBJETO o la acción en Commons, (c) el
         # objeto en Pexels. La tarjeta, solo si no queda ninguna.
-        lim_a = FOTOS_HECHO_FRASE if orden else FOTOS_BUSQUEDA_MAX
+        # Lo central del hecho, real (2026-11-10): una frase CENTRAL busca solo fotos del hecho o del
+        # lugar; una que nombra algo AL PASAR, sobre todo fotos genéricas de esa cosa.
+        central = es_central(g, i)
+        lim_a = (FOTOS_HECHO_FRASE if central else FOTOS_HECHO_AL_PASAR) if orden else FOTOS_BUSQUEDA_MAX
         # Temas modernos (2026-10-21): primero Pexels/Unsplash, antes que capturas de Commons.
         if not orden and (e.anio >= ANIO_MODERNO or hoy):
             for h in otras.stock(qs, FOTOS_STOCK_MAX, avisar):
@@ -1468,15 +1509,14 @@ def fotos_para_guion(wiki: Wiki, cliente, e: Evento, g: Guion, fotos_articulo: l
             for h in otras.buscar(qs, hoy, es_de_espacio(mostrar), lim_a - len(halladas), avisar):
                 halladas.append(_foto_de(h, mostrar))
         halladas = halladas[:lim_a]
-        if orden and not corrida.vencida():
+        if orden and not central and not corrida.vencida():
             obj = (g.objeto[i] if i < len(g.objeto) else "") or sin_anios(mostrar)
             nuevas, desc = filtrar_infos(wiki, "commons", wiki.buscar_commons(obj),
                                          f"Commons (objeto): {obj}", e.anio)
             for k, v in desc.items():
                 descartes[k] = descartes.get(k, 0) + v
             halladas += [f for f in nuevas if f.archivo not in {h.archivo for h in halladas}][:FOTOS_OBJETO_FRASE]
-            # Pexels: solo objetos genéricos, y en las frases del pasado Gemini tiene que confirmar
-            # que no se ve nada fuera de época (`anacronismo`, en elegir_fotos).
+            # Pexels: solo para lo que se nombra al pasar (objetos genéricos).
             halladas += [_foto_de(h, obj) for h in otras.stock([obj], FOTOS_PEXELS_FRASE, avisar)
                          if h["fuente"] == "pexels"]
         propias.append([i for i in sumar(halladas, len(halladas) if orden else FOTOS_BUSQUEDA_MAX)
@@ -1496,9 +1536,15 @@ def fotos_para_guion(wiki: Wiki, cliente, e: Evento, g: Guion, fotos_articulo: l
     capturas = {i for i, f in enumerate(pool) if _CAPTURA.search(f"{f.archivo} {f.epigrafe}")}
     de_web = [bool(_HABLA_DE_WEB.search(f"{g.frases[i]} {g.mostrar[i] if i < len(g.mostrar) else ''}"))
               for i in range(len(g.frases))]
+    # Frases que hablan de hoy o, con imagen = lo que se dice, que nombran algo al pasar: sin la
+    # regla de época. Las CENTRALES, solo fotos del hecho o del lugar (nada de stock ni "objeto").
+    libres = sin_epoca(g)
+    genericas = {i for i, f in enumerate(pool)
+                 if es_stock(f) or f.articulo.startswith("Commons (objeto)")} if g.imagen_frase else set()
     candidatas = [[x for x in dict.fromkeys(p + del_hecho + todas)
-                   if (hoy or x not in modernas) and (web or x not in capturas)]
-                  for p, hoy, web in zip(propias, presente, de_web)]
+                   if (libre or x not in modernas) and (web or x not in capturas)
+                   and not (g.imagen_frase and es_central(g, k) and x in genericas)]
+                  for k, (p, libre, web) in enumerate(zip(propias, libres, de_web))]
     if videos and corrida.vencida():
         avisar("    videos: sin buscar (pasó el tope de la búsqueda)")
     candidatos_video = (buscar_videos(g, e.anio, carpeta, buscador, avisar, tema=e.paginas[0])
@@ -1510,7 +1556,7 @@ def fotos_para_guion(wiki: Wiki, cliente, e: Evento, g: Guion, fotos_articulo: l
     extra: dict = {}
     rankings, vistas_malas = elegir_fotos(cliente, g, pool, candidatas, propias, avisar=avisar,
                                           anio=e.anio, videos=candidatos_video, elegidos=elegidos,
-                                          ocr=ocr, extra=extra)
+                                          ocr=ocr, extra=extra, elector=elector)
     g.fotos_respaldo = bool(extra.get("respaldo"))
     g.con_videos = videos
     g.videos = {str(i): v.a_dict() for i, v in elegidos.items()}
@@ -1538,7 +1584,12 @@ def fotos_para_guion(wiki: Wiki, cliente, e: Evento, g: Guion, fotos_articulo: l
     while vacias and base is not None and any("aparecen más de" in x or "seguidos" in x
                                               for x in errores):
         i = vacias.pop()
-        t = tarjeta(pool[base], texto_tarjeta(g, i, e.anio), carpeta / f"tarjeta_{i + 1:02d}.jpg")
+        texto = texto_tarjeta(g, i, e.anio, solo_clave=g.imagen_frase)
+        if texto is None:
+            # Imagen = lo que se dice (Santi, 2026-11-10): nada de tarjetas con un texto que no tiene
+            # que ver ("2022"); esa frase alarga la foto anterior (asignar).
+            continue
+        t = tarjeta(pool[base], texto, carpeta / f"tarjeta_{i + 1:02d}.jpg")
         pool.append(t)
         rankings[i] = [len(pool) - 1]
         g.tarjetas = sorted(set(g.tarjetas) | {i})
@@ -1551,6 +1602,10 @@ def fotos_para_guion(wiki: Wiki, cliente, e: Evento, g: Guion, fotos_articulo: l
     if any("aparecen más de" in e for e in errores):
         # Pocas fotos para tantas frases sin repetir más de 2 veces: como con menos de 4, al siguiente.
         raise PocasFotos(pool, g, disponibles)
+    if errores and g.imagen_frase and all("seguidos" in x for x in errores):
+        # "Si no hay foto, alargá la anterior antes que poner una tarjeta" (Santi, 2026-11-10).
+        avisar(f"    fotos: {'; '.join(errores)} (se alarga la anterior antes que poner una tarjeta)")
+        errores = []
     if errores:
         raise NarrarError("las fotos no alcanzan: " + "; ".join(errores))
     if g.minimo_fotos < ilustrar.MIN_FOTOS_ABSOLUTO:
@@ -1558,13 +1613,14 @@ def fotos_para_guion(wiki: Wiki, cliente, e: Evento, g: Guion, fotos_articulo: l
     return pool, g
 
 
-def texto_tarjeta(g: Guion, i: int, anio: int) -> str:
-    """La palabra clave de esa frase (si alguna de `g.claves` está en ella) o, si no, el año."""
+def texto_tarjeta(g: Guion, i: int, anio: int, solo_clave: bool = False) -> str | None:
+    """La palabra clave de esa frase (si alguna de `g.claves` está en ella) o, si no, el año.
+    `solo_clave`: sin clave, None (no hay tarjeta: el año suelto no tiene que ver con la frase)."""
     frase = _norm(g.frases[i]) if i < len(g.frases) else ""
     for c in g.claves:
         if _norm(c) and _norm(c) in frase:
             return c.upper()
-    return str(anio)
+    return None if solo_clave else str(anio)
 
 
 def tarjeta(base: Foto, texto: str, salida: Path) -> Foto:
@@ -1946,7 +2002,7 @@ class Propuesta:
 def proponer(wiki: Wiki, cliente, dia: date, carpeta: Path, avisar=log.info,
              correccion: str = "", saltear: int = 0, hecho: str = "", videos: bool = False,
              tope_fotos_s: float | None = None, hablado: bool = False,
-             imagen_frase: bool = False) -> Propuesta:
+             imagen_frase: bool = False, elector=None) -> Propuesta:
     """Elige el evento, escribe el guion (con qué mostrar en cada frase), busca y elige las fotos
     de cada frase. Si un evento no llega a ilustrar.MIN_FOTOS_DISTINTAS fotos distintas que
     sirvan, pasa al siguiente del ranking.
@@ -1996,6 +2052,7 @@ def proponer(wiki: Wiki, cliente, dia: date, carpeta: Path, avisar=log.info,
             g = escribir_guion(cliente, e, fuente, correccion, hablado=hablado)
             g.imagen_frase = imagen_frase      # efemerides.imagen_frase (2026-11-10)
             pool, g = fotos_para_guion(wiki, cliente, e, g, fotos, carpeta, avisar, videos=videos,
+                                       elector=elector,
                                        tope_s=tope_fotos_s)
         except PocasFotos as pocas:
             # Menos de 4 fotos de época: al siguiente. Se guarda el que más tenga, por si ninguno llega.
@@ -2038,7 +2095,7 @@ def texto_fuente(wiki: Wiki, e: Evento) -> str:
 
 
 def rehacer_guion(p: Propuesta, wiki: Wiki, cliente, carpeta: Path, correccion: str,
-                  avisar=log.info, hablado: bool = False) -> Propuesta:
+                  avisar=log.info, hablado: bool = False, elector=None) -> Propuesta:
     """✏️: el guion de nuevo con la corrección, y las fotos de sus frases otra vez. El pool de antes
     se conserva (los números no cambian) y lo ya descartado sigue descartado."""
     e = Evento(**p.evento)
@@ -2050,7 +2107,8 @@ def rehacer_guion(p: Propuesta, wiki: Wiki, cliente, carpeta: Path, correccion: 
     try:
         pool, g = fotos_para_guion(wiki, cliente, e, g, fotos, carpeta, avisar,
                                    pool=[Foto.de_dict(f) for f in p.fotos],
-                                   descartadas=set(anterior.descartadas), videos=anterior.con_videos)
+                                   descartadas=set(anterior.descartadas), videos=anterior.con_videos,
+                                   elector=elector)
     except PocasFotos as pocas:   # es el hecho que ya se eligió: se sigue con lo que haya, con aviso
         pool, g = pocas.pool, pocas.guion
         g.sin_alternativa = anterior.sin_alternativa
@@ -2080,17 +2138,20 @@ def con_videos(plan: list[tuple[int, int, float]], g: Guion) -> list[tuple[int, 
     return out
 
 
-CORTE_MAX_S, CORTE_MIN_S = 2.5, 1.5     # formato corto: un cambio de imagen cada 1,5-2,5 s
+CORTE_MAX_S, CORTE_MIN_S = 4.0, 2.5     # formato corto: un cambio de imagen cada 2,5-4 s (Santi, 2026-11-10)
 MOVIMIENTOS = ("in", "der", "out", "izq")
 
 
-def plan_rapido(plan: list[tuple[int, int, float]], g: Guion) -> tuple[list[tuple[int, int, float]], list[str]]:
-    """Formato corto (2026-11-10): cada tramo se parte en cortes de 1,5 a 2,5 s. Los cortes de una
-    frase alternan entre SUS fotos (las que Gemini puso para esa frase: la imagen sigue siendo lo que
-    se dice) y, si tiene una sola, la misma foto con otro movimiento (acercarse, alejarse, paneo).
+def plan_rapido(plan: list[tuple[int, int, float]], g: Guion,
+                max_apariciones: int = ilustrar.MAX_APARICIONES) -> tuple[list[tuple[int, int, float]], list[str]]:
+    """Formato corto: cada tramo se parte en cortes de 2,5 a 4 s. Los cortes de una frase alternan
+    entre SUS fotos (las que el modelo puso para esa frase: la imagen sigue siendo lo que se dice)
+    mientras ninguna pase de `max_apariciones` en el video; si no hay otra, sigue la misma foto con
+    otro movimiento (acercarse, alejarse, paneo), que es la misma aparición.
     Devuelve el plan y el movimiento de cada corte ("" en los videos)."""
     rk = g.rankings()
     out, movs = [], []
+    veces: dict[int, int] = {}
     m = 0
     for i, f, s in plan:
         if f == VIDEO:
@@ -2102,13 +2163,21 @@ def plan_rapido(plan: list[tuple[int, int, float]], g: Guion) -> tuple[list[tupl
             n -= 1
         propias = [f] + [x for x in (rk[i] if i < len(rk) else []) if x != f]
         for k in range(n):
-            foto = propias[k % len(propias)]
+            previa = out[-1][1] if out else None
+            quiere = propias[k % len(propias)]
+            if quiere != previa and veces.get(quiere, 0) >= max_apariciones:
+                quiere = next((x for x in propias if x != previa and veces.get(x, 0) < max_apariciones),
+                              None)
+            if quiere is None:      # no hay otra que no esté gastada: sigue la anterior (alargarla)
+                quiere = previa if previa is not None and previa != VIDEO else f
+            if quiere != previa:
+                veces[quiere] = veces.get(quiere, 0) + 1
             mov = MOVIMIENTOS[m % len(MOVIMIENTOS)]
             m += 1
-            if out and out[-1][1] == foto and movs[-1] == mov:
+            if out and out[-1][1] == quiere and movs[-1] == mov:
                 mov = MOVIMIENTOS[m % len(MOVIMIENTOS)]
                 m += 1
-            out.append((i, foto, round(s / n, 3)))
+            out.append((i, quiere, round(s / n, 3)))
             movs.append(mov)
     return out, movs
 

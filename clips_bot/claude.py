@@ -24,6 +24,7 @@ HAIKU = "claude-haiku-5-5"
 # US$ por millón de tokens (entrada, salida), precios de la API de Anthropic (2026-11).
 PRECIOS = {SONNET: (2.00, 10.00), HAIKU: (0.10, 0.50)}
 BETA_FALLBACK = "server-side-fallback-2026-07-01"
+MAX_IMAGENES = 100        # tope de la API por pedido
 
 
 class ClaudeError(GeminiError):
@@ -74,15 +75,23 @@ class ClaudeClient:
              imagenes: list[bytes] | None = None, audio: bytes | None = None,
              modelo: str | None = None) -> str:
         """El texto JSON de la respuesta. `temperatura` se ignora (los modelos actuales no la
-        aceptan); imágenes y audio no: eso sigue en Gemini."""
+        aceptan). `imagenes`: JPEG, van antes del texto en el orden en que vienen (desde el
+        2026-11-10 Sonnet elige y verifica las fotos de Pequeña Historia). El audio sigue en Gemini."""
         import anthropic
+        import base64
 
-        if imagenes or audio:
-            raise ClaudeError("Claude acá es solo para texto: las imágenes y el audio van con Gemini")
+        if audio:
+            raise ClaudeError("Claude acá no recibe audio: eso va con Gemini")
+        if imagenes and len(imagenes) > MAX_IMAGENES:
+            raise ClaudeError(f"Claude: {len(imagenes)} imágenes (máximo {MAX_IMAGENES} por pedido)")
         modelo = modelo or self.modelo
         funcion = _llamador()
+        contenido = [{"type": "image", "source": {"type": "base64", "media_type": "image/jpeg",
+                                                  "data": base64.standard_b64encode(img).decode()}}
+                     for img in imagenes or []]
+        contenido.append({"type": "text", "text": prompt})
         pedido = dict(model=modelo, max_tokens=self.max_tokens, system=sistema,
-                      messages=[{"role": "user", "content": prompt}],
+                      messages=[{"role": "user", "content": contenido if imagenes else prompt}],
                       output_config={"format": {"type": "json_schema", "schema": a_json_schema(schema)},
                                      **({"effort": self.esfuerzo} if self.esfuerzo else {})})
         try:

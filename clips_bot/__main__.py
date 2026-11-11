@@ -3424,7 +3424,8 @@ def _efe_proponer(conn, tg: TelegramClient, chats: list[str], dia, settings: Set
                         videos=settings.efemerides.videos,
                         tope_fotos_s=settings.efemerides.tope_fotos_min * 60,
                         hablado=settings.efemerides.guion_hablado,
-                        imagen_frase=settings.efemerides.imagen_frase)
+                        imagen_frase=settings.efemerides.imagen_frase,
+                        elector=_elector_fotos(settings))
     except (NarrarError, ef.WikiError, GeminiError) as e:
         error = f"No salió la efeméride: {html.escape(str(e)[:400])}"
         return ErrorPasajero(error) if getattr(e, "pasajero", False) else error
@@ -3435,6 +3436,17 @@ def _efe_proponer(conn, tg: TelegramClient, chats: list[str], dia, settings: Set
 
 
 # ---- /historia: el video aparte de Facebook (locales.py, prueba de 2 semanas desde el 2026-11-10) --
+
+def _elector_fotos(settings: Settings):
+    """Sonnet para elegir y verificar las fotos de Pequeña Historia (Santi, 2026-11-10: "así no
+    dependemos de la cuota gratis"; Gemini queda de respaldo). Va con la regla de imagen = lo que se
+    dice (`efemerides.imagen_frase`); apagada, o sin ANTHROPIC_API_KEY, None (Gemini, como antes)."""
+    if not settings.efemerides.imagen_frase:
+        return None
+    from . import claude
+
+    return claude.cliente(settings.historias_fb.modelo_texto)
+
 
 def _claude_textos(settings: Settings):
     """(Sonnet, Haiku) para el texto del video de Facebook; (None, None) sin ANTHROPIC_API_KEY."""
@@ -3466,7 +3478,8 @@ def _fb_proponer(conn, tg: TelegramClient, chats: list[str], dia, settings: Sett
                              hecho=hecho, videos=settings.efemerides.videos,
                              tope_fotos_s=settings.efemerides.tope_fotos_min * 60,
                              imagen_frase=settings.efemerides.imagen_frase,
-                             corto=settings.historias_fb.formato_corto)
+                             corto=settings.historias_fb.formato_corto,
+                             elector=_elector_fotos(settings))
     except (NarrarError, ef.WikiError, GeminiError) as e:
         return f"No salió la historia de Facebook: {html.escape(str(e)[:400])}"
     estado = {"propuesta": p.__dict__, "carpeta": str(carpeta), "chat_id": chats[0]}
@@ -3770,10 +3783,12 @@ def _efe_corregir(conn, tg: TelegramClient, t: dict, token: str, settings: Setti
             sonnet, _ = _claude_textos(settings)
             if sonnet is None:
                 return tg.send_message(t["chat_id"], "Falta ANTHROPIC_API_KEY en el .env.")
-            p = locales.rehacer(p, ef.Wiki(), sonnet, gemini, Path(estado["carpeta"]), t["texto"])
+            p = locales.rehacer(p, ef.Wiki(), sonnet, gemini, Path(estado["carpeta"]), t["texto"],
+                                elector=_elector_fotos(settings))
         else:
             p = ef.rehacer_guion(p, ef.Wiki(), gemini, Path(estado["carpeta"]), t["texto"],
-                                 hablado=settings.efemerides.guion_hablado)
+                                 hablado=settings.efemerides.guion_hablado,
+                                 elector=_elector_fotos(settings))
     except (NarrarError, GeminiError, ef.WikiError) as e:
         db.set_valor(conn, f"{ESPERA_EFE}:{t['user_id']}", token)   # que pueda probar otra vez
         return tg.send_message(t["chat_id"], f"No salió: {html.escape(str(e)[:300])}\n"

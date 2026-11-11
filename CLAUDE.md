@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-11-10 | **Versión:** v0.84.0 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 de clips + timer 06:00 de la efeméride + escucha de Telegram 24/7, que además propone la historia de Facebook a las 06:30)
+**Snapshot:** 2026-11-10 | **Versión:** v0.85.0 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 de clips + timer 06:00 de la efeméride + escucha de Telegram 24/7, que además propone la historia de Facebook a las 06:30)
 
 > **SI ESTÁS EMPEZANDO UNA SESIÓN NUEVA, LEÉ §10.** Ahí está qué está hecho, qué quedó a medias,
 > qué falta, y las trampas que ya nos mordieron.
@@ -713,7 +713,7 @@ clips_bot/locales.py     §3d: historias de Facebook (Wikipedia en español por 
 clips_bot/prueba_manual.py prueba manual vs API (§1): el clip del día a mano, registro e informe del feed
 clips_bot/envivo.py      modo en vivo (§3b): quién está al aire, momentos por creadores distintos,
                          alertas en la DB (no repetir, tope, vencer) y el resumen de tiempos
-tests/                   887 tests sin red ni video (conftest.py: nada sale a YouTube) (test_reglas_fijas.py: las 3 reglas de §1)
+tests/                   894 tests sin red ni video (conftest.py: nada sale a YouTube) (test_reglas_fijas.py: las 3 reglas de §1)
 ```
 
 Comandos:
@@ -906,6 +906,20 @@ Problemas abiertos:
 
 ## 9. CHANGELOG
 
+- v0.85.0 (2026-11-10) — **Feedback de Santi sobre los 3 ejemplos.** (1) **Rots: aprobado y
+  PRENDIDO** (`render.edicion_rots: true`). (2) Pequeña Historia (sigue APAGADO hasta que apruebe
+  los ejemplos nuevos): **Claude (Sonnet) elige y verifica las fotos** (`claude.ClaudeClient.json`
+  acepta imágenes, hasta 100 por pedido; `_elector_fotos`, va con `efemerides.imagen_frase`) y
+  Gemini queda de respaldo si Claude falla. El guion marca cada frase `central` (cuenta el hecho:
+  solo fotos reales del hecho o del lugar, nada de stock ni de "objeto": el pueblo inundado, ESE
+  pueblo) o al pasar (un muro, Pokémon, un tren: foto genérica de Commons o Pexels, sin regla de
+  época ni de anacronismo, `sin_epoca`); por frase central hasta 3 del hecho, por frase al pasar
+  1 del hecho + 2 del objeto en Commons + 2 de Pexels (pool hasta 56). Sin tarjetas con un texto
+  que no tiene que ver (`texto_tarjeta(solo_clave)`: solo una clave de ESA frase, nunca el año
+  suelto): la frase sin foto alarga la anterior y, con la regla prendida, pasarse de 6 s por eso
+  es un aviso y no un error. Historia corta: cortes de **2,5-4 s** (antes 1,5-2,5) y ninguna foto
+  más de 2 veces (`plan_rapido(max_apariciones)`; seguir la misma foto con otro movimiento es la
+  misma aparición). 894 tests OK.
 - v0.84.0 (2026-11-10) — **Edición nueva, programada y APAGADA** (propuesta aprobada por Santi;
   los ejemplos se arman en la Pi con los interruptores prendidos solo en memoria, sin tocar los
   timers). (1) **Imagen = lo que se dice** (`efemerides.imagen_frase`, efeméride de YouTube y su
@@ -2103,9 +2117,11 @@ aparte de Pequeña Historia a las 06:00 (`clips-bot-efemeride`) y la escucha de 
 
 ### Esperando respuesta de Santi (NO programar sin su OK)
 
-0. **Edición nueva (v0.84.0): programada y APAGADA, esperando que Santi apruebe los 3 ejemplos**
-   (mandados a su privado el 2026-11-10: historia de Facebook corta, efeméride de YouTube con imagen
-   = lo que se dice, y un clip de Rots antes/después). Decisiones de Santi: Pexels solo para objetos
+0. **Edición nueva (v0.84.0-v0.85.0): Rots APROBADO y prendido; Pequeña Historia esperando los
+   ejemplos rehechos** (historia de Facebook y efeméride, con Claude eligiendo las fotos y los
+   cambios de v0.85.0). Con su OK se prenden `efemerides.imagen_frase` (también activa Claude para
+   las fotos) e `historias_fb.formato_corto`. Santi aprobó de Pequeña Historia: karaoke,
+   movimiento de las fotos y el gancho primero. Decisiones de Santi: Pexels solo para objetos
    genéricos y con Gemini confirmando la época; el formato corto SOLO en la historia de Facebook (la
    efeméride de YouTube y su Reel de las 12:00 solo cambian la imagen; si Facebook rinde mejor,
    después se pasa); Rots todo, con la pregunta en la pantalla final y en la descripción. Con su OK

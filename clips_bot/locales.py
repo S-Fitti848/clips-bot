@@ -556,7 +556,7 @@ def local_de(c: Candidato) -> dict:
 
 def proponer(wiki: ef.Wiki, sonnet, haiku, gemini, dia: date, carpeta: Path, avisar=log.info,
              videos: bool = False, tope_fotos_s: float | None = None, hecho: str = "",
-             imagen_frase: bool = False, corto: bool = False) -> ef.Propuesta:
+             imagen_frase: bool = False, corto: bool = False, elector=None) -> ef.Propuesta:
     """La propuesta del día para Facebook. Mismo armado que la efeméride (fotos, hoja, aprobación),
     con otra fuente de hechos y Claude para el texto."""
     from . import fuentes_fotos
@@ -616,7 +616,7 @@ def proponer(wiki: ef.Wiki, sonnet, haiku, gemini, dia: date, carpeta: Path, avi
                                   corto=corto)
             g.imagen_frase = imagen_frase or corto
             pool, g = ef.fotos_para_guion(wiki, gemini, e, g, fotos, carpeta, avisar, videos=videos,
-                                          tope_s=tope_fotos_s)
+                                          tope_s=tope_fotos_s, elector=elector)
         except ef.PocasFotos as pocas:
             avisar(f"  {pocas}")
             fallas.append(f"{e.anio}: {pocas}")
@@ -641,7 +641,7 @@ def proponer(wiki: ef.Wiki, sonnet, haiku, gemini, dia: date, carpeta: Path, avi
 
 
 def rehacer(p: ef.Propuesta, wiki: ef.Wiki, sonnet, gemini, carpeta: Path, correccion: str,
-            avisar=log.info) -> ef.Propuesta:
+            avisar=log.info, elector=None) -> ef.Propuesta:
     """✏️ del video de Facebook: el guion de nuevo con Sonnet (mismas reglas del lugar) y las fotos
     de sus frases con Gemini; el pool de antes se conserva."""
     e = ef.Evento(**p.evento)
@@ -657,7 +657,8 @@ def rehacer(p: ef.Propuesta, wiki: ef.Wiki, sonnet, gemini, carpeta: Path, corre
     try:
         pool, g = ef.fotos_para_guion(wiki, gemini, e, g, fotos, carpeta, avisar,
                                       pool=[ef.Foto.de_dict(f) for f in p.fotos],
-                                      descartadas=set(anterior.descartadas), videos=anterior.con_videos)
+                                      descartadas=set(anterior.descartadas), videos=anterior.con_videos,
+                                      elector=elector)
     except ef.PocasFotos as pocas:
         pool, g = pocas.pool, pocas.guion
         g.sin_alternativa = anterior.sin_alternativa

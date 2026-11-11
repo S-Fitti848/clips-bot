@@ -137,14 +137,42 @@ def _guion(**kw):
     return ef.Guion(**{**base, **kw})
 
 
-def test_plan_rapido_corta_cada_1_5_a_2_5_s_con_las_fotos_de_la_frase():
+def test_plan_rapido_corta_cada_2_5_a_4_s_con_las_fotos_de_la_frase():
     g = _guion(frases=["uno", "dos"], ranking=[[0, 3], [1]])
-    plan, movs = ef.plan_rapido([(0, 0, 5.0), (1, 1, 2.0), (1, 2, 1.2)], g)
-    assert all(ef.CORTE_MIN_S - 0.3 <= s <= ef.CORTE_MAX_S for *_, s in plan)
+    plan, movs = ef.plan_rapido([(0, 0, 6.0), (1, 1, 3.0), (1, 2, 1.2)], g)
+    assert ef.CORTE_MIN_S == 2.5 and ef.CORTE_MAX_S == 4.0
+    assert all(s <= ef.CORTE_MAX_S for *_, s in plan)
+    assert all(s >= ef.CORTE_MIN_S for i, f, s in plan if i == 0)
     assert [f for i, f, _ in plan if i == 0] == [0, 3]             # alterna entre SUS fotos
-    assert sum(s for *_, s in plan) == pytest.approx(8.2)
+    assert sum(s for *_, s in plan) == pytest.approx(10.2)
     for (a, b), (ma, mb) in zip(zip(plan, plan[1:]), zip(movs, movs[1:])):
         assert not (a[1] == b[1] and ma == mb)                      # misma foto, otro movimiento
+
+
+def test_plan_rapido_ninguna_foto_mas_de_2_veces():
+    # una frase larga con dos fotos: A B A B A… pasaría las 2 apariciones; sigue la misma foto
+    g = _guion(frases=["uno"], ranking=[[0, 1]])
+    plan, movs = ef.plan_rapido([(0, 0, 18.0)], g)
+    from clips_bot import ilustrar
+    assert max(ilustrar.apariciones(plan).values()) <= 2
+    assert len(plan) >= 5 and sum(s for *_, s in plan) == pytest.approx(18.0)
+
+
+def test_sin_tarjeta_con_un_texto_que_no_tiene_que_ver():
+    g = _guion(frases=["Ese año salió Pokémon Escarlata.", "Y vendió millones."], claves=["Pokémon"])
+    assert ef.texto_tarjeta(g, 0, 2022, solo_clave=True) == "POKÉMON"
+    assert ef.texto_tarjeta(g, 1, 2022, solo_clave=True) is None      # nada de "2022" suelto
+    assert ef.texto_tarjeta(g, 1, 2022) == "2022"                      # sin la regla, como antes
+
+
+def test_central_y_al_pasar():
+    g = _guion(frases=["El pueblo se inundó.", "Como un muro de agua.", "Hoy es un museo."],
+               central=[True, False, True], presente=[False, False, True], imagen_frase=True)
+    assert [ef.es_central(g, i) for i in range(3)] == [True, False, True]
+    assert ef.sin_epoca(g) == [False, True, True]       # al pasar: sin regla de época
+    assert ef.sin_epoca(replace(g, imagen_frase=False)) == [False, False, True]
+    viejo = _guion(frases=["a"])                        # guiones sin el dato: central
+    assert ef.es_central(viejo, 0)
 
 
 def _d(frases):
@@ -224,6 +252,81 @@ def test_el_orden_de_preferencia_va_en_el_pedido_solo_con_la_regla(tmp_path):
     g = _guion(frases=["El tren."], mostrar=["1907 train"], presente=[False], imagen_frase=True)
     ef.elegir_fotos(G(r), g, pool, [[0, 1]], avisar=lambda *_: None, anio=1907)
     ef.elegir_fotos(G(r), replace(g, imagen_frase=False), pool, [[0, 1]], avisar=lambda *_: None, anio=1907)
-    assert "ORDEN DE PREFERENCIA" in pedidos[0] and "foto de stock del objeto" in pedidos[0]
-    assert "foto del objeto" in pedidos[0]
-    assert "ORDEN DE PREFERENCIA" not in pedidos[1]
+    assert "REGLAS DE SANTI" in pedidos[0] and "foto de stock del objeto" in pedidos[0]
+    assert "foto del objeto" in pedidos[0] and "(CENTRAL" in pedidos[0]
+    assert "REGLAS DE SANTI" not in pedidos[1]
+
+
+def test_al_pasar_el_prompt_dice_que_sirve_una_generica(tmp_path):
+    pool = [_foto(tmp_path, 0, "pexels: pikachu")]
+    pedidos = []
+
+    class G(_Gemini):
+        def json(self, sistema, prompt, *a, **k):
+            pedidos.append(prompt)
+            return super().json()
+
+    r = {"frases": [{"se_ve": "Pikachu", "fotos": [1], "de_epoca": False, "seguro": True, "contradice": False}],
+         "descartadas": [], "tipos": [{"foto": 1, "tipo": "foto", "otro_idioma": False, "anacronismo": True}]}
+    g = _guion(frases=["Ese año salió Pokémon."], mostrar=["2022 Pokemon game"], presente=[False],
+               central=[False], objeto=["Pikachu toy"], imagen_frase=True)
+    rankings, _ = ef.elegir_fotos(G(r), g, pool, [[0]], avisar=lambda *_: None, anio=1950)
+    assert "AL PASAR" in pedidos[0] and "Pikachu toy" in pedidos[0]
+    assert rankings == [[0]]       # al pasar: ni la época ni el anacronismo la sacan
+
+
+def test_claude_elige_y_gemini_queda_de_respaldo(tmp_path):
+    from clips_bot.claude import ClaudeError
+
+    pool = [_foto(tmp_path, 0, "Commons: 1907 train")]
+    r = {"frases": [{"se_ve": "tren", "fotos": [1], "de_epoca": True, "seguro": True, "contradice": False}],
+         "descartadas": [], "tipos": []}
+    usados = []
+
+    class Claude:
+        def __init__(self, falla):
+            self.falla = falla
+
+        def json(self, sistema, prompt, schema, imagenes=None, **k):
+            usados.append(("claude", len(imagenes or [])))
+            if self.falla:
+                raise ClaudeError("caído", pasajero=True)
+            return json.dumps(r)
+
+    class G(_Gemini):
+        def json(self, *a, **k):
+            usados.append(("gemini", len(k.get("imagenes") or [])))
+            return super().json()
+
+    g = _guion(frases=["El tren."], mostrar=["1907 train"], presente=[False], imagen_frase=True)
+    ef.elegir_fotos(G(r), g, pool, [[0]], avisar=lambda *_: None, anio=1907, elector=Claude(False))
+    assert usados == [("claude", 1)]
+    usados.clear()
+    ef.elegir_fotos(G(r), g, pool, [[0]], avisar=lambda *_: None, anio=1907, elector=Claude(True))
+    assert usados == [("claude", 1), ("gemini", 1)]
+
+
+def test_claude_recibe_las_imagenes_antes_del_texto():
+    from types import SimpleNamespace
+
+    from clips_bot.claude import ClaudeClient
+
+    pedidos = []
+
+    class Mensajes:
+        def create(self, **k):
+            pedidos.append(k)
+            return SimpleNamespace(usage=SimpleNamespace(input_tokens=10, output_tokens=5), model=k["model"],
+                                   stop_reason="end_turn", content=[SimpleNamespace(type="text", text="{}")])
+
+    falso = SimpleNamespace(messages=Mensajes(), beta=SimpleNamespace(messages=Mensajes()))
+    c = ClaudeClient("x", cliente=falso)
+    c.json("sis", "elegí", {"type": "OBJECT", "properties": {}}, imagenes=[b"\xff\xd8a", b"\xff\xd8b"])
+    contenido = pedidos[0]["messages"][0]["content"]
+    assert [b["type"] for b in contenido] == ["image", "image", "text"]
+    assert contenido[0]["source"]["media_type"] == "image/jpeg"
+
+
+def test_el_elector_va_solo_con_la_regla_prendida():
+    s = load_settings()
+    assert m._elector_fotos(replace(s, efemerides=replace(s.efemerides, imagen_frase=False))) is None
