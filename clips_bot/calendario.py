@@ -34,6 +34,7 @@ CLAVE = "calendario_conmemoraciones"   # bot_estado: {"dias": {iso: {"generado":
 DIAS = 90
 REFRESCAR_DIAS = 14     # un día ya armado se vuelve a leer si tiene más de esto (Wikipedia cambia)
 MAX_POR_DIA = 8         # en el mensaje de la semana, por día
+FUNDACION_ANIOS_MIN = 50   # una "fundación" de 2009 es un barrio nuevo (visto el 11/11): afuera
 
 BANDERAS = {"México": "🇲🇽", "Colombia": "🇨🇴", "Argentina": "🇦🇷", "Perú": "🇵🇪", "Chile": "🇨🇱",
             "Venezuela": "🇻🇪", "Uruguay": "🇺🇾", "Paraguay": "🇵🇾", "Bolivia": "🇧🇴", "Ecuador": "🇪🇨",
@@ -93,6 +94,8 @@ def entradas_del_dia(wiki: ef.Wiki, dia: date, avisar=log.info) -> list[dict]:
         avisar(f"calendario {dia:%d/%m}: anexos no salió ({err})")
     try:
         for c in locales.buscar_fundaciones(wiki, dia):
+            if c.anio > dia.year - FUNDACION_ANIOS_MIN:
+                continue
             titulo = c.paginas[0]
             sumar({"tipo": "fundacion", "pais": pais_de(c.texto), "texto": f"Aniversario de la fundación de {titulo}",
                    "articulos": [titulo], "anio": c.anio, "fuente": url_wiki(titulo)})
@@ -153,7 +156,7 @@ def linea(e: dict) -> str:
     bandera = BANDERAS.get(e.get("pais") or "", "🌎")
     pais = html.escape(e.get("pais") or "Latinoamérica")
     texto = html.escape(e["texto"][:160])
-    anio = f" ({e['anio']})" if e.get("anio") and str(e["anio"]) not in e["texto"] else ""
+    anio = f" ({e['anio']})" if e.get("tipo") == "fundacion" and e.get("anio") else ""
     return f"• {bandera} {pais}: {texto}{anio}"
 
 

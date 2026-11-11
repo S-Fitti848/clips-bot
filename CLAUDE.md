@@ -727,7 +727,7 @@ clips_bot/calendario.py  §3d: calendario de 90 días de fechas de Latinoaméric
 clips_bot/prueba_manual.py prueba manual vs API (§1): el clip del día a mano, registro e informe del feed
 clips_bot/envivo.py      modo en vivo (§3b): quién está al aire, momentos por creadores distintos,
                          alertas en la DB (no repetir, tope, vencer) y el resumen de tiempos
-tests/                   909 tests sin red ni video (conftest.py: nada sale a YouTube) (test_reglas_fijas.py: las 3 reglas de §1)
+tests/                   910 tests sin red ni video (conftest.py: nada sale a YouTube) (test_reglas_fijas.py: las 3 reglas de §1)
 ```
 
 Comandos:
@@ -943,7 +943,7 @@ Problemas abiertos:
   humana, y entre ellas México, Colombia, Argentina, Perú, Chile y Venezuela; Sonnet las ve con
   ★ CALENDARIO y el código las pone primero aunque no lo respete. (4) **El día exacto:**
   `_subir_facebook` no sube una historia (ni la efeméride) de un día que ya pasó.
-  `tests/test_calidad_calendario.py`. 909 tests OK.
+  `tests/test_calidad_calendario.py`. 910 tests OK.
 - v0.85.0 (2026-11-10) — **Feedback de Santi sobre los 3 ejemplos.** (1) **Rots: aprobado y
   PRENDIDO** (`render.edicion_rots: true`). (2) Pequeña Historia (sigue APAGADO hasta que apruebe
   los ejemplos nuevos): **Claude (Sonnet) elige y verifica las fotos** (`claude.ClaudeClient.json`

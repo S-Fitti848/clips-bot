@@ -162,6 +162,9 @@ WIKITEXTO = """== Acontecimientos ==
 ** Día de algo de afuera.
 * {{COL}}
 ** [[Día del Psicólogo]].
+** Por provincias:
+=== Santoral católico ===
+* San [[Serapión]].
 """
 
 
@@ -182,6 +185,13 @@ def test_entradas_del_dia_solo_latinoamerica_con_fuente_y_prioridad(monkeypatch)
     assert e[2]["tipo"] == "fundacion" and e[2]["anio"] == 1541
     assert e[2]["fuente"].endswith("Santiago_de_Chile")
     assert not any("afuera" in x["texto"] for x in e)
+    assert not any("Serapión" in x["texto"] or x["texto"].endswith(":") for x in e)
+
+
+def test_una_fundacion_reciente_es_un_barrio_no_va(monkeypatch):
+    barrio = locales.Candidato("fundacion", 2009, "Fundación de Paseos del Lago II: México", ["Paseos del Lago II"])
+    _fuentes_falsas(monkeypatch, [barrio])
+    assert not any(x["tipo"] == "fundacion" for x in calendario.entradas_del_dia(None, date(2026, 11, 15)))
 
 
 def test_actualizar_de_a_pocos_y_la_semana(conn, monkeypatch):

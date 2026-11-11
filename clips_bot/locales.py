@@ -116,12 +116,19 @@ def celebraciones(secs: dict[str, str]) -> list[dict]:
             continue
         pais = None
         for linea in cuerpo.splitlines():
-            m = re.match(r"^\*\s*\{\{([A-Z]{3})\}\}", linea.strip())
+            t = linea.strip()
+            m = re.match(r"^\*\s*\{\{([A-Z]{3})\}\}", t)
             if m:
                 pais = PAISES_PLANTILLA.get(m.group(1))    # None = país de afuera
                 continue
-            if not linea.lstrip().startswith("*") or len(_limpiar(linea.lstrip("*: "))) <= 3:
+            # El país vale para sus sub-ítems ("** …"): una subsección ("=== Santoral católico ===",
+            # 2026-11-11: los santos salían como de Perú) o un ítem de primer nivel lo cortan.
+            if t.startswith("=") or re.match(r"^\*(?!\*)", t):
+                pais = None
+            if not t.startswith("*") or len(_limpiar(linea.lstrip("*: "))) <= 3:
                 continue
+            if _limpiar(linea.lstrip("*: ")).rstrip().endswith(":"):
+                continue        # un título ("Por provincias:", "Misiones:"), no una fecha
             out.append({"pais": pais, "texto": _limpiar(linea.lstrip("*: ")), "enlaces": _enlaces(linea)})
     return out
 
@@ -180,7 +187,7 @@ _NO_LUGAR = re.compile(r"\b(club|f[uú]tbol|equipo|universidad|colegio|instituto
                        r"compa[nñ][ií]a|banco|aerol[ií]nea|radio|televisi[oó]n|canal|revista|diario|"
                        r"peri[oó]dico|iglesia|hermandad|cofrad[ií]a|logia|congregaci[oó]n|sindicato|"
                        r"orquesta|banda|federaci[oó]n|liga|asociaci[oó]n|sociedad|partido pol[ií]tico|"
-                       r"organizaci[oó]n|museo|hospital|marca)\b", re.I)
+                       r"organizaci[oó]n|museo|hospital|marca|cooperativa)\b", re.I)
 
 
 def anio_celebracion(texto: str, dia: date) -> int | None:
