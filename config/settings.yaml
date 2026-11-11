@@ -113,8 +113,8 @@ render:
   zoom_max_n: 3
   # Edición nueva de Rots (aprobada el 2026-11-10, edicion.py): sin silencios ni partes muertas
   # (15-35 s), zoom también en las risas, texto de contexto el primer segundo, subtítulos karaoke y
-  # 2 s finales con una pregunta (también en la descripción). APAGADA hasta que Santi apruebe el ejemplo.
-  edicion_rots: false
+  # 2 s finales con una pregunta (también en la descripción). PRENDIDA (Santi aprobó el ejemplo, 2026-11-10).
+  edicion_rots: true         # prendida por Santi el 2026-11-10 después de ver el ejemplo
   # 2026-10-20 (Santi: "los videos tardan en cargar en Telegram"): medium + crf 22 + tope 3500 kbps.
   # Medido con VMAF (modelo de celular) contra una referencia casi sin pérdida, sobre los clips más
   # pesados de las entregas: 33,6 → 26,7 MB (VMAF 96,7 → 96,6) y 36,5 → 26,9 MB (93,3 → 92,7). Con

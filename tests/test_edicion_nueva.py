@@ -24,9 +24,9 @@ def _habla(desde: float, n: int, paso: float = 0.4, texto: str = "bla") -> list[
     return [P(round(desde + k * paso, 2), round(desde + k * paso + 0.3, 2), texto) for k in range(n)]
 
 
-def test_apagado_en_los_timers():
+def test_interruptores_en_los_timers():
     s = load_settings()
-    assert s.render.edicion_rots is False
+    assert s.render.edicion_rots is True          # Rots: aprobado por Santi el 2026-11-10
     assert s.efemerides.imagen_frase is False
     assert s.historias_fb.formato_corto is False
 
@@ -124,7 +124,8 @@ def test_render_congela_el_final_para_la_pregunta():
 
 def test_un_momento_que_otro_subio_baja_con_la_edicion():
     s = load_settings()
-    assert m._factor_pego(s) == s.pego.peso
+    sin = replace(s, render=replace(s.render, edicion_rots=False))
+    assert m._factor_pego(sin) == s.pego.peso
     con = replace(s, render=replace(s.render, edicion_rots=True))
     assert m._factor_pego(con) == s.pego.peso_copiado < 1
 
