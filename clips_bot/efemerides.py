@@ -1642,7 +1642,7 @@ def fotos_para_guion(wiki: Wiki, cliente, e: Evento, g: Guion, fotos_articulo: l
         avisar(f"    fotos: {'; '.join(errores)} (se alarga la anterior antes que poner una tarjeta)")
         errores = []
     if errores:
-        raise NarrarError("las fotos no alcanzan: " + "; ".join(errores))
+        raise FotosNoAlcanzan(pool, g, errores)
     if g.minimo_fotos < ilustrar.MIN_FOTOS_ABSOLUTO:
         raise PocasFotos(pool, g, disponibles)
     control_calidad(pool, g, plan_estimado(g, len(pool)))
@@ -1681,6 +1681,16 @@ class FotosInsuficientes(NarrarError):
         self.pool, self.guion, self.pct = pool, g, pct
 
 
+class FotosNoAlcanzan(NarrarError):
+    """El plan no cumple la regla fija 1 (menos de 6 distintas, una foto más de 6 s): como con menos
+    del 70 %, primero la segunda búsqueda con Claude y después el hecho siguiente (el Ash Ketchum del
+    11/11 se salteaba la segunda búsqueda)."""
+
+    def __init__(self, pool: list, g: "Guion", errores: list[str]):
+        super().__init__("las fotos no alcanzan: " + "; ".join(errores))
+        self.pool, self.guion = pool, g
+
+
 def control_calidad(pool: list, g: "Guion", plan: list[tuple[int, int, float]]) -> float:
     pct = fraccion_real(pool, plan)
     g.fotos_reales = round(pct, 3)
@@ -1699,7 +1709,7 @@ def fotos_con_control(wiki: "Wiki", cliente, e: "Evento", g: "Guion", fotos_arti
     (FotosInsuficientes, o PocasFotos) y quien llama pasa al hecho siguiente."""
     try:
         return fotos_para_guion(wiki, cliente, e, g, fotos_articulo, carpeta, avisar, elector=elector, **k)
-    except (FotosInsuficientes, PocasFotos) as err:
+    except (FotosInsuficientes, FotosNoAlcanzan, PocasFotos) as err:
         avisar(f"  {err}: segunda búsqueda de fotos con Claude")
         anterior, pool_antes = err.guion, err.pool
     k = {**k, "pool": pool_antes, "descartadas": set(anterior.descartadas)}

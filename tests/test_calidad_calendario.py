@@ -73,6 +73,23 @@ def test_la_segunda_busqueda_va_con_claude_y_sin_regla_de_epoca(monkeypatch):
     assert pool == ["pool", "nueva"]
 
 
+def test_si_las_fotos_no_alcanzan_tambien_hay_segunda_busqueda(monkeypatch):
+    # Ash Ketchum (11/11): "5 fotos distintas; la foto 10 se ve 7,4 s seguidos" pasaba al hecho
+    # siguiente sin la segunda búsqueda con Claude.
+    llamadas = []
+
+    def fotos_para_guion(wiki, cliente, e, g_, fotos, carpeta, avisar, elector=None, segunda=False, **k):
+        llamadas.append(segunda)
+        if not segunda:
+            raise ef.FotosNoAlcanzan(["pool"], g_, ["hay 5 fotos distintas"])
+        return ["pool"], g_
+
+    monkeypatch.setattr(ef, "fotos_para_guion", fotos_para_guion)
+    ef.fotos_con_control(None, None, None, _guion(), [], None, lambda *_: None, elector_reintento="claude")
+    assert llamadas == [False, True]
+    assert issubclass(ef.FotosNoAlcanzan, ef.NarrarError)
+
+
 def test_si_la_segunda_tampoco_llega_sigue_la_excepcion(monkeypatch):
     def nunca(*a, segunda=False, **k):
         raise ef.FotosInsuficientes([], _guion(), 0.5)

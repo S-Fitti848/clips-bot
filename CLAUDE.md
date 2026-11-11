@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-11-11 | **Versión:** v0.87.0 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 de clips + timer 06:00 de la efeméride + escucha de Telegram 24/7, que además propone la historia de Facebook a las 06:30)
+**Snapshot:** 2026-11-11 | **Versión:** v0.87.1 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 de clips + timer 06:00 de la efeméride + escucha de Telegram 24/7, que además propone la historia de Facebook a las 06:30)
 
 > **SI ESTÁS EMPEZANDO UNA SESIÓN NUEVA, LEÉ §10.** Ahí está qué está hecho, qué quedó a medias,
 > qué falta, y las trampas que ya nos mordieron.
@@ -727,7 +727,7 @@ clips_bot/calendario.py  §3d: calendario de 90 días de fechas de Latinoaméric
 clips_bot/prueba_manual.py prueba manual vs API (§1): el clip del día a mano, registro e informe del feed
 clips_bot/envivo.py      modo en vivo (§3b): quién está al aire, momentos por creadores distintos,
                          alertas en la DB (no repetir, tope, vencer) y el resumen de tiempos
-tests/                   917 tests sin red ni video (conftest.py: nada sale a YouTube) (test_reglas_fijas.py: las 3 reglas de §1)
+tests/                   918 tests sin red ni video (conftest.py: nada sale a YouTube) (test_reglas_fijas.py: las 3 reglas de §1)
 ```
 
 Comandos:
@@ -920,6 +920,9 @@ Problemas abiertos:
 
 ## 9. CHANGELOG
 
+- v0.87.1 (2026-11-11) — Las fotos que no cumplen la regla fija 1 (menos de 6 distintas, una más
+  de 6 s seguidos) ahora también pasan por la segunda búsqueda con Claude antes del hecho siguiente
+  (`FotosNoAlcanzan`; el Ash Ketchum del ejemplo se la salteaba). 918 tests OK.
 - v0.87.0 (2026-11-11) — **Feedback de Santi sobre Cartagena y Ash Ketchum.** Cartagena (historia
   de Facebook) aprobada. (1) **Ficción** (`SISTEMA_GUION`, vale para la historia de Facebook): series,
   animé, juegos, películas → lo real primero ("el animé de Pokémon cerró la historia de Ash después
