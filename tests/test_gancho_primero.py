@@ -122,6 +122,8 @@ def test_calibracion_con_los_de_studio():
 def test_segundo_empujon():
     assert medicion_ph.hubo_empujon([1286, 140, 394, 26])        # Beatles: el día 2
     assert not medicion_ph.hubo_empujon([1203, 76, 64])          # Nacozari
+    assert not medicion_ph.hubo_empujon([20, 1156, 7, 9])        # Android: publicado a la noche
+    assert not medicion_ph.hubo_empujon([470, 711, 16, 1])       # vela solar: el paquete en 2 días
     assert not medicion_ph.hubo_empujon([])
 
 

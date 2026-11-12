@@ -70,10 +70,13 @@ def segundo_que_se_va(curva: dict) -> int | None:
 
 
 def hubo_empujon(por_dia: list[int]) -> bool:
-    """¿Algún día después del primero con al menos EMPUJON de las vistas del primero?"""
-    if not por_dia or por_dia[0] <= 0:
+    """¿Un SEGUNDO paquete? El primero puede caer entre el día 0 y el 1 (un Short publicado a la
+    noche: Android y Arcane hicieron 20 y 1.156): es el mayor de esos dos días. Empujón = algún día
+    desde el 2 con al menos EMPUJON de ese primer paquete (Beatles: 1.286, 140, 394)."""
+    if len(por_dia) < 3:
         return False
-    return any(v >= EMPUJON * por_dia[0] for v in por_dia[1:])
+    base = max(por_dia[0], por_dia[1])
+    return base > 0 and any(v >= EMPUJON * base for v in por_dia[2:])
 
 
 def medir_facebook(subidas: list[dict], token: str, version: str, session=None) -> dict:
