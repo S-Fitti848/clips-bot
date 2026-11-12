@@ -8,23 +8,24 @@ from clips_bot import facebook, graficos
 from clips_bot.config import load_settings
 
 
-def test_portada_despues_de_la_cuenta_y_antes_del_fundido():
-    assert graficos.CONTAR_S + 0.26 < graficos.PORTADA_S < graficos.AÑO_HASTA_S - 0.25
-    assert graficos.PORTADA_S < 2.0      # sin gráficos, el cartel del año dura 2 s: también se ve
+def _seg(t):
+    h, mi, s = t.split(":")
+    return int(h) * 3600 + int(mi) * 60 + float(s)
 
 
-def test_el_cuadro_de_la_portada_tiene_el_anio_final(tmp_path):
-    # el ASS del año: en PORTADA_S solo está activo el evento del año final
-    ev = graficos.anio_contando(1931)
-    activos = []
-    for linea in ev:
-        _, a, b, *_ , texto = linea.split(",", 9)
-        def seg(t):
-            h, mi, s = t.split(":")
-            return int(h) * 3600 + int(mi) * 60 + float(s)
-        if seg(a) <= graficos.PORTADA_S < seg(b):
-            activos.append(texto)
-    assert len(activos) == 1 and activos[0].endswith("1931")
+def test_la_portada_muestra_el_gancho():
+    # Desde el 2026-11-12 el video arranca con el gancho escrito en grande desde el primer cuadro:
+    # la portada es un cuadro con el gancho ya escrito (antes, el año final de la cuenta).
+    ev = graficos.gancho_en_pantalla("Una banda terminó una canción 45 años después.", 3.2)
+    _, a, b, *_, texto = ev[0].split(",", 9)
+    assert _seg(a) == 0.0 and _seg(a) <= graficos.PORTADA_S < _seg(b)
+    assert "Una banda terminó" in texto and "fad(0," in texto      # sin fundido de entrada
+
+
+def test_el_anio_cuenta_con_la_segunda_frase():
+    ev = graficos.anio_contando(1931, inicio=3.0)
+    arranques = [_seg(linea.split(",", 9)[1]) for linea in ev]
+    assert min(arranques) == 3.0 and ev[-1].endswith("1931")
 
 
 class Resp:

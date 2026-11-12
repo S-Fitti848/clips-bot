@@ -637,7 +637,10 @@ un canal de efemérides para público joven, en español rioplatense (vos, no t�
 REGLA DE ORO: usás SOLO lo que dice el texto del artículo que te paso. Nada de tu memoria: ni un
 nombre, ni un número, ni una fecha que no esté ahí. Si el artículo no lo dice, no lo digas.
 
-- La primera frase arranca EXACTAMENTE con "Un día como hoy, en <año>," y sigue con el gancho.
+- La PRIMERA frase es el GANCHO: lo más sorprendente del hecho, desde la primera palabra, en 14
+  palabras como mucho y SIN fecha ("Una banda terminó una canción 45 años después."). Nada de
+  "Un día como hoy" ni de arranques de relleno ("¿Sabías que…?", "Hoy te cuento…").
+- La SEGUNDA frase arranca EXACTAMENTE con "En <año>," y cuenta cuándo y dónde.
 - Tono: como alguien que te cuenta algo que lo sorprendió, con ganas. Nada de tono de manual.
 - Frases CORTAS: ninguna de más de 14 palabras. Mejor dos frases que una larga con comas.
 - Al menos UNA pregunta ("¿Sabés qué hizo después?") y al menos UNA exclamación ("¡Y funcionó!")
@@ -935,17 +938,17 @@ def validar_guion(d: dict, anio: int, fuente: str, corto: bool = False) -> list[
     elif n > maximo:
         errores.append(f"el guion tiene {n} palabras y el máximo es {maximo}: sacá "
                        f"{n - maximo + 5} palabras (datos, no la explicación)")
-    if corto:
-        # Gancho primero (2026-11-10): la primera frase es el dato más sorprendente; la fecha va en
-        # la segunda, "En <año>, en <lugar>,".
-        if _norm(frases[0]).startswith("un dia como hoy"):
-            errores.append('la primera frase es el GANCHO (el dato más sorprendente), sin "Un día como hoy"')
-        if len(frases[0].split()) > 14:
-            errores.append("la primera frase (el gancho) tiene que tener 14 palabras como mucho")
-        if len(frases) < 2 or not _norm(frases[1]).startswith("en ") or str(anio) not in frases[1]:
-            errores.append(f'la segunda frase tiene que arrancar con "En {anio}, en <lugar>,"')
-    elif not _norm(frases[0]).startswith("un dia como hoy") or str(anio) not in frases[0]:
-        errores.append(f'la primera frase tiene que arrancar con "Un día como hoy, en {anio},"')
+    # Gancho primero en TODO Pequeña Historia (Santi, 2026-11-12: en Facebook la mayoría se iba en el
+    # 0:04, justo cuando terminaba "Un día como hoy…"; en YouTube la mitad desliza al arranque): la
+    # primera frase es lo más sorprendente, sin fecha; el año va en la segunda, "En <año>,".
+    if _norm(frases[0]).startswith(("un dia como hoy", "sabias que", "hoy te cuento")):
+        errores.append('la primera frase es el GANCHO (lo más sorprendente), sin "Un día como hoy" ni relleno')
+    if str(anio) in frases[0]:
+        errores.append("la primera frase (el gancho) va SIN el año: el año va en la segunda")
+    if len(frases[0].split()) > 14:
+        errores.append("la primera frase (el gancho) tiene que tener 14 palabras como mucho")
+    if len(frases) < 2 or not _norm(frases[1]).startswith("en ") or str(anio) not in frases[1]:
+        errores.append(f'la segunda frase tiene que arrancar con "En {anio},"')
     # Pedido 2026-09-27 ("la voz suena triste y plana"): frases cortas, al menos una pregunta y
     # una exclamación, y cierre con gancho. Piper entona distinto una frase con ¿? o ¡!.
     if not frases[-1].rstrip().endswith(("?", "!")):
@@ -1102,6 +1105,10 @@ contradice; si dice que ganó, una foto de la derrota. Si contradice, true.
 banderas, escudos, firmas, logos, capturas de pantalla, retratos de alguien que NO protagoniza el
 hecho, fotos de otro tema, y cualquier imagen violenta o con muertos o heridos. Nunca las pongas en
 ninguna frase.
+
+`impactantes`: de las fotos que SIRVEN (que no descartaste), las 3 más impactantes a la vista, la
+mejor primero: la que haría frenar el dedo en el feed (un momento fuerte, una cara, algo raro o
+enorme), del hecho o del lugar. La primera va al principio del video, con el gancho.
 Respondé solo con el JSON pedido."""
 
 ORDEN_FOTOS = """REGLAS DE SANTI PARA ESTE VIDEO (le ganan a lo que diga más abajo):
@@ -1130,6 +1137,7 @@ SCHEMA_FOTOS = {
                            "video_de_epoca": {"type": "BOOLEAN"}, "contradice": {"type": "BOOLEAN"}},
             "required": ["se_ve", "fotos", "de_epoca", "seguro", "contradice"]}},
         "descartadas": {"type": "ARRAY", "items": {"type": "INTEGER"}},
+        "impactantes": {"type": "ARRAY", "items": {"type": "INTEGER"}},
         "tipos": {"type": "ARRAY", "items": {
             "type": "OBJECT",
             "properties": {"foto": {"type": "INTEGER"},
@@ -1408,6 +1416,15 @@ def elegir_fotos(cliente, g: Guion, pool: list[Foto], candidatas: list[list[int]
                     avisar(f"    frase {i + 1}: foto {x + 1} afuera (stock con algo fuera de época)")
         usadas = {x for r in rankings for x in r}
         malas |= {x for x in no_aptas if x not in usadas}
+        # La primera foto del video = la más impactante (Santi, 2026-11-12): va con el gancho, si es
+        # una candidata de la frase 1 (época, capturas y "solo del hecho" ya filtrados) y sirve.
+        if rankings and candidatas:
+            imp = [x - 1 for x in d.get("impactantes") or [] if isinstance(x, int)]
+            x = next((x for x in imp if x in candidatas[0] and x in usadas and x not in malas
+                      and x not in no_aptas), None)
+            if x is not None and (not rankings[0] or rankings[0][0] != x):
+                rankings[0] = [x] + [y for y in rankings[0] if y != x]
+                avisar(f"    frase 1: foto {x + 1} primero (la más impactante)")
         if extra is not None:
             extra["tipos"] = tipos
         # Con videos, después de las fotos van sus cuadros: Gemini a veces "descarta" esos
@@ -2776,7 +2793,8 @@ def es_piper(motor: str) -> bool:
 SISTEMA_ACORTAR = (
     "Acortás el guion de un Short de historia para que entre en el tiempo. Devolvés EXACTAMENTE la "
     "misma cantidad de frases, en el mismo orden, cada una más corta, diciendo lo mismo con menos "
-    "palabras. Mantené la primera frase empezando igual (\"Un día como hoy, en <año>,\"), el cierre "
+    "palabras. Mantené el gancho de la primera frase (lo más sorprendente, sin fecha) y la segunda "
+    "empezando igual (\"En <año>,\"), el cierre "
     "con gancho y que se entienda paso a paso. No agregues nombres, cifras ni datos que no estén en "
     "el guion original. Español rioplatense neutro.")
 SCHEMA_ACORTAR = {"type": "OBJECT", "properties": {"frases": {"type": "ARRAY", "items": {"type": "STRING"}}},
@@ -2798,9 +2816,10 @@ def validar_acortado(frases, originales: list[str], objetivo: int, fuente: str) 
     n = sum(len(f.split()) for f in frases)
     if n > objetivo:
         errores.append(f"tiene {n} palabras y tienen que ser como mucho {objetivo}")
-    inicio = " ".join(originales[0].split()[:6])
-    if originales[0].startswith("Un día como hoy") and not frases[0].startswith(inicio):
-        errores.append(f"la primera frase tiene que empezar con «{inicio}»")
+    if len(originales) > 1 and originales[1].startswith("En "):
+        inicio = " ".join(originales[1].split()[:2])          # "En 1811,"
+        if not frases[1].startswith(inicio):
+            errores.append(f"la segunda frase tiene que empezar con «{inicio}»")
     sin = no_respaldados(" ".join(frases), fuente)
     if sin:
         errores.append("esto no está en el artículo: " + ", ".join(sin[:6]))
@@ -2874,6 +2893,12 @@ def hacer_video(p: Propuesta, settings, carpeta: Path, avisar=log.info, conn=Non
             wav, duraciones, motor = voz_efemeride(g.frases, settings, carpeta, avisar,
                                                    segunda_primero=fb)
     duraciones, _ = ajustar_duracion(wav, duraciones, max_s, cfg_v.tts_acelerar_max, avisar)
+    # Nada de segundos muertos al principio (Santi, 2026-11-12): la voz arranca en el cuadro 1.
+    cortado = narrar.sacar_silencio_inicial(wav)
+    if cortado:
+        avisar(f"voz: saqué {cortado:.2f} s de silencio al principio")
+        if duraciones:
+            duraciones = [max(0.3, duraciones[0] - cortado)] + list(duraciones[1:])
     fin = narrar.duracion_wav(wav)
     avisar(f"voz ({motor}): {fin:.1f} s en {time.time() - t0:.0f} s")
     t0 = time.time()
@@ -2895,32 +2920,22 @@ def hacer_video(p: Propuesta, settings, carpeta: Path, avisar=log.info, conn=Non
         duraciones = [b - a for a, b in zip(inicios, inicios[1:] + [fin])]
     subs = sub.palabra_por_palabra(palabras, settings.subtitulos)
     cfg_ef = settings.efemerides
-    if g.corto:
-        # Formato corto: karaoke (la palabra que suena, dorada) y sin el año grande al principio,
-        # que es el gancho; las palabras clave grandes, igual.
-        sub.escribir_ass_karaoke(palabras, carpeta / "subs.ass", settings.subtitulos, settings.render,
-                                 color_activo=sub.KARAOKE_PH, tamano=78)
-        if cfg_ef.graficos:
-            from . import graficos as gr
-
-            gr.agregar_al_ass(carpeta / "subs.ass",
-                              gr.estilos(settings.render.ancho, settings.render.alto, settings.subtitulos.fuente),
-                              gr.claves_en_tiempo(palabras, g.claves))
-    elif cfg_ef.graficos:
-        # La efeméride de YouTube también con karaoke (Santi, 2026-11-11: "me gustan y no cambian
-        # nada de lo que funciona"); el año contando y las palabras clave grandes, igual que antes.
-        sub.escribir_ass_karaoke(palabras, carpeta / "subs.ass", settings.subtitulos, settings.render,
-                                 color_activo=sub.KARAOKE_PH, tamano=78)
-    else:
-        sub.escribir_ass(subs, carpeta / "subs.ass", settings.subtitulos, settings.render,
-                         cartel=str(e.anio), cartel_s=2.0, cartel_grande=True)
-    if cfg_ef.graficos and not g.corto:
-        # El año contando (en vez de quieto) y las palabras clave grandes cuando la voz las dice.
+    if cfg_ef.graficos:
+        # Karaoke en los dos formatos (Santi, 2026-11-11) y, desde el 2026-11-12, el arranque:
+        # el GANCHO escrito en grande desde el primer cuadro mientras la voz lo dice; el año
+        # contando recién con la segunda frase ("En <año>,"); las palabras clave después.
         from . import graficos as gr
 
+        sub.escribir_ass_karaoke(palabras, carpeta / "subs.ass", settings.subtitulos, settings.render,
+                                 color_activo=sub.KARAOKE_PH, tamano=78)
+        fin_gancho = inicios[1] if len(inicios) > 1 else min(fin, 3.0)
         gr.agregar_al_ass(carpeta / "subs.ass",
                           gr.estilos(settings.render.ancho, settings.render.alto, settings.subtitulos.fuente),
-                          gr.anio_contando(e.anio) + gr.claves_en_tiempo(palabras, g.claves))
+                          gr.gancho_en_pantalla(g.frases[0], fin_gancho)
+                          + gr.anio_contando(e.anio, inicio=fin_gancho)
+                          + gr.claves_en_tiempo(palabras, g.claves, desde_s=fin_gancho + gr.AÑO_HASTA_S))
+    else:
+        sub.escribir_ass(subs, carpeta / "subs.ass", settings.subtitulos, settings.render)
     avisar(f"subtítulos: {len(subs)} palabras en {time.time() - t0:.0f} s")
     # La música entra DESPUÉS de los subtítulos: Whisper tiene que escuchar la voz sola.
     from .config import ROOT

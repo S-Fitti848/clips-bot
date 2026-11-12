@@ -329,8 +329,8 @@ efemerides:
   efecto_fotos: fija
   # Imagen = lo que se dice (2026-11-10): foto del hecho o el lugar → del objeto en Commons → del
   # objeto en Pexels (Gemini confirma que no se ve nada fuera de época). Vale para la efeméride de
-  # YouTube (y su Reel) y para la historia de Facebook. APAGADA hasta que Santi apruebe el ejemplo.
-  imagen_frase: false
+  # YouTube (y su Reel) y para la historia de Facebook. PRENDIDA por Santi el 2026-11-12.
+  imagen_frase: true
   graficos: true
   # Si no sale a las 05:00 (el 2026-09-28: 429 de upload.wikimedia.org), la escucha de Telegram
   # reintenta sola a estas horas (AR). Recién si falla la última avisa que hoy no hay propuesta.
@@ -508,8 +508,8 @@ historias_fb:
   prueba_desde: "2026-11-10"
   prueba_dias: 14
   # Formato corto (2026-11-10): 20-30 s, gancho primero, cortes de 1,5-2,5 s con movimiento, karaoke
-  # e imagen = lo que se dice. APAGADO hasta que Santi apruebe el ejemplo.
-  formato_corto: false
+  # e imagen = lo que se dice. PRENDIDO por Santi el 2026-11-12.
+  formato_corto: true
   # Calendario de fechas de Latinoamérica (2026-11-11): cada lunes desde esta hora, la lista de la
   # semana a Santi; esos días la historia va primero con la fecha que se recuerda (calendario.py).
   calendario_hora: "08:00"

@@ -534,9 +534,9 @@ SISTEMA_GUION_LOCAL = ef.SISTEMA_GUION.replace(
     "un canal de efemérides para público joven, en español rioplatense (vos, no tú). Este video es\n"
     "para Facebook y lo va a ver sobre todo gente de ESE lugar de Latinoamérica: la historia es de\n"
     "ellos, contala con respeto y con orgullo (que alguien de ahí diga \"¡eso pasó en mi pueblo!\").").replace(
-    '- La primera frase arranca EXACTAMENTE con "Un día como hoy, en <año>," y sigue con el gancho.',
-    '- La primera frase arranca EXACTAMENTE con "Un día como hoy, en <año>, en <lugar>," (el pueblo o\n'
-    '  la ciudad, escrito igual que te lo paso) y sigue con el gancho.\n'
+    '- La SEGUNDA frase arranca EXACTAMENTE con "En <año>," y cuenta cuándo y dónde.',
+    '- La SEGUNDA frase arranca EXACTAMENTE con "En <año>, en <lugar>," (el pueblo o la ciudad,\n'
+    '  escrito igual que te lo paso) y cuenta dónde y cuándo.\n'
     '- El LUGAR va también en el `titulo` (escrito igual) y como hashtag (sin espacios ni tildes,\n'
     '  ej. #VillaEpecuen), además de un hashtag del país.\n'
     '- Si te digo que hoy se conmemora, podés nombrarlo SOLO si el artículo lo dice.').replace(
@@ -548,13 +548,6 @@ SISTEMA_GUION_LOCAL = ef.SISTEMA_GUION.replace(
 # en la segunda frase. Lo demás (solo el artículo, claridad, lugar en título y hashtag) igual.
 SISTEMA_GUION_CORTO = SISTEMA_GUION_LOCAL.replace(
     "un video vertical de 35 a 45 segundos", "un video vertical de 20 a 30 segundos").replace(
-    '- La primera frase arranca EXACTAMENTE con "Un día como hoy, en <año>, en <lugar>," (el pueblo o\n'
-    '  la ciudad, escrito igual que te lo paso) y sigue con el gancho.',
-    '- La PRIMERA frase es el GANCHO: el dato más sorprendente o el momento más fuerte de la historia,\n'
-    '  en 14 palabras como mucho, SIN fecha ("Un maquinista llevó un tren en llamas lejos de su pueblo.").\n'
-    '  Nada de "Un día como hoy".\n'
-    '- La SEGUNDA frase arranca EXACTAMENTE con "En <año>, en <lugar>," (el pueblo o la ciudad, escrito\n'
-    '  igual que te lo paso) y cuenta dónde y cuándo.').replace(
     "- Entre 80 y 100 palabras en total (contalas: menos de 70 queda corto y más de 105 se pasa de\n"
     "  45 segundos), en 8 a 14 frases, habladas, no escritas.",
     "- Entre 50 y 70 palabras en total (contalas: menos de 45 queda corto y más de 72 se pasa de\n"
@@ -582,11 +575,10 @@ def validar_lugar(lugar: str, corto: bool = False):
         errores = []
         clave = _sin_tildes(lugar).strip()
         frases = d.get("frases") or []
-        n = 2 if corto else 1
-        primera = " ".join(_sin_tildes(str((f or {}).get("texto") or "")) for f in frases[:n])
+        # Gancho primero (2026-11-12, en los dos formatos): el lugar en la primera o la segunda frase.
+        primera = " ".join(_sin_tildes(str((f or {}).get("texto") or "")) for f in frases[:2])
         if clave not in primera:
-            errores.append(f'la segunda frase tiene que nombrar el lugar: "En <año>, en {lugar},"' if corto
-                           else f'la primera frase tiene que nombrar el lugar: "Un día como hoy, en <año>, en {lugar},"')
+            errores.append(f'la segunda frase tiene que nombrar el lugar: "En <año>, en {lugar},"')
         if clave not in _sin_tildes(str(d.get("titulo") or "")):
             errores.append(f"el título tiene que nombrar el lugar ({lugar})")
         if not any(_compacto(lugar) == _compacto(str(h)) for h in d.get("hashtags") or []):

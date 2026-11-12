@@ -274,6 +274,39 @@ def limpiar_cola(wav: Path, ventana_s: float = 0.02, umbral_db: float = -45.0,
     return (n - corte) / sr
 
 
+def sacar_silencio_inicial(wav: Path, ventana_s: float = 0.01, umbral_db: float = -40.0,
+                           dejar_s: float = 0.02, maximo_s: float = 1.5) -> float:
+    """Nada de segundos muertos al principio (Santi, 2026-11-12: en Facebook la mayoría se iba en el
+    0:04): corta el silencio de antes de la primera palabra y deja `dejar_s`, así la voz arranca en el
+    primer cuadro. Devuelve los segundos cortados. Solo PCM de 16 bits; si arranca con voz, no toca."""
+    import numpy as np
+
+    with wave.open(str(wav)) as w:
+        params = w.getparams()
+        datos = w.readframes(w.getnframes())
+    if params.sampwidth != 2 or not params.nframes:
+        return 0.0
+    x = np.frombuffer(datos, dtype="<i2").reshape(-1, params.nchannels)
+    sr = params.framerate
+    paso = max(1, int(sr * ventana_s))
+    xf = x.astype(np.float32) / 32768.0
+    tope = min(len(x), int(sr * maximo_s))
+    primero = None
+    for i in range(0, tope, paso):
+        if 20 * math.log10(float(np.sqrt(np.mean(xf[i:i + paso] ** 2))) + 1e-9) > umbral_db:
+            primero = i
+            break
+    if primero is None:
+        return 0.0
+    corte = max(0, primero - int(sr * dejar_s))
+    if corte <= 0:
+        return 0.0
+    with wave.open(str(wav), "wb") as w:
+        w.setparams(params)
+        w.writeframes(x[corte:].tobytes())
+    return corte / sr
+
+
 def duracion_wav(path: Path) -> float:
     with wave.open(str(path)) as w:
         return w.getnframes() / float(w.getframerate() or 1)

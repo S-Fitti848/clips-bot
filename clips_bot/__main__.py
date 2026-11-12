@@ -2654,6 +2654,8 @@ def escuchar_telegram(settings: Settings, timeout_poll: int = 50) -> int:
                     _efe_reintento_tick, conn, tg, settings)
             _seguro(tg, str(chat_ultimo or ""), "la historia de Facebook", _fb_tick, conn, tg, settings)
             _seguro(tg, str(chat_ultimo or ""), "el calendario", _calendario_tick, conn, tg, settings)
+            _seguro(tg, str(chat_ultimo or ""), "la medición de Pequeña Historia",
+                    _medicion_ph_tick, conn, tg, settings)
             _seguro(tg, str(chat_ultimo or ""), "el reintento de los clips",
                     _clips_reintento_tick, conn, settings)
             _seguro(tg, str(chat_ultimo or ""), "la búsqueda de lo que pegó",
@@ -3554,6 +3556,50 @@ def _calendario_tick(conn, tg: TelegramClient, settings: Settings, ahora=None, w
         tg.send_message(DUENO, parte)
 
 
+def _medir_ph(conn, settings: Settings) -> dict:
+    """Mide los videos de Pequeña Historia (Facebook y YouTube) y los guarda (medicion_ph)."""
+    from . import facebook, medicion_ph, youtube
+
+    fb = {}
+    try:
+        _, token = facebook.credenciales()
+        ahora_iso = datetime.now(timezone.utc).isoformat()
+        subidas = [s for s in db.subidas(conn, ("programada", "publicada"))
+                   if s["canal"] == "facebook" and (s.get("publish_at") or "") <= ahora_iso]
+        fb = medicion_ph.medir_facebook(subidas, token, settings.facebook.version)
+    except Exception as e:      # sin credenciales o Facebook caído: se mide lo otro
+        log.info("medición de Facebook: %s", e)
+    yt = {}
+    try:
+        yt = medicion_ph.medir_youtube(youtube.Cliente("pequena_historia"),
+                                       datetime(2026, 10, 1, tzinfo=timezone.utc))
+    except Exception as e:
+        log.info("medición de YouTube: %s", e)
+    return medicion_ph.guardar(conn, fb, yt)
+
+
+def _medicion_ph_tick(conn, tg: TelegramClient, settings: Settings, ahora=None, medir=None) -> None:
+    """Una vez por día desde medicion_ph.HORA: mide los videos de Pequeña Historia; a la semana del
+    gancho primero (Santi, 2026-11-12), le manda a Santi la comparación con los de antes (una vez)."""
+    from . import medicion_ph as mp
+
+    ahora = ahora or datetime.now(AR)
+    hoy = ahora.date()
+    if ahora.strftime("%H:%M") < mp.HORA or db.get_valor(conn, mp.CLAVE_DIA) == hoy.isoformat():
+        return
+    if db.hay_trabajo_pesado(conn, VENCIMIENTO_PESADO_S):
+        return
+    db.set_valor(conn, mp.CLAVE_DIA, hoy.isoformat())
+    datos = (medir or _medir_ph)(conn, settings)
+    if hoy >= mp.DESDE + timedelta(days=mp.DIAS_INFORME) and not db.get_valor(conn, mp.CLAVE_INFORME):
+        db.set_valor(conn, mp.CLAVE_INFORME, hoy.isoformat())
+        from .telegram import partir_html
+
+        texto = mp.informe(datos, hasta=hoy) + "\n\n<b>Video por video</b>\n" + mp.por_video(datos)
+        for parte in partir_html(texto):
+            tg.send_message(DUENO, parte)
+
+
 FB_DIA = "historias_fb_dia"   # bot_estado: el día (AR) en que ya se propuso la de Facebook
 FB_FECHA_FIJA = "historias_fb_hecho"   # bot_estado: {"dia": ..., "hecho": ...} para elegir uno a mano
 
@@ -3976,6 +4022,26 @@ def cmd_calendario(args: argparse.Namespace) -> int:
         lunes = _fecha_efemeride(args.desde) if args.desde else hoy - timedelta(days=hoy.weekday())
         texto = calendario.texto_semana(conn, lunes)
         print(f"{n} días armados\n")
+        print(html.unescape(re.sub(r"<[^>]+>", "", texto)))
+        if args.enviar:
+            from .telegram import partir_html
+
+            tg = TelegramClient(env("TELEGRAM_BOT_TOKEN"))
+            for parte in partir_html(texto):
+                tg.send_message(DUENO, parte)
+    finally:
+        conn.close()
+    return 0
+
+
+def cmd_medicion_ph(args: argparse.Namespace) -> int:
+    """Mide los videos de Pequeña Historia y muestra antes contra después del gancho primero."""
+    from . import medicion_ph as mp
+
+    conn = db.connect(DB_PATH)
+    try:
+        datos = _medir_ph(conn, load_settings())
+        texto = mp.informe(datos, hasta=datetime.now(AR).date()) + "\n\n<b>Video por video</b>\n" + mp.por_video(datos)
         print(html.unescape(re.sub(r"<[^>]+>", "", texto)))
         if args.enviar:
             from .telegram import partir_html
@@ -5775,6 +5841,12 @@ def main(argv: list[str] | None = None) -> int:
     pc.add_argument("--dias", type=int, default=90, help="cuántos días armar desde hoy")
     pc.add_argument("--enviar", action="store_true", help="manda la semana a Santi por Telegram")
     pc.set_defaults(func=cmd_calendario)
+
+    pm = sub.add_parser("medicion-ph", help="mide los videos de Pequeña Historia (segundo en que se va "
+                                            "la mayoría en Facebook, %% que se queda en YouTube) y "
+                                            "muestra antes contra después del gancho")
+    pm.add_argument("--enviar", action="store_true", help="manda el informe a Santi por Telegram")
+    pm.set_defaults(func=cmd_medicion_ph)
 
     ph2 = sub.add_parser("hashtags-rots", help="pone los hashtags (y la categoría 22, sin tags) a los "
                                                "Shorts de Rots subidos por la API que no los tienen")

@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-11-11 | **Versión:** v0.88.0 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 de clips + timer 06:00 de la efeméride + escucha de Telegram 24/7, que además propone la historia de Facebook a las 06:30)
+**Snapshot:** 2026-11-12 | **Versión:** v0.89.0 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 de clips + timer 06:00 de la efeméride + escucha de Telegram 24/7, que además propone la historia de Facebook a las 06:30)
 
 > **SI ESTÁS EMPEZANDO UNA SESIÓN NUEVA, LEÉ §10.** Ahí está qué está hecho, qué quedó a medias,
 > qué falta, y las trampas que ya nos mordieron.
@@ -132,6 +132,13 @@ servicio systemd separado: `clips-bot`).
 - **Control de calidad de todo video de Pequeña Historia (Santi, 2026-11-11):** menos del 70 % del
   tiempo con fotos reales (no tarjetas) = NO se arma; primero otra búsqueda con Claude, después otro
   hecho del día, y si ninguno llega, aviso por Telegram en vez del video.
+- **Gancho primero en TODO Pequeña Historia (Santi, 2026-11-12):** efeméride e historia, YouTube y
+  Facebook. En Facebook la mayoría se iba en el 0:04, justo cuando terminaba "Un día como hoy…"; en
+  YouTube cada Short recibe un solo paquete de ~1.200 vistas en 24 h y la mitad desliza al arranque.
+  La primera frase es lo más sorprendente (sin fecha ni "Un día como hoy"), el año va en la segunda
+  ("En <año>,") y en pantalla; la voz arranca en el cuadro 1; el gancho escrito en grande desde el
+  primer cuadro; la primera foto es la más impactante. El cierre no se toca todavía. Medición por
+  video (`medicion_ph.py`) y comparación con los de antes el 19/11.
 - **Ficción (Santi, 2026-11-11, Ash Ketchum):** NO se eligen hechos que pasan dentro de una ficción
   (lo que le pasa a un personaje en un episodio, juego o película). Cultura pop sí, solo desde la vida
   real: estreno, lanzamiento, quién lo creó, cómo se hizo, impacto, récords. Nunca la trama. Vale para
@@ -728,10 +735,11 @@ clips_bot/claude.py      texto con Claude (SDK oficial `anthropic`, ANTHROPIC_AP
                          con clave "claude"; Sonnet con fallbacks "default"
 clips_bot/locales.py     §3d: historias de Facebook (Wikipedia en español por día, Haiku, Sonnet)
 clips_bot/calendario.py  §3d: calendario de 90 días de fechas de Latinoamérica + la lista de los lunes
+clips_bot/medicion_ph.py §1: medición del gancho por video (segundo en que se va la mayoría en FB, % que se queda en YT)
 clips_bot/prueba_manual.py prueba manual vs API (§1): el clip del día a mano, registro e informe del feed
 clips_bot/envivo.py      modo en vivo (§3b): quién está al aire, momentos por creadores distintos,
                          alertas en la DB (no repetir, tope, vencer) y el resumen de tiempos
-tests/                   921 tests sin red ni video (conftest.py: nada sale a YouTube) (test_reglas_fijas.py: las 3 reglas de §1)
+tests/                   929 tests sin red ni video (conftest.py: nada sale a YouTube) (test_reglas_fijas.py: las 3 reglas de §1)
 ```
 
 Comandos:
@@ -924,6 +932,27 @@ Problemas abiertos:
 
 ## 9. CHANGELOG
 
+- v0.89.0 (2026-11-12) — **Gancho primero en todo Pequeña Historia** (Santi, con el diagnóstico de
+  YouTube: 13 Shorts, cada uno ~1.150-1.290 vistas el primer día y casi nada después, 94-98 % del
+  feed de Shorts, `engagedViews/views` 41-56 % (Capilla Sixtina 28 %), 0-2,7 compartidos cada
+  1.000; y en Facebook la mayoría se iba en el 0:04). (1) **Guion:** la PRIMERA frase es el gancho
+  (lo más sorprendente, ≤ 14 palabras, sin el año, sin "Un día como hoy", "¿Sabías que…?" ni "Hoy
+  te cuento") y la SEGUNDA arranca con "En <año>," (en Facebook "En <año>, en <lugar>,"), en
+  `SISTEMA_GUION`, el hablado, `SISTEMA_GUION_LOCAL` y el corto; `validar_guion` lo exige en los dos
+  formatos, `validar_lugar` mira las dos primeras frases, `acortar_guion` mantiene el "En <año>,".
+  (2) **Arranque del video:** `narrar.sacar_silencio_inicial` (la voz arranca en el cuadro 1, deja
+  0,02 s); `graficos.gancho_en_pantalla` (la primera frase escrita en grande, amarilla, arriba,
+  desde el cuadro 0 sin fundido de entrada, hasta que empieza la segunda frase); el año contando
+  pasa a la segunda frase (`anio_contando(inicio=)`) y las palabras clave después; karaoke en los
+  dos formatos; la portada (`PORTADA_S` 0,8 s) muestra el gancho. (3) **La primera foto es la más
+  impactante:** el elector de fotos devuelve `impactantes` y la primera que sirve para la frase 1 va
+  primera (`elegir_fotos`). (4) **Interruptores PRENDIDOS:** `efemerides.imagen_frase: true` y
+  `historias_fb.formato_corto: true` (con `render.edicion_rots: true` de antes). (5) **Medición**
+  (`medicion_ph.py`, `_medicion_ph_tick` desde las 09:00, una vez por día): Facebook = el segundo en
+  que la retención (`post_video_retention_graph`) baja del 50 %, reproducciones y tiempo medio;
+  YouTube = % que se queda (`engagedViews/views`) y vistas; en `bot_estado.ph_medicion`; el
+  **19/11** le llega a Santi antes contra después (medianas) y video por video; CLI `medicion-ph
+  [--enviar]`. El cierre no se tocó. `tests/test_gancho_primero.py`. 929 tests OK.
 - v0.88.0 (2026-11-11) — **Feedback del ejemplo nuevo** (Santi: "mejoró mucho"; le gustaron el
   karaoke, la info, las fotos y la tarjeta de una palabra tipo "2022"). (1) **Ninguna foto en más de
   2 cortes** del corto (`plan_rapido`: cada corte cuenta, aunque sea la misma foto con otro
@@ -2201,7 +2230,9 @@ aparte de Pequeña Historia a las 06:00 (`clips-bot-efemeride`) y la escucha de 
 
 ### Esperando respuesta de Santi (NO programar sin su OK)
 
-0. **Edición nueva (v0.84.0-v0.86.0): Rots APROBADO y prendido; Pequeña Historia esperando los
+0. **Edición nueva: TODO PRENDIDO desde el 2026-11-12** (v0.89.0: `render.edicion_rots`,
+   `efemerides.imagen_frase`, `historias_fb.formato_corto`, y el gancho primero en todo Pequeña
+   Historia; el 19/11 llega la comparación de `medicion_ph`). Lo de abajo es la historia: **Rots APROBADO y prendido; Pequeña Historia esperando los
    ejemplos rehechos** (los de v0.85.0 salieron flojos: Hatuey con 2 tarjetas, Einstein con 4; desde
    v0.86.0 un video así no se arma) (historia de Facebook y efeméride, con Claude eligiendo las fotos y los
    cambios de v0.85.0). Con su OK se prenden `efemerides.imagen_frase` (también activa Claude para

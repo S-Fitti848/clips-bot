@@ -386,7 +386,7 @@ def test_la_efemeride_de_youtube_va_con_karaoke():
     import inspect
 
     fuente = inspect.getsource(ef.hacer_video)
-    assert fuente.count("escribir_ass_karaoke") == 2
+    assert fuente.count("escribir_ass_karaoke") == 1 and "if cfg_ef.graficos:" in fuente   # los dos formatos
 
 
 def test_la_historia_sale_a_la_manana_de_su_pais():

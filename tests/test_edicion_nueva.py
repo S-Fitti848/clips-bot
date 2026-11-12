@@ -27,8 +27,8 @@ def _habla(desde: float, n: int, paso: float = 0.4, texto: str = "bla") -> list[
 def test_interruptores_en_los_timers():
     s = load_settings()
     assert s.render.edicion_rots is True          # Rots: aprobado por Santi el 2026-11-10
-    assert s.efemerides.imagen_frase is False
-    assert s.historias_fb.formato_corto is False
+    assert s.efemerides.imagen_frase is True       # prendidos por Santi el 2026-11-12
+    assert s.historias_fb.formato_corto is True
 
 
 # ---- Rots: recorte -------------------------------------------------------------------------

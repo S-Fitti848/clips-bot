@@ -164,8 +164,8 @@ def test_no_respaldados(guion, faltan):
 
 
 def _guion_ok(**cambios):
-    d = {"frases": [{"texto": "Un día como hoy, en 1998, Google estrenó su buscador en Internet.", "mostrar": "1998 Google search 1998", "presente": False},
-                    {"texto": "Larry Page y Sergey Brin lo empezaron como un proyecto universitario.", "mostrar": "1998 Larry Page Sergey Brin", "presente": False},
+    d = {"frases": [{"texto": "Un buscador nacido en un armario cambió cómo buscamos todo.", "mostrar": "1998 Google search 1998", "presente": False},
+                    {"texto": "En 1998, Larry Page y Sergey Brin lo empezaron como un proyecto universitario.", "mostrar": "1998 Larry Page Sergey Brin", "presente": False},
                     {"texto": "Lo arrancaron en la Universidad de Stanford, con muy poco.", "mostrar": "1998 Stanford University", "presente": False},
                     {"texto": "¡Tenían un armario lleno de servidores y dos routers HP!", "mostrar": "1998 Google first server rack", "presente": False},
                     {"texto": "Al principio el buscador no se llamaba Google, se llamaba BackRub.", "mostrar": "1998 BackRub logo", "presente": False},
@@ -186,8 +186,15 @@ def test_un_guion_bien_armado_pasa():
 
 def test_el_gancho_la_pregunta_y_las_fotos():
     sin_gancho = _guion_ok()
-    sin_gancho["frases"][0]["texto"] = "En 1998 Google estrenó su buscador en Internet para todo el mundo."
-    assert any("Un día como hoy" in e for e in ef.validar_guion(sin_gancho, 1998, ARTICULO))
+    # Gancho primero (2026-11-12): nada de "Un día como hoy" ni el año en la primera frase.
+    sin_gancho["frases"][0]["texto"] = "Un día como hoy, en 1998, Google estrenó su buscador."
+    assert any("GANCHO" in e for e in ef.validar_guion(sin_gancho, 1998, ARTICULO))
+    con_anio = _guion_ok()
+    con_anio["frases"][0]["texto"] = "En 1998 un buscador nació en un armario."
+    assert any("SIN el año" in e for e in ef.validar_guion(con_anio, 1998, ARTICULO))
+    sin_anio_despues = _guion_ok()
+    sin_anio_despues["frases"][1]["texto"] = "Larry Page y Sergey Brin lo empezaron como un proyecto universitario."
+    assert any('"En 1998,"' in e for e in ef.validar_guion(sin_anio_despues, 1998, ARTICULO))
     sin_pregunta = _guion_ok()
     sin_pregunta["frases"][-1]["texto"] = "Y así fue como empezó todo, en un armario."
     assert any("gancho" in e for e in ef.validar_guion(sin_pregunta, 1998, ARTICULO))

@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import logging
 import math
+import re
 import subprocess
 import unicodedata
 from pathlib import Path
@@ -25,9 +26,10 @@ log = logging.getLogger(__name__)
 MAPA_BASE = "File:Blue Marble 2002.png"     # NASA, dominio público, equirrectangular
 MAPA_CREDITO = "Mapa: NASA Blue Marble (dominio público)"
 CONTAR_S, AÑO_HASTA_S = 1.4, 2.4
-# La portada de Pequeña Historia (2026-10-20: la del Al Capone mostraba "1880" a mitad de la cuenta):
-# un cuadro con el año FINAL quieto, después del saltito (0,26 s) y antes del fundido (0,25 s).
-PORTADA_S = CONTAR_S + 0.5
+# La portada de Pequeña Historia: desde el 2026-11-12 el video arranca con el GANCHO escrito en
+# grande desde el primer cuadro (antes, el año contando; la del Al Capone mostraba "1880" a mitad de
+# la cuenta): la portada es un cuadro con el gancho ya escrito y la primera foto.
+PORTADA_S = 0.8
 CLAVE_S = 1.1
 
 
@@ -47,20 +49,33 @@ def estilos(W: int, H: int, fuente: str) -> list[str]:
     return [f"Style: Anio,{fuente},230,&H00FFFFFF,&H000000FF,&H00000000,&H64000000,-1,0,0,0,100,100,"
             f"0,0,1,10,4,8,40,40,{int(H * 0.16)},1",
             f"Style: Clave,{fuente},150,&H0000E1FF,&H000000FF,&H00000000,&H64000000,-1,0,0,0,100,100,"
-            f"0,0,1,10,4,8,40,40,{int(H * 0.17)},1"]
+            f"0,0,1,10,4,8,40,40,{int(H * 0.17)},1",
+            # El gancho escrito en grande desde el primer cuadro (2026-11-12): amarillo, borde negro.
+            f"Style: Gancho,{fuente},96,&H0000E1FF,&H000000FF,&H00000000,&H64000000,-1,0,0,0,100,100,"
+            f"0,0,1,9,3,8,70,70,{int(H * 0.12)},1"]
 
 
-def anio_contando(anio: int, desde: int | None = None, pasos: int = 18) -> list[str]:
+def gancho_en_pantalla(frase: str, hasta_s: float) -> list[str]:
+    """La primera frase (el gancho) escrita en grande arriba desde el cuadro 1 hasta que termina:
+    sin fundido de entrada, así el primer cuadro (y la portada) ya la muestran."""
+    texto = re.sub(r"[{}\\]", "", frase or "").strip()
+    if not texto:
+        return []
+    return [f"Dialogue: 3,{_t(0)},{_t(max(hasta_s, 0.5))},Gancho,,0,0,0,,{{\\fad(0,200)}}{texto}"]
+
+
+def anio_contando(anio: int, desde: int | None = None, pasos: int = 18, inicio: float = 0.0) -> list[str]:
     """El año corriendo de `desde` (unas décadas antes) hasta `anio` en CONTAR_S, frenando al final,
-    y quieto hasta AÑO_HASTA_S."""
+    y quieto hasta AÑO_HASTA_S. `inicio`: desde cuándo (2026-11-12: cuando arranca la segunda frase,
+    la del año; el principio es del gancho)."""
     desde = desde if desde is not None else max(0, anio - 60)
     ev = []
     for k in range(pasos):
         x = (k + 1) / pasos
         valor = round(desde + (anio - desde) * (1 - (1 - x) ** 3))
-        a, b = CONTAR_S * k / pasos, CONTAR_S * (k + 1) / pasos
+        a, b = inicio + CONTAR_S * k / pasos, inicio + CONTAR_S * (k + 1) / pasos
         ev.append(f"Dialogue: 2,{_t(a)},{_t(b)},Anio,,0,0,0,,{valor}")
-    ev.append(f"Dialogue: 2,{_t(CONTAR_S)},{_t(AÑO_HASTA_S)},Anio,,0,0,0,,"
+    ev.append(f"Dialogue: 2,{_t(inicio + CONTAR_S)},{_t(inicio + AÑO_HASTA_S)},Anio,,0,0,0,,"
               f"{{\\t(0,120,\\fscx112\\fscy112)\\t(120,260,\\fscx100\\fscy100)\\fad(0,250)}}{anio}")
     return ev
 
