@@ -493,7 +493,7 @@ def _proponer_con(monkeypatch, fotos_por_anio: dict[int, int]):
         def eventos(self, lang, dia):
             return eventos if lang == "es" else []
 
-    monkeypatch.setattr(ef, "elegir", lambda cliente, cands: [(i, c.paginas[0]) for i, c in enumerate(cands)])
+    monkeypatch.setattr(ef, "elegir", lambda cliente, cands, **k: [(i, c.paginas[0]) for i, c in enumerate(cands)])
     monkeypatch.setattr(ef, "fotos_del_evento", lambda wiki, e: ([], {}))
     monkeypatch.setattr(ef, "texto_fuente", lambda wiki, e: "texto")
     monkeypatch.setattr(ef, "escribir_guion", lambda cliente, e, fuente, correccion="", **k: _guion_epoca(4))

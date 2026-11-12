@@ -457,6 +457,12 @@ def en_calendario(c: Candidato) -> bool:
     return c.seccion in ("celebracion", "fundacion") or bool(str(c.clasif.get("conmemora") or "").strip())
 
 
+def otro_pais_primero(lista: list[Candidato], evitar: set | None) -> list[Candidato]:
+    """Los de un país que ya salió hoy, al final (en el mismo orden): "si se puede"."""
+    malos = {_sin_tildes(str(p)).strip() for p in (evitar or set()) if str(p or "").strip()}
+    return sorted(lista, key=lambda c: _sin_tildes(str(c.clasif.get("pais") or "")).strip() in malos)
+
+
 def buenos(cands: list[Candidato]) -> list[Candidato]:
     """Historias con un lugar concreto, sin tragedias solas, de mejor a peor. Calendario (Santi,
     2026-11-11: "esos días tienen prioridad sobre cualquier otro hecho"): primero las fechas que se
@@ -546,17 +552,8 @@ SISTEMA_GUION_LOCAL = ef.SISTEMA_GUION.replace(
 
 # Formato corto (Santi, 2026-11-10; historias_fb.formato_corto): 20-30 s, el gancho primero y la fecha
 # en la segunda frase. Lo demás (solo el artículo, claridad, lugar en título y hashtag) igual.
-SISTEMA_GUION_CORTO = SISTEMA_GUION_LOCAL.replace(
-    "un video vertical de 35 a 45 segundos", "un video vertical de 20 a 30 segundos").replace(
-    "- Entre 80 y 100 palabras en total (contalas: menos de 70 queda corto y más de 105 se pasa de\n"
-    "  45 segundos), en 8 a 14 frases, habladas, no escritas.",
-    "- Entre 50 y 70 palabras en total (contalas: menos de 45 queda corto y más de 72 se pasa de\n"
-    "  30 segundos), en 7 a 11 frases, habladas, no escritas. Directo a lo interesante: nada de\n"
-    "  contexto que no haga falta para entender.").replace(
-    '- "Menos datos" NO es un guion más corto: sigue siendo de 80 a 100 palabras.',
-    '- "Menos datos" NO es un guion más corto que 50 palabras.')
-assert (SISTEMA_GUION_CORTO.count("20 a 30 segundos") == 1 and "Entre 50 y 70" in SISTEMA_GUION_CORTO
-        and "La PRIMERA frase es el GANCHO" in SISTEMA_GUION_CORTO and "más corto que 50" in SISTEMA_GUION_CORTO)
+SISTEMA_GUION_CORTO = ef.a_corto(SISTEMA_GUION_LOCAL)
+assert "La PRIMERA frase es el GANCHO" in SISTEMA_GUION_CORTO
 
 
 def _sin_tildes(t: str) -> str:
@@ -602,8 +599,12 @@ def local_de(c: Candidato) -> dict:
 def proponer(wiki: ef.Wiki, sonnet, haiku, gemini, dia: date, carpeta: Path, avisar=log.info,
              videos: bool = False, tope_fotos_s: float | None = None, hecho: str = "",
              imagen_frase: bool = False, corto: bool = False, elector=None,
-             elector_reintento=None) -> ef.Propuesta:
-    """La propuesta del día para Facebook. Mismo armado que la efeméride (fotos, hoja, aprobación),
+             elector_reintento=None, excluir: set | None = None,
+             evitar_paises: set | None = None) -> ef.Propuesta:
+    """`excluir`: hechos (su texto) que ya salieron hoy; `evitar_paises`: los países de esos (Santi,
+    2026-11-12: 2 historias por día, sin repetir país si se puede: van al final, no afuera).
+
+    La propuesta del día para Facebook. Mismo armado que la efeméride (fotos, hoja, aprobación),
     con otra fuente de hechos y Claude para el texto."""
     from . import fuentes_fotos
 
@@ -634,10 +635,16 @@ def proponer(wiki: ef.Wiki, sonnet, haiku, gemini, dia: date, carpeta: Path, avi
         for c in lista:
             if not str(c.clasif.get("lugar") or "").strip():
                 c.clasif["lugar"] = c.paginas[0]
+    lista = [c for c in lista if c.texto not in (excluir or set())]
     avisar(f"Haiku: {len(lista)} historias humanas con lugar concreto")
     if not lista:
-        raise ef.NarrarError("Ningún hecho de hoy es una historia humana con un lugar concreto")
+        raise ef.NarrarError("Ningún hecho de hoy es una historia humana con un lugar concreto"
+                             + (" (sin contar las que ya salieron hoy)" if excluir else ""))
+    lista = otro_pais_primero(lista, evitar_paises)
     elegidos = elegir(sonnet, lista[:20])
+    elegidos = [x for x in elegidos if x[0].texto not in (excluir or set())]
+    orden = otro_pais_primero([c for c, _, _ in elegidos], evitar_paises)
+    elegidos = sorted(elegidos, key=lambda x: orden.index(x[0]))
     avisar("Sonnet eligió: " + " | ".join(f"{c.anio} {c.clasif.get('lugar')}: {c.texto[:50]} [{a}]"
                                           for c, a, _ in elegidos))
     fallas, respaldo, descartes = [], None, {}

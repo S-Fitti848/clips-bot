@@ -73,7 +73,9 @@ def test_prendido():
 def test_subir_de_una_efemeride_va_a_facebook_aunque_youtube_este_apagado(tmp_path, monkeypatch):
     conn = db.connect(tmp_path / "t.db")
     s = load_settings()
-    s = replace(s, youtube_upload_enabled=False, facebook=replace(s.facebook, activo=True))
+    # facebook.efemeride: true = como antes del 2026-11-12 (desde ahí la efeméride, de tecnología,
+    # va solo a YouTube: ver test_la_efemeride_de_tecnologia_no_va_a_facebook).
+    s = replace(s, youtube_upload_enabled=False, facebook=replace(s.facebook, activo=True, efemeride=True))
     subidos = []
     monkeypatch.setattr(facebook, "subir_reel", lambda v, t, c, ver: subidos.append((t, c)) or "FB1")
     meta = {"clip_id": "efemeride_1004_1957", "salida": str(tmp_path / "v.mp4"), "efemeride": {},
@@ -83,3 +85,16 @@ def test_subir_de_una_efemeride_va_a_facebook_aunque_youtube_este_apagado(tmp_pa
     assert any("Facebook" in a for a in avisos) and any("esperando la auditoría" in a for a in avisos)
     assert m._subir(conn, s, meta, "pequena_historia") == [] or len(subidos) == 1   # no dos veces
     assert m._subir(conn, s, {**meta, "clip_id": "x", "plataforma": "twitch"}, "rots") == []  # clips: no
+
+
+def test_la_efemeride_de_tecnologia_no_va_a_facebook(tmp_path, monkeypatch):
+    conn = db.connect(tmp_path / "t.db")
+    s = load_settings()
+    assert s.facebook.efemeride is False          # Santi, 2026-11-12: la de tecnología solo en YouTube
+    s = replace(s, youtube_upload_enabled=False, facebook=replace(s.facebook, activo=True))
+    subidos = []
+    monkeypatch.setattr(facebook, "subir_reel", lambda v, t, c, ver: subidos.append((t, c)) or "FB1")
+    meta = {"clip_id": "efemeride_1112_2004", "salida": str(tmp_path / "v.mp4"), "efemeride": {},
+            "textos": {"titulo": "Nace Facebook", "descripcion": "d", "hashtags": ["#Shorts"]}}
+    m._subir(conn, s, meta, "pequena_historia")
+    assert subidos == []

@@ -331,6 +331,17 @@ efemerides:
   # objeto en Pexels (Gemini confirma que no se ve nada fuera de época). Vale para la efeméride de
   # YouTube (y su Reel) y para la historia de Facebook. PRENDIDA por Santi el 2026-11-12.
   imagen_frase: true
+  # Nicho (Santi, 2026-11-12): la efeméride diaria es "historia de la tecnología e internet" (desde la
+  # vida real: inventos, lanzamientos, empresas, creadores; nunca tramas), en el formato corto y SOLO
+  # en YouTube. Los 3 videos del día (2 de Latinoamérica + este) en YouTube, a 4 h o más entre sí.
+  tema: tecnologia
+  corto: true
+  horas_youtube: ["11:00", "15:30", "20:00"]
+  separacion_youtube_h: 4
+  # Voces de Gemini por día (plan gratis, por proyecto; la clave principal la comparte Lo Encontré):
+  # aviso a Santi al llegar a tts_aviso de tts_tope.
+  tts_tope: 10
+  tts_aviso: 8
   graficos: true
   # Si no sale a las 05:00 (el 2026-09-28: 429 de upload.wikimedia.org), la escucha de Telegram
   # reintenta sola a estas horas (AR). Recién si falla la última avisa que hoy no hay propuesta.
@@ -490,6 +501,8 @@ facebook:
   # hora; la historia aparte de Facebook, a historias_fb.hora_publicacion (19:00). Las dos quedan en
   # bot_estado.historias_fb_registro con `reel` = efemeride | historia, para la comparación del 24/11.
   hora_efemeride: "19:00"     # Santi, 2026-11-11 (antes 12:00)
+  # Desde el 2026-11-12 la efeméride es la de tecnología: va SOLO a YouTube.
+  efemeride: false
 
 # Pequeña Historia, video APARTE solo para Facebook (prueba de 2 semanas desde el 2026-11-10, a
 # partir del Reel de Nacozari: 100 % orgánico, 16.841 reproducciones contra ~200 del resto).
@@ -519,6 +532,10 @@ historias_fb:
   hora_local: "08:30"
   hora_sin_pais: "11:00"
   separacion_h: 4
+  # Nicho (Santi, 2026-11-12): 2 historias reales de Latinoamérica por día (sin repetir país si se
+  # puede), en YouTube Y en Facebook. Si no hay 2 buenas, sale menos y se avisa (nada de relleno).
+  por_dia: 2
+  youtube: true
 
 # Lo que pega en otros canales → el clip original (pego.py, 2026-09-29). Una vez por día (y en
 # /buscar): Shorts de OTROS canales que nombran a cada streamer de las carpetas con diarios,

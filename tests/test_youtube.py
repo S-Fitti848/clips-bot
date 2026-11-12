@@ -143,9 +143,9 @@ def test_prendida_programa_una_sola_vez(conn, prendida):
 
 
 @pytest.mark.parametrize("hora_aprobacion,esperado", [
-    ((9, 0), (12, 0)),        # antes de las 12: a las 12
-    ((15, 10), (15, 40)),     # pasadas las 12: en 30 min, el mismo día
-    ((23, 32), (23, 55)),     # tarde: nunca después de las 23:55 (antes caía a las 00:02 de mañana)
+    ((9, 0), (11, 0)),        # el primer horario de los 3 del día (efemerides.horas_youtube)
+    ((15, 10), (15, 30)),     # el siguiente que no pasó (con 20 min de margen)
+    ((23, 32), (23, 52)),     # tarde: el mismo día, nunca después de las 23:55
 ])
 def test_la_efemeride_sale_el_mismo_dia(conn, prendida, hora_aprobacion, esperado):
     """"Un día como hoy" no puede salir mañana. Encontrado corriendo el test en la Pi a las 23:32."""
@@ -155,6 +155,17 @@ def test_la_efemeride_sale_el_mismo_dia(conn, prendida, hora_aprobacion, esperad
     canal, _, cuando, cat = ClienteFalso.subidos[-1]
     assert canal == "pequena_historia" and cat == "27"
     assert cuando.date() == ahora.date() and (cuando.hour, cuando.minute) == esperado
+
+
+def test_los_tres_de_pequena_historia_a_4_horas(conn, prendida):
+    # Nicho (Santi, 2026-11-12): 2 de Latinoamérica + 1 de tecnología, en YouTube a 4 h o más.
+    ahora = datetime(2026, 11, 13, 7, 0, tzinfo=AR)
+    for k in range(3):
+        m._programar_subida(conn, prendida, {**META, "clip_id": f"ph_{k}"}, "pequena_historia", "12:00",
+                            ahora=ahora)
+    horas = sorted(c for _, _, c, _ in ClienteFalso.subidos[-3:])
+    assert [(h.hour, h.minute) for h in horas] == [(11, 0), (15, 30), (20, 0)]
+    assert all((b - a).total_seconds() >= 4 * 3600 for a, b in zip(horas, horas[1:]))
 
 
 def test_subidas_lista_y_cancela(conn, prendida):

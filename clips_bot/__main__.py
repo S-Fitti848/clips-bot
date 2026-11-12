@@ -2656,6 +2656,7 @@ def escuchar_telegram(settings: Settings, timeout_poll: int = 50) -> int:
             _seguro(tg, str(chat_ultimo or ""), "el calendario", _calendario_tick, conn, tg, settings)
             _seguro(tg, str(chat_ultimo or ""), "la medición de Pequeña Historia",
                     _medicion_ph_tick, conn, tg, settings)
+            _seguro(tg, str(chat_ultimo or ""), "el aviso de las voces", _voces_tick, conn, tg, settings)
             _seguro(tg, str(chat_ultimo or ""), "el reintento de los clips",
                     _clips_reintento_tick, conn, settings)
             _seguro(tg, str(chat_ultimo or ""), "la búsqueda de lo que pegó",
@@ -3434,10 +3435,12 @@ def _efe_proponer(conn, tg: TelegramClient, chats: list[str], dia, settings: Set
                         hablado=settings.efemerides.guion_hablado,
                         imagen_frase=settings.efemerides.imagen_frase,
                         elector=_elector_fotos(settings),
-                        elector_reintento=_elector_fotos(settings, reintento=True))
+                        elector_reintento=_elector_fotos(settings, reintento=True),
+                        tema="" if hecho else settings.efemerides.tema,
+                        corto=settings.efemerides.corto)
     except (NarrarError, ef.WikiError, GeminiError) as e:
         error = f"No salió la efeméride: {html.escape(str(e)[:400])}"
-        if isinstance(e, ef.SinFotosReales):
+        if isinstance(e, (ef.SinFotosReales, ef.SinTema)):
             return ErrorDefinitivo(error)
         return ErrorPasajero(error) if getattr(e, "pasajero", False) else error
     estado = {"propuesta": p.__dict__, "carpeta": str(carpeta), "chat_id": chats[0]}
@@ -3469,10 +3472,18 @@ def _claude_textos(settings: Settings):
     return claude.cliente(cfg.modelo_texto), claude.cliente(cfg.modelo_simple, esfuerzo="low")
 
 
+PH_LATAM = "ph_latam"   # bot_estado, ph_latam:<día>: [{"texto", "pais"}] de las historias propuestas ese día
+
+
+def _latam_del_dia(conn, dia) -> list[dict]:
+    return json.loads(db.get_valor(conn, f"{PH_LATAM}:{dia.isoformat()}") or "[]")
+
+
 def _fb_proponer(conn, tg: TelegramClient, chats: list[str], dia, settings: Settings,
                  hecho: str = "") -> str | None:
-    """Propone la historia de Facebook y manda la aprobación (la misma de la efeméride: ✅ ✏️ 🔁).
-    NO toma el turno pesado: lo toma quien llama. Devuelve el error, o None."""
+    """Propone una historia de Latinoamérica (va a YouTube y a Facebook desde el 2026-11-12) y manda
+    la aprobación (la misma de la efeméride: ✅ ✏️ 🔁), sin repetir un hecho ya propuesto hoy y con
+    otro país si se puede. NO toma el turno pesado: lo toma quien llama. Devuelve el error, o None."""
     import secrets
 
     from . import efemerides as ef, locales
@@ -3493,9 +3504,14 @@ def _fb_proponer(conn, tg: TelegramClient, chats: list[str], dia, settings: Sett
                              imagen_frase=settings.efemerides.imagen_frase,
                              corto=settings.historias_fb.formato_corto,
                              elector=_elector_fotos(settings),
-                             elector_reintento=_elector_fotos(settings, reintento=True))
+                             elector_reintento=_elector_fotos(settings, reintento=True),
+                             excluir={x["texto"] for x in _latam_del_dia(conn, dia)},
+                             evitar_paises={x["pais"] for x in _latam_del_dia(conn, dia) if x.get("pais")})
     except (NarrarError, ef.WikiError, GeminiError) as e:
-        return f"No salió la historia de Facebook: {html.escape(str(e)[:400])}"
+        return f"No salió la historia de Latinoamérica: {html.escape(str(e)[:400])}"
+    ya = _latam_del_dia(conn, dia)
+    ya.append({"texto": p.evento.get("texto"), "pais": (p.local or {}).get("pais")})
+    db.set_valor(conn, f"{PH_LATAM}:{dia.isoformat()}", json.dumps(ya, ensure_ascii=False))
     estado = {"propuesta": p.__dict__, "carpeta": str(carpeta), "chat_id": chats[0]}
     for chat in chats:
         _efe_mostrar(conn, tg, chat, token, estado)
@@ -3571,8 +3587,10 @@ def _medir_ph(conn, settings: Settings) -> dict:
         log.info("medición de Facebook: %s", e)
     yt = {}
     try:
+        clips = {s["video_id"]: s["clip_id"] for s in db.subidas(conn)
+                 if s["canal"] == "pequena_historia" and s.get("video_id")}
         yt = medicion_ph.medir_youtube(youtube.Cliente("pequena_historia"),
-                                       datetime(2026, 10, 1, tzinfo=timezone.utc))
+                                       datetime(2026, 10, 1, tzinfo=timezone.utc), clips)
     except Exception as e:
         log.info("medición de YouTube: %s", e)
     return medicion_ph.guardar(conn, fb, yt)
@@ -3598,6 +3616,17 @@ def _medicion_ph_tick(conn, tg: TelegramClient, settings: Settings, ahora=None, 
         texto = mp.informe(datos, hasta=hoy) + "\n\n<b>Video por video</b>\n" + mp.por_video(datos)
         for parte in partir_html(texto):
             tg.send_message(DUENO, parte)
+
+
+def _voces_tick(conn, tg: TelegramClient, settings: Settings, ahora=None) -> None:
+    """En cada vuelta de la escucha: si las voces de Gemini de hoy (con Lo Encontré) llegan a
+    efemerides.tts_aviso, le avisa a Santi (una vez por día y clave)."""
+    from . import voces
+
+    cfg = settings.efemerides
+    uso = voces.uso_hoy(conn, cfg.lo_encontre_db, ahora)
+    for texto in voces.avisos(conn, uso, cfg.tts_tope, cfg.tts_aviso):
+        tg.send_message(DUENO, texto)
 
 
 FB_DIA = "historias_fb_dia"   # bot_estado: el día (AR) en que ya se propuso la de Facebook
@@ -3627,19 +3656,32 @@ def _fb_tick(conn, tg: TelegramClient, settings: Settings, ahora=None, proponer=
     fijo = json.loads(db.get_valor(conn, FB_FECHA_FIJA) or "{}")
     hecho = (db.get_valor(conn, f"{FB_FECHA_FIJA}:{hoy}") or
              (fijo.get("hecho", "") if fijo.get("dia") == hoy else ""))
-    log.info("historia de Facebook: propongo la de hoy a %s%s", chats, f" ({hecho})" if hecho else "")
+    # Nicho (Santi, 2026-11-12): historias_fb.por_dia (2) historias de Latinoamérica por día, cada
+    # una con otro hecho y, si se puede, otro país. Si no hay suficientes buenas, salen menos y se avisa.
+    n = max(1, int(cfg.por_dia))
+    log.info("historias de Latinoamérica: propongo %d a %s%s", n, chats, f" ({hecho})" if hecho else "")
+    errores, salieron = [], 0
     try:
-        error = ((proponer or _fb_proponer)(conn, tg, chats, ahora.date(), settings, hecho=hecho)
-                 if chats else "no hay a quién mandarla (ni historias_fb.chat ni /destinos)")
-    except Exception as e:
-        log.exception("la historia de Facebook falló")
-        error = f"No salió la historia de Facebook: {html.escape(str(e)[:400])}"
+        for k in range(n):
+            try:
+                error = ((proponer or _fb_proponer)(conn, tg, chats, ahora.date(), settings,
+                                                    hecho=hecho if k == 0 else "")
+                         if chats else "no hay a quién mandarla (ni historias_fb.chat ni /destinos)")
+            except Exception as e:
+                log.exception("la historia de Latinoamérica falló")
+                error = f"No salió la historia de Latinoamérica: {html.escape(str(e)[:400])}"
+            if error:
+                errores.append(error)
+                break        # si no hay una buena más, no se rellena
+            salieron += 1
     finally:
         db.soltar_turno(conn, db.RECURSO_PESADO, turno, VENCIMIENTO_PESADO_S)
-    if error:
-        log.info("historia de Facebook: %s", error)
+    if errores:
+        log.info("historias de Latinoamérica: %d de %d (%s)", salieron, n, errores[-1])
+        cuantas = ("hoy no hay propuesta" if not salieron else
+                   f"hoy sale{'n' if salieron > 1 else ''} {salieron} de {n} (no hay otra buena: no relleno)")
         for chat in chats:
-            tg.send_message(chat, f"📘 <b>Pequeña Historia · Facebook</b>: hoy no hay propuesta. {error}\n"
+            tg.send_message(chat, f"📘 <b>Pequeña Historia · Latinoamérica</b>: {cuantas}. {errores[-1]}\n"
                                   "Probá a mano con <code>/historia</code>.")
 
 
@@ -3978,7 +4020,10 @@ def cmd_efemeride(args: argparse.Namespace) -> int:
         p = ef.proponer(ef.Wiki(), gemini, dia, carpeta, avisar=print, hecho=args.hecho or "",
                         videos=settings.efemerides.videos or getattr(args, "videos", False),
                         tope_fotos_s=settings.efemerides.tope_fotos_min * 60,
-                        hablado=settings.efemerides.guion_hablado)
+                        hablado=settings.efemerides.guion_hablado,
+                        imagen_frase=settings.efemerides.imagen_frase,
+                        tema="" if args.hecho else settings.efemerides.tema,
+                        corto=settings.efemerides.corto)
         (carpeta / "propuesta.json").write_text(json.dumps(p.__dict__, ensure_ascii=False, indent=2),
                                                encoding="utf-8")
         g = ef.Guion.de_dict(p.guion)
@@ -4130,7 +4175,9 @@ def _programar_subida(conn, settings: Settings, meta: dict, canal: str, hora: st
     if not settings.youtube_upload_enabled and not demo:
         return ""
     clip_id = meta["clip_id"]
-    if db.subidas(conn, ("programada", "privada", "publicada"), clip_id=clip_id):
+    # Solo las de ESTE canal: la historia de Latinoamérica va a YouTube y a Facebook (2026-11-12).
+    if [s for s in db.subidas(conn, ("programada", "privada", "publicada"), clip_id=clip_id)
+            if s["canal"] == canal]:
         return ""
     if meta.get("partido_en_pantalla") and not demo:
         return _subir_privado_a_revisar(conn, meta, canal)
@@ -4142,6 +4189,9 @@ def _programar_subida(conn, settings: Settings, meta: dict, canal: str, hora: st
         cuando = youtube.proximo_horario(hora, ahora=hoy, ocupados=ocupados,
                                          horarios=list(settings.publicacion.horarios)
                                          if canal == "rots" else None)
+        if canal == "pequena_historia" and not demo:
+            # Los 3 videos del día (2 de Latinoamérica + 1 de tecnología, 2026-11-12) a 4 h o más.
+            cuando = hora_ph_youtube(settings, _ph_youtube_del_dia(conn, clip_id, hoy), hoy)
         if demo:
             hh, mm = (int(x) for x in hora.split(":"))
             cuando = (hoy + timedelta(days=1)).replace(hour=hh, minute=mm, second=0, microsecond=0)
@@ -4599,18 +4649,25 @@ def _subir(conn, settings: Settings, meta: dict, canal: str) -> list[str]:
     Historia, Facebook (si está prendido). Devuelve los avisos para Telegram."""
     avisos = []
     if _solo_facebook(meta):
-        # El video aparte de Facebook (2026-11-09): YouTube no se toca.
+        # La historia de Latinoamérica: Facebook (a la mañana de su país) y, desde el 2026-11-12,
+        # también YouTube (historias_fb.youtube), en el horario libre del canal.
+        if settings.youtube_upload_enabled and settings.historias_fb.youtube:
+            aviso = _programar_subida(conn, settings, meta, "pequena_historia",
+                                      settings.efemerides.hora_publicacion)
+            if aviso:
+                avisos.append(aviso)
         if not settings.facebook.activo:
-            return ["📘 La subida a Facebook está apagada (facebook.activo)."]
+            return avisos + ["📘 La subida a Facebook está apagada (facebook.activo)."]
         pais = ((meta.get("efemeride") or {}).get("local") or {}).get("pais")
         aviso = _subir_facebook(conn, settings, meta,
                                 hora=hora_historia_fb(settings, pais, datetime.now(AR).date()))
-        return [aviso] if aviso else []
+        return avisos + ([aviso] if aviso else [])
     if settings.youtube_upload_enabled:
         aviso = _programar_subida(conn, settings, meta, canal, _hora_de(settings, canal, meta))
         if aviso:
             avisos.append(aviso)
-    if canal == "pequena_historia" and settings.facebook.activo:
+    # La efeméride (desde el 2026-11-12, la de tecnología) va SOLO a YouTube (facebook.efemeride).
+    if canal == "pequena_historia" and settings.facebook.activo and settings.facebook.efemeride:
         aviso = _subir_facebook(conn, settings, meta)
         if aviso:
             if not settings.youtube_upload_enabled:
@@ -4697,6 +4754,46 @@ def hora_historia_fb(settings: Settings, pais, dia) -> str:
     hh, mm = (int(x) for x in cfg.hora_local.split(":"))
     local = datetime.combine(dia, dtime(hh, mm), tzinfo=ZoneInfo(tz))
     return local.astimezone(AR).strftime("%H:%M")
+
+
+def _ph_youtube_del_dia(conn, clip_id: str, hoy: datetime) -> list[datetime]:
+    """Cuándo salen (o salieron) hoy los otros videos de Pequeña Historia en YouTube."""
+    out = []
+    for s in db.subidas(conn, ("programada", "publicada")):
+        if s["canal"] != "pequena_historia" or s["clip_id"] == clip_id:
+            continue
+        iso = s.get("publish_at") or (str(s.get("creada") or "").replace(" ", "T") + "Z")
+        try:
+            t = datetime.fromisoformat(iso.replace("Z", "+00:00")).astimezone(AR)
+        except ValueError:
+            continue
+        if t.date() == hoy.date():
+            out.append(t)
+    return out
+
+
+def hora_ph_youtube(settings: Settings, otras: list[datetime], ahora: datetime) -> datetime:
+    """El horario de YouTube de un video de Pequeña Historia: el primero de efemerides.horas_youtube
+    que no pasó (con 20 min de margen) y queda a separacion_youtube_h o más de los otros del día; si
+    ninguno, separado de los otros; si tampoco entra en el día, en 30 min (nunca mañana: lo
+    corrige quien llama)."""
+    cfg = settings.efemerides
+    sep = timedelta(hours=cfg.separacion_youtube_h)
+    margen = ahora + timedelta(minutes=20)
+
+    def libre(t):
+        return all(abs((t - o).total_seconds()) >= sep.total_seconds() - 1 for o in otras)
+
+    for h in cfg.horas_youtube:
+        hh, mm = (int(x) for x in str(h).split(":"))
+        t = ahora.replace(hour=hh, minute=mm, second=0, microsecond=0)
+        if t >= margen and libre(t):
+            return t
+    base = max([margen] + [o + sep for o in otras])
+    limite = ahora.replace(hour=23, minute=55, second=0, microsecond=0)
+    if base <= limite and libre(base):
+        return base.replace(second=0, microsecond=0)
+    return (ahora + timedelta(minutes=30)).replace(second=0, microsecond=0)
 
 
 def separar_de_otras(cuando: datetime, otras: list[datetime], ahora: datetime, horas: float,

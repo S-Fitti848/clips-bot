@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-11-12 | **Versión:** v0.89.0 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 de clips + timer 06:00 de la efeméride + escucha de Telegram 24/7, que además propone la historia de Facebook a las 06:30)
+**Snapshot:** 2026-11-12 | **Versión:** v0.90.0 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 de clips + timer 06:00 de la efeméride + escucha de Telegram 24/7, que además propone la historia de Facebook a las 06:30)
 
 > **SI ESTÁS EMPEZANDO UNA SESIÓN NUEVA, LEÉ §10.** Ahí está qué está hecho, qué quedó a medias,
 > qué falta, y las trampas que ya nos mordieron.
@@ -132,13 +132,23 @@ servicio systemd separado: `clips-bot`).
 - **Control de calidad de todo video de Pequeña Historia (Santi, 2026-11-11):** menos del 70 % del
   tiempo con fotos reales (no tarjetas) = NO se arma; primero otra búsqueda con Claude, después otro
   hecho del día, y si ninguno llega, aviso por Telegram en vez del video.
+- **Nicho de Pequeña Historia: 3 videos por día, todos en formato corto (Santi, 2026-11-12):**
+  2 de **historias reales de Latinoamérica** (`locales.py`, con prioridad a las fechas del calendario,
+  sin repetir hecho y, si se puede, sin repetir país) que van a YouTube Y a Facebook (Facebook a la
+  mañana del país, 4 h o más entre los dos); 1 de **historia de la tecnología e internet**
+  (`efemerides.tema: tecnologia`, desde la vida real, nunca tramas) SOLO en YouTube
+  (`facebook.efemeride: false`). En YouTube los 3 a 4 h o más (`efemerides.horas_youtube` 11:00 /
+  15:30 / 20:00). Nada fuera de esos temas: si un día no hay suficientes buenos, salen menos y se
+  avisa (`ef.SinTema`, "hoy sale 1 de 2"). Voces: aviso a Santi al llegar a 8 de ~10 por clave y
+  día, contando Lo Encontré (`voces.py`). Seguimiento a 2 semanas contra los 10 Shorts anteriores
+  (`medicion_ph`, 26/11).
 - **Gancho primero en TODO Pequeña Historia (Santi, 2026-11-12):** efeméride e historia, YouTube y
   Facebook. En Facebook la mayoría se iba en el 0:04, justo cuando terminaba "Un día como hoy…"; en
   YouTube cada Short recibe un solo paquete de ~1.200 vistas en 24 h y la mitad desliza al arranque.
   La primera frase es lo más sorprendente (sin fecha ni "Un día como hoy"), el año va en la segunda
   ("En <año>,") y en pantalla; la voz arranca en el cuadro 1; el gancho escrito en grande desde el
   primer cuadro; la primera foto es la más impactante. El cierre no se toca todavía. Medición por
-  video (`medicion_ph.py`) y comparación con los de antes el 19/11.
+  video (`medicion_ph.py`) y comparación con los 10 anteriores el 26/11.
 - **Ficción (Santi, 2026-11-11, Ash Ketchum):** NO se eligen hechos que pasan dentro de una ficción
   (lo que le pasa a un personaje en un episodio, juego o película). Cultura pop sí, solo desde la vida
   real: estreno, lanzamiento, quién lo creó, cómo se hizo, impacto, récords. Nunca la trama. Vale para
@@ -735,11 +745,12 @@ clips_bot/claude.py      texto con Claude (SDK oficial `anthropic`, ANTHROPIC_AP
                          con clave "claude"; Sonnet con fallbacks "default"
 clips_bot/locales.py     §3d: historias de Facebook (Wikipedia en español por día, Haiku, Sonnet)
 clips_bot/calendario.py  §3d: calendario de 90 días de fechas de Latinoamérica + la lista de los lunes
-clips_bot/medicion_ph.py §1: medición del gancho por video (segundo en que se va la mayoría en FB, % que se queda en YT)
+clips_bot/medicion_ph.py §1: seguimiento por video (segundo en que se va la mayoría en FB, % que se queda en YT calibrado con Studio, empujones)
+clips_bot/voces.py       voces de Gemini de hoy por clave (con Lo Encontré) y el aviso cerca del tope
 clips_bot/prueba_manual.py prueba manual vs API (§1): el clip del día a mano, registro e informe del feed
 clips_bot/envivo.py      modo en vivo (§3b): quién está al aire, momentos por creadores distintos,
                          alertas en la DB (no repetir, tope, vencer) y el resumen de tiempos
-tests/                   929 tests sin red ni video (conftest.py: nada sale a YouTube) (test_reglas_fijas.py: las 3 reglas de §1)
+tests/                   937 tests sin red ni video (conftest.py: nada sale a YouTube) (test_reglas_fijas.py: las 3 reglas de §1)
 ```
 
 Comandos:
@@ -932,6 +943,31 @@ Problemas abiertos:
 
 ## 9. CHANGELOG
 
+- v0.90.0 (2026-11-12) — **Nicho y cantidad de Pequeña Historia** (§1). (1) **2 historias de
+  Latinoamérica por día** (`historias_fb.por_dia`): `_fb_tick` propone hasta 2 con el mismo turno;
+  `locales.proponer(excluir, evitar_paises)` saltea lo ya propuesto ese día (`bot_estado.ph_latam:<día>`)
+  y deja al final los de un país que ya salió (`otro_pais_primero`, también después de Sonnet); si
+  la segunda no sale, "hoy sale 1 de 2 (no relleno)". 📤 las sube a Facebook (a la mañana del país,
+  `separar_de_otras` 4 h) y, nuevo, a YouTube (`historias_fb.youtube`). (2) **La efeméride es la de
+  tecnología e internet** (`efemerides.tema`, `ef.TEMAS`, `elegir(tema=)`: si ninguno es del tema,
+  lista vacía → `ef.SinTema`, aviso sin reintentos), en el **formato corto** (`efemerides.corto`,
+  `ef.SISTEMA_GUION_CORTO` = `ef.a_corto(SISTEMA_GUION)`, que también arma el corto de Facebook) y
+  **solo en YouTube** (`facebook.efemeride: false`). (3) **YouTube a 4 h** (`hora_ph_youtube`,
+  `efemerides.horas_youtube` 11:00/15:30/20:00, `separacion_youtube_h` 4): el primer horario libre
+  que no pasó; `_programar_subida` ya no frena la de YouTube porque haya una de Facebook del mismo
+  clip. (4) **Voces** (`voces.py`, `_voces_tick`): las de hoy (día de California) por clave, la
+  principal sumando las de Lo Encontré (`~/bot-videos/data/bot2.db`, `tts_uso:<día>`: comparten la
+  GEMINI_API_KEY, comparado por huella); aviso a Santi al llegar a `tts_aviso` (8) de `tts_tope` (10,
+  el que asume Lo Encontré; Google no lo publica). (5) **Seguimiento** (`medicion_ph`): a los 14 días
+  (26/11) contra los 10 Shorts anteriores: % que se queda **calibrado con Studio** (Nacozari 63,9 /
+  Beatles 61,6 / Capilla 28,4 contra 56,1 / 50,3 / 28,2 de `engagedViews/views`; recta por mínimos
+  cuadrados, ±3 puntos; filtrar solo el feed de Shorts no cambia nada: 56,3 / 50,9 / 27,9), vistas,
+  **segundo empujón** (un día con ≥ 25 % del primero), % de vistas de suscriptores (lo más parecido
+  a "vuelven": la API no tiene `viewerType`; hoy 12 de 12.691 vistas son de suscriptores) y
+  tecnología contra Latinoamérica. **Costo medido por día:** Claude ≈ US$0,20-0,25 por historia
+  (elegir 0,007 + guion ~0,12 + fotos ~0,07-0,14) y ≈ 0,07-0,14 por la de tecnología (solo las
+  fotos) → ~US$0,55-0,65 por día; voces 3 de PH (las 2 de Latinoamérica por la segunda clave) + las
+  de Lo Encontré (0-4) en la principal; Pi ~13-15 min por video (propuesta 6-9 + video 6-7). 937 tests OK.
 - v0.89.0 (2026-11-12) — **Gancho primero en todo Pequeña Historia** (Santi, con el diagnóstico de
   YouTube: 13 Shorts, cada uno ~1.150-1.290 vistas el primer día y casi nada después, 94-98 % del
   feed de Shorts, `engagedViews/views` 41-56 % (Capilla Sixtina 28 %), 0-2,7 compartidos cada
@@ -2232,7 +2268,8 @@ aparte de Pequeña Historia a las 06:00 (`clips-bot-efemeride`) y la escucha de 
 
 0. **Edición nueva: TODO PRENDIDO desde el 2026-11-12** (v0.89.0: `render.edicion_rots`,
    `efemerides.imagen_frase`, `historias_fb.formato_corto`, y el gancho primero en todo Pequeña
-   Historia; el 19/11 llega la comparación de `medicion_ph`). Lo de abajo es la historia: **Rots APROBADO y prendido; Pequeña Historia esperando los
+   Historia; desde v0.90.0, 3 videos por día: 2 de Latinoamérica + 1 de tecnología; el 26/11 llega la
+   comparación de `medicion_ph`). Lo de abajo es la historia: **Rots APROBADO y prendido; Pequeña Historia esperando los
    ejemplos rehechos** (los de v0.85.0 salieron flojos: Hatuey con 2 tarjetas, Einstein con 4; desde
    v0.86.0 un video así no se arma) (historia de Facebook y efeméride, con Claude eligiendo las fotos y los
    cambios de v0.85.0). Con su OK se prenden `efemerides.imagen_frase` (también activa Claude para

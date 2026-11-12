@@ -422,7 +422,21 @@ MAX_GUIONES = 3     # hechos que se intentan por día (2 → 3 el 2026-09-29: co
                     # fotos) más los reintentos del guion: caso normal 1 + 3 × 2 = 7
 
 
-def elegir(cliente, eventos: list[Evento], cuantos: int = ELEGIDOS) -> list[tuple[int, str]]:
+# Nicho (Santi, 2026-11-12): la efeméride diaria es SOLO "historia de la tecnología e internet".
+TEMAS = {"tecnologia": """
+TEMA DE ESTE CANAL: SOLO historia de la TECNOLOGÍA e INTERNET, contada desde la vida real: inventos,
+lanzamientos de productos, empresas, creadores, la primera vez que algo funcionó, récords, sitios y
+servicios de internet, computadoras, teléfonos, consolas, videojuegos como producto (su lanzamiento,
+no su trama). NADA de otros temas (política, guerras, arte, deportes, religión, historia general),
+aunque sean interesantes. Si ningún hecho de hoy es de este tema, devolvé `elegidos` VACÍO: es
+preferible no sacar video que sacar uno de otro tema."""}
+
+
+class SinTema(NarrarError):
+    """Ningún hecho del día es del tema del canal: no sale video y se avisa (sin reintentos)."""
+
+
+def elegir(cliente, eventos: list[Evento], cuantos: int = ELEGIDOS, tema: str = "") -> list[tuple[int, str]]:
     """(índice, artículo del evento) de los elegidos, del mejor al peor.
 
     El artículo lo elige Gemini entre los del hecho porque el primero de la lista suele ser el
@@ -431,10 +445,11 @@ def elegir(cliente, eventos: list[Evento], cuantos: int = ELEGIDOS) -> list[tupl
     no es uno de la lista, se usa el último (el más específico, en el feed en castellano)."""
     lista = "\n".join(f"{i}. ({e.anio}) {e.texto}  [artículos: {' | '.join(e.paginas)}]"
                       for i, e in enumerate(eventos, 1))
+    hasta = f"Elegí hasta {cuantos} (solo los del tema)" if tema else f"Elegí {cuantos}"
     d = json.loads(cliente.json(
-        SISTEMA_ELEGIR, f"Hechos de hoy:\n{lista}\n\nElegí {cuantos}; `indice` es el número de la "
-        "lista y `articulo` es, de sus artículos, el que trata ESPECÍFICAMENTE de ese hecho (no el "
-        "país ni la ciudad), copiado tal cual.", SCHEMA_ELEGIR, temperatura=0.4))
+        SISTEMA_ELEGIR + TEMAS.get(tema, ""), f"Hechos de hoy:\n{lista}\n\n{hasta}; `indice` es el "
+        "número de la lista y `articulo` es, de sus artículos, el que trata ESPECÍFICAMENTE de ese "
+        "hecho (no el país ni la ciudad), copiado tal cual.", SCHEMA_ELEGIR, temperatura=0.4))
     out: list[tuple[int, str]] = []
     for x in d.get("elegidos") or []:
         i = x.get("indice") if isinstance(x, dict) else None
@@ -714,6 +729,24 @@ SISTEMA_GUION_HABLADO = SISTEMA_GUION.replace(
   ("casi cien años", "más de dos mil personas"), y solo redondeando un número que ESTÁ en el
   artículo o los años que pasaron desde el hecho. Nada de números que no salgan de ahí. Los años
   del hecho van en cifras ("en 1928").""")
+
+def a_corto(sistema: str) -> str:
+    """El mismo prompt para el formato corto (20-30 s, 50-70 palabras): el de la historia de Facebook
+    y, desde el 2026-11-12, el de la efeméride de tecnología."""
+    out = sistema.replace(
+        "un video vertical de 35 a 45 segundos", "un video vertical de 20 a 30 segundos").replace(
+        "- Entre 80 y 100 palabras en total (contalas: menos de 70 queda corto y más de 105 se pasa de\n"
+        "  45 segundos), en 8 a 14 frases, habladas, no escritas.",
+        "- Entre 50 y 70 palabras en total (contalas: menos de 45 queda corto y más de 72 se pasa de\n"
+        "  30 segundos), en 7 a 11 frases, habladas, no escritas. Directo a lo interesante: nada de\n"
+        "  contexto que no haga falta para entender.").replace(
+        '- "Menos datos" NO es un guion más corto: sigue siendo de 80 a 100 palabras.',
+        '- "Menos datos" NO es un guion más corto que 50 palabras.')
+    assert out.count("20 a 30 segundos") == 1 and "Entre 50 y 70" in out and "más corto que 50" in out
+    return out
+
+
+SISTEMA_GUION_CORTO = a_corto(SISTEMA_GUION)
 
 SCHEMA_GUION = {
     "type": "OBJECT",
@@ -2218,8 +2251,12 @@ class Propuesta:
 def proponer(wiki: Wiki, cliente, dia: date, carpeta: Path, avisar=log.info,
              correccion: str = "", saltear: int = 0, hecho: str = "", videos: bool = False,
              tope_fotos_s: float | None = None, hablado: bool = False,
-             imagen_frase: bool = False, elector=None, elector_reintento=None) -> Propuesta:
-    """Elige el evento, escribe el guion (con qué mostrar en cada frase), busca y elige las fotos
+             imagen_frase: bool = False, elector=None, elector_reintento=None,
+             tema: str = "", corto: bool = False) -> Propuesta:
+    """`tema` (2026-11-12, efemerides.tema): solo hechos de ese tema (TEMAS); si no hay ninguno,
+    SinTema (no sale video). `corto`: el formato corto (SISTEMA_GUION_CORTO, 20-30 s).
+
+    Elige el evento, escribe el guion (con qué mostrar en cada frase), busca y elige las fotos
     de cada frase. Si un evento no llega a ilustrar.MIN_FOTOS_DISTINTAS fotos distintas que
     sirvan, pasa al siguiente del ranking.
 
@@ -2245,7 +2282,9 @@ def proponer(wiki: Wiki, cliente, dia: date, carpeta: Path, avisar=log.info,
     if not candidatos:
         raise NarrarError("Ningún hecho de hoy pasa el filtro de temas sensibles"
                           + (f" (con «{hecho}»)" if hecho else "") + ".")
-    elegidos = elegir(cliente, candidatos)
+    elegidos = elegir(cliente, candidatos, tema=tema)
+    if tema and not elegidos:
+        raise SinTema(f"Hoy no hay ningún hecho de «{tema}» que sirva: no saco el video (nada de relleno).")
     avisar("Gemini eligió: " + " | ".join(f"{candidatos[i].anio} {candidatos[i].texto[:50]} [{a}]"
                                           for i, a in elegidos))
     descartes: dict = {}
@@ -2265,8 +2304,9 @@ def proponer(wiki: Wiki, cliente, dia: date, carpeta: Path, avisar=log.info,
         fuente = texto_fuente(wiki, e)
         guiones += 1
         try:
-            g = escribir_guion(cliente, e, fuente, correccion, hablado=hablado)
-            g.imagen_frase = imagen_frase      # efemerides.imagen_frase (2026-11-10)
+            g = escribir_guion(cliente, e, fuente, correccion, hablado=hablado and not corto,
+                               sistema=SISTEMA_GUION_CORTO if corto else None, corto=corto)
+            g.imagen_frase = imagen_frase or corto      # efemerides.imagen_frase (2026-11-10)
             pool, g = fotos_con_control(wiki, cliente, e, g, fotos, carpeta, avisar, videos=videos,
                                         elector=elector, elector_reintento=elector_reintento,
                                         tope_s=tope_fotos_s)
@@ -2318,7 +2358,8 @@ def rehacer_guion(p: Propuesta, wiki: Wiki, cliente, carpeta: Path, correccion: 
     e = Evento(**p.evento)
     anterior = Guion.de_dict(p.guion)
     g = escribir_guion(cliente, e, p.fuente, correccion=correccion, anterior=anterior.texto,
-                       hablado=hablado)
+                       hablado=hablado and not anterior.corto,
+                       sistema=SISTEMA_GUION_CORTO if anterior.corto else None, corto=anterior.corto)
     g.imagen_frase = anterior.imagen_frase
     fotos, _ = fotos_del_evento(wiki, e)
     try:

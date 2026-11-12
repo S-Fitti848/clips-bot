@@ -326,6 +326,20 @@ class EfemeridesCfg:
     # dicen) y la voz con pausas variables entre frases + ecualizado suave de locutor.
     guion_hablado: bool = False
     voz_natural: bool = False
+    # Nicho (Santi, 2026-11-12): la efeméride diaria pasa a ser el video de "historia de la
+    # tecnología e internet" (contada desde la vida real), en el formato corto y SOLO en YouTube.
+    # Vacío = cualquier tema, como antes.
+    tema: str = "tecnologia"
+    corto: bool = True
+    # Los 3 videos del día en YouTube (2 de Latinoamérica + 1 de tecnología): estos horarios (AR),
+    # siempre a separacion_youtube_h o más entre sí.
+    horas_youtube: tuple = ("11:00", "15:30", "20:00")
+    separacion_youtube_h: float = 4.0
+    # Voces de Gemini por día (plan gratis, por PROYECTO de Google; Google no publica el número): con
+    # Lo Encontré, que usa la misma clave principal. Aviso a Santi al llegar a tts_aviso de tts_tope.
+    tts_tope: int = 10
+    tts_aviso: int = 8
+    lo_encontre_db: str = "/home/santi/bot-videos/data/bot2.db"
 
 
 @dataclass(frozen=True)
@@ -374,6 +388,8 @@ class Facebook:
     # La efeméride de YouTube también sale como Reel en la página (2 Reels por día con la historia
     # de las 19:00). Vacío = la misma hora que YouTube (efemerides.hora_publicacion).
     hora_efemeride: str = "19:00"
+    # Desde el 2026-11-12 la efeméride es la de tecnología, que va SOLO a YouTube.
+    efemeride: bool = False
 
 
 @dataclass(frozen=True)
@@ -400,6 +416,10 @@ class HistoriasFb:
     hora_local: str = "08:30"
     hora_sin_pais: str = "11:00"
     separacion_h: float = 4.0
+    # Nicho (Santi, 2026-11-12): historias reales de Latinoamérica, `por_dia` por día, sin repetir
+    # país si se puede, en YouTube Y en Facebook (`youtube`).
+    por_dia: int = 2
+    youtube: bool = True
 
 
 @dataclass(frozen=True)

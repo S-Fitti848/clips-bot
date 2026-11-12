@@ -246,14 +246,20 @@ def test_fb_tick_una_vez_por_dia_desde_las_0630(conn, monkeypatch):
     db.set_valor(conn, m.FB_FECHA_FIJA, json.dumps({"dia": "2026-11-10", "hecho": "Epecuén"}))
     m._fb_tick(conn, tg, settings, ahora=datetime(2026, 11, 10, 6, 31, tzinfo=m.AR), proponer=proponer)
     m._fb_tick(conn, tg, settings, ahora=datetime(2026, 11, 10, 9, 0, tzinfo=m.AR), proponer=proponer)
-    assert llamados == [(["-100"], date(2026, 11, 10), "Epecuén")]
+    # 2 por día (Santi, 2026-11-12); el hecho fijado, solo en la primera.
+    assert llamados == [(["-100"], date(2026, 11, 10), "Epecuén"), (["-100"], date(2026, 11, 10), "")]
     assert db.hay_trabajo_pesado(conn) is None      # el turno se soltó
     m._fb_tick(conn, tg, settings, ahora=datetime(2026, 11, 11, 6, 40, tzinfo=m.AR),
                proponer=lambda *a, **k: "No salió la historia de Facebook: x")
     assert "hoy no hay propuesta" in tg.mensajes[-1][1]
+    # una sí y la segunda no: sale una y se avisa, sin relleno
+    respuestas = iter([None, "No salió la historia de Latinoamérica: no hay otra"])
+    m._fb_tick(conn, tg, settings, ahora=datetime(2026, 11, 12, 6, 40, tzinfo=m.AR),
+               proponer=lambda *a, **k: next(respuestas))
+    assert "hoy sale 1 de 2" in tg.mensajes[-1][1] and "no relleno" in tg.mensajes[-1][1]
 
 
-def test_la_historia_sube_solo_a_facebook_a_su_hora(conn, monkeypatch):
+def test_la_historia_va_a_facebook_a_su_hora_y_a_youtube(conn, monkeypatch):
     import clips_bot.__main__ as m
     from clips_bot.config import load_settings
 
@@ -262,7 +268,8 @@ def test_la_historia_sube_solo_a_facebook_a_su_hora(conn, monkeypatch):
             "textos": {"titulo": "Villa Epecuén", "descripcion": "d", "hashtags": ["#Shorts"]},
             "efemeride": {"fecha": "2026-11-10", "anio": 1985, "destino": "facebook",
                           "local": {"lugar": "Villa Epecuén", "pais": "Argentina", "tipo": "momento_emotivo"}}}
-    monkeypatch.setattr(m, "_programar_subida", lambda *a, **k: pytest.fail("no va a YouTube"))
+    yt = []
+    monkeypatch.setattr(m, "_programar_subida", lambda c, s, me, canal, h, **k: yt.append(canal) or "📤 YouTube")
     horas = []
 
     def subir_fb(conn_, settings_, meta_, ahora=None, hora=None):
@@ -272,7 +279,9 @@ def test_la_historia_sube_solo_a_facebook_a_su_hora(conn, monkeypatch):
 
     monkeypatch.setattr(m, "_subir_facebook", subir_fb)
     avisos = m._subir(conn, settings, meta, "pequena_historia")
-    assert avisos == ["📘 Programado en Facebook para las 19:00."]
+    # Desde el 2026-11-12 la historia de Latinoamérica va también a YouTube (historias_fb.youtube).
+    assert avisos[-1] == "📘 Programado en Facebook para las 19:00."
+    assert yt == (["pequena_historia"] if settings.youtube_upload_enabled else [])
     assert horas == [m.hora_historia_fb(settings, "Argentina", datetime.now(m.AR).date())]  # su país
     [r] = json.loads(db.get_valor(conn, m.HISTORIAS_FB_REGISTRO))
     assert r["tipo"] == "momento_emotivo" and r["lugar"] == "Villa Epecuén" and r["video_id"] == "123"
@@ -347,4 +356,5 @@ def test_fb_tick_con_un_hecho_fijado_para_un_dia(conn, monkeypatch):
     for dia in (10, 11, 12):
         m._fb_tick(conn, TG(), load_settings(), ahora=datetime(2026, 11, dia, 6, 35, tzinfo=m.AR),
                    proponer=proponer)
-    assert hechos == [(10, "Epecuén"), (11, ""), (12, "Juana Inés")]
+    primeras = [h for k, h in enumerate(hechos) if k % 2 == 0]   # 2 por día; el fijado, en la primera
+    assert primeras == [(10, "Epecuén"), (11, ""), (12, "Juana Inés")] and len(hechos) == 6
