@@ -65,13 +65,13 @@ def test_el_tick_corre_una_vez_por_dia_desde_las_02(tmp_path, monkeypatch):
                         lambda s, sts, buscar_ahora, avisar=None, tope_s=None: llamadas.append(tope_s) or [])
     settings = load_settings()
     AR = m.AR
-    m._pego_tick(conn, settings, ahora=datetime(2026, 10, 1, 1, 59, tzinfo=AR))
+    m._pego_tick(conn, settings, ahora=datetime(2026, 10, 1, 1, 29, tzinfo=AR))
     assert llamadas == []
-    m._pego_tick(conn, settings, ahora=datetime(2026, 10, 1, 2, 0, tzinfo=AR))
+    m._pego_tick(conn, settings, ahora=datetime(2026, 10, 1, 1, 30, tzinfo=AR))
     m._pego_tick(conn, settings, ahora=datetime(2026, 10, 1, 3, 0, tzinfo=AR))
     assert llamadas == [settings.pego.tope_min * 60]      # una sola vez ese día, con el tope
     assert db.hay_trabajo_pesado(conn) is None            # soltó el turno
-    m._pego_tick(conn, settings, ahora=datetime(2026, 10, 2, 2, 5, tzinfo=AR))
+    m._pego_tick(conn, settings, ahora=datetime(2026, 10, 2, 1, 35, tzinfo=AR))
     assert len(llamadas) == 2
 
 

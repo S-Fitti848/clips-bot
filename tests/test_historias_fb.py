@@ -228,7 +228,7 @@ class TG:
         self.mensajes.append((chat, texto))
 
 
-def test_fb_tick_una_vez_por_dia_desde_las_0630(conn, monkeypatch):
+def test_fb_tick_una_vez_por_dia_de_madrugada(conn, monkeypatch):
     import clips_bot.__main__ as m
     from clips_bot.config import load_settings
 
@@ -241,10 +241,15 @@ def test_fb_tick_una_vez_por_dia_desde_las_0630(conn, monkeypatch):
         return None
 
     tg = TG()
-    m._fb_tick(conn, tg, settings, ahora=datetime(2026, 11, 10, 6, 10, tzinfo=m.AR), proponer=proponer)
+    m._fb_tick(conn, tg, settings, ahora=datetime(2026, 11, 10, 3, 50, tzinfo=m.AR), proponer=proponer)
     assert llamados == []
     db.set_valor(conn, m.FB_FECHA_FIJA, json.dumps({"dia": "2026-11-10", "hecho": "Epecuén"}))
-    m._fb_tick(conn, tg, settings, ahora=datetime(2026, 11, 10, 6, 31, tzinfo=m.AR), proponer=proponer)
+    # de madrugada (2026-11-12): espera a que terminen Rots y la de tecnología
+    m._fb_tick(conn, tg, settings, ahora=datetime(2026, 11, 10, 4, 20, tzinfo=m.AR), proponer=proponer)
+    assert llamados == []
+    db.set_valor(conn, m.DIARIO_FIN, "2026-11-10")
+    db.set_valor(conn, m.EFE_DIA, "2026-11-10")
+    m._fb_tick(conn, tg, settings, ahora=datetime(2026, 11, 10, 4, 31, tzinfo=m.AR), proponer=proponer)
     m._fb_tick(conn, tg, settings, ahora=datetime(2026, 11, 10, 9, 0, tzinfo=m.AR), proponer=proponer)
     # 2 por día (Santi, 2026-11-12); el hecho fijado, solo en la primera.
     assert llamados == [(["-100"], date(2026, 11, 10), "Epecuén"), (["-100"], date(2026, 11, 10), "")]

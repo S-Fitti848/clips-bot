@@ -110,6 +110,9 @@ def test_con_el_timer_propio_instalado_diario_no_hace_la_efemeride(monkeypatch, 
     m.cmd_diario(args)
     assert llamadas == ["clips", "metricas", "pego"]
     llamadas.clear()
+    m.cmd_diario(args)                    # el timer de respaldo (05:00): ya corrió hoy, no hace nada
+    assert llamadas == []
+    db.borrar_valor(db.connect(tmp_path / "t.db"), m.DIARIO_FIN)
     monkeypatch.setattr(m, "efemeride_aparte", lambda: False)   # hasta instalarlo, va al final
     m.cmd_diario(args)
     assert llamadas == ["clips", "metricas", "pego", "efemeride"]

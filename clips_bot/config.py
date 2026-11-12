@@ -330,6 +330,9 @@ class EfemeridesCfg:
     # tecnología e internet" (contada desde la vida real), en el formato corto y SOLO en YouTube.
     # Vacío = cualquier tema, como antes.
     tema: str = "tecnologia"
+    # Madrugada (2026-11-12): la escucha la propone desde esta hora, apenas termina Rots (el timer de
+    # las 06:00 queda de respaldo).
+    hora_propuesta: str = "04:00"
     corto: bool = True
     # Los 3 videos del día en YouTube (2 de Latinoamérica + 1 de tecnología): estos horarios (AR),
     # siempre a separacion_youtube_h o más entre sí.
@@ -472,6 +475,9 @@ class Publicacion:
     prueba_manual_dias: int = 7
     # La entrega diaria se sube sola a Rots en sus horarios (sin tocar 📤). ❌ sigue cancelando.
     subir_solo: bool = False
+    # Madrugada (Santi, 2026-11-12): la escucha lanza la corrida de Rots a esta hora (AR) para que todo
+    # esté en Telegram antes de las 05:30; el timer de las 05:00 queda de respaldo.
+    hora_rots: str = "03:30"
 
 
 @dataclass(frozen=True)

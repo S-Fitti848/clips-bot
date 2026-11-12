@@ -208,3 +208,55 @@ def test_aviso_de_voces_con_lo_encontre(conn, tmp_path):
     textos = voces.avisos(conn, uso, tope=10, aviso=8)
     assert len(textos) == 1 and "principal lleva 8" in textos[0] and "5 de Lo Encontré" in textos[0]
     assert voces.avisos(conn, uso, tope=10, aviso=8) == []        # una vez por día
+
+
+def test_madrugada_en_orden(conn):
+    import clips_bot.__main__ as m
+
+    s = load_settings()
+    assert (s.publicacion.hora_rots, s.efemerides.hora_propuesta, s.historias_fb.hora, s.pego.hora) ==         ("03:30", "04:00", "04:00", "01:30")
+    lanzadas, efes = [], []
+    tick = lambda h, mi, d=13: m._madrugada_tick(conn, None, s, ahora=datetime(2026, 11, d, h, mi, tzinfo=m.AR),
+                                                 lanzar=lambda: lanzadas.append(1),
+                                                 efemeride=lambda st: efes.append(1))
+    tick(3, 20)
+    assert lanzadas == []                                   # antes de las 03:30
+    assert db.tomar_turno(conn, db.RECURSO_PESADO, "pego:x", maximo=1, vencimiento_s=3600)
+    tick(3, 31)
+    assert lanzadas == []                                   # "pegó" todavía andando: espera
+    db.soltar_turno(conn, db.RECURSO_PESADO, "pego:x", 3600)
+    tick(3, 32)
+    tick(3, 40)
+    assert lanzadas == [1]                                  # una sola vez
+    assert db.tomar_turno(conn, db.RECURSO_PESADO, "diario:1", maximo=1, vencimiento_s=3600)
+    tick(4, 10)
+    assert efes == []                                       # Rots andando: la de tecnología espera
+    db.soltar_turno(conn, db.RECURSO_PESADO, "diario:1", 3600)
+    tick(4, 20)
+    assert efes == []                                       # sin terminar Rots (y antes de las 05:30)
+    db.set_valor(conn, m.DIARIO_FIN, "2026-11-13")
+    tick(4, 40)
+    tick(4, 50)
+    assert efes == [1] and db.get_valor(conn, m.EFE_DIA) == "2026-11-13"
+    assert db.hay_trabajo_pesado(conn) is None
+
+
+def test_el_timer_de_respaldo_no_corre_dos_veces(conn, monkeypatch, tmp_path):
+    import clips_bot.__main__ as m
+
+    monkeypatch.setattr(m, "DB_PATH", tmp_path / "t.db")
+    hoy = datetime.now(m.AR).date().isoformat()
+    db.set_valor(conn, m.DIARIO_FIN, hoy)
+    assert m._ya_corrio_hoy(conn) == "la corrida de hoy ya terminó"
+    db.set_valor(conn, m.DIARIO_FIN, "2000-01-01")
+    assert m._ya_corrio_hoy(conn) is None
+    assert db.tomar_turno(conn, db.RECURSO_PESADO, "diario:9", maximo=1, vencimiento_s=3600)
+    assert m._ya_corrio_hoy(conn) == "la corrida de hoy está andando"
+
+
+def test_la_fecha_de_madrugada_es_la_del_dia():
+    import clips_bot.__main__ as m
+
+    # a las 04:00 AR (07:00 UTC) el día de la historia es el de Argentina
+    ahora = datetime(2026, 11, 13, 4, 0, tzinfo=m.AR)
+    assert ahora.date() == date(2026, 11, 13) and ahora.astimezone(timezone.utc).date() == date(2026, 11, 13)

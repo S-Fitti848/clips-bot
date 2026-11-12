@@ -335,6 +335,7 @@ efemerides:
   # vida real: inventos, lanzamientos, empresas, creadores; nunca tramas), en el formato corto y SOLO
   # en YouTube. Los 3 videos del día (2 de Latinoamérica + este) en YouTube, a 4 h o más entre sí.
   tema: tecnologia
+  hora_propuesta: "04:00"    # la escucha la propone apenas termina Rots (el timer de 06:00, de respaldo)
   corto: true
   horas_youtube: ["11:00", "15:30", "20:00"]
   separacion_youtube_h: 4
@@ -474,6 +475,9 @@ envivo:
 # §3 paso 10: entrega por Telegram.
 publicacion:
   horarios: ["13:00", "18:00", "21:30"]   # hora AR sugerida para cada seleccionado, en orden
+  # Madrugada (Santi, 2026-11-12: "todo en Telegram antes de las 5:30"): la escucha lanza la corrida
+  # de Rots a esta hora; el timer de las 05:00 queda de respaldo (si ya corrió, no hace nada).
+  hora_rots: "03:30"
   # Prueba manual vs API (prueba_manual.py): CANCELADA por Santi el 2026-11-10 antes de arrancar
   # ("no voy a subir nada a mano"). Para volver a hacerla, poné la fecha de inicio.
   prueba_manual_desde: ""
@@ -513,7 +517,7 @@ facebook:
 # respaldo). YouTube no cambia nada.
 historias_fb:
   activo: true
-  hora: "06:30"              # AR: la escucha la propone a esta hora (después de la efeméride de las 06:00)
+  hora: "04:00"              # AR, desde el 2026-11-12: después de Rots (03:30) y de la de tecnología
   hora_publicacion: "19:00"  # AR: el Reel sale a esta hora (16 h en Colombia, 15 h en el centro de México)
   chat: ""                   # vacío = los destinos de la entrega diaria
   modelo_texto: "claude-sonnet-5-5"
@@ -556,7 +560,7 @@ pego:
   canales_propios: ["Rots", "Pequeña Historia"]
   # Aparte de la corrida diaria (el 30/09 se comió los 90 min de la de las 05:00 y no salió nada):
   # corre en la escucha a esta hora, con este tope total; la de las 05:00 usa lo ya encontrado.
-  hora: "02:00"
+  hora: "01:30"              # 2026-11-12: antes de Rots (03:30): 01:30 + 15 + 75 = 03:00
   tope_min: 15
   # El Short sin original, buscado en el STREAM (2026-10-04, Santi): los 2 que más pegaron por día,
   # en los VODs del streamer (Kick y Twitch) de los `dias_antes` días antes de publicado; solo el

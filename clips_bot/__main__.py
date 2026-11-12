@@ -769,9 +769,35 @@ def _avisar_cero(settings: Settings, detalle: str, destinos: list[str] | None = 
         log.warning("No pude avisar que hoy no salió nada: %s", e)
 
 
+DIARIO_FIN = "diario_fin"     # bot_estado: el día (AR) en que terminó la corrida diaria
+EFE_DIA = "efemeride_dia"     # bot_estado: el día (AR) en que ya se propuso la efeméride (tecnología)
+ROTS_LANZADA = "rots_lanzada"  # bot_estado: el día en que la escucha lanzó la corrida de madrugada
+
+
+def _ya_corrio_hoy(conn) -> str | None:
+    """Por qué la corrida diaria no tiene que correr de nuevo hoy (2026-11-12: la lanza la escucha a
+    las 03:30 y el timer de las 05:00 queda de respaldo), o None."""
+    hoy = datetime.now(AR).date().isoformat()
+    if db.get_valor(conn, DIARIO_FIN) == hoy:
+        return "la corrida de hoy ya terminó"
+    quien = str(db.hay_trabajo_pesado(conn, VENCIMIENTO_PESADO_S) or "")
+    if quien.startswith("diario:"):
+        return "la corrida de hoy está andando"
+    return None
+
+
 def cmd_diario(args: argparse.Namespace) -> int:
     """Corrida diaria completa: candidatos → procesar lo necesario → elegir → entregar."""
     settings = load_settings()
+    if not args.simular:
+        conn = db.connect(DB_PATH)
+        try:
+            motivo = _ya_corrio_hoy(conn)
+        finally:
+            conn.close()
+        if motivo:
+            print(f"Nada que hacer: {motivo} (la lanza la escucha a las {settings.publicacion.hora_rots}).")
+            return 0
 
     # Turno pesado: si hay un /buscar andando (modo escucha), se espera a que termine en vez de
     # pelearle la CPU a la Pi. Después de ESPERA_DIARIO_S arranca igual: la corrida del día no se
@@ -815,6 +841,8 @@ def cmd_diario(args: argparse.Namespace) -> int:
     finally:
         conn = db.connect(DB_PATH)
         try:
+            if not args.simular:
+                db.set_valor(conn, DIARIO_FIN, datetime.now(AR).date().isoformat())
             db.soltar_turno(conn, db.RECURSO_PESADO, token, VENCIMIENTO_PESADO_S)
         finally:
             conn.close()
@@ -829,6 +857,10 @@ def cmd_efemeride_diaria(args: argparse.Namespace) -> int:
     settings = load_settings()
     token = f"efemeride:{datetime.now(timezone.utc).timestamp():.0f}"
     conn = db.connect(DB_PATH)
+    if db.get_valor(conn, EFE_DIA) == datetime.now(AR).date().isoformat():
+        conn.close()
+        print("Nada que hacer: la efeméride de hoy ya se propuso (de madrugada, desde la escucha).")
+        return 0
     try:
         espera = 0.0
         while not db.tomar_turno(conn, db.RECURSO_PESADO, token, maximo=1,
@@ -2652,6 +2684,8 @@ def escuchar_telegram(settings: Settings, timeout_poll: int = 50) -> int:
                     _envivo_tick, conn, tg, settings, reloj_envivo)
             _seguro(tg, str(chat_ultimo or ""), "el reintento de la efeméride",
                     _efe_reintento_tick, conn, tg, settings)
+            _seguro(tg, str(chat_ultimo or ""), "la madrugada (Rots y la de tecnología)",
+                    _madrugada_tick, conn, tg, settings)
             _seguro(tg, str(chat_ultimo or ""), "la historia de Facebook", _fb_tick, conn, tg, settings)
             _seguro(tg, str(chat_ultimo or ""), "el calendario", _calendario_tick, conn, tg, settings)
             _seguro(tg, str(chat_ultimo or ""), "la medición de Pequeña Historia",
@@ -3618,6 +3652,53 @@ def _medicion_ph_tick(conn, tg: TelegramClient, settings: Settings, ahora=None, 
             tg.send_message(DUENO, parte)
 
 
+# Madrugada (Santi, 2026-11-12: "todas las propuestas del día en Telegram antes de las 5:30"): la
+# escucha lanza la corrida de Rots a publicacion.hora_rots (03:30) con el mismo servicio de siempre
+# (`sudo systemctl restart clips-bot.service`, lo único que el sudoers permite sin contraseña; los
+# timers de 05:00 y 06:00 no se pueden mover sin la contraseña de Santi y quedan de RESPALDO: si ya
+# corrió, no hacen nada). Después, en orden y con el turno pesado: la de tecnología
+# (efemerides.hora_propuesta) y las 2 de Latinoamérica (historias_fb.hora, _fb_tick).
+LISTO_DESDE = "05:30"   # si Rots no terminó para esta hora, Pequeña Historia no lo espera más
+
+
+def _rots_listo(conn, ahora: datetime) -> bool:
+    return db.get_valor(conn, DIARIO_FIN) == ahora.date().isoformat() or ahora.strftime("%H:%M") >= LISTO_DESDE
+
+
+def _lanzar_rots() -> None:
+    import subprocess
+
+    subprocess.Popen(["sudo", "-n", "systemctl", "restart", "clips-bot.service"],
+                     stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                     start_new_session=True)
+
+
+def _madrugada_tick(conn, tg: TelegramClient, settings: Settings, ahora=None, lanzar=None,
+                    efemeride=None) -> None:
+    ahora = ahora or datetime.now(AR)
+    hoy, hm = ahora.date().isoformat(), ahora.strftime("%H:%M")
+    pesado = db.hay_trabajo_pesado(conn, VENCIMIENTO_PESADO_S)
+    if settings.publicacion.hora_rots <= hm < "05:00" and db.get_valor(conn, ROTS_LANZADA) != hoy \
+            and db.get_valor(conn, DIARIO_FIN) != hoy and not pesado:
+        db.set_valor(conn, ROTS_LANZADA, hoy)
+        log.info("madrugada: lanzo la corrida de Rots")
+        (lanzar or _lanzar_rots)()
+        return
+    cfg = settings.efemerides
+    if not cfg.diaria or not cfg.hora_propuesta <= hm < "21:00" or db.get_valor(conn, EFE_DIA) == hoy:
+        return
+    if pesado or not _rots_listo(conn, ahora):
+        return
+    turno = "efemeride:madrugada"
+    if not db.tomar_turno(conn, db.RECURSO_PESADO, turno, maximo=1, vencimiento_s=VENCIMIENTO_PESADO_S):
+        return
+    try:
+        (efemeride or efemeride_del_dia)(settings)
+    finally:
+        db.set_valor(conn, EFE_DIA, hoy)
+        db.soltar_turno(conn, db.RECURSO_PESADO, turno, VENCIMIENTO_PESADO_S)
+
+
 def _voces_tick(conn, tg: TelegramClient, settings: Settings, ahora=None) -> None:
     """En cada vuelta de la escucha: si las voces de Gemini de hoy (con Lo Encontré) llegan a
     efemerides.tts_aviso, le avisa a Santi (una vez por día y clave)."""
@@ -3645,6 +3726,10 @@ def _fb_tick(conn, tg: TelegramClient, settings: Settings, ahora=None, proponer=
     if not cfg.hora <= ahora.strftime("%H:%M") < "21:00" or db.get_valor(conn, FB_DIA) == hoy:
         return
     if db.hay_trabajo_pesado(conn, VENCIMIENTO_PESADO_S):
+        return
+    # De madrugada, en orden (2026-11-12): primero Rots y la de tecnología, después estas.
+    if not _rots_listo(conn, ahora) or (settings.efemerides.diaria and db.get_valor(conn, EFE_DIA) != hoy
+                                        and ahora.strftime("%H:%M") < LISTO_DESDE):
         return
     turno = "historia_fb:diaria"
     if not db.tomar_turno(conn, db.RECURSO_PESADO, turno, maximo=1, vencimiento_s=VENCIMIENTO_PESADO_S):
@@ -3804,6 +3889,11 @@ def efemeride_del_dia(settings: Settings, simular: bool = False) -> None:
     if simular:
         print("  (simulación: no se propone nada)")
         return
+    conn = db.connect(DB_PATH)
+    try:
+        db.set_valor(conn, EFE_DIA, datetime.now(AR).date().isoformat())   # una por día
+    finally:
+        conn.close()
     try:
         n = musica.llenar(ROOT / cfg.carpeta_musica, cfg.musica_por_fuente, avisar=print)
         print(f"  música: {n} temas nuevos")

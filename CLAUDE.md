@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-11-12 | **Versión:** v0.90.0 | **Modo:** Fase 2: corriendo solo en la Pi (timer 05:00 de clips + timer 06:00 de la efeméride + escucha de Telegram 24/7, que además propone la historia de Facebook a las 06:30)
+**Snapshot:** 2026-11-12 | **Versión:** v0.91.0 | **Modo:** Fase 2: corriendo solo en la Pi. Madrugada desde la escucha (v0.91.0): Rots 03:30 → tecnología → 2 de Latinoamérica, todo antes de las 05:30; timers 05:00 y 06:00 de respaldo
 
 > **SI ESTÁS EMPEZANDO UNA SESIÓN NUEVA, LEÉ §10.** Ahí está qué está hecho, qué quedó a medias,
 > qué falta, y las trampas que ya nos mordieron.
@@ -750,7 +750,7 @@ clips_bot/voces.py       voces de Gemini de hoy por clave (con Lo Encontré) y e
 clips_bot/prueba_manual.py prueba manual vs API (§1): el clip del día a mano, registro e informe del feed
 clips_bot/envivo.py      modo en vivo (§3b): quién está al aire, momentos por creadores distintos,
                          alertas en la DB (no repetir, tope, vencer) y el resumen de tiempos
-tests/                   937 tests sin red ni video (conftest.py: nada sale a YouTube) (test_reglas_fijas.py: las 3 reglas de §1)
+tests/                   940 tests sin red ni video (conftest.py: nada sale a YouTube) (test_reglas_fijas.py: las 3 reglas de §1)
 ```
 
 Comandos:
@@ -943,6 +943,21 @@ Problemas abiertos:
 
 ## 9. CHANGELOG
 
+- v0.91.0 (2026-11-12) — **Todo en Telegram antes de las 05:30** (Santi). Los timers (05:00 clips,
+  06:00 efeméride) no se pueden mover sin la contraseña de Santi (sudo solo permite `restart` de
+  los servicios), así que la **escucha arma la madrugada** (`_madrugada_tick`): a
+  `publicacion.hora_rots` (03:30) lanza la corrida de Rots con `sudo -n systemctl restart
+  clips-bot.service` (sin esperarla) si el turno está libre; apenas termina (`DIARIO_FIN`), la de
+  tecnología (`efemerides.hora_propuesta` 04:00, con el turno, `efemeride_del_dia`); y después las 2
+  de Latinoamérica (`historias_fb.hora` 04:00, `_fb_tick` espera a Rots y a la de tecnología, o
+  hasta las 05:30). "Pegó" pasa a la 01:30 (termina a las 03:00 como mucho). Los timers de 05:00 y
+  06:00 quedan de **respaldo**: `cmd_diario` no corre si la de hoy terminó o está andando
+  (`_ya_corrio_hoy`) y `efemeride-diaria` no corre si ya se propuso (`EFE_DIA`). Los horarios de
+  publicación no cambian. La fecha de la historia es la del día en Argentina (a las 04:00 AR ya es
+  el día nuevo también en UTC). OJO: la cuota gratis de Gemini se renueva a las 05:00 AR; a las
+  03:30-04:30 queda lo que sobró del día anterior (la principal suele estar sin flash: la segunda
+  clave y flash-lite), así que los textos de Rots y de la de tecnología pueden salir con el modelo
+  de respaldo, y si no hay nada, el reintento de siempre en una hora. 940 tests OK.
 - v0.90.0 (2026-11-12) — **Nicho y cantidad de Pequeña Historia** (§1). (1) **2 historias de
   Latinoamérica por día** (`historias_fb.por_dia`): `_fb_tick` propone hasta 2 con el mismo turno;
   `locales.proponer(excluir, evitar_paises)` saltea lo ya propuesto ese día (`bot_estado.ph_latam:<día>`)
