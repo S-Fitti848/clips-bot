@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-11-13 | **Versión:** v0.92.0 | **Modo:** Fase 2: corriendo solo en la Pi. Madrugada desde la escucha (v0.91.0): Rots 03:30 → tecnología → 2 de Latinoamérica, todo antes de las 05:30; timers 05:00 y 06:00 de respaldo
+**Snapshot:** 2026-11-13 | **Versión:** v0.93.0 | **Modo:** Fase 2: corriendo solo en la Pi. Madrugada desde la escucha (v0.91.0): Rots 03:30 → tecnología → 2 de Latinoamérica, todo antes de las 05:30; timers 05:00 y 06:00 de respaldo
 
 > **SI ESTÁS EMPEZANDO UNA SESIÓN NUEVA, LEÉ §10.** Ahí está qué está hecho, qué quedó a medias,
 > qué falta, y las trampas que ya nos mordieron.
@@ -763,7 +763,7 @@ clips_bot/voces.py       voces de Gemini de hoy por clave (con Lo Encontré) y e
 clips_bot/prueba_manual.py prueba manual vs API (§1): el clip del día a mano, registro e informe del feed
 clips_bot/envivo.py      modo en vivo (§3b): quién está al aire, momentos por creadores distintos,
                          alertas en la DB (no repetir, tope, vencer) y el resumen de tiempos
-tests/                   946 tests sin red ni video (conftest.py: nada sale a YouTube) (test_reglas_fijas.py: las 3 reglas de §1)
+tests/                   949 tests sin red ni video (conftest.py: nada sale a YouTube) (test_reglas_fijas.py: las 3 reglas de §1)
 ```
 
 Comandos:
@@ -956,6 +956,21 @@ Problemas abiertos:
 
 ## 9. CHANGELOG
 
+- v0.93.0 (2026-11-13) — **Final que paga, puntaje de tecnología y costo real de Claude** (Santi,
+  después de ver los guiones del 14/11). (1) **Segunda revisión del final** (`ef.final_que_paga`,
+  `SISTEMA_PAGO`, dentro de `escribir_guion`, `revisar_final=True`, en los 3 videos): el mismo
+  cliente (Claude) mira si la última o la anteúltima frase responde la pregunta del gancho (en La
+  Pola el gancho prometía el billete y el final hablaba del Día de la Mujer); si no, reescribe solo
+  las dos últimas y se vuelve a validar todo; si lo nuevo no valida (o Claude no responde), queda el
+  guion como estaba. (2) **Puntaje de la de tecnología** (`ef.elegir(notas=)`, `CRITERIOS_TEC` marca,
+  sorpresa, consecuencia y final, 1-10; `PUNTAJE_TEC_MIN` 7,5; ejemplo de 10: el error que le hizo
+  perder a Netscape la guerra de los navegadores): pasan las de 7,5 o más, de mejor a peor; si
+  ninguna, `SinTema` (no sale y se avisa); el puntaje va en la aprobación ("💻 TECNOLOGÍA (solo
+  YouTube) ⭐ …", `_encabezado_tec`, `Propuesta.local`). (3) **Costo real de Claude**
+  (`claude.resumen_costo` / `texto_costo` por tarea desde `gemini_uso`; `costo()` reconoce los
+  modelos con versión, antes un Haiku con versión se cobraba como Sonnet); `_costo_claude_tick`
+  manda el del día pedido en `bot_estado.costo_claude_pedido` apenas termina ese día; CLI
+  `costo-claude [--dia]`. Pedido cargado: el 14/11. 949 tests OK.
 - v0.92.0 (2026-11-13) — **Guiones que retienen y texto con Claude** (dos pedidos de Santi). (1)
   **Segunda frase con intriga** (`SISTEMA_GUION` y el de Latinoamérica): sin "En <año>, en <lugar>,";
   el año (y el lugar en Latinoamérica) se dicen en la 3.ª o 4.ª (`validar_guion`, `validar_lugar`),

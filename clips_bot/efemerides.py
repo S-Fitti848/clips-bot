@@ -412,7 +412,10 @@ SCHEMA_ELEGIR = {
     "properties": {"elegidos": {"type": "ARRAY", "items": {
         "type": "OBJECT",
         "properties": {"indice": {"type": "INTEGER"}, "articulo": {"type": "STRING"},
-                       "motivo": {"type": "STRING"}},
+                       "motivo": {"type": "STRING"},
+                       # el puntaje de la de tecnología (2026-11-13), 1 a 10 cada uno
+                       "marca": {"type": "INTEGER"}, "sorpresa": {"type": "INTEGER"},
+                       "consecuencia": {"type": "INTEGER"}, "final": {"type": "INTEGER"}},
         "required": ["indice", "articulo", "motivo"]}}},
     "required": ["elegidos"],
 }
@@ -431,14 +434,27 @@ lanzamientos de productos, empresas, creadores, la primera vez que algo funcion�
 servicios de internet, computadoras, teléfonos, consolas, videojuegos como producto (su lanzamiento,
 no su trama). NADA de otros temas (política, guerras, arte, deportes, religión, historia general),
 aunque sean interesantes. Si ningún hecho de hoy es de este tema, devolvé `elegidos` VACÍO: es
-preferible no sacar video que sacar uno de otro tema."""}
+preferible no sacar video que sacar uno de otro tema.
+PUNTUÁ cada elegido del 1 al 10 en cuatro cosas (sé exigente):
+- `marca`: ¿es una marca o un producto que TODOS conocen (Google, Windows, PlayStation, WhatsApp)?
+- `sorpresa`: ¿tiene un dato sorprendente?
+- `consecuencia`: ¿tuvo una consecuencia grande, algo que cambió cómo usamos internet o la tecnología?
+- `final`: ¿se puede cerrar con un dato que impacte?
+EJEMPLO DE 10 EN LAS CUATRO: "el error que le hizo perder a Netscape la guerra de los navegadores",
+contado con giro (dominaba la web, se saltó una versión entera, la siguiente salió lenta y rota, e
+Internet Explorer se quedó con todo). Un estándar técnico que nadie conoce (UML) no pasa de 3 en marca."""}
 
 
 class SinTema(NarrarError):
     """Ningún hecho del día es del tema del canal: no sale video y se avisa (sin reintentos)."""
 
 
-def elegir(cliente, eventos: list[Evento], cuantos: int = ELEGIDOS, tema: str = "") -> list[tuple[int, str]]:
+CRITERIOS_TEC = ("marca", "sorpresa", "consecuencia", "final")
+PUNTAJE_TEC_MIN = 7.5     # Santi, 2026-11-13
+
+
+def elegir(cliente, eventos: list[Evento], cuantos: int = ELEGIDOS, tema: str = "",
+           notas: dict | None = None) -> list[tuple[int, str]]:
     """(índice, artículo del evento) de los elegidos, del mejor al peor.
 
     El artículo lo elige Gemini entre los del hecho porque el primero de la lista suele ser el
@@ -459,6 +475,10 @@ def elegir(cliente, eventos: list[Evento], cuantos: int = ELEGIDOS, tema: str = 
             paginas = eventos[i - 1].paginas
             art = str(x.get("articulo") or "").strip().replace(" ", "_")
             out.append((i - 1, art if art in paginas else paginas[-1]))
+            if notas is not None:     # {índice: {"puntaje": promedio, criterio: nota}}
+                n = {k: x.get(k) for k in CRITERIOS_TEC if isinstance(x.get(k), int)}
+                notas[i - 1] = {**n, "puntaje": round(sum(n.values()) / len(CRITERIOS_TEC), 2)
+                                if len(n) == len(CRITERIOS_TEC) else 0.0}
     return out[:cuantos]
 
 
@@ -1100,10 +1120,64 @@ def frases_de_accion(frases: list[dict]) -> list[int]:
     return [i for i, f in enumerate(frases) if i > 0 and (f or {}).get("accion")][:MAX_VIDEOS]
 
 
+SISTEMA_PAGO = """Revisás el final de un guion de video corto. El gancho (la primera frase) deja una
+pregunta abierta, y el final la tiene que RESPONDER: la anteúltima o la última frase dice la
+respuesta concreta a esa pregunta (si el gancho promete "terminó en un billete", el final dice lo del
+billete). Si ya la responde, `responde` true y repetís las dos últimas frases igual. Si no, `responde`
+false y reescribís SOLO las dos últimas frases: la anteúltima responde la pregunta y la última cierra
+con un gancho que termina en "?" o "!". Usás SOLO lo que dice el artículo (ni un nombre, número ni
+fecha que no esté ahí), frases de 14 palabras como mucho, español rioplatense, mismo tono.
+Respondé solo con el JSON pedido."""
+
+SCHEMA_PAGO = {"type": "OBJECT",
+               "properties": {"responde": {"type": "BOOLEAN"}, "anteultima": {"type": "STRING"},
+                              "ultima": {"type": "STRING"}, "motivo": {"type": "STRING"}},
+               "required": ["responde", "anteultima", "ultima", "motivo"]}
+
+
+def final_que_paga(cliente, d: dict, e: Evento, fuente: str, corto: bool = False,
+                   rango: tuple[int, int] | None = None, validar_extra=None, avisar=log.info) -> dict:
+    """Segunda revisión (Santi, 2026-11-13: en La Pola el gancho prometía "terminó en un billete" y
+    el final hablaba del Día de la Mujer): ¿el final responde la pregunta del gancho? Si no, se
+    reescriben las dos últimas frases y se vuelve a validar todo; si lo nuevo no valida, queda el
+    guion como estaba (nunca uno peor). Devuelve el guion (dict) a usar."""
+    frases = [str((f or {}).get("texto") or "") for f in d.get("frases") or []]
+    if len(frases) < 4:
+        return d
+    prompt = (f"Gancho: {frases[0]}\nPregunta que deja: {d.get('pregunta_gancho') or '(no dicha)'}\n\n"
+              "Guion entero:\n" + "\n".join(f"{i + 1}. {f}" for i, f in enumerate(frases))
+              + f"\n\nTEXTO DEL ARTÍCULO (lo único que podés usar):\n{fuente[:8000]}")
+    from .gemini import GeminiError
+
+    errores: list[str] = []
+    for _ in range(2):
+        extra = f"\n\nTu respuesta anterior tenía estos errores: {'; '.join(errores)}" if errores else ""
+        try:
+            r = json.loads(cliente.json(SISTEMA_PAGO, prompt + extra, SCHEMA_PAGO, temperatura=0.3))
+        except (GeminiError, ValueError) as err:
+            avisar(f"  revisión del final: no respondió ({str(err)[:80]}); queda como estaba")
+            return d
+        if r.get("responde") is True:
+            return d
+        nuevo = json.loads(json.dumps(d))
+        nuevo["frases"][-2]["texto"] = str(r.get("anteultima") or "").strip()
+        nuevo["frases"][-1]["texto"] = str(r.get("ultima") or "").strip()
+        nuevo["frase_pago"] = len(frases) - 1
+        errores = validar_guion(nuevo, e.anio, fuente + "\n" + e.texto + f" {e.anio}", corto=corto, rango=rango)
+        if validar_extra and not errores:
+            errores = validar_extra(nuevo)
+        if not errores:
+            avisar(f"  revisión del final: reescrito ({str(r.get('motivo') or '')[:100]})")
+            return nuevo
+    avisar(f"  revisión del final: lo nuevo no valida ({'; '.join(errores)[:120]}); queda como estaba")
+    return d
+
+
 def escribir_guion(cliente, e: Evento, fuente: str, correccion: str = "", anterior: str = "",
                    reintentos: int = 2, hablado: bool = False, sistema: str | None = None,
                    validar_extra=None, contexto: str = "", corto: bool = False,
-                   rango: tuple[int, int] | None = None, max_s: float = 0.0) -> Guion:
+                   rango: tuple[int, int] | None = None, max_s: float = 0.0,
+                   revisar_final: bool = True) -> Guion:
     """Gemini (o Claude, en el video de Facebook) con el artículo, SIN fotos: el guion y qué mostrar
     en cada frase. Las fotos se buscan después para cada frase (`fotos_para_guion`). Reintenta con
     los errores de la validación. `sistema`/`validar_extra`/`contexto`: los del video de Facebook
@@ -1121,6 +1195,8 @@ def escribir_guion(cliente, e: Evento, fuente: str, correccion: str = "", anteri
                                 rango=rango)
         if validar_extra and not errores:
             errores = validar_extra(d)
+        if not errores and revisar_final:
+            d = final_que_paga(cliente, d, e, fuente, corto=corto, rango=rango, validar_extra=validar_extra)
         if not errores:
             return Guion(frases=[f["texto"].strip() for f in d["frases"]], fotos=[],
                          descartadas=[], titulo=d["titulo"].strip(),
@@ -2334,9 +2410,22 @@ def proponer(wiki: Wiki, cliente, dia: date, carpeta: Path, avisar=log.info,
         raise NarrarError("Ningún hecho de hoy pasa el filtro de temas sensibles"
                           + (f" (con «{hecho}»)" if hecho else "") + ".")
     escritor = texto or cliente     # 2026-11-12: el texto con Claude; `cliente` (Gemini) para las fotos
-    elegidos = elegir(escritor, candidatos, tema=tema)
+    notas: dict = {}
+    elegidos = elegir(escritor, candidatos, tema=tema, notas=notas)
     if tema and not elegidos:
         raise SinTema(f"Hoy no hay ningún hecho de «{tema}» que sirva: no saco el video (nada de relleno).")
+    if tema == "tecnologia":
+        # Puntaje propio (Santi, 2026-11-13): marca conocida, sorpresa, consecuencia y final; pasan
+        # las de PUNTAJE_TEC_MIN (7,5) o más, de mejor a peor.
+        for i, _ in elegidos:
+            n = notas.get(i, {})
+            avisar(f"  {n.get('puntaje', 0):.2f} {candidatos[i].anio} {candidatos[i].texto[:60]} {n}")
+        flojos = [i for i, _ in elegidos if notas.get(i, {}).get("puntaje", 0) < PUNTAJE_TEC_MIN]
+        elegidos = sorted([x for x in elegidos if x[0] not in flojos],
+                          key=lambda x: -notas.get(x[0], {}).get("puntaje", 0))
+        if not elegidos:
+            raise SinTema(f"Hoy ningún hecho de tecnología llega a {PUNTAJE_TEC_MIN:g} (marca, sorpresa, "
+                          "consecuencia y final): no saco uno flojo.")
     avisar("Gemini eligió: " + " | ".join(f"{candidatos[i].anio} {candidatos[i].texto[:50]} [{a}]"
                                           for i, a in elegidos))
     descartes: dict = {}
@@ -2376,8 +2465,11 @@ def proponer(wiki: Wiki, cliente, dia: date, carpeta: Path, avisar=log.info,
         for k in g.descartadas:        # para poder juzgar si el descarte visual es razonable
             if 0 <= k < len(pool):
                 avisar(f"    descartada {k + 1}: {pool[k].epigrafe[:90]}")
+        n = notas.get(i) or {}
         return Propuesta(fecha=dia.isoformat(), evento=e.a_dict(), fotos=[f.a_dict() for f in pool],
-                         reserva=[], guion=g.a_dict(), fuente=fuente[:20000], descartes=descartes)
+                         reserva=[], guion=g.a_dict(), fuente=fuente[:20000], descartes=descartes,
+                         local={"puntaje": n.get("puntaje"),
+                                "puntajes": {k: n.get(k) for k in CRITERIOS_TEC}} if tema else {})
     if respaldo:
         e, fuente, pocas, n = respaldo
         avisar(f"Ningún hecho llegó a {ilustrar.MIN_FOTOS_ABSOLUTO} fotos de época: uso {e.anio} "

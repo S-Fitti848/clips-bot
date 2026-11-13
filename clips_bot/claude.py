@@ -56,8 +56,41 @@ def a_json_schema(s: dict) -> dict:
 
 
 def costo(modelo: str, entrada: int, salida: int) -> float:
-    pe, ps = PRECIOS.get(modelo, PRECIOS[SONNET])
+    """US$ del pedido. El modelo puede venir con versión ("claude-haiku-5-5-2026…"): se busca por nombre."""
+    m = str(modelo or "")
+    pe, ps = next((v for k, v in PRECIOS.items() if m.startswith(k)),
+                  PRECIOS[HAIKU] if "haiku" in m else PRECIOS[SONNET])
     return (entrada * pe + salida * ps) / 1e6
+
+
+# Para qué es cada función que llama a Claude (el informe de costo, 2026-11-13).
+QUE_ES = {"textos.generar": "Rots: textos de los clips", "revision.revisar": "Rots: chequeo visual",
+          "seleccion.desempatar": "Rots: desempate", "locales.clasificar": "Latinoamérica: clasificar (Haiku)",
+          "locales.elegir": "Latinoamérica: elegir y puntuar", "efemerides.elegir": "Tecnología: elegir y puntuar",
+          "efemerides.escribir_guion": "Guiones (Latinoamérica y tecnología)",
+          "efemerides.final_que_paga": "Revisión del final", "efemerides.pedir": "Fotos (elegir y verificar)",
+          "efemerides.acortar_guion": "Acortar guion"}
+
+
+def resumen_costo(conn, dia: str) -> tuple[float, list[tuple[str, int, float]]]:
+    """(US$ total, [(qué es, pedidos, US$)]) de Claude en el día `dia` (AR, AAAA-MM-DD), de gemini_uso."""
+    por: dict[str, list] = {}
+    for funcion, modelo, entrada, salida in conn.execute(
+            "SELECT funcion, modelo, entrada, salida FROM gemini_uso WHERE clave = 'claude' AND dia = ?", (dia,)):
+        k = QUE_ES.get(funcion, funcion)
+        x = por.setdefault(k, [0, 0.0])
+        x[0] += 1
+        x[1] += costo(modelo, entrada or 0, salida or 0)
+    filas = sorted(((k, n, round(c, 4)) for k, (n, c) in por.items()), key=lambda r: -r[2])
+    return round(sum(c for _, _, c in filas), 4), filas
+
+
+def texto_costo(conn, dia: str) -> str:
+    total, filas = resumen_costo(conn, dia)
+    lineas = [f"🔧 Claude Code: <b>Costo real de Claude del {dia[8:10]}/{dia[5:7]}</b>: US$ {total:.2f}"
+              f" (≈ US$ {total * 30:.0f} por mes a este ritmo)"]
+    lineas += [f"• {k}: US$ {c:.3f} ({n} pedido{'s' if n != 1 else ''})" for k, n, c in filas]
+    return "\n".join(lineas)
 
 
 class ClaudeClient:

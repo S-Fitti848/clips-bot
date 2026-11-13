@@ -367,3 +367,104 @@ def test_la_misma_historia_no_sale_dos_veces_el_mismo_dia(tmp_path, monkeypatch)
     with pytest.raises(ef.NarrarError, match="ninguna historia"):
         locales.proponer(None, None, None, None, date(2026, 11, 14), tmp_path,
                          excluir={nac.texto, "Policarpa Salavarrieta"}, evitar_paises={"Colombia"})
+
+
+# ---- 2026-11-13 (2): el final que paga, el puntaje de tecnología y el costo de Claude ---------
+
+def _d_pola(final="¡Y cada 14 de noviembre es el Día de la Mujer Colombiana!"):
+    frases = ["Una costurera espió a los españoles y terminó en un billete.",
+              "Mandaba mensajes a los patriotas, y casi nadie la conocía…",
+              "Fue en 1817, en Bogotá, bajo el mando español.",
+              "Pero un espía enviado por los españoles la delató.",
+              "¡No aceptaría ni un vaso de agua de mis enemigos!",
+              "Su ejecución indignó al pueblo y creó mucha resistencia.",
+              "¿Sabés qué pasó después?", final]
+    return {"frases": [{"texto": t, "mostrar": f"1817 Bogota escena {chr(97 + i)}", "presente": False}
+                       for i, t in enumerate(frases)],
+            "idea_clave": "x", "titulo": "La Pola", "descripcion": "d", "hashtags": ["#Shorts", "#Bogota", "#Colombia"],
+            "pregunta_gancho": "¿Cómo terminó en un billete?", "frase_tension": 4, "frase_giro": 5, "frase_pago": 8}
+
+
+class _Revisor:
+    def __init__(self, *respuestas):
+        self.r, self.prompts = list(respuestas), []
+
+    def json(self, sistema, prompt, schema, temperatura=0.7, **k):
+        self.prompts.append(prompt)
+        return json.dumps(self.r.pop(0))
+
+
+FUENTE_POLA = ("En 1817 en Bogotá Policarpa Salavarrieta fue fusilada. Su imagen aparece en el billete "
+               "de 10 000 pesos. El 14 de noviembre es el Día de la Mujer Colombiana.")
+
+
+def test_el_final_tiene_que_responder_el_gancho():
+    e = ef.Evento("es", 1817, "La Pola", ["Policarpa Salavarrieta"])
+    rev = _Revisor({"responde": False, "anteultima": "Hoy su cara está en el billete de 10 000 pesos.",
+                    "ultima": "¿La reconocerías en tu billetera?", "motivo": "faltaba el billete"})
+    d = ef.final_que_paga(rev, _d_pola(), e, FUENTE_POLA, corto=True, rango=(40, 120))
+    assert "billete" in d["frases"][-2]["texto"] and d["frase_pago"] == 7
+    assert "terminó en un billete" in rev.prompts[0] and "¿Cómo terminó en un billete?" in rev.prompts[0]
+    ok = _Revisor({"responde": True, "anteultima": "", "ultima": "", "motivo": ""})
+    assert ef.final_que_paga(ok, _d_pola(), e, FUENTE_POLA, corto=True, rango=(40, 120)) == _d_pola()
+    # si lo nuevo no valida (un dato que no está en el artículo), queda como estaba
+    malo = {"responde": False, "anteultima": "Ganó 3 millones de dólares en 1990.", "ultima": "¡Increíble!",
+            "motivo": "x"}
+    assert ef.final_que_paga(_Revisor(malo, malo), _d_pola(), e, FUENTE_POLA, corto=True,
+                             rango=(40, 120)) == _d_pola()
+
+
+def test_tecnologia_con_su_puntaje(tmp_path):
+    assert ef.PUNTAJE_TEC_MIN == 7.5 and "Netscape" in ef.TEMAS["tecnologia"]
+
+    class W:
+        def eventos(self, lang, dia):
+            return [ef.Evento("es", 1997, "Se adopta el estándar UML.", ["UML"]),
+                    ef.Evento("es", 2000, "Se lanza Netscape 6.", ["Netscape"])] if lang == "es" else []
+
+    class G:
+        def json(self, *a, **k):
+            return json.dumps({"elegidos": [
+                {"indice": 1, "articulo": "UML", "motivo": "x", "marca": 2, "sorpresa": 3, "consecuencia": 4, "final": 3},
+                {"indice": 2, "articulo": "Netscape", "motivo": "y", "marca": 6, "sorpresa": 6, "consecuencia": 7, "final": 6}]})
+
+    with pytest.raises(ef.SinTema, match="7.5"):
+        ef.proponer(W(), G(), date(2026, 11, 14), tmp_path, tema="tecnologia")
+    notas = {}
+    ef.elegir(G(), W().eventos("es", None), tema="tecnologia", notas=notas)
+    assert notas[0]["puntaje"] == 3.0 and notas[1]["puntaje"] == 6.25
+    import clips_bot.__main__ as m
+    enc = m._encabezado_tec({"puntaje": 9.25, "puntajes": {"marca": 10, "sorpresa": 9, "consecuencia": 9, "final": 9}})
+    assert "TECNOLOGÍA" in enc and "⭐ 9.2" in enc
+
+
+def test_costo_real_de_claude_del_dia(conn):
+    import clips_bot.__main__ as m
+    from clips_bot import claude
+
+    for funcion, modelo, ent, sal in (("textos.generar", "claude-sonnet-5-5-20261001", 4000, 700),
+                                      ("locales.clasificar", "claude-haiku-5-5-20261001", 20000, 8000),
+                                      ("efemerides.escribir_guion", "claude-sonnet-5-5", 6500, 4500)):
+        conn.execute("INSERT INTO gemini_uso (ts, dia, funcion, modelo, clave, entrada, salida, cache) "
+                     "VALUES ('2026-11-14T08:00:00+00:00', '2026-11-14', ?, ?, 'claude', ?, ?, 0)",
+                     (funcion, modelo, ent, sal))
+    conn.commit()
+    total, filas = claude.resumen_costo(conn, "2026-11-14")
+    haiku = dict((k, c) for k, _, c in filas)["Latinoamérica: clasificar (Haiku)"]
+    assert haiku == pytest.approx(0.006) and total == pytest.approx(0.015 + 0.006 + 0.058)
+
+    class TG:
+        def __init__(self):
+            self.m = []
+
+        def send_message(self, chat, texto, **k):
+            self.m.append((chat, texto))
+
+    tg, s = TG(), load_settings()
+    db.set_valor(conn, m.COSTO_PEDIDO, "2026-11-14")
+    m._costo_claude_tick(conn, tg, s, ahora=datetime(2026, 11, 14, 23, 50, tzinfo=m.AR))
+    assert tg.m == []                                     # el día todavía no terminó
+    m._costo_claude_tick(conn, tg, s, ahora=datetime(2026, 11, 15, 0, 5, tzinfo=m.AR))
+    assert len(tg.m) == 1 and "US$ 0.08" in tg.m[0][1] and "Rots: textos" in tg.m[0][1]
+    m._costo_claude_tick(conn, tg, s, ahora=datetime(2026, 11, 15, 9, 0, tzinfo=m.AR))
+    assert len(tg.m) == 1                                 # una sola vez

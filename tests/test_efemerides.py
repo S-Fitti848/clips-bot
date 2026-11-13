@@ -230,10 +230,11 @@ def test_el_gancho_la_pregunta_y_las_fotos():
 def test_escribir_guion_reintenta_con_los_errores():
     malo = _guion_ok()
     malo["frases"][4]["texto"] = "Hoy procesan más de mil millones de búsquedas diarias en el mundo."
-    g = FakeGemini(malo, _guion_ok())
+    # la tercera respuesta es la revisión del final (2026-11-13): ya responde la pregunta del gancho
+    g = FakeGemini(malo, _guion_ok(), {"responde": True, "anteultima": "", "ultima": "", "motivo": ""})
     e = ef.Evento("es", 1998, "arranca Google", ["Google"])
     guion = ef.escribir_guion(g, e, ARTICULO)
-    assert "mil millones" in g.prompts[1] and g.imagenes == [0, 0]   # el guion va sin fotos
+    assert "mil millones" in g.prompts[1] and g.imagenes == [0, 0, 0]   # sin fotos (la 3.ª: el final)
     assert guion.mostrar[2] == "1998 Stanford University" and guion.idea_clave and guion.fotos == []
 
 

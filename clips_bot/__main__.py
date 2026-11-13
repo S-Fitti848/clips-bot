@@ -2694,6 +2694,7 @@ def escuchar_telegram(settings: Settings, timeout_poll: int = 50) -> int:
             _seguro(tg, str(chat_ultimo or ""), "la medición de Pequeña Historia",
                     _medicion_ph_tick, conn, tg, settings)
             _seguro(tg, str(chat_ultimo or ""), "el aviso de las voces", _voces_tick, conn, tg, settings)
+            _seguro(tg, str(chat_ultimo or ""), "el costo de Claude", _costo_claude_tick, conn, tg, settings)
             _seguro(tg, str(chat_ultimo or ""), "el reintento de los clips",
                     _clips_reintento_tick, conn, settings)
             _seguro(tg, str(chat_ultimo or ""), "la búsqueda de lo que pegó",
@@ -3405,7 +3406,16 @@ def _efe_mostrar(conn, tg: TelegramClient, chat_id: str, token: str, estado: dic
                                 [ef.Foto.de_dict(f) for f in p.fotos])
     if p.destino == "facebook":
         texto = (_encabezado_fb(p.local) + "\n" + texto)[:4000]
+    elif (p.local or {}).get("puntaje"):
+        texto = (_encabezado_tec(p.local) + "\n" + texto)[:4000]
     tg.send_message(chat_id, texto, teclado={"inline_keyboard": filas})
+
+
+def _encabezado_tec(local: dict) -> str:
+    """Arriba de la propuesta de tecnología (2026-11-13): solo YouTube y su puntaje."""
+    n = local.get("puntajes") or {}
+    return (f"💻 <b>TECNOLOGÍA</b> (solo YouTube)\n⭐ {local['puntaje']:.1f} (marca {n.get('marca')}, "
+            f"sorpresa {n.get('sorpresa')}, consecuencia {n.get('consecuencia')}, final {n.get('final')})")
 
 
 def _encabezado_fb(local: dict) -> str:
@@ -3714,6 +3724,22 @@ def _madrugada_tick(conn, tg: TelegramClient, settings: Settings, ahora=None, la
     finally:
         db.set_valor(conn, EFE_DIA, hoy)
         db.soltar_turno(conn, db.RECURSO_PESADO, turno, VENCIMIENTO_PESADO_S)
+
+
+COSTO_PEDIDO = "costo_claude_pedido"   # bot_estado: el día (AR) cuyo costo de Claude pidió Santi
+
+
+def _costo_claude_tick(conn, tg: TelegramClient, settings: Settings, ahora=None) -> None:
+    """Santi pidió el costo real de Claude de un día (2026-11-13: "pasámelo cuando lo tengas"): apenas
+    termina ese día, se lo manda (una vez) y borra el pedido."""
+    from . import claude
+
+    dia = db.get_valor(conn, COSTO_PEDIDO)
+    ahora = ahora or datetime.now(AR)
+    if not dia or ahora.date().isoformat() <= dia:
+        return
+    db.borrar_valor(conn, COSTO_PEDIDO)
+    tg.send_message(DUENO, claude.texto_costo(conn, dia))
 
 
 def _voces_tick(conn, tg: TelegramClient, settings: Settings, ahora=None) -> None:
@@ -4184,6 +4210,18 @@ def cmd_calendario(args: argparse.Namespace) -> int:
             tg = TelegramClient(env("TELEGRAM_BOT_TOKEN"))
             for parte in partir_html(texto):
                 tg.send_message(DUENO, parte)
+    finally:
+        conn.close()
+    return 0
+
+
+def cmd_costo_claude(args: argparse.Namespace) -> int:
+    from . import claude
+
+    conn = db.connect(DB_PATH)
+    try:
+        dia = args.dia or datetime.now(AR).date().isoformat()
+        print(html.unescape(re.sub(r"<[^>]+>", "", claude.texto_costo(conn, dia))))
     finally:
         conn.close()
     return 0
@@ -6054,6 +6092,10 @@ def main(argv: list[str] | None = None) -> int:
                                             "muestra antes contra después del gancho")
     pm.add_argument("--enviar", action="store_true", help="manda el informe a Santi por Telegram")
     pm.set_defaults(func=cmd_medicion_ph)
+
+    pk = sub.add_parser("costo-claude", help="lo que gastó Claude en un día, por tarea")
+    pk.add_argument("--dia", help="AAAA-MM-DD (AR); default hoy")
+    pk.set_defaults(func=cmd_costo_claude)
 
     ph2 = sub.add_parser("hashtags-rots", help="pone los hashtags (y la categoría 22, sin tags) a los "
                                                "Shorts de Rots subidos por la API que no los tienen")
