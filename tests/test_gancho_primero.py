@@ -346,3 +346,24 @@ def test_textos_con_claude_y_gemini_de_respaldo():
         claude.ConRespaldo(Falla(), None).json("s", "p", {})
     s = load_settings()
     assert s.textos.motor == "claude"
+
+
+def test_la_misma_historia_no_sale_dos_veces_el_mismo_dia(tmp_path, monkeypatch):
+    # 14/11: La Pola como nacimiento y como fusilamiento, con el mismo artículo.
+    nac = locales.Candidato("nacimientos", 1817, "Policarpa Salavarrieta, heroína (n. 1795).",
+                            ["Policarpa Salavarrieta"], clasif={"lugar": "Bogotá", "pais": "Colombia", "humana": True})
+    fus = locales.Candidato("acontecimientos", 1817, "fusilamiento de Policarpa Salavarrieta.",
+                            ["Policarpa Salavarrieta"], clasif={"lugar": "Bogotá", "pais": "Colombia", "humana": True})
+    monkeypatch.setattr(locales, "leer_todo", lambda w, d, a: ([nac, fus], {}, set()))
+    monkeypatch.setattr(locales, "filtrar", lambda t, h, hom: (t, {}))
+    monkeypatch.setattr(locales, "clasificar", lambda *a, **k: None)
+
+    def elegir(sonnet, lista, cuantos=8):
+        for c in lista:
+            c.clasif["puntaje"] = 9.0
+        return [(c, "Policarpa Salavarrieta", "") for c in lista]
+
+    monkeypatch.setattr(locales, "elegir", elegir)
+    with pytest.raises(ef.NarrarError, match="ninguna historia"):
+        locales.proponer(None, None, None, None, date(2026, 11, 14), tmp_path,
+                         excluir={nac.texto, "Policarpa Salavarrieta"}, evitar_paises={"Colombia"})

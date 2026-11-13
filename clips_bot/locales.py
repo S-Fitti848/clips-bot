@@ -666,7 +666,9 @@ def proponer(wiki: ef.Wiki, sonnet, haiku, gemini, dia: date, carpeta: Path, avi
                              + (" (sin contar las que ya salieron hoy)" if excluir else ""))
     lista = otro_pais_primero(lista, evitar_paises)
     elegidos = elegir(sonnet, lista[:20])
-    elegidos = [x for x in elegidos if x[0].texto not in (excluir or set())]
+    # Ni el mismo hecho ni la misma historia contada desde otra línea del día (2026-11-13: el 14/11 La
+    # Pola aparece como nacimiento y como fusilamiento, con el mismo artículo).
+    elegidos = [x for x in elegidos if x[0].texto not in (excluir or set()) and x[1] not in (excluir or set())]
     if not hecho:
         # Solo las que atrapan (Santi, 2026-11-13): 8 o más de promedio en persona, peligro, giro y
         # emoción. Si hoy no hay ninguna, no sale (y quien llama avisa): nada de relleno.

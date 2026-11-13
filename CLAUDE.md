@@ -763,7 +763,7 @@ clips_bot/voces.py       voces de Gemini de hoy por clave (con Lo Encontré) y e
 clips_bot/prueba_manual.py prueba manual vs API (§1): el clip del día a mano, registro e informe del feed
 clips_bot/envivo.py      modo en vivo (§3b): quién está al aire, momentos por creadores distintos,
                          alertas en la DB (no repetir, tope, vencer) y el resumen de tiempos
-tests/                   945 tests sin red ni video (conftest.py: nada sale a YouTube) (test_reglas_fijas.py: las 3 reglas de §1)
+tests/                   946 tests sin red ni video (conftest.py: nada sale a YouTube) (test_reglas_fijas.py: las 3 reglas de §1)
 ```
 
 Comandos:
@@ -973,7 +973,10 @@ Problemas abiertos:
   (5) **Texto con Claude** (`claude.ConRespaldo`, `claude.para_texto`, `textos.motor: claude`,
   `process.cliente_textos`): textos de Rots y chequeo visual con Sonnet, desempate con Haiku, y la
   de tecnología (elegir, guion, ✏️ y acortar: `ef.proponer(texto=)`, `rehacer_guion(texto=)`,
-  `_texto_efemeride`) con Sonnet; Gemini de respaldo si Claude falla, y para audio. 945 tests OK.
+  `_texto_efemeride`) con Sonnet; Gemini de respaldo si Claude falla, y para audio. (6) Encontrado
+  armando la vista previa del 14/11: las dos únicas de 8 o más eran LA MISMA historia (La Pola como
+  nacimiento y como fusilamiento, mismo artículo) y habrían salido las dos: ahora tampoco se repite
+  el artículo del hecho en el día (`ph_latam` guarda `articulo`). 946 tests OK.
 - v0.91.0 (2026-11-12) — **Todo en Telegram antes de las 05:30** (Santi). Los timers (05:00 clips,
   06:00 efeméride) no se pueden mover sin la contraseña de Santi (sudo solo permite `restart` de
   los servicios), así que la **escucha arma la madrugada** (`_madrugada_tick`): a

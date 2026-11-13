@@ -3554,12 +3554,14 @@ def _fb_proponer(conn, tg: TelegramClient, chats: list[str], dia, settings: Sett
                              corto=settings.historias_fb.formato_corto,
                              elector=_elector_fotos(settings),
                              elector_reintento=_elector_fotos(settings, reintento=True),
-                             excluir={x["texto"] for x in _latam_del_dia(conn, dia)},
+                             excluir={v for x in _latam_del_dia(conn, dia)
+                                      for v in (x.get("texto"), x.get("articulo")) if v},
                              evitar_paises={x["pais"] for x in _latam_del_dia(conn, dia) if x.get("pais")})
     except (NarrarError, ef.WikiError, GeminiError) as e:
         return f"No salió la historia de Latinoamérica: {html.escape(str(e)[:400])}"
     ya = _latam_del_dia(conn, dia)
-    ya.append({"texto": p.evento.get("texto"), "pais": (p.local or {}).get("pais")})
+    ya.append({"texto": p.evento.get("texto"), "pais": (p.local or {}).get("pais"),
+               "articulo": (p.evento.get("paginas") or [""])[0]})
     db.set_valor(conn, f"{PH_LATAM}:{dia.isoformat()}", json.dumps(ya, ensure_ascii=False))
     estado = {"propuesta": p.__dict__, "carpeta": str(carpeta), "chat_id": chats[0]}
     for chat in chats:
