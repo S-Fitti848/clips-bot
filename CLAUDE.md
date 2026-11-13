@@ -970,7 +970,10 @@ Problemas abiertos:
   (`claude.resumen_costo` / `texto_costo` por tarea desde `gemini_uso`; `costo()` reconoce los
   modelos con versión, antes un Haiku con versión se cobraba como Sonnet); `_costo_claude_tick`
   manda el del día pedido en `bot_estado.costo_claude_pedido` apenas termina ese día; CLI
-  `costo-claude [--dia]`. Pedido cargado: el 14/11. 949 tests OK.
+  `costo-claude [--dia]`. Pedido cargado: el 14/11. Probado con el guion real de La Pola: la primera
+  pasada no ponía el billete porque la revisión veía solo los primeros 8.000 caracteres del artículo
+  y el billete está en "Homenajes"; con el artículo entero (20.000) la anteúltima quedó "Su valentía
+  la hizo heroína y estuvo en el billete de 10 000 pesos." 949 tests OK.
 - v0.92.0 (2026-11-13) — **Guiones que retienen y texto con Claude** (dos pedidos de Santi). (1)
   **Segunda frase con intriga** (`SISTEMA_GUION` y el de Latinoamérica): sin "En <año>, en <lugar>,";
   el año (y el lugar en Latinoamérica) se dicen en la 3.ª o 4.ª (`validar_guion`, `validar_lugar`),

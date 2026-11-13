@@ -1146,7 +1146,9 @@ def final_que_paga(cliente, d: dict, e: Evento, fuente: str, corto: bool = False
         return d
     prompt = (f"Gancho: {frases[0]}\nPregunta que deja: {d.get('pregunta_gancho') or '(no dicha)'}\n\n"
               "Guion entero:\n" + "\n".join(f"{i + 1}. {f}" for i, f in enumerate(frases))
-              + f"\n\nTEXTO DEL ARTÍCULO (lo único que podés usar):\n{fuente[:8000]}")
+              # El artículo entero (hasta 20.000): en La Pola el billete estaba en "Homenajes",
+              # después de los primeros 8.000 caracteres, y la revisión no lo veía.
+              + f"\n\nTEXTO DEL ARTÍCULO (lo único que podés usar):\n{fuente[:20000]}")
     from .gemini import GeminiError
 
     errores: list[str] = []
