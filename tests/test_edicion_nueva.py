@@ -189,24 +189,31 @@ def _d(frases):
             "hashtags": ["#Shorts", "#Nacozari", "#Mexico"]}
 
 
-def test_guion_corto_gancho_primero_y_fecha_en_la_segunda():
+def test_guion_corto_gancho_intriga_y_el_anio_despues():
+    # 2026-11-13: la segunda suma intriga; el año y el lugar, en la 3.ª o la 4.ª.
     fuente = "En 1907 en Nacozari un maquinista llevó un tren con dinamita lejos del pueblo"
     bien = _d(["¡Un maquinista llevó un tren en llamas lejos de su pueblo!",
-               "En 1907, en Nacozari, un tren cargaba dinamita."] + ["Y el pueblo se salvó?"] * 6)
+               "Y nadie lo había obligado…", "Fue en 1907, en Nacozari."] + ["Y el pueblo se salvó?"] * 5)
     errores = ef.validar_guion(bien, 1907, fuente, corto=True)
-    assert not any("primera" in e or "segunda" in e for e in errores)
+    assert not any("primera" in e or "segunda" in e or "año" in e for e in errores)
     viejo = _d(["Un día como hoy, en 1907, en Nacozari, un tren cargaba dinamita."] * 8)
     errores = ef.validar_guion(viejo, 1907, fuente, corto=True)
     assert any("GANCHO" in e for e in errores) and any("segunda" in e for e in errores)
+    con_fecha = _d(["¡Un tren en llamas!", "En 1907, en Nacozari, un tren cargaba dinamita."]
+                   + ["Y el pueblo se salvó?"] * 6)
+    assert any("INTRIGA" in e for e in ef.validar_guion(con_fecha, 1907, fuente, corto=True))
     assert not any("palabras" in e for e in ef.validar_guion(bien, 1907, fuente, corto=True)
                    if "mínimo" in e and "70" in e)
 
 
-def test_el_lugar_en_la_segunda_frase_del_corto():
+def test_el_lugar_en_la_tercera_o_cuarta_frase():
     v = locales.validar_lugar("Nacozari", corto=True)
-    d = _d(["¡Un tren en llamas!", "En 1907, en Nacozari, pasó esto."])
+    d = _d(["¡Un tren en llamas!", "Y nadie lo esperaba…", "Fue en 1907, en Nacozari."])
     assert not any("lugar" in e for e in v(d))
-    assert "20 a 30 segundos" in locales.SISTEMA_GUION_CORTO
+    temprano = _d(["¡Un tren en llamas!", "En Nacozari nadie lo esperaba…", "Fue en 1907."])
+    assert any("tercera o la cuarta" in e for e in v(temprano))
+    # Latinoamérica 30-40 s (2026-11-13); la de tecnología sigue en 20-30 s
+    assert "30 a 40 segundos" in locales.SISTEMA_GUION_CORTO and "20 a 30 segundos" in ef.SISTEMA_GUION_CORTO
 
 
 class _Gemini:

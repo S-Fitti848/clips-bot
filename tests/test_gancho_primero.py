@@ -24,14 +24,15 @@ def test_los_cuatro_guiones_arrancan_con_el_gancho():
                     locales.SISTEMA_GUION_CORTO):
         assert "La PRIMERA frase es el GANCHO" in sistema
         assert 'arranca EXACTAMENTE con "Un día como hoy' not in sistema
-    assert 'La SEGUNDA frase arranca EXACTAMENTE con "En <año>, en <lugar>,"' in locales.SISTEMA_GUION_LOCAL
-    assert 'La SEGUNDA frase arranca EXACTAMENTE con "En <año>, en <lugar>,"' in locales.SISTEMA_GUION_CORTO
+        assert "La SEGUNDA frase suma INTRIGA" in sistema and "GANCHO → TENSIÓN" in sistema
+    assert "El AÑO y el LUGAR" in locales.SISTEMA_GUION_LOCAL and "El AÑO y el LUGAR" in locales.SISTEMA_GUION_CORTO
 
 
 def test_el_lugar_va_en_la_segunda_frase_tambien_en_el_formato_largo():
     v = locales.validar_lugar("Nacozari")
     d = {"frases": [{"texto": "Un maquinista alejó un tren en llamas de su pueblo."},
-                    {"texto": "En 1907, en Nacozari, Jesús García lo hizo."}],
+                    {"texto": "Y nadie se lo había pedido…"},
+                    {"texto": "Fue en 1907, en Nacozari, y Jesús García lo hizo."}],
          "titulo": "El héroe de Nacozari", "hashtags": ["#Nacozari", "#Mexico", "#Shorts"]}
     assert v(d) == []
 
@@ -260,3 +261,88 @@ def test_la_fecha_de_madrugada_es_la_del_dia():
     # a las 04:00 AR (07:00 UTC) el día de la historia es el de Argentina
     ahora = datetime(2026, 11, 13, 4, 0, tzinfo=m.AR)
     assert ahora.date() == date(2026, 11, 13) and ahora.astimezone(timezone.utc).date() == date(2026, 11, 13)
+
+
+# ---- 2026-11-13: mejores historias, estructura, 30-40 s y textos con Claude --------------------
+
+def test_solo_pasan_las_historias_de_8_o_mas(tmp_path, monkeypatch):
+    c1 = locales.Candidato("acontecimientos", 1907, "Jesús García salva Nacozari.", ["Jesús García"],
+                           clasif={"lugar": "Nacozari", "pais": "México", "humana": True, "interes": 9})
+    c2 = locales.Candidato("acontecimientos", 1950, "Se funda una cooperativa.", ["Coop"],
+                           clasif={"lugar": "Lima", "pais": "Perú", "humana": True, "interes": 5})
+
+    class Sonnet:
+        def json(self, *a, **k):
+            return json.dumps({"elegidos": [
+                {"n": 1, "articulo": "Jesús García", "articulo_lugar": "", "motivo": "x",
+                 "persona": 10, "peligro": 10, "giro": 9, "emocion": 10},
+                {"n": 2, "articulo": "Coop", "articulo_lugar": "", "motivo": "y",
+                 "persona": 3, "peligro": 2, "giro": 3, "emocion": 4}]})
+
+    out = locales.elegir(Sonnet(), [c1, c2])
+    assert c1.clasif["puntaje"] == pytest.approx(9.75) and c2.clasif["puntaje"] == 3.0
+    assert locales.PUNTAJE_MIN == 8 and "Nacozari" in locales.SISTEMA_ELEGIR
+    assert [c.anio for c, _, _ in out] == [1907, 1950]          # elegir puntúa; el corte es en proponer
+    loc = locales.local_de(c1)
+    import clips_bot.__main__ as m
+    assert "⭐ 9.8" in m._encabezado_fb(loc) and "LATINOAMÉRICA" in m._encabezado_fb(loc)
+
+
+def test_ninguna_de_8_no_sale(tmp_path, monkeypatch):
+    c = locales.Candidato("acontecimientos", 1950, "Se funda una cooperativa en Lima.", ["Coop"],
+                          clasif={"lugar": "Lima", "pais": "Perú", "humana": True, "interes": 5})
+    monkeypatch.setattr(locales, "leer_todo", lambda w, d, a: ([c], {}, set()))
+    monkeypatch.setattr(locales, "filtrar", lambda t, h, hom: (t, {}))
+    monkeypatch.setattr(locales, "clasificar", lambda *a, **k: None)
+
+    def elegir(sonnet, lista, cuantos=8):
+        lista[0].clasif["puntaje"] = 5.0
+        return [(lista[0], "Coop", "")]
+
+    monkeypatch.setattr(locales, "elegir", elegir)
+    with pytest.raises(ef.NarrarError, match="ninguna historia llega a 8"):
+        locales.proponer(None, None, None, None, date(2026, 11, 13), tmp_path)
+
+
+def test_latinoamerica_de_30_a_40_y_tecnologia_de_20_a_30():
+    assert "30 a 40 segundos" in locales.SISTEMA_GUION_CORTO and "Entre 70 y 90" in locales.SISTEMA_GUION_CORTO
+    assert "20 a 30 segundos" in ef.SISTEMA_GUION_CORTO and "Entre 50 y 70" in ef.SISTEMA_GUION_CORTO
+    assert ef.LATAM_MAX_S == 40 and ef.LATAM_PALABRAS == (65, 95)
+
+
+def test_el_lugar_en_pantalla_desde_la_segunda_frase():
+    from clips_bot import graficos as gr
+
+    ev = gr.lugar_en_pantalla("Cartagena de Indias", 2.6, 6.0)
+    assert ev and "Cartagena de Indias" in ev[0] and ",Lugar," in ev[0] and "fad(150" in ev[0]
+    anio = gr.anio_contando(1811, inicio=2.6, hasta=6.0)
+    assert anio[-1].split(",")[2] == gr._t(6.0)               # el año quieto toda la intriga
+    assert gr.lugar_en_pantalla("", 1, 2) == []
+
+
+def test_textos_con_claude_y_gemini_de_respaldo():
+    from clips_bot import claude
+    from clips_bot.gemini import GeminiError
+
+    class Falla:
+        modelo = "claude-x"
+
+        def json(self, *a, **k):
+            raise claude.ClaudeError("caído")
+
+    class Ok:
+        def __init__(self, r):
+            self.r, self.llamadas = r, 0
+
+        def json(self, *a, **k):
+            self.llamadas += 1
+            return self.r
+
+    gem = Ok('{"de": "gemini"}')
+    assert claude.ConRespaldo(Ok('{"de": "claude"}'), gem).json("s", "p", {}) == '{"de": "claude"}'
+    assert claude.ConRespaldo(Falla(), gem).json("s", "p", {}) == '{"de": "gemini"}'
+    assert claude.ConRespaldo(Ok("x"), gem).json("s", "p", {}, audio=b"1") == '{"de": "gemini"}'  # audio: Gemini
+    with pytest.raises(GeminiError):
+        claude.ConRespaldo(Falla(), None).json("s", "p", {})
+    s = load_settings()
+    assert s.textos.motor == "claude"

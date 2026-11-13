@@ -67,6 +67,8 @@ PALABRAS_MIN, PALABRAS_MAX = 70, 105
 # La historia de Facebook corta (2026-11-10): 20-30 s a ~2,3 palabras/s; se le piden 50-70.
 PALABRAS_MIN_CORTO, PALABRAS_MAX_CORTO = 45, 72
 CORTO_MAX_S = 30.0
+# Las de Latinoamérica, 30-40 s (Santi, 2026-11-13): se le piden 70-90 palabras.
+LATAM_PALABRAS, LATAM_MAX_S = (65, 95), 40.0
 
 MESES = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre",
          "octubre", "noviembre", "diciembre"]
@@ -655,7 +657,16 @@ nombre, ni un número, ni una fecha que no esté ahí. Si el artículo no lo dic
 - La PRIMERA frase es el GANCHO: lo más sorprendente del hecho, desde la primera palabra, en 14
   palabras como mucho y SIN fecha ("Una banda terminó una canción 45 años después."). Nada de
   "Un día como hoy" ni de arranques de relleno ("¿Sabías que…?", "Hoy te cuento…").
-- La SEGUNDA frase arranca EXACTAMENTE con "En <año>," y cuenta cuándo y dónde.
+- La SEGUNDA frase suma INTRIGA, sin el año: algo que haga querer saber cómo siguió ("Y lo hicieron
+  sin ejército…", "Nadie lo esperaba…"). NO arranca con "En <año>" (en Facebook la gente se iba
+  justo ahí: 98 % hasta el segundo 3 y 40 % en el 8). El año y el lugar ya van escritos en pantalla.
+- El AÑO se dice recién en la TERCERA o CUARTA frase ("Fue en 1811.").
+- ESTRUCTURA (Santi, 2026-11-13: en Facebook la gente se va después del segundo 3): GANCHO → TENSIÓN →
+  GIRO → un FINAL QUE PAGA lo que prometió el gancho. El gancho deja una PREGUNTA ABIERTA que solo se
+  responde al final (por eso se quedan). La tensión es el problema, el peligro o lo que estaba en
+  juego ("Pero había un problema…"); el giro, lo que nadie esperaba; el pago, la respuesta a la
+  pregunta del gancho, en la última o la anteúltima frase. Decí en `pregunta_gancho` cuál es esa
+  pregunta y en `frase_tension`, `frase_giro` y `frase_pago` el número de cada frase (desde 1).
 - Tono: como alguien que te cuenta algo que lo sorprendió, con ganas. Nada de tono de manual.
 - Frases CORTAS: ninguna de más de 14 palabras. Mejor dos frases que una larga con comas.
 - Al menos UNA pregunta ("¿Sabés qué hizo después?") y al menos UNA exclamación ("¡Y funcionó!")
@@ -730,19 +741,23 @@ SISTEMA_GUION_HABLADO = SISTEMA_GUION.replace(
   artículo o los años que pasaron desde el hecho. Nada de números que no salgan de ahí. Los años
   del hecho van en cifras ("en 1928").""")
 
-def a_corto(sistema: str) -> str:
-    """El mismo prompt para el formato corto (20-30 s, 50-70 palabras): el de la historia de Facebook
-    y, desde el 2026-11-12, el de la efeméride de tecnología."""
+def a_corto(sistema: str, segundos: tuple[int, int] = (20, 30),
+            palabras: tuple[int, int] = (50, 70), frases: tuple[int, int] = (7, 11)) -> str:
+    """El mismo prompt para el formato corto: 20-30 s y 50-70 palabras (la de tecnología, desde el
+    2026-11-12) o, con otros números, 30-40 s y 70-90 (las de Latinoamérica, 2026-11-13: en Facebook
+    los Reels de 30-45 s promedian 3.800 reproducciones y los de 15-30 s, 256)."""
+    (s0, s1), (p0, p1), (f0, f1) = segundos, palabras, frases
     out = sistema.replace(
-        "un video vertical de 35 a 45 segundos", "un video vertical de 20 a 30 segundos").replace(
+        "un video vertical de 35 a 45 segundos", f"un video vertical de {s0} a {s1} segundos").replace(
         "- Entre 80 y 100 palabras en total (contalas: menos de 70 queda corto y más de 105 se pasa de\n"
         "  45 segundos), en 8 a 14 frases, habladas, no escritas.",
-        "- Entre 50 y 70 palabras en total (contalas: menos de 45 queda corto y más de 72 se pasa de\n"
-        "  30 segundos), en 7 a 11 frases, habladas, no escritas. Directo a lo interesante: nada de\n"
-        "  contexto que no haga falta para entender.").replace(
+        f"- Entre {p0} y {p1} palabras en total (contalas: menos de {p0 - 5} queda corto y más de "
+        f"{p1 + 2} se pasa de\n  {s1} segundos), en {f0} a {f1} frases, habladas, no escritas. "
+        "Directo a lo interesante: nada de\n  contexto que no haga falta para entender.").replace(
         '- "Menos datos" NO es un guion más corto: sigue siendo de 80 a 100 palabras.',
-        '- "Menos datos" NO es un guion más corto que 50 palabras.')
-    assert out.count("20 a 30 segundos") == 1 and "Entre 50 y 70" in out and "más corto que 50" in out
+        f'- "Menos datos" NO es un guion más corto que {p0} palabras.')
+    assert out.count(f"{s0} a {s1} segundos") == 1 and f"Entre {p0} y {p1}" in out \
+        and f"más corto que {p0}" in out
     return out
 
 
@@ -764,6 +779,10 @@ SCHEMA_GUION = {
         "hashtags": {"type": "ARRAY", "items": {"type": "STRING"}},
         "tono": {"type": "STRING", "enum": ["alegre", "epico", "misterioso", "curioso", "emotivo"]},
         "cuenta_trama": {"type": "BOOLEAN"},
+        "pregunta_gancho": {"type": "STRING"},
+        "frase_tension": {"type": "INTEGER"},
+        "frase_giro": {"type": "INTEGER"},
+        "frase_pago": {"type": "INTEGER"},
     },
     "required": ["frases", "idea_clave", "titulo", "descripcion", "hashtags"],
 }
@@ -928,6 +947,8 @@ class Guion:
     central: list[bool] = field(default_factory=list)   # cuenta el hecho mismo: foto real obligatoria
     imagen_frase: bool = False
     corto: bool = False
+    pregunta_gancho: str = ""   # la pregunta que deja abierta el gancho (se responde al final)
+    max_s: float = 0.0     # tope de la voz (0 = el del formato): 40 s las de Latinoamérica
     # Control de calidad (Santi, 2026-11-11): qué parte del tiempo va con fotos reales (no tarjetas) y
     # si es la segunda búsqueda (con Claude, sin la regla de época, documentos del hecho permitidos).
     fotos_reales: float = 0.0
@@ -953,7 +974,26 @@ class Guion:
         return cls(**d)
 
 
-def validar_guion(d: dict, anio: int, fuente: str, corto: bool = False) -> list[str]:
+def errores_estructura(d: dict, n: int) -> list[str]:
+    """Gancho → tensión → giro → final que paga (Santi, 2026-11-13). El guion dice qué pregunta deja
+    abierta el gancho y en qué frase va cada parte (desde 1): la tensión desde la tercera (la primera
+    es el gancho y la segunda la intriga), después el giro, y el pago en la última o la anteúltima."""
+    errores = []
+    if not str(d.get("pregunta_gancho") or "").strip():
+        errores.append("falta `pregunta_gancho`: la pregunta que deja abierta el gancho y se responde al final")
+    t, g, p = (d.get(k) for k in ("frase_tension", "frase_giro", "frase_pago"))
+    if not all(isinstance(x, int) for x in (t, g, p)):
+        return errores + ["faltan `frase_tension`, `frase_giro` y `frase_pago` (el número de cada frase)"]
+    if not 3 <= t < g <= p <= n:
+        errores.append(f"la estructura no está en orden (tensión {t}, giro {g}, pago {p}): tensión desde "
+                       "la frase 3, después el giro y el final que paga el gancho")
+    elif p < n - 1:
+        errores.append(f"el final que paga el gancho va en la última o la anteúltima frase (está en la {p})")
+    return errores
+
+
+def validar_guion(d: dict, anio: int, fuente: str, corto: bool = False,
+                  rango: tuple[int, int] | None = None) -> list[str]:
     if not isinstance(d, dict) or not isinstance(d.get("frases"), list) or not d["frases"]:
         return ["faltan las frases"]
     frases = [str((f or {}).get("texto") or "").strip() for f in d["frases"]]
@@ -963,7 +1003,7 @@ def validar_guion(d: dict, anio: int, fuente: str, corto: bool = False) -> list[
     n = len(re.findall(r"\S+", texto))
     # El aviso dice cuánto y qué hacer: con "tienen que ser entre 85 y 105" a secas, flash-lite
     # devolvió 75, 68 y 68 palabras en la prueba del 28/09, sin moverse.
-    minimo, maximo = (PALABRAS_MIN_CORTO, PALABRAS_MAX_CORTO) if corto else (PALABRAS_MIN, PALABRAS_MAX)
+    minimo, maximo = rango or ((PALABRAS_MIN_CORTO, PALABRAS_MAX_CORTO) if corto else (PALABRAS_MIN, PALABRAS_MAX))
     if n < minimo:
         errores.append(f"el guion tiene {n} palabras y el mínimo es {minimo}: te faltan "
                        f"{minimo - n + 5} palabras. Agregá 1 o 2 frases cortas que expliquen "
@@ -980,8 +1020,14 @@ def validar_guion(d: dict, anio: int, fuente: str, corto: bool = False) -> list[
         errores.append("la primera frase (el gancho) va SIN el año: el año va en la segunda")
     if len(frases[0].split()) > 14:
         errores.append("la primera frase (el gancho) tiene que tener 14 palabras como mucho")
-    if len(frases) < 2 or not _norm(frases[1]).startswith("en ") or str(anio) not in frases[1]:
-        errores.append(f'la segunda frase tiene que arrancar con "En {anio},"')
+    # La segunda suma intriga y el año va en la 3.ª o 4.ª (Santi, 2026-11-12: el Reel de Cartagena
+    # tenía 98 % hasta el segundo 3 y caía a 40 % en el 8, justo en "En 1811, en Cartagena…").
+    if len(frases) > 1 and (str(anio) in frases[1] or re.match(r"en\s+\d", _norm(frases[1]))):
+        errores.append('la segunda frase suma INTRIGA ("Nadie lo esperaba…"), sin el año: el año va '
+                       "en la tercera o la cuarta")
+    if not any(str(anio) in f for f in frases[2:4]):
+        errores.append(f"el año ({anio}) se dice en la tercera o la cuarta frase")
+    errores += errores_estructura(d, len(frases))
     # Pedido 2026-09-27 ("la voz suena triste y plana"): frases cortas, al menos una pregunta y
     # una exclamación, y cierre con gancho. Piper entona distinto una frase con ¿? o ¡!.
     if not frases[-1].rstrip().endswith(("?", "!")):
@@ -1056,7 +1102,8 @@ def frases_de_accion(frases: list[dict]) -> list[int]:
 
 def escribir_guion(cliente, e: Evento, fuente: str, correccion: str = "", anterior: str = "",
                    reintentos: int = 2, hablado: bool = False, sistema: str | None = None,
-                   validar_extra=None, contexto: str = "", corto: bool = False) -> Guion:
+                   validar_extra=None, contexto: str = "", corto: bool = False,
+                   rango: tuple[int, int] | None = None, max_s: float = 0.0) -> Guion:
     """Gemini (o Claude, en el video de Facebook) con el artículo, SIN fotos: el guion y qué mostrar
     en cada frase. Las fotos se buscan después para cada frase (`fotos_para_guion`). Reintenta con
     los errores de la validación. `sistema`/`validar_extra`/`contexto`: los del video de Facebook
@@ -1070,7 +1117,8 @@ def escribir_guion(cliente, e: Evento, fuente: str, correccion: str = "", anteri
         extra = f"\n\nTu respuesta anterior tenía estos errores: {'; '.join(errores)}" if errores else ""
         base = sistema or (SISTEMA_GUION_HABLADO if hablado else SISTEMA_GUION)   # efemerides.guion_hablado
         d = json.loads(cliente.json(base, prompt + extra, SCHEMA_GUION, temperatura=0.5))
-        errores = validar_guion(d, e.anio, fuente + "\n" + e.texto + f" {e.anio}", corto=corto)
+        errores = validar_guion(d, e.anio, fuente + "\n" + e.texto + f" {e.anio}", corto=corto,
+                                rango=rango)
         if validar_extra and not errores:
             errores = validar_extra(d)
         if not errores:
@@ -1083,7 +1131,8 @@ def escribir_guion(cliente, e: Evento, fuente: str, correccion: str = "", anteri
                          presente=[bool(f.get("presente")) for f in d["frases"]],
                          objeto=[str(f.get("objeto") or "").strip() for f in d["frases"]],
                          central=[f.get("central") is not False for f in d["frases"]],
-                         corto=corto,
+                         corto=corto, max_s=max_s,
+                         pregunta_gancho=str(d.get("pregunta_gancho") or "").strip(),
                          accion=frases_de_accion(d["frases"]),
                          claves=claves_del_guion(d.get("claves"), [f["texto"] for f in d["frases"]]))
     raise NarrarError("El guion no pasó la validación: " + "; ".join(errores))
@@ -2046,6 +2095,8 @@ def texto_aprobacion(e: Evento, g: Guion, fotos: list[Foto], fecha: date,
     lineas = [f"📅 <b>Pequeña Historia · {fecha.day} de {MESES[fecha.month - 1]}</b> — {e.anio}",
               f"<i>{html.escape(e.texto[:200])}</i>",
               f"\n<b>Título:</b> {html.escape(g.titulo)}"]
+    if g.pregunta_gancho:
+        lineas.append(f"<b>Pregunta que deja el gancho:</b> {html.escape(g.pregunta_gancho)}")
     if g.idea_clave:
         lineas.append(f"<b>Tiene que quedar claro:</b> {html.escape(g.idea_clave)}")
     if g.fotos_respaldo:
@@ -2252,7 +2303,7 @@ def proponer(wiki: Wiki, cliente, dia: date, carpeta: Path, avisar=log.info,
              correccion: str = "", saltear: int = 0, hecho: str = "", videos: bool = False,
              tope_fotos_s: float | None = None, hablado: bool = False,
              imagen_frase: bool = False, elector=None, elector_reintento=None,
-             tema: str = "", corto: bool = False) -> Propuesta:
+             tema: str = "", corto: bool = False, texto=None) -> Propuesta:
     """`tema` (2026-11-12, efemerides.tema): solo hechos de ese tema (TEMAS); si no hay ninguno,
     SinTema (no sale video). `corto`: el formato corto (SISTEMA_GUION_CORTO, 20-30 s).
 
@@ -2282,7 +2333,8 @@ def proponer(wiki: Wiki, cliente, dia: date, carpeta: Path, avisar=log.info,
     if not candidatos:
         raise NarrarError("Ningún hecho de hoy pasa el filtro de temas sensibles"
                           + (f" (con «{hecho}»)" if hecho else "") + ".")
-    elegidos = elegir(cliente, candidatos, tema=tema)
+    escritor = texto or cliente     # 2026-11-12: el texto con Claude; `cliente` (Gemini) para las fotos
+    elegidos = elegir(escritor, candidatos, tema=tema)
     if tema and not elegidos:
         raise SinTema(f"Hoy no hay ningún hecho de «{tema}» que sirva: no saco el video (nada de relleno).")
     avisar("Gemini eligió: " + " | ".join(f"{candidatos[i].anio} {candidatos[i].texto[:50]} [{a}]"
@@ -2304,7 +2356,7 @@ def proponer(wiki: Wiki, cliente, dia: date, carpeta: Path, avisar=log.info,
         fuente = texto_fuente(wiki, e)
         guiones += 1
         try:
-            g = escribir_guion(cliente, e, fuente, correccion, hablado=hablado and not corto,
+            g = escribir_guion(escritor, e, fuente, correccion, hablado=hablado and not corto,
                                sistema=SISTEMA_GUION_CORTO if corto else None, corto=corto)
             g.imagen_frase = imagen_frase or corto      # efemerides.imagen_frase (2026-11-10)
             pool, g = fotos_con_control(wiki, cliente, e, g, fotos, carpeta, avisar, videos=videos,
@@ -2352,12 +2404,12 @@ def texto_fuente(wiki: Wiki, e: Evento) -> str:
 
 def rehacer_guion(p: Propuesta, wiki: Wiki, cliente, carpeta: Path, correccion: str,
                   avisar=log.info, hablado: bool = False, elector=None,
-                  elector_reintento=None) -> Propuesta:
+                  elector_reintento=None, texto=None) -> Propuesta:
     """✏️: el guion de nuevo con la corrección, y las fotos de sus frases otra vez. El pool de antes
     se conserva (los números no cambian) y lo ya descartado sigue descartado."""
     e = Evento(**p.evento)
     anterior = Guion.de_dict(p.guion)
-    g = escribir_guion(cliente, e, p.fuente, correccion=correccion, anterior=anterior.texto,
+    g = escribir_guion(texto or cliente, e, p.fuente, correccion=correccion, anterior=anterior.texto,
                        hablado=hablado and not anterior.corto,
                        sistema=SISTEMA_GUION_CORTO if anterior.corto else None, corto=anterior.corto)
     g.imagen_frase = anterior.imagen_frase
@@ -2834,8 +2886,8 @@ def es_piper(motor: str) -> bool:
 SISTEMA_ACORTAR = (
     "Acortás el guion de un Short de historia para que entre en el tiempo. Devolvés EXACTAMENTE la "
     "misma cantidad de frases, en el mismo orden, cada una más corta, diciendo lo mismo con menos "
-    "palabras. Mantené el gancho de la primera frase (lo más sorprendente, sin fecha) y la segunda "
-    "empezando igual (\"En <año>,\"), el cierre "
+    "palabras. Mantené el gancho de la primera frase (lo más sorprendente, sin fecha), la intriga de "
+    "la segunda (sin fecha), el año en la misma frase en que está, el cierre "
     "con gancho y que se entienda paso a paso. No agregues nombres, cifras ni datos que no estén en "
     "el guion original. Español rioplatense neutro.")
 SCHEMA_ACORTAR = {"type": "OBJECT", "properties": {"frases": {"type": "ARRAY", "items": {"type": "STRING"}}},
@@ -2857,10 +2909,10 @@ def validar_acortado(frases, originales: list[str], objetivo: int, fuente: str) 
     n = sum(len(f.split()) for f in frases)
     if n > objetivo:
         errores.append(f"tiene {n} palabras y tienen que ser como mucho {objetivo}")
-    if len(originales) > 1 and originales[1].startswith("En "):
-        inicio = " ".join(originales[1].split()[:2])          # "En 1811,"
-        if not frases[1].startswith(inicio):
-            errores.append(f"la segunda frase tiene que empezar con «{inicio}»")
+    for k in (2, 3):     # el año se sigue diciendo en la misma frase (la 3.ª o la 4.ª)
+        for anio in re.findall(r"\b(1\d{3}|20\d{2})\b", originales[k] if k < len(originales) else ""):
+            if anio not in frases[k]:
+                errores.append(f"la frase {k + 1} tiene que seguir diciendo el año {anio}")
     sin = no_respaldados(" ".join(frases), fuente)
     if sin:
         errores.append("esto no está en el artículo: " + ", ".join(sin[:6]))
@@ -2921,7 +2973,7 @@ def hacer_video(p: Propuesta, settings, carpeta: Path, avisar=log.info, conn=Non
     # Duración (2026-10-04): atempo hasta ×1,1 y nada más. Si no entra ni así, se acorta el GUION
     # (`cliente`: Gemini) y se vuelve a sintetizar; la voz nunca se acelera más ni cambia de tono.
     dur = narrar.duracion_wav(wav)
-    max_s = CORTO_MAX_S if g.corto else cfg_v.tts_max_s      # formato corto de Facebook: 30 s
+    max_s = g.max_s or (CORTO_MAX_S if g.corto else cfg_v.tts_max_s)   # corto 30 s; Latinoamérica 40
     tope = max_s * cfg_v.tts_acelerar_max
     if dur > tope and cliente is not None:
         objetivo = palabras_objetivo(len(g.texto.split()), dur, tope)
@@ -2970,11 +3022,17 @@ def hacer_video(p: Propuesta, settings, carpeta: Path, avisar=log.info, conn=Non
         sub.escribir_ass_karaoke(palabras, carpeta / "subs.ass", settings.subtitulos, settings.render,
                                  color_activo=sub.KARAOKE_PH, tamano=78)
         fin_gancho = inicios[1] if len(inicios) > 1 else min(fin, 3.0)
+        # El año (y el lugar, en la de Latinoamérica) escritos desde la segunda frase, mientras la
+        # voz suma intriga; la voz los dice en la 3.ª o 4.ª (Santi, 2026-11-12).
+        fin_intriga = inicios[2] if len(inicios) > 2 else fin_gancho + gr.AÑO_HASTA_S
+        lugar = str(((p.local or {}) if p.destino == "facebook" else {}).get("lugar") or "")
         gr.agregar_al_ass(carpeta / "subs.ass",
                           gr.estilos(settings.render.ancho, settings.render.alto, settings.subtitulos.fuente),
                           gr.gancho_en_pantalla(g.frases[0], fin_gancho)
-                          + gr.anio_contando(e.anio, inicio=fin_gancho)
-                          + gr.claves_en_tiempo(palabras, g.claves, desde_s=fin_gancho + gr.AÑO_HASTA_S))
+                          + gr.anio_contando(e.anio, inicio=fin_gancho, hasta=fin_intriga)
+                          + gr.lugar_en_pantalla(lugar, fin_gancho, fin_intriga)
+                          + gr.claves_en_tiempo(palabras, g.claves,
+                                                desde_s=max(fin_gancho + gr.AÑO_HASTA_S, fin_intriga)))
     else:
         sub.escribir_ass(subs, carpeta / "subs.ass", settings.subtitulos, settings.render)
     avisar(f"subtítulos: {len(subs)} palabras en {time.time() - t0:.0f} s")

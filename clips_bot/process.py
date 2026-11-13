@@ -402,7 +402,7 @@ def procesar(url: str, cfg: Settings, streamers: list[Streamer], forzar: bool = 
     # dobles?, ¿algo cortado? Se rehace UNA vez, sin volver a preguntar (cuota).
     if gemini and cfg.render.chequeo_visual:
         with crono.etapa("chequeo visual (Gemini)"):
-            rev = revision.revisar(gemini, salida, layout.tipo, quemar)
+            rev = revision.revisar(cliente_textos(gemini, cfg), salida, layout.tipo, quemar)
         res.chequeo_visual = rev.a_dict()
         rehacer = False
         if rev.falla_encuadre and layout.tipo != "fit_blur" and not forzado:
@@ -484,10 +484,21 @@ def _transcribir(res: Resultado, d, info, cfg: Settings, crono: Cronometro, desc
         del modelo
 
 
+def cliente_textos(gemini, cfg: Settings, simple: bool = False):
+    """Claude para el texto de Rots (textos.motor, 2026-11-12) con Gemini de respaldo."""
+    if cfg.textos.motor != "claude":
+        return gemini
+    from . import claude
+
+    if simple:
+        return claude.para_texto(gemini, cfg.textos.claude_simple, esfuerzo="low")
+    return claude.para_texto(gemini, cfg.textos.claude_modelo)
+
+
 def generar_textos(gemini: GeminiClient, cfg: Settings, meta: dict,
                    imagenes: list[bytes] | None = None) -> tx.TextosClip:
     return tx.generar(
-        gemini, cfg.textos, canal=meta["canal"] or meta["streamer"], login=meta["streamer"],
+        cliente_textos(gemini, cfg), cfg.textos, canal=meta["canal"] or meta["streamer"], login=meta["streamer"],
         categoria=meta["categoria"], titulo_twitch=meta["titulo_twitch"], duracion=meta["duracion_s"],
         transcripcion=meta["transcripcion"], fecha=(meta.get("creado") or "")[:10] or None,
         imagenes=imagenes, gusto=_gusto(cfg), plataforma=meta.get("plataforma") or "twitch",

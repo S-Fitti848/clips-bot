@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-11-12 | **Versión:** v0.91.0 | **Modo:** Fase 2: corriendo solo en la Pi. Madrugada desde la escucha (v0.91.0): Rots 03:30 → tecnología → 2 de Latinoamérica, todo antes de las 05:30; timers 05:00 y 06:00 de respaldo
+**Snapshot:** 2026-11-13 | **Versión:** v0.92.0 | **Modo:** Fase 2: corriendo solo en la Pi. Madrugada desde la escucha (v0.91.0): Rots 03:30 → tecnología → 2 de Latinoamérica, todo antes de las 05:30; timers 05:00 y 06:00 de respaldo
 
 > **SI ESTÁS EMPEZANDO UNA SESIÓN NUEVA, LEÉ §10.** Ahí está qué está hecho, qué quedó a medias,
 > qué falta, y las trampas que ya nos mordieron.
@@ -149,6 +149,19 @@ servicio systemd separado: `clips-bot`).
   ("En <año>,") y en pantalla; la voz arranca en el cuadro 1; el gancho escrito en grande desde el
   primer cuadro; la primera foto es la más impactante. El cierre no se toca todavía. Medición por
   video (`medicion_ph.py`) y comparación con los 10 anteriores el 26/11.
+- **Guion de Pequeña Historia desde el 2026-11-13 (Santi, con datos de Facebook: 98 % hasta el
+  segundo 3 y 40 % en el 8 en Cartagena; los Reels de 30-45 s promedian 3.800 reproducciones y los
+  de 15-30 s, 256):** gancho con una pregunta abierta → la 2.ª frase suma INTRIGA (nada de "En
+  <año>, en <lugar>,") → el año y el lugar se DICEN en la 3.ª o 4.ª (escritos en pantalla desde la
+  2.ª) → tensión → giro → final que paga el gancho (última o anteúltima frase). Las de
+  Latinoamérica duran 30-40 s (70-90 palabras); la de tecnología, 20-30 s. Solo pasan las historias
+  de Latinoamérica con 8 o más de promedio en persona, peligro, giro y emoción (Sonnet las puntúa;
+  Nacozari = 10); si un día no hay, salen menos y se avisa.
+- **Texto con Claude, Gemini solo para voces y lo que pide audio (Santi, 2026-11-12):** los textos de
+  Rots (título, frase de arranque, pregunta, descripción, puntaje y tono, con 3 cuadros), el chequeo
+  visual y el desempate, y el texto del video de tecnología, con Claude (Sonnet; el desempate,
+  Haiku), Gemini de respaldo (`claude.ConRespaldo`). Lo único que SOLO puede Gemini: las voces y
+  escuchar audio (/narrar y /serie le pasan el audio del video para avisar si hay música).
 - **Ficción (Santi, 2026-11-11, Ash Ketchum):** NO se eligen hechos que pasan dentro de una ficción
   (lo que le pasa a un personaje en un episodio, juego o película). Cultura pop sí, solo desde la vida
   real: estreno, lanzamiento, quién lo creó, cómo se hizo, impacto, récords. Nunca la trama. Vale para
@@ -750,7 +763,7 @@ clips_bot/voces.py       voces de Gemini de hoy por clave (con Lo Encontré) y e
 clips_bot/prueba_manual.py prueba manual vs API (§1): el clip del día a mano, registro e informe del feed
 clips_bot/envivo.py      modo en vivo (§3b): quién está al aire, momentos por creadores distintos,
                          alertas en la DB (no repetir, tope, vencer) y el resumen de tiempos
-tests/                   940 tests sin red ni video (conftest.py: nada sale a YouTube) (test_reglas_fijas.py: las 3 reglas de §1)
+tests/                   945 tests sin red ni video (conftest.py: nada sale a YouTube) (test_reglas_fijas.py: las 3 reglas de §1)
 ```
 
 Comandos:
@@ -943,6 +956,24 @@ Problemas abiertos:
 
 ## 9. CHANGELOG
 
+- v0.92.0 (2026-11-13) — **Guiones que retienen y texto con Claude** (dos pedidos de Santi). (1)
+  **Segunda frase con intriga** (`SISTEMA_GUION` y el de Latinoamérica): sin "En <año>, en <lugar>,";
+  el año (y el lugar en Latinoamérica) se dicen en la 3.ª o 4.ª (`validar_guion`, `validar_lugar`),
+  y en pantalla desde la 2.ª hasta que empieza la 3.ª (`anio_contando(hasta=)`,
+  `graficos.lugar_en_pantalla`, estilo `Lugar`). (2) **Estructura** gancho → tensión → giro → pago:
+  el guion devuelve `pregunta_gancho`, `frase_tension`, `frase_giro`, `frase_pago`
+  (`errores_estructura`: tensión desde la 3.ª, en orden, el pago en la última o la anteúltima); la
+  pregunta sale en el mensaje de aprobación. (3) **Latinoamérica 30-40 s** (`ef.a_corto(segundos,
+  palabras, frases)`, 70-90 palabras pedidas, 65-95 validadas, voz hasta 40 s: `LATAM_PALABRAS`,
+  `LATAM_MAX_S`, `Guion.max_s`); tecnología sigue en 20-30. (4) **Puntaje de las historias**
+  (`locales.elegir`: Sonnet da `persona`, `peligro`, `giro`, `emocion` 1-10, Nacozari como 10;
+  `proponer` deja solo las de promedio ≥ `PUNTAJE_MIN` 8, ordenadas por puntaje con el calendario
+  primero; si ninguna, NarrarError → "hoy sale 1 de 2" / "no hay propuesta"). El encabezado de la
+  aprobación pasa a "🌎 LATINOAMÉRICA (YouTube y Facebook)" con el puntaje (decía "SOLO FACEBOOK").
+  (5) **Texto con Claude** (`claude.ConRespaldo`, `claude.para_texto`, `textos.motor: claude`,
+  `process.cliente_textos`): textos de Rots y chequeo visual con Sonnet, desempate con Haiku, y la
+  de tecnología (elegir, guion, ✏️ y acortar: `ef.proponer(texto=)`, `rehacer_guion(texto=)`,
+  `_texto_efemeride`) con Sonnet; Gemini de respaldo si Claude falla, y para audio. 945 tests OK.
 - v0.91.0 (2026-11-12) — **Todo en Telegram antes de las 05:30** (Santi). Los timers (05:00 clips,
   06:00 efeméride) no se pueden mover sin la contraseña de Santi (sudo solo permite `restart` de
   los servicios), así que la **escucha arma la madrugada** (`_madrugada_tick`): a

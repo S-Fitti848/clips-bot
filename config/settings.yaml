@@ -373,6 +373,9 @@ efemerides:
 
 # §3 paso 7: textos con Gemini.
 textos:
+  # Desde el 2026-11-12 (Santi): los textos de Rots los escribe Claude (Sonnet; el desempate, Haiku),
+  # con Gemini de respaldo si Claude falla. A las 03:30 la cuota gratis de Gemini ya está gastada.
+  motor: claude
   # El free tier de los Flash está en ~20 requests/día (reseteo a medianoche del Pacífico). Con 3
   # clips/día y UNA llamada por clip (título + descripción + hashtags + depende_de_fecha juntos)
   # entramos cómodos; lo que quema la cuota son los reintentos y las pruebas.

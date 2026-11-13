@@ -493,6 +493,17 @@ Ordená del mejor al peor (hasta 8) los que más se parecen a eso:
 - nada que pase DENTRO de una ficción (lo que le pasa a un personaje de una serie, telenovela,
   juego o película): la cultura pop solo si se cuenta desde la vida real (estreno, quién lo creó,
   cómo se hizo, impacto, récords).
+PUNTUÁ cada uno del 1 al 10 en cuatro cosas (Santi, 2026-11-13: la gente se va después del
+segundo 3, hacen falta historias que atrapen):
+- `persona`: ¿hay una persona concreta, con nombre, en el centro? (10 = alguien con nombre que hace
+  algo; 1 = una institución o una ley);
+- `peligro`: ¿hay peligro, conflicto o algo en juego? (10 = vidas en riesgo; 1 = nada en juego);
+- `giro`: ¿hay un giro o un final sorprendente?;
+- `emocion`: ¿genera emoción (orgullo, asombro, tristeza)?
+EJEMPLO DE 10 EN LAS CUATRO: Nacozari (1907): el maquinista Jesús García ve que el tren lleva
+dinamita prendida, lo saca del pueblo a toda máquina y muere en la explosión salvando a todos; hoy
+el pueblo se llama Nacozari de García. Sé exigente: una fundación sin protagonista o un decreto
+no pasan de 4 en persona y en peligro.
 Para cada uno: `articulo` = el título EXACTO, de la lista de artículos del hecho, del artículo que
 cuenta ESE hecho (no el del país ni el de una fecha); `articulo_lugar` = el título, de la misma
 lista, del artículo del pueblo o ciudad (vacío si no está). Respondé solo con el JSON pedido."""
@@ -502,10 +513,17 @@ SCHEMA_ELEGIR = {
     "properties": {"elegidos": {"type": "ARRAY", "items": {
         "type": "OBJECT",
         "properties": {"n": {"type": "INTEGER"}, "articulo": {"type": "STRING"},
-                       "articulo_lugar": {"type": "STRING"}, "motivo": {"type": "STRING"}},
-        "required": ["n", "articulo", "articulo_lugar", "motivo"]}}},
+                       "articulo_lugar": {"type": "STRING"}, "motivo": {"type": "STRING"},
+                       "persona": {"type": "INTEGER"}, "peligro": {"type": "INTEGER"},
+                       "giro": {"type": "INTEGER"}, "emocion": {"type": "INTEGER"}},
+        "required": ["n", "articulo", "articulo_lugar", "motivo", "persona", "peligro", "giro",
+                     "emocion"]}}},
     "required": ["elegidos"],
 }
+
+
+CRITERIOS = ("persona", "peligro", "giro", "emocion")
+PUNTAJE_MIN = 8.0    # Santi, 2026-11-13: solo pasan las de 8 o más de promedio
 
 
 def elegir(sonnet, cands: list[Candidato], cuantos: int = 8) -> list[tuple[Candidato, str, str]]:
@@ -527,6 +545,9 @@ def elegir(sonnet, cands: list[Candidato], cuantos: int = 8) -> list[tuple[Candi
         art = x.get("articulo") if x.get("articulo") in c.paginas else c.paginas[0]
         lug = x.get("articulo_lugar") if x.get("articulo_lugar") in c.paginas else ""
         vistos.add(n)
+        notas = {k: x.get(k) for k in CRITERIOS if isinstance(x.get(k), int)}
+        c.clasif["puntajes"] = notas
+        c.clasif["puntaje"] = round(sum(notas.values()) / len(CRITERIOS), 2) if len(notas) == len(CRITERIOS) else 0.0
         out.append((c, art, lug if lug != art else ""))
     # El calendario manda aunque Sonnet no lo respete (sorted es estable: dentro de cada grupo, su orden).
     out.sort(key=lambda x: not en_calendario(x[0]))
@@ -540,9 +561,9 @@ SISTEMA_GUION_LOCAL = ef.SISTEMA_GUION.replace(
     "un canal de efemérides para público joven, en español rioplatense (vos, no tú). Este video es\n"
     "para Facebook y lo va a ver sobre todo gente de ESE lugar de Latinoamérica: la historia es de\n"
     "ellos, contala con respeto y con orgullo (que alguien de ahí diga \"¡eso pasó en mi pueblo!\").").replace(
-    '- La SEGUNDA frase arranca EXACTAMENTE con "En <año>," y cuenta cuándo y dónde.',
-    '- La SEGUNDA frase arranca EXACTAMENTE con "En <año>, en <lugar>," (el pueblo o la ciudad,\n'
-    '  escrito igual que te lo paso) y cuenta dónde y cuándo.\n'
+    '- El AÑO se dice recién en la TERCERA o CUARTA frase ("Fue en 1811.").',
+    '- El AÑO y el LUGAR (el pueblo o la ciudad, escrito igual que te lo paso) se dicen recién en la\n'
+    '  TERCERA o CUARTA frase ("Fue en 1811, en Cartagena de Indias.").\n'
     '- El LUGAR va también en el `titulo` (escrito igual) y como hashtag (sin espacios ni tildes,\n'
     '  ej. #VillaEpecuen), además de un hashtag del país.\n'
     '- Si te digo que hoy se conmemora, podés nombrarlo SOLO si el artículo lo dice.').replace(
@@ -552,7 +573,9 @@ SISTEMA_GUION_LOCAL = ef.SISTEMA_GUION.replace(
 
 # Formato corto (Santi, 2026-11-10; historias_fb.formato_corto): 20-30 s, el gancho primero y la fecha
 # en la segunda frase. Lo demás (solo el artículo, claridad, lugar en título y hashtag) igual.
-SISTEMA_GUION_CORTO = ef.a_corto(SISTEMA_GUION_LOCAL)
+# 30-40 s (Santi, 2026-11-13: en Facebook los de 30-45 s promedian 3.800 reproducciones; los de
+# 15-30 s, 256). La de tecnología sigue en 20-30 s (ef.SISTEMA_GUION_CORTO).
+SISTEMA_GUION_CORTO = ef.a_corto(SISTEMA_GUION_LOCAL, segundos=(30, 40), palabras=(70, 90), frases=(8, 12))
 assert "La PRIMERA frase es el GANCHO" in SISTEMA_GUION_CORTO
 
 
@@ -572,10 +595,10 @@ def validar_lugar(lugar: str, corto: bool = False):
         errores = []
         clave = _sin_tildes(lugar).strip()
         frases = d.get("frases") or []
-        # Gancho primero (2026-11-12, en los dos formatos): el lugar en la primera o la segunda frase.
-        primera = " ".join(_sin_tildes(str((f or {}).get("texto") or "")) for f in frases[:2])
-        if clave not in primera:
-            errores.append(f'la segunda frase tiene que nombrar el lugar: "En <año>, en {lugar},"')
+        # El lugar se dice en la 3.ª o 4.ª frase, con el año (2026-11-12: la 2.ª suma intriga).
+        tercera = " ".join(_sin_tildes(str((f or {}).get("texto") or "")) for f in frases[2:4])
+        if clave not in tercera:
+            errores.append(f'la tercera o la cuarta frase tiene que nombrar el lugar: "Fue en <año>, en {lugar}."')
         if clave not in _sin_tildes(str(d.get("titulo") or "")):
             errores.append(f"el título tiene que nombrar el lugar ({lugar})")
         if not any(_compacto(lugar) == _compacto(str(h)) for h in d.get("hashtags") or []):
@@ -593,7 +616,8 @@ def contexto_de(c: Candidato) -> str:
 def local_de(c: Candidato) -> dict:
     k = c.clasif
     return {"lugar": k.get("lugar"), "region": k.get("region"), "pais": k.get("pais"),
-            "tipo": k.get("tipo"), "conmemora": k.get("conmemora"), "seccion": c.seccion}
+            "tipo": k.get("tipo"), "conmemora": k.get("conmemora"), "seccion": c.seccion,
+            "puntaje": k.get("puntaje"), "puntajes": k.get("puntajes")}
 
 
 def proponer(wiki: ef.Wiki, sonnet, haiku, gemini, dia: date, carpeta: Path, avisar=log.info,
@@ -643,6 +667,20 @@ def proponer(wiki: ef.Wiki, sonnet, haiku, gemini, dia: date, carpeta: Path, avi
     lista = otro_pais_primero(lista, evitar_paises)
     elegidos = elegir(sonnet, lista[:20])
     elegidos = [x for x in elegidos if x[0].texto not in (excluir or set())]
+    if not hecho:
+        # Solo las que atrapan (Santi, 2026-11-13): 8 o más de promedio en persona, peligro, giro y
+        # emoción. Si hoy no hay ninguna, no sale (y quien llama avisa): nada de relleno.
+        flojas = [f"{c.anio} {c.clasif.get('lugar')}: {c.clasif.get('puntaje', 0):.1f}"
+                  for c, _, _ in elegidos if c.clasif.get("puntaje", 0) < PUNTAJE_MIN]
+        elegidos = [x for x in elegidos if x[0].clasif.get("puntaje", 0) >= PUNTAJE_MIN]
+        if flojas:
+            avisar(f"debajo de {PUNTAJE_MIN:g}: " + " | ".join(flojas))
+        # Las mejores primero (el calendario igual manda).
+        elegidos.sort(key=lambda x: (not en_calendario(x[0]), -x[0].clasif.get("puntaje", 0)))
+        if not elegidos:
+            raise ef.NarrarError(f"Hoy ninguna historia llega a {PUNTAJE_MIN:g} de promedio (persona, "
+                                 "peligro, giro y emoción): no saco una floja. "
+                                 + ("Las mejores: " + " | ".join(flojas[:3]) if flojas else ""))
     orden = otro_pais_primero([c for c, _, _ in elegidos], evitar_paises)
     elegidos = sorted(elegidos, key=lambda x: orden.index(x[0]))
     avisar("Sonnet eligió: " + " | ".join(f"{c.anio} {c.clasif.get('lugar')}: {c.texto[:50]} [{a}]"
@@ -669,7 +707,8 @@ def proponer(wiki: ef.Wiki, sonnet, haiku, gemini, dia: date, carpeta: Path, avi
         try:
             g = ef.escribir_guion(sonnet, e, fuente, sistema=SISTEMA_GUION_CORTO if corto else SISTEMA_GUION_LOCAL,
                                   validar_extra=validar_lugar(lugar, corto), contexto=contexto_de(c),
-                                  corto=corto)
+                                  corto=corto, rango=ef.LATAM_PALABRAS if corto else None,
+                                  max_s=ef.LATAM_MAX_S if corto else 0.0)
             g.imagen_frase = imagen_frase or corto
             pool, g = ef.fotos_con_control(wiki, gemini, e, g, fotos, carpeta, avisar, videos=videos,
                                            tope_s=tope_fotos_s, elector=elector,
@@ -709,7 +748,8 @@ def rehacer(p: ef.Propuesta, wiki: ef.Wiki, sonnet, gemini, carpeta: Path, corre
     corto = anterior.corto
     g = ef.escribir_guion(sonnet, e, p.fuente, correccion=correccion, anterior=anterior.texto,
                           sistema=SISTEMA_GUION_CORTO if corto else SISTEMA_GUION_LOCAL,
-                          validar_extra=validar_lugar(lugar, corto), contexto=contexto_de(c), corto=corto)
+                          validar_extra=validar_lugar(lugar, corto), contexto=contexto_de(c), corto=corto,
+                          rango=ef.LATAM_PALABRAS if corto else None, max_s=ef.LATAM_MAX_S if corto else 0.0)
     g.imagen_frase = anterior.imagen_frase
     fotos, _ = ef.fotos_del_evento(wiki, e)
     try:

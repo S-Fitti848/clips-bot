@@ -52,7 +52,19 @@ def estilos(W: int, H: int, fuente: str) -> list[str]:
             f"0,0,1,10,4,8,40,40,{int(H * 0.17)},1",
             # El gancho escrito en grande desde el primer cuadro (2026-11-12): amarillo, borde negro.
             f"Style: Gancho,{fuente},96,&H0000E1FF,&H000000FF,&H00000000,&H64000000,-1,0,0,0,100,100,"
-            f"0,0,1,9,3,8,70,70,{int(H * 0.12)},1"]
+            f"0,0,1,9,3,8,70,70,{int(H * 0.12)},1",
+            # El lugar, debajo del año, mientras la voz cuenta la intriga (2026-11-12).
+            f"Style: Lugar,{fuente},78,&H00FFFFFF,&H000000FF,&H00000000,&H64000000,-1,0,0,0,100,100,"
+            f"0,0,1,7,3,8,60,60,{int(H * 0.16) + 270},1"]
+
+
+def lugar_en_pantalla(lugar: str, inicio: float, hasta: float) -> list[str]:
+    """El lugar escrito debajo del año desde la segunda frase (la voz lo dice recién en la 3.ª-4.ª)."""
+    texto = re.sub(r"[{}\\]", "", lugar or "").strip()
+    if not texto:
+        return []
+    return [f"Dialogue: 2,{_t(inicio)},{_t(max(hasta, inicio + AÑO_HASTA_S))},Lugar,,0,0,0,,"
+            f"{{\\fad(150,250)}}{texto}"]
 
 
 def gancho_en_pantalla(frase: str, hasta_s: float) -> list[str]:
@@ -64,7 +76,8 @@ def gancho_en_pantalla(frase: str, hasta_s: float) -> list[str]:
     return [f"Dialogue: 3,{_t(0)},{_t(max(hasta_s, 0.5))},Gancho,,0,0,0,,{{\\fad(0,200)}}{texto}"]
 
 
-def anio_contando(anio: int, desde: int | None = None, pasos: int = 18, inicio: float = 0.0) -> list[str]:
+def anio_contando(anio: int, desde: int | None = None, pasos: int = 18, inicio: float = 0.0,
+                  hasta: float | None = None) -> list[str]:
     """El año corriendo de `desde` (unas décadas antes) hasta `anio` en CONTAR_S, frenando al final,
     y quieto hasta AÑO_HASTA_S. `inicio`: desde cuándo (2026-11-12: cuando arranca la segunda frase,
     la del año; el principio es del gancho)."""
@@ -75,7 +88,8 @@ def anio_contando(anio: int, desde: int | None = None, pasos: int = 18, inicio: 
         valor = round(desde + (anio - desde) * (1 - (1 - x) ** 3))
         a, b = inicio + CONTAR_S * k / pasos, inicio + CONTAR_S * (k + 1) / pasos
         ev.append(f"Dialogue: 2,{_t(a)},{_t(b)},Anio,,0,0,0,,{valor}")
-    ev.append(f"Dialogue: 2,{_t(inicio + CONTAR_S)},{_t(inicio + AÑO_HASTA_S)},Anio,,0,0,0,,"
+    fin = max(inicio + AÑO_HASTA_S, hasta or 0.0)   # quieto mientras dura la segunda frase
+    ev.append(f"Dialogue: 2,{_t(inicio + CONTAR_S)},{_t(fin)},Anio,,0,0,0,,"
               f"{{\\t(0,120,\\fscx112\\fscy112)\\t(120,260,\\fscx100\\fscy100)\\fad(0,250)}}{anio}")
     return ev
 

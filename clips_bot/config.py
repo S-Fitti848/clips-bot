@@ -259,6 +259,12 @@ class PantallaCfg:
 
 @dataclass(frozen=True)
 class Textos:
+    # Desde el 2026-11-12 (Santi: "que madrugar no empeore la calidad"): los textos de Rots (título,
+    # frase de arranque, pregunta, descripción, puntaje y tono, con 3 cuadros del clip) los escribe
+    # Claude (`claude_modelo`); Gemini (`modelo`) queda de respaldo si Claude falla. "gemini" = como antes.
+    motor: str = "claude"
+    claude_modelo: str = "claude-sonnet-5-5"
+    claude_simple: str = "claude-haiku-5-5"     # el desempate de la selección
     modelo: str = "gemini-3.6-flash"
     modelo_fallback: str = "gemini-3.5-flash-lite"  # cuando se acaba la cuota diaria del principal
     max_titulo: int = 59

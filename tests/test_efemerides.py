@@ -165,8 +165,8 @@ def test_no_respaldados(guion, faltan):
 
 def _guion_ok(**cambios):
     d = {"frases": [{"texto": "Un buscador nacido en un armario cambió cómo buscamos todo.", "mostrar": "1998 Google search 1998", "presente": False},
-                    {"texto": "En 1998, Larry Page y Sergey Brin lo empezaron como un proyecto universitario.", "mostrar": "1998 Larry Page Sergey Brin", "presente": False},
-                    {"texto": "Lo arrancaron en la Universidad de Stanford, con muy poco.", "mostrar": "1998 Stanford University", "presente": False},
+                    {"texto": "Y todo empezó como un proyecto de dos estudiantes, con muy poco.", "mostrar": "1998 Larry Page Sergey Brin", "presente": False},
+                    {"texto": "Fue en 1998: Larry Page y Sergey Brin, en la Universidad de Stanford.", "mostrar": "1998 Stanford University", "presente": False},
                     {"texto": "¡Tenían un armario lleno de servidores y dos routers HP!", "mostrar": "1998 Google first server rack", "presente": False},
                     {"texto": "Al principio el buscador no se llamaba Google, se llamaba BackRub.", "mostrar": "1998 BackRub logo", "presente": False},
                     {"texto": "Con el tiempo superó a AltaVista, el más popular de la época.", "mostrar": "1998 AltaVista search", "presente": False},
@@ -175,7 +175,10 @@ def _guion_ok(**cambios):
                     {"texto": "¿Te imaginás cómo buscarías cualquier cosa sin este buscador?", "mostrar": "1998 library card catalog", "presente": False}],
          "idea_clave": "Un buscador ordena la web para que encuentres lo que buscás.",
          "titulo": "El día que arrancó Google",
-         "descripcion": "Así empezó el buscador.", "hashtags": ["#Shorts", "#Google", "#PequeñaHistoria"]}
+         "descripcion": "Así empezó el buscador.", "hashtags": ["#Shorts", "#Google", "#PequeñaHistoria"],
+         # gancho → tensión → giro → final que paga (2026-11-13)
+         "pregunta_gancho": "¿Cómo un armario cambió la forma de buscar?",
+         "frase_tension": 4, "frase_giro": 5, "frase_pago": 8}
     d.update(cambios)
     return d
 
@@ -192,9 +195,16 @@ def test_el_gancho_la_pregunta_y_las_fotos():
     con_anio = _guion_ok()
     con_anio["frases"][0]["texto"] = "En 1998 un buscador nació en un armario."
     assert any("SIN el año" in e for e in ef.validar_guion(con_anio, 1998, ARTICULO))
-    sin_anio_despues = _guion_ok()
-    sin_anio_despues["frases"][1]["texto"] = "Larry Page y Sergey Brin lo empezaron como un proyecto universitario."
-    assert any('"En 1998,"' in e for e in ef.validar_guion(sin_anio_despues, 1998, ARTICULO))
+    sin_intriga = _guion_ok()
+    sin_intriga["frases"][1]["texto"] = "En 1998, Larry Page y Sergey Brin lo empezaron en Stanford."
+    assert any("INTRIGA" in e for e in ef.validar_guion(sin_intriga, 1998, ARTICULO))
+    sin_anio = _guion_ok()
+    sin_anio["frases"][2]["texto"] = "Larry Page y Sergey Brin, en la Universidad de Stanford."
+    assert any("tercera o la cuarta" in e for e in ef.validar_guion(sin_anio, 1998, ARTICULO))
+    # la estructura: tensión, giro y pago en orden, el pago al final
+    assert any("estructura" in e for e in ef.validar_guion(_guion_ok(frase_giro=3), 1998, ARTICULO))
+    assert any("anteúltima" in e for e in ef.validar_guion(_guion_ok(frase_pago=6), 1998, ARTICULO))
+    assert any("pregunta_gancho" in e for e in ef.validar_guion(_guion_ok(pregunta_gancho=""), 1998, ARTICULO))
     sin_pregunta = _guion_ok()
     sin_pregunta["frases"][-1]["texto"] = "Y así fue como empezó todo, en un armario."
     assert any("gancho" in e for e in ef.validar_guion(sin_pregunta, 1998, ARTICULO))

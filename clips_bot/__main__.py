@@ -535,7 +535,10 @@ def ejecutar_seleccion(settings: Settings, gemini: GeminiClient | None, enviar: 
                 * (_factor_pego(settings) if (o.meta.get("pego") or {}).get("vistas") else 1.0)
                 * factor_pico(o.meta.get("chat_pico"), cfg.peso_chat)
                 for o in opciones}
-    elegidos = seleccionar(buenos, cfg, ahora, desempate_gemini(gemini) if gemini else None,
+    from .process import cliente_textos
+
+    elegidos = seleccionar(buenos, cfg, ahora,
+                           desempate_gemini(cliente_textos(gemini, settings, simple=True)) if gemini else None,
                            por_clip)
     if len(elegidos) < cupo and relleno:
         # Solo puede salir de acá lo que falló ÚNICAMENTE por calidad: lo que se descarta por tono,
@@ -3409,8 +3412,12 @@ def _encabezado_fb(local: dict) -> str:
     """Arriba de la propuesta y del video de Facebook: que no se confunda con la de YouTube."""
     lugar = ", ".join(x for x in (local.get("lugar"), local.get("region"), local.get("pais")) if x)
     conm = f" · hoy: {local['conmemora']}" if local.get("conmemora") else ""
-    return (f"📘 <b>SOLO FACEBOOK</b> (no va a YouTube) · {html.escape(lugar)} · "
-            f"{html.escape(str(local.get('tipo') or '').replace('_', ' '))}{html.escape(conm)}")
+    notas = local.get("puntajes") or {}
+    puntaje = (f"\n⭐ {local['puntaje']:.1f} (persona {notas.get('persona')}, peligro {notas.get('peligro')}, "
+               f"giro {notas.get('giro')}, emoción {notas.get('emocion')})" if local.get("puntaje") else "")
+    # Desde el 2026-11-12 la de Latinoamérica va a YouTube y a Facebook.
+    return (f"🌎 <b>LATINOAMÉRICA</b> (YouTube y Facebook) · {html.escape(lugar)} · "
+            f"{html.escape(str(local.get('tipo') or '').replace('_', ' '))}{html.escape(conm)}{puntaje}")
 
 
 def _args_efemeride(args: list) -> tuple[str | None, str]:
@@ -3471,7 +3478,7 @@ def _efe_proponer(conn, tg: TelegramClient, chats: list[str], dia, settings: Set
                         elector=_elector_fotos(settings),
                         elector_reintento=_elector_fotos(settings, reintento=True),
                         tema="" if hecho else settings.efemerides.tema,
-                        corto=settings.efemerides.corto)
+                        corto=settings.efemerides.corto, texto=_texto_efemeride(settings, gemini))
     except (NarrarError, ef.WikiError, GeminiError) as e:
         error = f"No salió la efeméride: {html.escape(str(e)[:400])}"
         if isinstance(e, (ef.SinFotosReales, ef.SinTema)):
@@ -3496,6 +3503,14 @@ def _elector_fotos(settings: Settings, reintento: bool = False):
     from . import claude
 
     return claude.cliente(settings.historias_fb.modelo_texto)
+
+
+def _texto_efemeride(settings: Settings, gemini):
+    """El texto de la efeméride (desde el 2026-11-12, la de tecnología: elegir el hecho, el guion y
+    acortarlo) con Claude Sonnet, como las de Latinoamérica; Gemini de respaldo."""
+    from . import claude
+
+    return claude.para_texto(gemini, settings.historias_fb.modelo_texto)
 
 
 def _claude_textos(settings: Settings):
@@ -4013,6 +4028,7 @@ def _efe_corregir(conn, tg: TelegramClient, t: dict, token: str, settings: Setti
         else:
             p = ef.rehacer_guion(p, ef.Wiki(), gemini, Path(estado["carpeta"]), t["texto"],
                                  hablado=settings.efemerides.guion_hablado,
+                                 texto=_texto_efemeride(settings, gemini),
                                  elector=_elector_fotos(settings),
                                  elector_reintento=_elector_fotos(settings, reintento=True))
     except (NarrarError, GeminiError, ef.WikiError) as e:
@@ -4041,7 +4057,8 @@ def _efe_video(conn, tg: TelegramClient, chat_id: str, token: str, settings: Set
         fb = getattr(prop, "destino", "") == "facebook"
         try:
             meta = ef.hacer_video(prop, settings, Path(estado["carpeta"]), avisar=log.info, conn=conn,
-                                  cliente=(_claude_textos(settings)[0] if fb else None) or _gemini(settings))
+                                  cliente=(_claude_textos(settings)[0] if fb else
+                                           _texto_efemeride(settings, _gemini(settings))))
         except NarrarError as e:
             return f"No pude armar el video: {html.escape(str(e)[:300])}"
         motor = meta.get("efemeride", {}).get("voz", "")
@@ -4113,7 +4130,7 @@ def cmd_efemeride(args: argparse.Namespace) -> int:
                         hablado=settings.efemerides.guion_hablado,
                         imagen_frase=settings.efemerides.imagen_frase,
                         tema="" if args.hecho else settings.efemerides.tema,
-                        corto=settings.efemerides.corto)
+                        corto=settings.efemerides.corto, texto=_texto_efemeride(settings, gemini))
         (carpeta / "propuesta.json").write_text(json.dumps(p.__dict__, ensure_ascii=False, indent=2),
                                                encoding="utf-8")
         g = ef.Guion.de_dict(p.guion)
@@ -4135,7 +4152,8 @@ def cmd_efemeride(args: argparse.Namespace) -> int:
         print(f"Hay algo pesado andando ({db.hay_trabajo_pesado(conn)}): probá después.", file=sys.stderr)
         return 3
     try:
-        meta = ef.hacer_video(p, settings, carpeta, avisar=print, conn=conn, cliente=_gemini(settings))
+        meta = ef.hacer_video(p, settings, carpeta, avisar=print, conn=conn,
+                              cliente=_texto_efemeride(settings, _gemini(settings)))
     finally:
         db.soltar_turno(conn, db.RECURSO_PESADO, token, VENCIMIENTO_PESADO_S)
         conn.close()

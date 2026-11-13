@@ -100,21 +100,22 @@ def test_elegir_valida_los_articulos():
     assert lug == "Villa Epecuén"
 
 
-def _guion(primera="Un día como hoy, en 1985, en Villa Epecuén, el agua tapó todo.",
+def _guion(tercera="Fue en 1985, en Villa Epecuén.",
            titulo="Villa Epecuén: el pueblo bajo el agua", tags=("#Shorts", "#VillaEpecuen", "#Argentina")):
-    return {"frases": [{"texto": primera}], "titulo": titulo, "hashtags": list(tags)}
+    return {"frases": [{"texto": "Un pueblo entero quedó bajo el agua."}, {"texto": "Y nadie se lo esperaba…"},
+                       {"texto": tercera}], "titulo": titulo, "hashtags": list(tags)}
 
 
 def test_validar_lugar():
     v = locales.validar_lugar("Villa Epecuén")
     assert v(_guion()) == []
-    errores = v(_guion(primera="Un día como hoy, en 1985, el agua tapó todo.", titulo="El pueblo bajo el agua",
+    errores = v(_guion(tercera="Fue en 1985.", titulo="El pueblo bajo el agua",
                        tags=("#Shorts", "#Argentina")))
     assert len(errores) == 3
 
 
 def test_el_prompt_del_guion_pide_el_lugar():
-    assert "en <lugar>," in locales.SISTEMA_GUION_LOCAL
+    assert "El AÑO y el LUGAR" in locales.SISTEMA_GUION_LOCAL and "TERCERA o CUARTA" in locales.SISTEMA_GUION_LOCAL
     assert "#VillaEpecuen" in locales.SISTEMA_GUION_LOCAL
     assert ef.REGLAS_CLARIDAD in locales.SISTEMA_GUION_LOCAL    # regla fija 2
 

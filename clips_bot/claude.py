@@ -121,6 +121,36 @@ class ClaudeClient:
         return texto
 
 
+class ConRespaldo:
+    """Texto con Claude y Gemini SOLO si Claude falla o hace falta audio (Santi, 2026-11-12: "que
+    madrugar no empeore la calidad": a las 03:30 la cuota gratis de Gemini ya está gastada). Misma
+    forma que GeminiClient.json."""
+
+    def __init__(self, principal, respaldo=None):
+        self.principal, self.respaldo = principal, respaldo
+        self.modelo = getattr(principal, "modelo", None)
+
+    def json(self, sistema: str, prompt: str, schema: dict, temperatura: float = 0.7,
+             imagenes: list[bytes] | None = None, audio: bytes | None = None,
+             modelo: str | None = None) -> str:
+        if audio is None and self.principal is not None:
+            try:
+                return self.principal.json(sistema, prompt, schema, temperatura, imagenes=imagenes)
+            except GeminiError as e:
+                if self.respaldo is None:
+                    raise
+                log.warning("Claude no respondió (%s): uso Gemini", str(e)[:120])
+        if self.respaldo is None:
+            raise ClaudeError("sin Claude ni Gemini para este pedido")
+        return self.respaldo.json(sistema, prompt, schema, temperatura, imagenes=imagenes, audio=audio)
+
+
+def para_texto(gemini, modelo: str = SONNET, esfuerzo: str | None = None):
+    """El cliente de texto: Claude (`modelo`) con Gemini de respaldo; sin ANTHROPIC_API_KEY, Gemini."""
+    c = cliente(modelo, esfuerzo)
+    return ConRespaldo(c, gemini) if c is not None else gemini
+
+
 def cliente(modelo: str = SONNET, esfuerzo: str | None = None) -> ClaudeClient | None:
     """Con ANTHROPIC_API_KEY del .env; None si no está."""
     from .config import env
