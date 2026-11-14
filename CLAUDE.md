@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-11-14 | **Versión:** v0.94.0 (desplegado) | **Modo:** Fase 2: corriendo solo en la Pi. **Rots APAGADO** (`publicacion.rots: false`). Madrugada desde la escucha: tecnología desde las 04:00 → 2 de Latinoamérica, todo antes de las 05:30; timers 05:00 (no hace nada con Rots apagado) y 06:00 de respaldo
+**Snapshot:** 2026-11-14 | **Versión:** v0.95.0 (desplegado) | **Modo:** Fase 2: corriendo solo en la Pi. **Rots APAGADO** (`publicacion.rots: false`). Madrugada desde la escucha: tecnología desde las 04:00 → 2 de Latinoamérica, todo antes de las 05:30; timers 05:00 (no hace nada con Rots apagado) y 06:00 de respaldo
 
 > **SI ESTÁS EMPEZANDO UNA SESIÓN NUEVA, LEÉ §10.** Ahí está qué está hecho, qué quedó a medias,
 > qué falta, y las trampas que ya nos mordieron.
@@ -959,6 +959,28 @@ Problemas abiertos:
 
 ## 9. CHANGELOG
 
+- v0.95.0 (2026-11-14, tarde) — **Por qué el 14/11 no salió nada y el feedback de los ejemplos.**
+  (1) La madrugada corrió bien sin Rots (04:00 tecnología y Latinoamérica). Tecnología: la mejor,
+  Netscape 6, 7,25 (< 7,5). Latinoamérica: La Pola (8,5) y Túpac Katari pasaron el puntaje pero el
+  control del 70 % las frenó (68 % y 62 %): en las frases centrales solo valían fotos de época y el
+  resto eran tarjetas. Ahora (`ESCENAS_EN_CENTRALES`) las centrales buscan también 2 escenas de
+  Pexels y el modelo puede poner una **escena ilustrativa** ("un preso leyendo papeles": lo que pidió
+  Santi) si no hay foto real, sin confundir sobre lo central (nada de una cara que pase por el
+  protagonista, ni otro lugar, ni nada moderno); responde `escena` (obligatorio) y una escena no sale
+  por `de_epoca` ni `seguro`. (2) El gancho con la foto MÁS llamativa (una cara humana clara del
+  protagonista si hay), no la más oficial. (3) El mapa con zoom llega al lugar justo cuando la voz lo
+  dice (`momento_de_palabra`, `insertar_tramo`, `mapa_zoom(llegada=)`). (4) Humor suave en los guiones
+  cuando la historia lo permite, nunca en muertes, ejecuciones, tragedias ni temas sensibles. (5)
+  **Canal de marcas animadas conectado y APAGADO** (`animacion.activo: false`, `animacion/marcas.py`,
+  `marcas.yaml` con 457 marcas y 824 pares marca-ángulo verificados en es.wikipedia, tabla
+  `animacion_videos`: un ángulo nunca se repite y una marca no vuelve en 7 días; Sonnet puntúa 8
+  candidatos en marca conocida, dato sorprendente, giro y humor, pasan ≥ 8; guion validado contra el
+  artículo; `_animacion_tick` desde las 07:00, fuera de 03:45-06:00, manda a Telegram y no sube nada).
+  Ejemplos mandados a Santi: Nerf (8,25, 40,5 s, render 252 s, Claude US$ 0,087) y Monopoly (9,25,
+  45,4 s, 283 s, US$ 0,098). (6) Diseño de retención y alcance en `docs/diseno-retencion-alcance.md`
+  (Instagram, TikTok, final en loop, música con tensión y efectos, grupos de Facebook): sin programar.
+  Los de hoy se armaron a mano con el estilo nuevo forzado en memoria (el interruptor sigue apagado).
+  1092 tests OK.
 - v0.94.0 (2026-11-14) — **Rots apagado, Pequeña Historia sin aprobar y con estilo nuevo (los dos
   APAGADOS hasta que Santi apruebe), ElevenLabs preparado, base de animación y nicho** (pedido de
   Santi en dos partes: investigación + mejoras con diseño y ejemplos antes de activar). (1) **Rots
@@ -2398,9 +2420,12 @@ no repiten lo que ya corrió.
   montaje del gancho repitió dos fotos casi iguales de la misma estatua.
 - **ElevenLabs:** cuando Santi ponga `ELEVENLABS_API_KEY`, `python -m clips_bot voces-elevenlabs` y
   `--muestra <id>`; con la voz elegida, `efemerides.elevenlabs_voz` / `elevenlabs_nombre`.
-- **Canal de animación:** elegir nicho con `docs/nicho-animacion/informe.md`; la base técnica está en
-  `clips_bot/animacion/` (sin conectar al bot: falta guion → JSON, tiempos de Whisper, música, más
-  personajes, integrarlo a la escucha).
+- **Canal de marcas animadas** (nicho elegido por Santi: origen de marcas con humor y sarcasmo):
+  conectado y APAGADO; ejemplos Nerf y Monopoly mandados. Con su OK: `animacion.activo: true`. Cuando
+  cree el canal de YouTube: `youtube-auth animacion` y programar la subida (hoy no existe).
+- **Retención y alcance** (`docs/diseno-retencion-alcance.md`): esperando su OK. Instagram pide volver
+  a autorizar el token de la página con el permiso de publicar en Instagram (avisar antes); TikTok
+  pide app + auditoría (sin auditar, todo queda privado).
 
 0. **Voz de Pequeña Historia** (v0.88.0): muestras de Fenrir más calmo, Achird, Sadaltager y Charon
    con energía media mandadas; falta que elija. Al elegir: `efemerides.tts_modelo:
