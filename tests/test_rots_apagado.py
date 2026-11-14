@@ -46,3 +46,9 @@ def test_pego_y_ya_no_corren(conn):
     m._pego_tick(conn, s, ahora=datetime(2026, 11, 14, 2, 0, tzinfo=m.AR))
     assert db.get_valor(conn, m.PEGO_DIA) is None
     assert "apagado" in m._ya(conn, None, "1", s)
+
+
+def test_pequena_historia_y_asi_nacio_van_al_privado_de_santi():
+    s = load_settings()
+    assert s.efemerides.chat == m.DUENO and s.historias_fb.chat == m.DUENO
+    assert s.animacion.chat in ("", m.DUENO)      # vacío = el privado de Santi

@@ -100,3 +100,23 @@ def rots_prendido(monkeypatch):
         return raw
 
     monkeypatch.setattr(config, "_read_yaml", leer)
+
+
+@pytest.fixture
+def chat_a_destinos(monkeypatch):
+    """Desde el 2026-11-14 Pequeña Historia va al privado de Santi (efemerides.chat, historias_fb.chat);
+    los tests del camino "chat vacío → destinos de la entrega diaria" lo vacían."""
+    from clips_bot import config
+
+    original = config._read_yaml
+
+    def leer(path):
+        raw = original(path)
+        if isinstance(raw, dict):
+            raw = dict(raw)
+            for sec in ("efemerides", "historias_fb"):
+                if isinstance(raw.get(sec), dict):
+                    raw[sec] = {**raw[sec], "chat": ""}
+        return raw
+
+    monkeypatch.setattr(config, "_read_yaml", leer)

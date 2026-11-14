@@ -229,7 +229,7 @@ class TG:
         self.mensajes.append((chat, texto))
 
 
-def test_fb_tick_una_vez_por_dia_de_madrugada(conn, monkeypatch):
+def test_fb_tick_una_vez_por_dia_de_madrugada(conn, monkeypatch, chat_a_destinos):
     import clips_bot.__main__ as m
     from clips_bot.config import load_settings
 

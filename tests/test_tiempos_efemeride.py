@@ -120,7 +120,7 @@ def test_con_el_timer_propio_instalado_diario_no_hace_la_efemeride(monkeypatch, 
     assert llamadas == ["clips", "metricas", "pego", "efemeride"]
 
 
-def test_efemeride_diaria_no_pisa_a_los_clips_y_queda_para_los_reintentos(monkeypatch, tmp_path):
+def test_efemeride_diaria_no_pisa_a_los_clips_y_queda_para_los_reintentos(monkeypatch, tmp_path, chat_a_destinos):
     import json
 
     dbp = tmp_path / "t.db"

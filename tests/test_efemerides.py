@@ -488,7 +488,7 @@ def diaria(monkeypatch, tmp_path):
     monkeypatch.setattr(m, "_efe_proponer",
                         lambda conn, tg, chats, dia, s, g: enviados["propuestas"].append(chats))
     s = load_settings()
-    return enviados, lambda **cambios: replace(s, efemerides=replace(s.efemerides, **cambios))
+    return enviados, lambda **cambios: replace(s, efemerides=replace(s.efemerides, **{"chat": "", **cambios}))
 
 
 def test_la_corrida_diaria_propone_a_los_destinos(diaria):
