@@ -237,7 +237,7 @@ def test_fb_tick_una_vez_por_dia_de_madrugada(conn, monkeypatch):
     monkeypatch.setattr(db, "destinos", lambda c: ["-100"])
     llamados = []
 
-    def proponer(conn_, tg, chats, dia, settings_, hecho=""):
+    def proponer(conn_, tg, chats, dia, settings_, hecho="", auto=False):
         llamados.append((chats, dia, hecho))
         return None
 
@@ -358,7 +358,7 @@ def test_fb_tick_con_un_hecho_fijado_para_un_dia(conn, monkeypatch):
     db.set_valor(conn, m.FB_FECHA_FIJA, json.dumps({"dia": "2026-11-10", "hecho": "Epecuén"}))
     db.set_valor(conn, f"{m.FB_FECHA_FIJA}:2026-11-12", "Juana Inés")
     hechos = []
-    proponer = lambda conn_, tg, chats, dia, s, hecho="": hechos.append((dia.day, hecho))
+    proponer = lambda conn_, tg, chats, dia, s, hecho="", auto=False: hechos.append((dia.day, hecho))
     for dia in (10, 11, 12):
         m._fb_tick(conn, TG(), load_settings(), ahora=datetime(2026, 11, dia, 6, 35, tzinfo=m.AR),
                    proponer=proponer)

@@ -340,6 +340,9 @@ class EfemeridesCfg:
     # las 06:00 queda de respaldo).
     hora_propuesta: str = "04:00"
     corto: bool = True
+    # Sin aprobar (Santi, 2026-11-14): las 3 diarias se arman y se programan solas; el video llega a
+    # Telegram horas antes de publicarse con ❌ Cancelar. Los controles de calidad siguen igual.
+    sin_aprobar: bool = False
     # Los 3 videos del día en YouTube (2 de Latinoamérica + 1 de tecnología): estos horarios (AR),
     # siempre a separacion_youtube_h o más entre sí.
     horas_youtube: tuple = ("11:00", "15:30", "20:00")

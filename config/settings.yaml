@@ -337,6 +337,11 @@ efemerides:
   tema: tecnologia
   hora_propuesta: "04:00"    # la escucha la propone apenas termina Rots (el timer de 06:00, de respaldo)
   corto: true
+  # Sin aprobar (Santi, 2026-11-14; APAGADO hasta que apruebe el diseño): las 3 diarias (tecnología y
+  # las 2 de Latinoamérica) se arman y se programan solas; el video llega a Telegram horas antes de
+  # publicarse con ❌ Cancelar, y si no se toca nada sale a su hora. /efemeride e /historia a mano
+  # siguen con ✅. Los controles de calidad automáticos no cambian.
+  sin_aprobar: false
   horas_youtube: ["11:00", "15:30", "20:00"]
   separacion_youtube_h: 4
   # Voces de Gemini por día (plan gratis, por proyecto; la clave principal la comparte Lo Encontré):

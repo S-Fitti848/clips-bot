@@ -3475,7 +3475,7 @@ def _efemeride(conn, tg: TelegramClient, chat_id: str, args: list, settings: Set
 
 
 def _efe_proponer(conn, tg: TelegramClient, chats: list[str], dia, settings: Settings,
-                  gemini, hecho: str = "") -> str | None:
+                  gemini, hecho: str = "", auto: bool = False) -> str | None:
     """Propone y manda la aprobación a `chats`. NO toma el turno pesado: lo toma quien llama
     (/efemeride, o la corrida de las 05:00, que ya lo tiene). Devuelve el error, o None."""
     import secrets
@@ -3501,9 +3501,28 @@ def _efe_proponer(conn, tg: TelegramClient, chats: list[str], dia, settings: Set
             return ErrorDefinitivo(error)
         return ErrorPasajero(error) if getattr(e, "pasajero", False) else error
     estado = {"propuesta": p.__dict__, "carpeta": str(carpeta), "chat_id": chats[0]}
+    if auto:
+        return _efe_auto(conn, tg, chats, token, estado, settings)
     for chat in chats:
         _efe_mostrar(conn, tg, chat, token, estado)   # el mismo token: se aprueba desde cualquiera
     return None
+
+
+def _sin_aprobar(settings: Settings) -> dict:
+    """{"auto": True} con efemerides.sin_aprobar prendido; si no, nada (la llamada de siempre)."""
+    return {"auto": True} if settings.efemerides.sin_aprobar else {}
+
+
+def _efe_auto(conn, tg: TelegramClient, chats: list[str], token: str, estado: dict,
+              settings: Settings) -> str | None:
+    """Sin aprobar (efemerides.sin_aprobar, 2026-11-14): arma el video ya (el turno pesado lo tiene
+    quien llama), lo programa y lo manda con ❌ Cancelar. Devuelve el error, o None."""
+    db.set_valor(conn, f"efe:{token}", json.dumps(estado, ensure_ascii=False))
+    try:
+        return _efe_armar(conn, tg, chats, token, settings, auto=True)
+    except Exception as e:      # el aviso de siempre, nunca tumbar la madrugada
+        log.exception("el video sin aprobar falló")
+        return f"No salió el video de Pequeña Historia: {html.escape(str(e)[:300])}"
 
 
 # ---- /historia: el video aparte de Facebook (locales.py, prueba de 2 semanas desde el 2026-11-10) --
@@ -3545,7 +3564,7 @@ def _latam_del_dia(conn, dia) -> list[dict]:
 
 
 def _fb_proponer(conn, tg: TelegramClient, chats: list[str], dia, settings: Settings,
-                 hecho: str = "") -> str | None:
+                 hecho: str = "", auto: bool = False) -> str | None:
     """Propone una historia de Latinoamérica (va a YouTube y a Facebook desde el 2026-11-12) y manda
     la aprobación (la misma de la efeméride: ✅ ✏️ 🔁), sin repetir un hecho ya propuesto hoy y con
     otro país si se puede. NO toma el turno pesado: lo toma quien llama. Devuelve el error, o None."""
@@ -3580,6 +3599,8 @@ def _fb_proponer(conn, tg: TelegramClient, chats: list[str], dia, settings: Sett
                "articulo": (p.evento.get("paginas") or [""])[0]})
     db.set_valor(conn, f"{PH_LATAM}:{dia.isoformat()}", json.dumps(ya, ensure_ascii=False))
     estado = {"propuesta": p.__dict__, "carpeta": str(carpeta), "chat_id": chats[0]}
+    if auto:
+        return _efe_auto(conn, tg, chats, token, estado, settings)
     for chat in chats:
         _efe_mostrar(conn, tg, chat, token, estado)
     return None
@@ -3802,7 +3823,8 @@ def _fb_tick(conn, tg: TelegramClient, settings: Settings, ahora=None, proponer=
         for k in range(n):
             try:
                 error = ((proponer or _fb_proponer)(conn, tg, chats, ahora.date(), settings,
-                                                    hecho=hecho if k == 0 else "")
+                                                    hecho=hecho if k == 0 else "",
+                                                    **_sin_aprobar(settings))
                          if chats else "no hay a quién mandarla (ni historias_fb.chat ni /destinos)")
             except Exception as e:
                 log.exception("la historia de Latinoamérica falló")
@@ -3906,7 +3928,8 @@ def _efe_reintento_tick(conn, tg: TelegramClient, settings: Settings, ahora=None
     hora = d["horas"].pop(0)
     log.info("efeméride: reintento de las %s", hora)
     try:
-        error = _efe_proponer(conn, tg, d["chats"], ahora.date(), settings, gemini)
+        error = _efe_proponer(conn, tg, d["chats"], ahora.date(), settings, gemini,
+                              **_sin_aprobar(settings))
     except Exception as e:     # que un error no deje el reintento en loop: cuenta como intento
         log.exception("el reintento de la efeméride falló")
         error = f"No salió la efeméride: {html.escape(str(e)[:400])}"
@@ -3963,7 +3986,8 @@ def efemeride_del_dia(settings: Settings, simular: bool = False) -> None:
         if gemini is None:
             error = "sin GEMINI_API_KEY"
         else:
-            error = _efe_proponer(conn, tg, chats, datetime.now(AR).date(), settings, gemini)
+            error = _efe_proponer(conn, tg, chats, datetime.now(AR).date(), settings, gemini,
+                                  **_sin_aprobar(settings))
         if error:
             print(f"  {error}")
             horas = _efe_horas_que_faltan(cfg.reintentos, datetime.now(AR))
@@ -4079,10 +4103,7 @@ def _efe_video(conn, tg: TelegramClient, chat_id: str, token: str, settings: Set
     """✅: voz, fotos con zoom, subtítulos y año; se entrega con los créditos en la descripción."""
     import secrets
 
-    from . import efemerides as ef
-
-    estado = _efe_estado(conn, token)
-    if not estado:
+    if not _efe_estado(conn, token):
         return "Esa efeméride venció. Mandá /efemeride de nuevo."
     turno = f"efemeride:{secrets.token_hex(3)}"
     if not db.tomar_turno(conn, db.RECURSO_PESADO, turno, maximo=1,
@@ -4090,31 +4111,51 @@ def _efe_video(conn, tg: TelegramClient, chat_id: str, token: str, settings: Set
         return OCUPADO
     try:
         tg.send_message(chat_id, "Poniendo la voz y armando el video. En la Pi son unos 3 minutos.")
-        prop = ef.Propuesta(**estado["propuesta"])
-        fb = getattr(prop, "destino", "") == "facebook"
-        try:
-            meta = ef.hacer_video(prop, settings, Path(estado["carpeta"]), avisar=log.info, conn=conn,
-                                  cliente=(_claude_textos(settings)[0] if fb else
-                                           _texto_efemeride(settings, _gemini(settings))))
-        except NarrarError as e:
-            return f"No pude armar el video: {html.escape(str(e)[:300])}"
-        motor = meta.get("efemeride", {}).get("voz", "")
-        # Con Piper (Gemini sin cuota o sin respuesta): el botón para rehacerla con Laomedeia
-        # cuando vuelva la cuota. Por eso la propuesta se guarda hasta que salga con Laomedeia.
-        extra = ([[{"text": "🔁 Rehacer con Laomedeia", "callback_data": f"efe:voz:{token}"}]]
-                 if ef.es_piper(motor) else [])
+        return _efe_armar(conn, tg, chat_id, token, settings)
+    finally:
+        db.soltar_turno(conn, db.RECURSO_PESADO, turno, VENCIMIENTO_PESADO_S)
+
+
+def _efe_armar(conn, tg: TelegramClient, chat_id, token: str, settings: Settings, auto: bool = False):
+    """Arma el video de la propuesta `token` y lo entrega. NO toma el turno pesado (lo tiene quien
+    llama). `auto` (efemerides.sin_aprobar, 2026-11-14): lo programa en YouTube/Facebook ANTES de
+    mandarlo, así llega con "📤 Programado" y ❌ Cancelar; si nadie lo cancela, sale solo."""
+    from . import efemerides as ef
+
+    estado = _efe_estado(conn, token)
+    if not estado:
+        return "Esa efeméride venció. Mandá /efemeride de nuevo."
+    prop = ef.Propuesta(**estado["propuesta"])
+    fb = getattr(prop, "destino", "") == "facebook"
+    try:
+        meta = ef.hacer_video(prop, settings, Path(estado["carpeta"]), avisar=log.info, conn=conn,
+                              cliente=(_claude_textos(settings)[0] if fb else
+                                       _texto_efemeride(settings, _gemini(settings))))
+    except NarrarError as e:
+        return f"No pude armar el video: {html.escape(str(e)[:300])}"
+    motor = meta.get("efemeride", {}).get("voz", "")
+    # Con Piper (Gemini sin cuota o sin respuesta): el botón para rehacerla con Laomedeia
+    # cuando vuelva la cuota. Por eso la propuesta se guarda hasta que salga con Laomedeia.
+    extra = ([[{"text": "🔁 Rehacer con Laomedeia", "callback_data": f"efe:voz:{token}"}]]
+             if ef.es_piper(motor) and not auto else [])
+    if auto:
+        avisos = _subir(conn, settings, meta, "pequena_historia")
+        titulo = (_encabezado_fb(prop.local) if fb else
+                  _encabezado_tec(prop.local or {}) if (prop.local or {}).get("puntaje") is not None
+                  else "📅 <b>Pequeña Historia</b>")
+        encabezado = (f"{titulo}\n🤖 <b>Se publica sola</b>: si no tocás nada sale a su hora; "
+                      "❌ Cancelar la frena.\n" + "\n".join(avisos))
+    else:
         encabezado = (_encabezado_fb(prop.local) + "\n📤 sale en la página a las "
                       + hora_historia_fb(settings, (prop.local or {}).get("pais"), datetime.now(AR).date())
                       + " (AR)" if fb else
                       "📅 <b>Pequeña Historia</b> — subilo al canal de efemérides")
-        enviar_clip(tg, chat_id, conn, meta["clip_id"], meta, 1, None,
-                    encabezado=f"{encabezado}\n🎙 {html.escape(ef.texto_voz(motor))}", extra_filas=extra)
-        if not extra:
-            db.borrar_valor(conn, f"efe:{token}")
-        # El ✅ arma el video; subirlo es aparte, con "📤 Subir" debajo del video (2026-09-30).
-        return None
-    finally:
-        db.soltar_turno(conn, db.RECURSO_PESADO, turno, VENCIMIENTO_PESADO_S)
+    enviar_clip(tg, chat_id, conn, meta["clip_id"], meta, 1, None,
+                encabezado=f"{encabezado}\n🎙 {html.escape(ef.texto_voz(motor))}", extra_filas=extra)
+    if not extra:
+        db.borrar_valor(conn, f"efe:{token}")
+    # El ✅ arma el video; subirlo es aparte, con "📤 Subir" debajo del video (2026-09-30).
+    return None
 
 
 def cmd_musica(args: argparse.Namespace) -> int:
