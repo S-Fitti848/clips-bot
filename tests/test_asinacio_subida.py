@@ -27,7 +27,7 @@ class R:
 
 def test_prendido_y_a_las_19():
     s = load_settings().animacion
-    assert s.activo and s.subir and s.hora_publicacion == "19:00" and not s.facebook
+    assert s.activo and s.subir and s.hora_publicacion == "19:00" and s.facebook
     assert s.chat in ("", m.DUENO)
 
 

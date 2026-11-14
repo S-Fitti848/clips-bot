@@ -2486,9 +2486,11 @@ no repiten lo que ya corrió.
   montaje del gancho repitió dos fotos casi iguales de la misma estatua.
 - **ElevenLabs:** cuando Santi ponga `ELEVENLABS_API_KEY`, `python -m clips_bot voces-elevenlabs` y
   `--muestra <id>`; con la voz elegida, `efemerides.elevenlabs_voz` / `elevenlabs_nombre`.
-- **Así Nació** PRENDIDO desde el 15/11 (1 por día, YouTube 19:00 con ❌ Cancelar). Falta: que Santi
-  elija el banner (2 opciones del taller) y conecte la página de Facebook (ASINACIO_FACEBOOK_* en el
-  .env y `animacion.facebook: true`). Con su OK: `animacion.activo: true`. Cuando
+- **Así Nació** PRENDIDO desde el 15/11 (1 por día, YouTube y Reel en su página de Facebook a las 19:00,
+  con ❌ Cancelar). Página «Asinacio.oficial» (`1533484406504022`) conectada el 14/11: token de página
+  que no vence en `ASINACIO_FACEBOOK_PAGE_TOKEN` (huella 16d7443e4bb0, compu y Pi). Falta que Santi
+  elija el banner. OJO: la app de Meta (clips-bot) seguía en modo desarrollo en octubre: si sigue así,
+  el público no ve los Reels (pasarla a Live es de Santi, docs/facebook-asi-nacio.md). Con su OK: `animacion.activo: true`. Cuando
   cree el canal de YouTube: `youtube-auth animacion` y programar la subida (hoy no existe).
 - **Retención y alcance** (`docs/diseno-retencion-alcance.md`): esperando su OK. Instagram pide volver
   a autorizar el token de la página con el permiso de publicar en Instagram (avisar antes); TikTok
