@@ -1302,7 +1302,9 @@ ORDEN_FOTOS = """REGLAS DE SANTI PARA ESTE VIDEO (le ganan a lo que diga más ab
   confunda con lo central: nada de una cara en primer plano que parezca ser el protagonista real,
   ni otro lugar presentado como el del hecho, ni nada que no existía en esa época. Si la primera
   que ponés es una escena así, marcá `escena` true (ahí `de_epoca` puede ir false: lo que importa es
-  que no se vea nada moderno, eso va en `anacronismo`). Si no hay nada, dejá la lista vacía.
+  que no se vea nada moderno, eso va en `anacronismo`; y `seguro` va true si la escena muestra la
+  situación que dice la frase). Si no hay nada, dejá la lista vacía. Una frase central con una
+  escena que sirve es MEJOR que dejarla vacía: vacía va una tarjeta con texto.
 - Frases marcadas AL PASAR (nombran una cosa de pasada: un muro, Pokémon, un tren): sirve una foto
   genérica de esa cosa, de Commons o de stock, aunque no sea del hecho ni de la época. Si la frase
   dice "Pokémon", un Pikachu o unas cartas de Pokémon sirven: ahí `seguro` va true. `de_epoca` no
@@ -1324,7 +1326,7 @@ SCHEMA_FOTOS = {
                            "video": {"type": "INTEGER"}, "momento": {"type": "INTEGER"},
                            "video_de_epoca": {"type": "BOOLEAN"}, "contradice": {"type": "BOOLEAN"},
                            "escena": {"type": "BOOLEAN"}},
-            "required": ["se_ve", "fotos", "de_epoca", "seguro", "contradice"]}},
+            "required": ["se_ve", "fotos", "de_epoca", "seguro", "contradice", "escena"]}},
         "descartadas": {"type": "ARRAY", "items": {"type": "INTEGER"}},
         "impactantes": {"type": "ARRAY", "items": {"type": "INTEGER"}},
         "tipos": {"type": "ARRAY", "items": {
@@ -1465,7 +1467,7 @@ def rankings_de(d: dict, candidatas: list[list[int]],
             ok = ok[1:]
         # Relevancia dura (2026-10-02: en la de 4chan entró una página militar de Facebook): si
         # Gemini no está seguro de que la primera muestre lo que dice la frase, sale.
-        if ok and (f or {}).get("seguro") is False:
+        if ok and (f or {}).get("seguro") is False and not (f or {}).get("escena"):
             ok = ok[1:]
         # Que no contradiga (2026-10-21: "el precio subió muchísimo" con un gráfico en picada).
         if ok and (f or {}).get("contradice") is True:
