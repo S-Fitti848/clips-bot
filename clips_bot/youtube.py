@@ -33,7 +33,10 @@ from .red import SesionConTope
 
 log = logging.getLogger(__name__)
 
-CANALES = {"rots": "Rots (clips)", "pequena_historia": "Pequeña Historia (efemérides)"}
+CANALES = {"rots": "Rots (clips)", "pequena_historia": "Pequeña Historia (efemérides)",
+           # El canal de marcas animadas (2026-11-14): preparado para `youtube-auth animacion` cuando
+           # Santi lo cree. Hoy NADA sube ahí (animacion/marcas.py solo manda a Telegram).
+           "animacion": "Marcas animadas"}
 SCOPES = ["https://www.googleapis.com/auth/youtube.upload",
           "https://www.googleapis.com/auth/youtube",       # para cancelar (videos.update) y listar
           "https://www.googleapis.com/auth/yt-analytics.readonly"]   # métricas de los Shorts (§4b)

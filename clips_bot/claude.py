@@ -69,7 +69,8 @@ QUE_ES = {"textos.generar": "Rots: textos de los clips", "revision.revisar": "Ro
           "locales.elegir": "Latinoamérica: elegir y puntuar", "efemerides.elegir": "Tecnología: elegir y puntuar",
           "efemerides.escribir_guion": "Guiones (Latinoamérica y tecnología)",
           "efemerides.final_que_paga": "Revisión del final", "efemerides.pedir": "Fotos (elegir y verificar)",
-          "efemerides.acortar_guion": "Acortar guion"}
+          "efemerides.acortar_guion": "Acortar guion",
+          "marcas.elegir": "Animación: elegir y puntuar la marca", "marcas.escribir_guion": "Animación: guion"}
 
 
 def resumen_costo(conn, dia: str) -> tuple[float, list[tuple[str, int, float]]]:

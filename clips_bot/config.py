@@ -442,6 +442,25 @@ class HistoriasFb:
 
 
 @dataclass(frozen=True)
+class Animacion:
+    """Canal NUEVO de animación (Santi, 2026-11-14): el origen de marcas con humor y sarcasmo, dibujado
+    por código (clips_bot/animacion/marcas.py). Un video por día a Telegram, SIN subir a ningún lado
+    hasta que exista el canal de YouTube ("animacion")."""
+    activo: bool = False               # APAGADO hasta que Santi apruebe los ejemplos
+    hora: str = "07:00"                # AR: desde cuándo la escucha arma el del día (nunca 03:45-06:00)
+    chat: str = ""                     # a dónde va; vacío = el privado de Santi
+    modelo_texto: str = "claude-sonnet-5-5"
+    candidatos: int = 8                # marcas que se puntúan por día (una por marca)
+    puntaje_min: float = 8.0           # promedio de marca conocida, dato sorprendente, giro y humor
+    max_intentos: int = 3              # elegidos que se prueban si un guion no valida
+    musica: bool = True
+    musica_volumen: float = 0.10
+    procesos: int = 2                  # rasterizadores en la Pi (el x264 también usa CPU)
+    franja_libre_desde: str = "03:45"  # ahí el bot arma Pequeña Historia: la animación no corre
+    franja_libre_hasta: str = "06:00"
+
+
+@dataclass(frozen=True)
 class EnVivo:
     """Modo /envivo: detectar un momento mientras el stream sigue al aire (§3 modo en vivo)."""
     intervalo_twitch_s: int = 300     # /streams va en lote: una llamada para todos los de Twitch
@@ -521,6 +540,7 @@ class Settings:
     facebook: Facebook = Facebook()
     historias_fb: HistoriasFb = HistoriasFb()
     efemerides: EfemeridesCfg = EfemeridesCfg()
+    animacion: Animacion = Animacion()
     youtube_upload_enabled: bool = False
 
 
@@ -595,6 +615,7 @@ def load_settings(path: Path = CONFIG_DIR / "settings.yaml") -> Settings:
         pego=_seccion(Pego, raw, "pego", path),
         facebook=_seccion(Facebook, raw, "facebook", path),
         historias_fb=_seccion(HistoriasFb, raw, "historias_fb", path),
+        animacion=_seccion(Animacion, raw, "animacion", path),
         youtube_upload_enabled=bool(raw.get("youtube_upload_enabled", False)),
     )
 

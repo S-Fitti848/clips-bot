@@ -2696,6 +2696,7 @@ def escuchar_telegram(settings: Settings, timeout_poll: int = 50) -> int:
             _seguro(tg, str(chat_ultimo or ""), "la madrugada (Rots y la de tecnología)",
                     _madrugada_tick, conn, tg, settings)
             _seguro(tg, str(chat_ultimo or ""), "la historia de Facebook", _fb_tick, conn, tg, settings)
+            _seguro(tg, str(chat_ultimo or ""), "el video de marcas", _animacion_tick, conn, tg, settings)
             _seguro(tg, str(chat_ultimo or ""), "el calendario", _calendario_tick, conn, tg, settings)
             _seguro(tg, str(chat_ultimo or ""), "la medición de Pequeña Historia",
                     _medicion_ph_tick, conn, tg, settings)
@@ -3846,6 +3847,56 @@ def _fb_tick(conn, tg: TelegramClient, settings: Settings, ahora=None, proponer=
                                   "Probá a mano con <code>/historia</code>.")
 
 
+ANIM_DIA = "animacion_dia"   # bot_estado: el día (AR) en que ya se armó (o se intentó) el de marcas
+
+
+def _animacion_armar(conn, tg: TelegramClient, chats: list[str], settings: Settings, hoy) -> None:
+    from .animacion import marcas
+
+    carpeta = DATA_DIR.parent / "output" / "animacion" / hoy.strftime("%Y%m%d")
+    r = marcas.armar_video(conn, settings, carpeta, hoy=hoy, avisar=log.info,
+                           procesos=settings.animacion.procesos)
+    marcas.enviar(tg, chats, r)
+    # Recién entregado entra en la rotación (un ángulo nunca se repite; la marca no vuelve en 7 días).
+    marcas.registrar(conn, r.marca, r.angulo, hoy, r.promedio, r.titulo, r.video)
+    log.info("animación: %s / %s (%.1f) en %.0f s, Claude US$ %.3f", r.marca, r.angulo, r.promedio,
+             r.total_s, r.costo_usd)
+
+
+def _animacion_tick(conn, tg: TelegramClient, settings: Settings, ahora=None, armar=None) -> None:
+    """Canal de marcas animadas (Santi, 2026-11-14): desde animacion.hora, una vez por día, con el
+    turno pesado libre y NUNCA en la franja de Pequeña Historia (03:45-06:00). El video va a Telegram
+    y no se sube a ningún lado. Una falla (o un día sin candidato de 8) se avisa y no se reintenta."""
+    cfg = settings.animacion
+    if not cfg.activo:
+        return
+    ahora = ahora or datetime.now(AR)
+    hoy, hm = ahora.date().isoformat(), ahora.strftime("%H:%M")
+    if cfg.franja_libre_desde <= hm < cfg.franja_libre_hasta or not cfg.hora <= hm < "23:00":
+        return
+    if db.get_valor(conn, ANIM_DIA) == hoy or db.hay_trabajo_pesado(conn, VENCIMIENTO_PESADO_S):
+        return
+    turno = "animacion:diaria"
+    if not db.tomar_turno(conn, db.RECURSO_PESADO, turno, maximo=1, vencimiento_s=VENCIMIENTO_PESADO_S):
+        return
+    db.set_valor(conn, ANIM_DIA, hoy)    # una por día, aunque falle
+    chats = [c.strip() for c in cfg.chat.split(",") if c.strip()] or [DUENO]
+    error = ""
+    try:
+        (armar or _animacion_armar)(conn, tg, chats, settings, ahora.date())
+    except Exception as e:
+        from .animacion.marcas import SinCandidato
+
+        if not isinstance(e, SinCandidato):
+            log.exception("el video de marcas falló")
+        error = html.escape(str(e)[:500])
+    finally:
+        db.soltar_turno(conn, db.RECURSO_PESADO, turno, VENCIMIENTO_PESADO_S)
+    if error:
+        for chat in chats:
+            tg.send_message(chat, f"🎨 <b>Marcas animadas</b>: hoy no sale. {error}")
+
+
 EFE_REINTENTO = "efemeride_reintento"   # bot_estado: la propuesta de hoy que falló y espera turno
 
 
@@ -4374,7 +4425,7 @@ def cmd_historia_fb(args: argparse.Namespace) -> int:
 
 # 22 = People & Blogs: la de los Shorts subidos a mano que salían en el feed (los 40 de sept-oct);
 # la API los subía en 20 (Gaming). 27 = Education.
-CATEGORIA = {"rots": "22", "pequena_historia": "27"}
+CATEGORIA = {"rots": "22", "pequena_historia": "27", "animacion": "24"}   # 24 = Entretenimiento
 
 
 def _para_youtube(meta: dict, canal: str) -> tuple[str, list[str]]:
@@ -6127,7 +6178,7 @@ def main(argv: list[str] | None = None) -> int:
 
     pyt = sub.add_parser("youtube-auth", help="primer login de un canal de YouTube (en la compu con "
                                               "navegador); después copiar el token a la Pi")
-    pyt.add_argument("canal", choices=["rots", "pequena_historia"])
+    pyt.add_argument("canal", choices=["rots", "pequena_historia", "animacion"])
     pyt.add_argument("--puerto", type=int, default=8765)
     pyt.set_defaults(func=cmd_youtube_auth)
 

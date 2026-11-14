@@ -604,3 +604,23 @@ pego:
   # compilado (TOP…, mejores momentos), NO se busca en el VOD: su original no está ahí. Sale igual en
   # el resumen de "🔥 pegó" con el motivo.
   otros_nombres: ["Gastón Edul", "Edul", "Kun Agüero", "el Kun", "Agüero"]
+
+# Canal NUEVO de animación (Santi, 2026-11-14): el origen de marcas con humor y sarcasmo, dibujado
+# por código (clips_bot/animacion/marcas.py, catálogo en clips_bot/animacion/marcas.yaml). 1 video por
+# día a Telegram, SIN subir a ningún lado: el canal de YouTube ("animacion") todavía no existe.
+# Rotación: un ángulo de una marca no se repite nunca; una marca no sale dos veces en 7 días. Solo
+# salen los candidatos con promedio >= puntaje_min (marca conocida, dato sorprendente, giro, humor);
+# si ninguno llega, ese día no sale y se avisa. Nunca entre las 03:45 y las 06:00 (Pequeña Historia).
+animacion:
+  activo: false              # APAGADO hasta que Santi apruebe los ejemplos
+  hora: "07:00"              # AR: desde cuándo la escucha arma el del día
+  chat: ""                   # vacío = el privado de Santi
+  modelo_texto: "claude-sonnet-5-5"
+  candidatos: 8
+  puntaje_min: 8.0
+  max_intentos: 3
+  musica: true
+  musica_volumen: 0.10
+  procesos: 2
+  franja_libre_desde: "03:45"
+  franja_libre_hasta: "06:00"

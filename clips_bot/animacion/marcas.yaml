@@ -1,0 +1,465 @@
+# Catálogo del canal de animación: origen de marcas con humor (Santi, 2026-11-14).
+# Generado y verificado contra la API de Wikipedia el 2026-11-14 (agrupado de a 50, con el User-Agent
+# del bot): toda marca tiene artículo en es.wikipedia que no es una desambiguación; `wiki_en` cuando
+# el de español es corto (menos de 7.000 bytes). Las que no tenían artículo quedaron afuera.
+# `angulos`: solo los que aplican a esa marca (origen, nombre, logo, casi_quiebra, rival,
+# producto_fracasado, mascota, slogan). Si el artículo no tiene datos del ángulo, Claude le pone
+# 1 en «dato sorprendente» y no pasa el corte de 8. Nada de logos ni mascotas dibujadas igual.
+marcas:
+  - {nombre: "Coca-Cola", pais: "Estados Unidos", categoria: "bebidas", wiki_es: "Coca-Cola", angulos: [origen, nombre, logo, rival, producto_fracasado, mascota, slogan]}
+  - {nombre: "Pepsi", pais: "Estados Unidos", categoria: "bebidas", wiki_es: "Pepsi", angulos: [origen, nombre, logo, rival, producto_fracasado, slogan]}
+  - {nombre: "Fanta", pais: "Alemania", categoria: "bebidas", wiki_es: "Fanta", angulos: [nombre, slogan]}
+  - {nombre: "Sprite", pais: "Estados Unidos", categoria: "bebidas", wiki_es: "Sprite (refresco)", angulos: [origen, nombre, slogan]}
+  - {nombre: "7 Up", pais: "Estados Unidos", categoria: "bebidas", wiki_es: "7 Up", wiki_en: "7 Up", angulos: [origen, nombre, slogan]}
+  - {nombre: "Inca Kola", pais: "Perú", categoria: "bebidas", wiki_es: "Inca Kola", angulos: [origen, nombre, logo, rival, slogan]}
+  - {nombre: "Guaraná Antarctica", pais: "Brasil", categoria: "bebidas", wiki_es: "Guaraná Antarctica", wiki_en: "Guaraná Antarctica", angulos: [origen, nombre, slogan]}
+  - {nombre: "Manaos", pais: "Argentina", categoria: "bebidas", wiki_es: "Manaos (bebida)", angulos: [origen, slogan]}
+  - {nombre: "Big Cola", pais: "Perú", categoria: "bebidas", wiki_es: "Big Cola", angulos: [origen, rival]}
+  - {nombre: "Postobón", pais: "Colombia", categoria: "bebidas", wiki_es: "Postobón", angulos: [origen, nombre, slogan]}
+  - {nombre: "Red Bull", pais: "Austria", categoria: "bebidas", wiki_es: "Red Bull", angulos: [origen, nombre, logo, slogan]}
+  - {nombre: "Monster Energy", pais: "Estados Unidos", categoria: "bebidas", wiki_es: "Monster Energy", angulos: [origen, logo]}
+  - {nombre: "Gatorade", pais: "Estados Unidos", categoria: "bebidas", wiki_es: "Gatorade", angulos: [origen, nombre, rival, slogan]}
+  - {nombre: "Powerade", pais: "Estados Unidos", categoria: "bebidas", wiki_es: "Powerade", wiki_en: "Powerade", angulos: [origen, rival]}
+  - {nombre: "Schweppes", pais: "Suiza", categoria: "bebidas", wiki_es: "Schweppes", angulos: [origen, nombre, slogan]}
+  - {nombre: "Canada Dry", pais: "Canadá", categoria: "bebidas", wiki_es: "Canada Dry", angulos: [origen, nombre]}
+  - {nombre: "Dr Pepper", pais: "Estados Unidos", categoria: "bebidas", wiki_es: "Dr Pepper", angulos: [origen, nombre]}
+  - {nombre: "Mountain Dew", pais: "Estados Unidos", categoria: "bebidas", wiki_es: "Mountain Dew", angulos: [origen, nombre, logo]}
+  - {nombre: "Lipton", pais: "Reino Unido", categoria: "bebidas", wiki_es: "Lipton", angulos: [origen]}
+  - {nombre: "Nescafé", pais: "Suiza", categoria: "bebidas", wiki_es: "Nescafé", angulos: [origen, nombre, rival]}
+  - {nombre: "Nesquik", pais: "Suiza", categoria: "bebidas", wiki_es: "Nesquik", wiki_en: "Nesquik", angulos: [origen, mascota]}
+  - {nombre: "Milo", pais: "Australia", categoria: "bebidas", wiki_es: "Milo (bebida)", wiki_en: "Milo (drink)", angulos: [origen, nombre]}
+  - {nombre: "Toddy", pais: "Venezuela", categoria: "bebidas", wiki_es: "Toddy (PepsiCo)", angulos: [origen]}
+  - {nombre: "Tang", pais: "Estados Unidos", categoria: "bebidas", wiki_es: "Tang (bebida)", angulos: [origen, slogan]}
+  - {nombre: "Jumex", pais: "México", categoria: "bebidas", wiki_es: "Grupo Jumex", wiki_en: "Jumex", angulos: [origen]}
+  - {nombre: "Jarritos", pais: "México", categoria: "bebidas", wiki_es: "Jarritos", wiki_en: "Jarritos", angulos: [origen, nombre]}
+  - {nombre: "Peñafiel", pais: "México", categoria: "bebidas", wiki_es: "Peñafiel (agua mineral)", wiki_en: "Peñafiel (mineral water)", angulos: [origen]}
+  - {nombre: "Topo Chico", pais: "México", categoria: "bebidas", wiki_es: "Topo Chico", wiki_en: "Topo Chico", angulos: [origen, nombre]}
+  - {nombre: "Frescolita", pais: "Venezuela", categoria: "bebidas", wiki_es: "Frescolita", wiki_en: "Frescolita", angulos: [origen]}
+  - {nombre: "ColaCao", pais: "España", categoria: "bebidas", wiki_es: "Cola Cao", angulos: [origen, nombre, slogan]}
+  - {nombre: "Starbucks", pais: "Estados Unidos", categoria: "cafeterías", wiki_es: "Starbucks", angulos: [origen, nombre, logo, slogan]}
+  - {nombre: "Juan Valdez", pais: "Colombia", categoria: "cafeterías", wiki_es: "Juan Valdez", angulos: [origen, nombre, mascota]}
+  - {nombre: "Café Martínez", pais: "Argentina", categoria: "cafeterías", wiki_es: "Café Martínez", angulos: [origen]}
+  - {nombre: "Nespresso", pais: "Suiza", categoria: "bebidas", wiki_es: "Nespresso", wiki_en: "Nespresso", angulos: [origen, slogan]}
+  - {nombre: "Quilmes", pais: "Argentina", categoria: "cervezas", wiki_es: "Quilmes (cerveza)", angulos: [origen, nombre, logo, slogan]}
+  - {nombre: "Corona", pais: "México", categoria: "cervezas", wiki_es: "Corona (cerveza)", angulos: [origen, nombre, slogan]}
+  - {nombre: "Grupo Modelo", pais: "México", categoria: "cervezas", wiki_es: "Grupo Modelo", angulos: [origen, nombre]}
+  - {nombre: "Heineken", pais: "Países Bajos", categoria: "cervezas", wiki_es: "Heineken International", angulos: [origen, nombre, logo]}
+  - {nombre: "Budweiser", pais: "Estados Unidos", categoria: "cervezas", wiki_es: "Budweiser", angulos: [origen, nombre, slogan]}
+  - {nombre: "Stella Artois", pais: "Bélgica", categoria: "cervezas", wiki_es: "Stella Artois", angulos: [origen, nombre]}
+  - {nombre: "Brahma", pais: "Brasil", categoria: "cervezas", wiki_es: "Brahma (cerveza)", wiki_en: "Brahma (beer)", angulos: [origen, nombre]}
+  - {nombre: "Cusqueña", pais: "Perú", categoria: "cervezas", wiki_es: "Cusqueña", angulos: [origen]}
+  - {nombre: "Águila", pais: "Colombia", categoria: "cervezas", wiki_es: "Cerveza Águila", angulos: [origen]}
+  - {nombre: "Empresas Polar", pais: "Venezuela", categoria: "cervezas", wiki_es: "Empresas Polar", angulos: [origen, nombre]}
+  - {nombre: "Guinness", pais: "Irlanda", categoria: "cervezas", wiki_es: "Guinness (cerveza)", angulos: [origen, nombre, logo, slogan]}
+  - {nombre: "Carlsberg", pais: "Dinamarca", categoria: "cervezas", wiki_es: "Grupo Carlsberg", angulos: [origen, slogan]}
+  - {nombre: "Skol", pais: "Brasil", categoria: "cervezas", wiki_es: "Skol", wiki_en: "Skol", angulos: [origen]}
+  - {nombre: "Bavaria", pais: "Colombia", categoria: "cervezas", wiki_es: "Cervecería Bavaria", angulos: [origen]}
+  - {nombre: "Gallo", pais: "Guatemala", categoria: "cervezas", wiki_es: "Gallo (cerveza)", angulos: [origen]}
+  - {nombre: "Fernet-Branca", pais: "Italia", categoria: "bebidas", wiki_es: "Fernet-Branca", angulos: [origen, nombre]}
+  - {nombre: "Bacardí", pais: "Cuba", categoria: "bebidas", wiki_es: "Bacardí", angulos: [origen, nombre, logo]}
+  - {nombre: "Havana Club", pais: "Cuba", categoria: "bebidas", wiki_es: "Havana Club", wiki_en: "Havana Club", angulos: [origen, rival]}
+  - {nombre: "Johnnie Walker", pais: "Reino Unido", categoria: "bebidas", wiki_es: "Johnnie Walker", angulos: [origen, logo, slogan]}
+  - {nombre: "Smirnoff", pais: "Rusia", categoria: "bebidas", wiki_es: "Smirnoff", wiki_en: "Smirnoff", angulos: [origen]}
+  - {nombre: "Gancia", pais: "Italia", categoria: "bebidas", wiki_es: "Gancia", wiki_en: "Gancia", angulos: [origen]}
+  - {nombre: "Concha y Toro", pais: "Chile", categoria: "bebidas", wiki_es: "Viña Concha y Toro", angulos: [origen]}
+  - {nombre: "Flor de Caña", pais: "Nicaragua", categoria: "bebidas", wiki_es: "Flor de Caña", wiki_en: "Flor de Caña", angulos: [origen]}
+  - {nombre: "Freixenet", pais: "España", categoria: "bebidas", wiki_es: "Freixenet", angulos: [origen]}
+  - {nombre: "Taragüí", pais: "Argentina", categoria: "bebidas", wiki_es: "Taragüi (yerba mate)", angulos: [origen]}
+  - {nombre: "McDonald's", pais: "Estados Unidos", categoria: "comida rápida", wiki_es: "McDonald's", angulos: [origen, nombre, logo, rival, producto_fracasado, mascota, slogan]}
+  - {nombre: "Burger King", pais: "Estados Unidos", categoria: "comida rápida", wiki_es: "Burger King", angulos: [origen, nombre, rival, producto_fracasado, mascota, slogan]}
+  - {nombre: "KFC", pais: "Estados Unidos", categoria: "comida rápida", wiki_es: "Kentucky Fried Chicken", angulos: [origen, nombre, logo, mascota, slogan]}
+  - {nombre: "Subway", pais: "Estados Unidos", categoria: "comida rápida", wiki_es: "Subway", angulos: [origen, nombre]}
+  - {nombre: "Pizza Hut", pais: "Estados Unidos", categoria: "comida rápida", wiki_es: "Pizza Hut", angulos: [origen, nombre, logo]}
+  - {nombre: "Domino's Pizza", pais: "Estados Unidos", categoria: "comida rápida", wiki_es: "Domino's Pizza", angulos: [origen, nombre, logo, casi_quiebra]}
+  - {nombre: "Wendy's", pais: "Estados Unidos", categoria: "comida rápida", wiki_es: "Wendy's", angulos: [origen, nombre, logo, slogan]}
+  - {nombre: "Taco Bell", pais: "Estados Unidos", categoria: "comida rápida", wiki_es: "Taco Bell", angulos: [origen, nombre, mascota, producto_fracasado]}
+  - {nombre: "Pollo Campero", pais: "Guatemala", categoria: "comida rápida", wiki_es: "Pollo Campero", angulos: [origen]}
+  - {nombre: "Dunkin'", pais: "Estados Unidos", categoria: "comida rápida", wiki_es: "Dunkin'", angulos: [origen, nombre]}
+  - {nombre: "Krispy Kreme", pais: "Estados Unidos", categoria: "comida rápida", wiki_es: "Krispy Kreme", wiki_en: "Krispy Kreme", angulos: [origen, casi_quiebra]}
+  - {nombre: "Papa John's", pais: "Estados Unidos", categoria: "comida rápida", wiki_es: "Papa John's Pizza", angulos: [origen]}
+  - {nombre: "Little Caesars", pais: "Estados Unidos", categoria: "comida rápida", wiki_es: "Little Caesars", angulos: [origen, mascota]}
+  - {nombre: "Popeyes", pais: "Estados Unidos", categoria: "comida rápida", wiki_es: "Popeyes", angulos: [origen, rival]}
+  - {nombre: "Carl's Jr.", pais: "Estados Unidos", categoria: "comida rápida", wiki_es: "Carl's Jr.", angulos: [origen]}
+  - {nombre: "Bembos", pais: "Perú", categoria: "comida rápida", wiki_es: "Bembos", wiki_en: "Bembos", angulos: [origen]}
+  - {nombre: "Telepizza", pais: "España", categoria: "comida rápida", wiki_es: "Telepizza", angulos: [origen]}
+  - {nombre: "Crepes & Waffles", pais: "Colombia", categoria: "comida rápida", wiki_es: "Crepes & Waffles", wiki_en: "Crepes & Waffles", angulos: [origen]}
+  - {nombre: "Freddo", pais: "Argentina", categoria: "comida rápida", wiki_es: "Freddo", angulos: [origen]}
+  - {nombre: "Havanna", pais: "Argentina", categoria: "golosinas", wiki_es: "Havanna", angulos: [origen, nombre]}
+  - {nombre: "Grupo Bimbo", pais: "México", categoria: "alimentos", wiki_es: "Grupo Bimbo", angulos: [origen, nombre, logo, mascota]}
+  - {nombre: "Bagley", pais: "Argentina", categoria: "golosinas", wiki_es: "Melville Sewell Bagley", angulos: [origen]}
+  - {nombre: "Arcor", pais: "Argentina", categoria: "golosinas", wiki_es: "Arcor", angulos: [origen, nombre]}
+  - {nombre: "Sabritas", pais: "México", categoria: "snacks", wiki_es: "Sabritas", angulos: [origen, nombre]}
+  - {nombre: "Lay's", pais: "Estados Unidos", categoria: "snacks", wiki_es: "Lay's", angulos: [origen, nombre]}
+  - {nombre: "Doritos", pais: "Estados Unidos", categoria: "snacks", wiki_es: "Doritos", angulos: [origen, nombre, producto_fracasado]}
+  - {nombre: "Cheetos", pais: "Estados Unidos", categoria: "snacks", wiki_es: "Cheetos", angulos: [origen, mascota]}
+  - {nombre: "Pringles", pais: "Estados Unidos", categoria: "snacks", wiki_es: "Pringles", angulos: [origen, nombre, logo, mascota, producto_fracasado]}
+  - {nombre: "Ruffles", pais: "Estados Unidos", categoria: "snacks", wiki_es: "Ruffles", wiki_en: "Ruffles (potato chips)", angulos: [origen]}
+  - {nombre: "Barcel", pais: "México", categoria: "snacks", wiki_es: "Barcel", angulos: [origen]}
+  - {nombre: "Nestlé", pais: "Suiza", categoria: "alimentos", wiki_es: "Nestlé", angulos: [origen, logo]}
+  - {nombre: "Kellogg's", pais: "Estados Unidos", categoria: "alimentos", wiki_es: "Kellanova", angulos: [origen, nombre, mascota, slogan]}
+  - {nombre: "Corn Flakes", pais: "Estados Unidos", categoria: "alimentos", wiki_es: "Copos de maíz", angulos: [origen]}
+  - {nombre: "Frosties", pais: "Estados Unidos", categoria: "alimentos", wiki_es: "Frosted Flakes", wiki_en: "Frosted Flakes", angulos: [mascota]}
+  - {nombre: "Oreo", pais: "Estados Unidos", categoria: "golosinas", wiki_es: "Oreo", angulos: [origen, nombre, rival]}
+  - {nombre: "Kit Kat", pais: "Reino Unido", categoria: "golosinas", wiki_es: "Kit Kat", angulos: [origen, nombre, slogan]}
+  - {nombre: "Snickers", pais: "Estados Unidos", categoria: "golosinas", wiki_es: "Snickers", wiki_en: "Snickers", angulos: [origen, nombre, slogan]}
+  - {nombre: "M&M's", pais: "Estados Unidos", categoria: "golosinas", wiki_es: "M&M's", angulos: [origen, nombre, logo, mascota]}
+  - {nombre: "Mars Incorporated", pais: "Estados Unidos", categoria: "golosinas", wiki_es: "Mars, Incorporated", wiki_en: "Mars Inc.", angulos: [origen]}
+  - {nombre: "Hershey's", pais: "Estados Unidos", categoria: "golosinas", wiki_es: "Hershey's", wiki_en: "The Hershey Company", angulos: [origen]}
+  - {nombre: "Toblerone", pais: "Suiza", categoria: "golosinas", wiki_es: "Toblerone", angulos: [origen, logo]}
+  - {nombre: "Milka", pais: "Suiza", categoria: "golosinas", wiki_es: "Milka", angulos: [origen, mascota]}
+  - {nombre: "Ferrero Rocher", pais: "Italia", categoria: "golosinas", wiki_es: "Ferrero Rocher", wiki_en: "Ferrero Rocher", angulos: [origen]}
+  - {nombre: "Nutella", pais: "Italia", categoria: "golosinas", wiki_es: "Nutella", wiki_en: "Nutella", angulos: [origen, nombre]}
+  - {nombre: "Kinder Sorpresa", pais: "Italia", categoria: "golosinas", wiki_es: "Kinder Sorpresa", angulos: [origen]}
+  - {nombre: "Mentos", pais: "Países Bajos", categoria: "golosinas", wiki_es: "Mentos", wiki_en: "Mentos", angulos: [origen, nombre]}
+  - {nombre: "Chupa Chups", pais: "España", categoria: "golosinas", wiki_es: "Chupa Chups", angulos: [origen, nombre, logo]}
+  - {nombre: "Haribo", pais: "Alemania", categoria: "golosinas", wiki_es: "Haribo", wiki_en: "Haribo", angulos: [origen, nombre]}
+  - {nombre: "Bon o Bon", pais: "Argentina", categoria: "golosinas", wiki_es: "Bon o Bon", angulos: [origen]}
+  - {nombre: "Mantecol", pais: "Argentina", categoria: "golosinas", wiki_es: "Mantecol", wiki_en: "Mantecol", angulos: [origen]}
+  - {nombre: "Garoto", pais: "Brasil", categoria: "golosinas", wiki_es: "Garoto", wiki_en: "Garoto", angulos: [origen]}
+  - {nombre: "Georgalos", pais: "Argentina", categoria: "golosinas", wiki_es: "Georgalos", angulos: [origen]}
+  - {nombre: "Gansito", pais: "México", categoria: "golosinas", wiki_es: "Gansito", wiki_en: "Gansito", angulos: [origen, mascota]}
+  - {nombre: "D'Onofrio", pais: "Perú", categoria: "golosinas", wiki_es: "D'Onofrio", angulos: [origen]}
+  - {nombre: "Colombina", pais: "Colombia", categoria: "golosinas", wiki_es: "Colombina", wiki_en: "Columbine (stock character)", angulos: [origen]}
+  - {nombre: "Productos Ramo", pais: "Colombia", categoria: "alimentos", wiki_es: "Productos Ramo", wiki_en: "Productos Ramo", angulos: [origen]}
+  - {nombre: "Pelon Pelo Rico", pais: "México", categoria: "golosinas", wiki_es: "Pelon Pelo Rico", wiki_en: "Pelon Pelo Rico", angulos: [origen]}
+  - {nombre: "Tajín", pais: "México", categoria: "alimentos", wiki_es: "Tajín (condimento)", wiki_en: "Tajín seasoning", angulos: [origen, nombre]}
+  - {nombre: "Nissin Foods", pais: "Japón", categoria: "alimentos", wiki_es: "Nissin Foods", wiki_en: "Nissin Foods", angulos: [origen]}
+  - {nombre: "Maruchan", pais: "Japón", categoria: "alimentos", wiki_es: "Maruchan", angulos: [origen]}
+  - {nombre: "Cup Noodles", pais: "Japón", categoria: "alimentos", wiki_es: "Cup Noodles", wiki_en: "Cup Noodles", angulos: [origen]}
+  - {nombre: "Knorr", pais: "Alemania", categoria: "alimentos", wiki_es: "Knorr", wiki_en: "Knorr (brand)", angulos: [origen]}
+  - {nombre: "Maggi", pais: "Suiza", categoria: "alimentos", wiki_es: "Maggi", wiki_en: "Maggi", angulos: [origen, nombre]}
+  - {nombre: "Heinz", pais: "Estados Unidos", categoria: "alimentos", wiki_es: "Heinz (compañía)", wiki_en: "Heinz", angulos: [origen, nombre, logo, slogan]}
+  - {nombre: "Hellmann's", pais: "Estados Unidos", categoria: "alimentos", wiki_es: "Hellmann's", angulos: [origen]}
+  - {nombre: "La Serenísima", pais: "Argentina", categoria: "alimentos", wiki_es: "La Serenísima", angulos: [origen]}
+  - {nombre: "Danone", pais: "Francia", categoria: "alimentos", wiki_es: "Grupo Danone", angulos: [origen, nombre]}
+  - {nombre: "Yakult", pais: "Japón", categoria: "alimentos", wiki_es: "Yakult", wiki_en: "Yakult", angulos: [origen, nombre]}
+  - {nombre: "Gloria", pais: "Perú", categoria: "alimentos", wiki_es: "Gloria (marca)", angulos: [origen]}
+  - {nombre: "Alpina", pais: "Colombia", categoria: "alimentos", wiki_es: "Alpina (empresa)", wiki_en: "Alpina Productos Alimenticios", angulos: [origen]}
+  - {nombre: "Grupo Lala", pais: "México", categoria: "alimentos", wiki_es: "Grupo Lala", angulos: [origen]}
+  - {nombre: "SanCor", pais: "Argentina", categoria: "alimentos", wiki_es: "SanCor", angulos: [origen, casi_quiebra]}
+  - {nombre: "Quaker", pais: "Estados Unidos", categoria: "alimentos", wiki_es: "Quaker Oats Company", angulos: [origen, mascota]}
+  - {nombre: "Goya Foods", pais: "Estados Unidos", categoria: "alimentos", wiki_es: "Goya Foods", angulos: [origen]}
+  - {nombre: "Grupo Herdez", pais: "México", categoria: "alimentos", wiki_es: "Grupo Herdez", angulos: [origen]}
+  - {nombre: "La Costeña", pais: "México", categoria: "alimentos", wiki_es: "La Costeña", angulos: [origen]}
+  - {nombre: "Tabasco", pais: "Estados Unidos", categoria: "alimentos", wiki_es: "Salsa Tabasco", wiki_en: "Tabasco sauce", angulos: [origen, nombre]}
+  - {nombre: "Barilla", pais: "Italia", categoria: "alimentos", wiki_es: "Barilla", angulos: [origen]}
+  - {nombre: "Molinos Río de la Plata", pais: "Argentina", categoria: "alimentos", wiki_es: "Molinos Río de la Plata", angulos: [origen]}
+  - {nombre: "Ledesma", pais: "Argentina", categoria: "alimentos", wiki_es: "Grupo Ledesma", angulos: [origen]}
+  - {nombre: "Harina P.A.N.", pais: "Venezuela", categoria: "alimentos", wiki_es: "Harina P.A.N.", angulos: [origen, nombre]}
+  - {nombre: "Gruma", pais: "México", categoria: "alimentos", wiki_es: "Gruma", angulos: [origen]}
+  - {nombre: "Conaprole", pais: "Uruguay", categoria: "alimentos", wiki_es: "Cooperativa Nacional de Productores de Leche", angulos: [origen]}
+  - {nombre: "Savory", pais: "Chile", categoria: "golosinas", wiki_es: "Savory", angulos: [origen]}
+  - {nombre: "Apple", pais: "Estados Unidos", categoria: "tecnología", wiki_es: "Apple", angulos: [origen, nombre, logo, rival, producto_fracasado, slogan]}
+  - {nombre: "Microsoft", pais: "Estados Unidos", categoria: "tecnología", wiki_es: "Microsoft", angulos: [origen, nombre, logo, rival, producto_fracasado]}
+  - {nombre: "Google", pais: "Estados Unidos", categoria: "tecnología", wiki_es: "Google", angulos: [origen, nombre, logo, producto_fracasado]}
+  - {nombre: "Samsung", pais: "Corea del Sur", categoria: "tecnología", wiki_es: "Samsung", angulos: [origen, nombre, logo]}
+  - {nombre: "Sony", pais: "Japón", categoria: "tecnología", wiki_es: "Sony", angulos: [origen, nombre, logo, producto_fracasado]}
+  - {nombre: "Nintendo", pais: "Japón", categoria: "videojuegos", wiki_es: "Nintendo", angulos: [origen, nombre, rival, producto_fracasado, mascota]}
+  - {nombre: "Sega", pais: "Japón", categoria: "videojuegos", wiki_es: "Sega", angulos: [origen, nombre, rival, producto_fracasado, mascota]}
+  - {nombre: "PlayStation", pais: "Japón", categoria: "videojuegos", wiki_es: "PlayStation (marca)", angulos: [origen, rival, producto_fracasado]}
+  - {nombre: "Xbox", pais: "Estados Unidos", categoria: "videojuegos", wiki_es: "Xbox (marca)", angulos: [origen, nombre, rival, producto_fracasado]}
+  - {nombre: "Atari", pais: "Estados Unidos", categoria: "videojuegos", wiki_es: "Atari", angulos: [origen, casi_quiebra, producto_fracasado]}
+  - {nombre: "Nokia", pais: "Finlandia", categoria: "tecnología", wiki_es: "Nokia", angulos: [origen, nombre, casi_quiebra]}
+  - {nombre: "Motorola", pais: "Estados Unidos", categoria: "tecnología", wiki_es: "Motorola, Inc.", angulos: [origen, nombre]}
+  - {nombre: "BlackBerry", pais: "Canadá", categoria: "tecnología", wiki_es: "BlackBerry", angulos: [origen, casi_quiebra]}
+  - {nombre: "LG", pais: "Corea del Sur", categoria: "tecnología", wiki_es: "LG Corporation", angulos: [origen, nombre]}
+  - {nombre: "Huawei", pais: "China", categoria: "tecnología", wiki_es: "Huawei", angulos: [origen, nombre]}
+  - {nombre: "Xiaomi", pais: "China", categoria: "tecnología", wiki_es: "Xiaomi", angulos: [origen, nombre]}
+  - {nombre: "Lenovo", pais: "China", categoria: "tecnología", wiki_es: "Lenovo", angulos: [origen, nombre]}
+  - {nombre: "Hewlett-Packard", pais: "Estados Unidos", categoria: "tecnología", wiki_es: "Hewlett-Packard", angulos: [origen]}
+  - {nombre: "Dell", pais: "Estados Unidos", categoria: "tecnología", wiki_es: "Dell Technologies", wiki_en: "Dell Technologies", angulos: [origen]}
+  - {nombre: "IBM", pais: "Estados Unidos", categoria: "tecnología", wiki_es: "IBM", angulos: [origen, nombre, logo]}
+  - {nombre: "Intel", pais: "Estados Unidos", categoria: "tecnología", wiki_es: "Intel", angulos: [origen, nombre, slogan]}
+  - {nombre: "AMD", pais: "Estados Unidos", categoria: "tecnología", wiki_es: "Advanced Micro Devices", angulos: [origen, rival]}
+  - {nombre: "Nvidia", pais: "Estados Unidos", categoria: "tecnología", wiki_es: "Nvidia", angulos: [origen, nombre]}
+  - {nombre: "Amazon", pais: "Estados Unidos", categoria: "internet", wiki_es: "Amazon", angulos: [origen, nombre, logo, slogan]}
+  - {nombre: "eBay", pais: "Estados Unidos", categoria: "internet", wiki_es: "EBay", angulos: [origen]}
+  - {nombre: "Mercado Libre", pais: "Argentina", categoria: "internet", wiki_es: "MercadoLibre", angulos: [origen, nombre, rival]}
+  - {nombre: "Netflix", pais: "Estados Unidos", categoria: "internet", wiki_es: "Netflix", angulos: [origen, nombre, rival, casi_quiebra]}
+  - {nombre: "YouTube", pais: "Estados Unidos", categoria: "internet", wiki_es: "YouTube", angulos: [origen, nombre, logo]}
+  - {nombre: "Facebook", pais: "Estados Unidos", categoria: "internet", wiki_es: "Facebook", angulos: [origen, nombre, logo, rival]}
+  - {nombre: "Instagram", pais: "Estados Unidos", categoria: "internet", wiki_es: "Instagram", angulos: [origen, nombre, logo]}
+  - {nombre: "WhatsApp", pais: "Estados Unidos", categoria: "internet", wiki_es: "WhatsApp", angulos: [origen, nombre]}
+  - {nombre: "Twitter", pais: "Estados Unidos", categoria: "internet", wiki_es: "Twitter", angulos: [origen, nombre, logo]}
+  - {nombre: "TikTok", pais: "China", categoria: "internet", wiki_es: "TikTok", angulos: [origen, nombre]}
+  - {nombre: "Spotify", pais: "Suecia", categoria: "internet", wiki_es: "Spotify", angulos: [origen, nombre]}
+  - {nombre: "Uber", pais: "Estados Unidos", categoria: "internet", wiki_es: "Uber", angulos: [origen, nombre]}
+  - {nombre: "Rappi", pais: "Colombia", categoria: "internet", wiki_es: "Rappi", angulos: [origen, nombre]}
+  - {nombre: "Airbnb", pais: "Estados Unidos", categoria: "internet", wiki_es: "Airbnb", angulos: [origen, nombre, casi_quiebra]}
+  - {nombre: "Tesla", pais: "Estados Unidos", categoria: "autos", wiki_es: "Tesla, Inc.", angulos: [origen, nombre, casi_quiebra]}
+  - {nombre: "SpaceX", pais: "Estados Unidos", categoria: "tecnología", wiki_es: "SpaceX", angulos: [origen, nombre]}
+  - {nombre: "Kodak", pais: "Estados Unidos", categoria: "tecnología", wiki_es: "Kodak", angulos: [origen, casi_quiebra, producto_fracasado]}
+  - {nombre: "Canon", pais: "Japón", categoria: "tecnología", wiki_es: "Canon Inc.", angulos: [origen, nombre]}
+  - {nombre: "Nikon", pais: "Japón", categoria: "tecnología", wiki_es: "Nikon", angulos: [origen]}
+  - {nombre: "Casio", pais: "Japón", categoria: "tecnología", wiki_es: "Casio Computer", angulos: [origen, nombre]}
+  - {nombre: "Panasonic", pais: "Japón", categoria: "tecnología", wiki_es: "Panasonic", angulos: [origen, nombre]}
+  - {nombre: "Philips", pais: "Países Bajos", categoria: "tecnología", wiki_es: "Philips", angulos: [origen]}
+  - {nombre: "Toshiba", pais: "Japón", categoria: "tecnología", wiki_es: "Toshiba", angulos: [origen]}
+  - {nombre: "Blockbuster", pais: "Estados Unidos", categoria: "entretenimiento", wiki_es: "Blockbuster (empresa)", angulos: [origen, casi_quiebra, rival]}
+  - {nombre: "Myspace", pais: "Estados Unidos", categoria: "internet", wiki_es: "Myspace", angulos: [origen, casi_quiebra]}
+  - {nombre: "Yahoo!", pais: "Estados Unidos", categoria: "internet", wiki_es: "Yahoo!", angulos: [origen, nombre, casi_quiebra]}
+  - {nombre: "Skype", pais: "Luxemburgo", categoria: "internet", wiki_es: "Skype", angulos: [origen]}
+  - {nombre: "Pokémon", pais: "Japón", categoria: "videojuegos", wiki_es: "Pokémon", angulos: [origen, nombre, mascota]}
+  - {nombre: "Game Boy", pais: "Japón", categoria: "videojuegos", wiki_es: "Game Boy", angulos: [origen, producto_fracasado]}
+  - {nombre: "Tamagotchi", pais: "Japón", categoria: "juguetes", wiki_es: "Tamagotchi", angulos: [origen]}
+  - {nombre: "Lego", pais: "Dinamarca", categoria: "juguetes", wiki_es: "LEGO (empresa)", angulos: [origen, nombre, casi_quiebra]}
+  - {nombre: "Mattel", pais: "Estados Unidos", categoria: "juguetes", wiki_es: "Mattel", angulos: [origen]}
+  - {nombre: "Barbie", pais: "Estados Unidos", categoria: "juguetes", wiki_es: "Barbie", angulos: [origen, rival]}
+  - {nombre: "Hot Wheels", pais: "Estados Unidos", categoria: "juguetes", wiki_es: "Hot Wheels", angulos: [origen]}
+  - {nombre: "Hasbro", pais: "Estados Unidos", categoria: "juguetes", wiki_es: "Hasbro", angulos: [origen]}
+  - {nombre: "Monopoly", pais: "Estados Unidos", categoria: "juguetes", wiki_es: "Monopoly", angulos: [origen]}
+  - {nombre: "Play-Doh", pais: "Estados Unidos", categoria: "juguetes", wiki_es: "Play-Doh", angulos: [origen]}
+  - {nombre: "Cubo de Rubik", pais: "Hungría", categoria: "juguetes", wiki_es: "Cubo de Rubik", angulos: [origen]}
+  - {nombre: "Nerf", pais: "Estados Unidos", categoria: "juguetes", wiki_es: "Nerf", angulos: [origen]}
+  - {nombre: "Fisher-Price", pais: "Estados Unidos", categoria: "juguetes", wiki_es: "Fisher-Price", wiki_en: "Fisher-Price", angulos: [origen]}
+  - {nombre: "Playmobil", pais: "Alemania", categoria: "juguetes", wiki_es: "Playmobil", angulos: [origen]}
+  - {nombre: "Uno", pais: "Estados Unidos", categoria: "juguetes", wiki_es: "Uno (juego)", angulos: [origen]}
+  - {nombre: "Jenga", pais: "Reino Unido", categoria: "juguetes", wiki_es: "Jenga", angulos: [origen]}
+  - {nombre: "Twister", pais: "Estados Unidos", categoria: "juguetes", wiki_es: "Twister (juego)", wiki_en: "Twister (game)", angulos: [origen]}
+  - {nombre: "Slinky", pais: "Estados Unidos", categoria: "juguetes", wiki_es: "Slinky (juguete)", angulos: [origen]}
+  - {nombre: "Frisbee", pais: "Estados Unidos", categoria: "juguetes", wiki_es: "Frisbee", angulos: [origen, nombre]}
+  - {nombre: "Hello Kitty", pais: "Japón", categoria: "juguetes", wiki_es: "Hello Kitty", angulos: [origen, mascota]}
+  - {nombre: "Sanrio", pais: "Japón", categoria: "juguetes", wiki_es: "Sanrio", angulos: [origen]}
+  - {nombre: "Duracell", pais: "Estados Unidos", categoria: "hogar", wiki_es: "Duracell", wiki_en: "Duracell", angulos: [origen, mascota]}
+  - {nombre: "Energizer", pais: "Estados Unidos", categoria: "hogar", wiki_es: "Energizer", angulos: [origen, mascota]}
+  - {nombre: "Gillette", pais: "Estados Unidos", categoria: "higiene", wiki_es: "Gillette (marca)", angulos: [origen, slogan]}
+  - {nombre: "Bic", pais: "Francia", categoria: "hogar", wiki_es: "Bic", wiki_en: "Bic", angulos: [origen]}
+  - {nombre: "Faber-Castell", pais: "Alemania", categoria: "hogar", wiki_es: "Faber-Castell", angulos: [origen]}
+  - {nombre: "Post-it", pais: "Estados Unidos", categoria: "hogar", wiki_es: "Post-it", wiki_en: "Post-it note", angulos: [origen]}
+  - {nombre: "3M", pais: "Estados Unidos", categoria: "hogar", wiki_es: "3M", angulos: [origen]}
+  - {nombre: "Velcro", pais: "Suiza", categoria: "hogar", wiki_es: "Velcro", angulos: [origen, nombre]}
+  - {nombre: "Tupperware", pais: "Estados Unidos", categoria: "hogar", wiki_es: "Tupperware", wiki_en: "Tupperware", angulos: [origen, casi_quiebra]}
+  - {nombre: "Zippo", pais: "Estados Unidos", categoria: "hogar", wiki_es: "Zippo", wiki_en: "Zippo", angulos: [origen]}
+  - {nombre: "Ray-Ban", pais: "Estados Unidos", categoria: "ropa", wiki_es: "Ray-Ban", wiki_en: "Ray-Ban", angulos: [origen]}
+  - {nombre: "Rolex", pais: "Suiza", categoria: "ropa", wiki_es: "Rolex", angulos: [origen, nombre]}
+  - {nombre: "Swatch", pais: "Suiza", categoria: "ropa", wiki_es: "Swatch", angulos: [origen, casi_quiebra]}
+  - {nombre: "Nike", pais: "Estados Unidos", categoria: "deportes", wiki_es: "Nike", angulos: [origen, nombre, logo, rival, slogan]}
+  - {nombre: "Adidas", pais: "Alemania", categoria: "deportes", wiki_es: "Adidas", angulos: [origen, nombre, logo, rival]}
+  - {nombre: "Puma", pais: "Alemania", categoria: "deportes", wiki_es: "Puma (marca)", angulos: [origen, nombre, logo, rival]}
+  - {nombre: "Reebok", pais: "Reino Unido", categoria: "deportes", wiki_es: "Reebok", angulos: [origen, casi_quiebra]}
+  - {nombre: "Vans", pais: "Estados Unidos", categoria: "deportes", wiki_es: "Vans", wiki_en: "Vans", angulos: [origen]}
+  - {nombre: "New Balance", pais: "Estados Unidos", categoria: "deportes", wiki_es: "New Balance", angulos: [origen]}
+  - {nombre: "Fila", pais: "Italia", categoria: "deportes", wiki_es: "Fila (marca)", wiki_en: "Fila", angulos: [origen]}
+  - {nombre: "Penalty", pais: "Brasil", categoria: "deportes", wiki_es: "Penalty (marca)", angulos: [origen]}
+  - {nombre: "Umbro", pais: "Reino Unido", categoria: "deportes", wiki_es: "Umbro (marca)", angulos: [origen]}
+  - {nombre: "Kappa", pais: "Italia", categoria: "deportes", wiki_es: "Kappa (marca)", angulos: [origen]}
+  - {nombre: "Asics", pais: "Japón", categoria: "deportes", wiki_es: "Asics", wiki_en: "Asics", angulos: [origen, nombre]}
+  - {nombre: "Under Armour", pais: "Estados Unidos", categoria: "deportes", wiki_es: "Under Armour", angulos: [origen]}
+  - {nombre: "Wilson", pais: "Estados Unidos", categoria: "deportes", wiki_es: "Wilson Sporting Goods", wiki_en: "Wilson Sporting Goods", angulos: [origen]}
+  - {nombre: "Speedo", pais: "Australia", categoria: "deportes", wiki_es: "Speedo", wiki_en: "Speedo", angulos: [origen]}
+  - {nombre: "Lacoste", pais: "Francia", categoria: "ropa", wiki_es: "Lacoste", angulos: [origen, nombre, logo]}
+  - {nombre: "Levi's", pais: "Estados Unidos", categoria: "ropa", wiki_es: "Levi Strauss & Co.", angulos: [origen, nombre, logo]}
+  - {nombre: "Zara", pais: "España", categoria: "ropa", wiki_es: "Inditex", angulos: [origen, nombre]}
+  - {nombre: "H&M", pais: "Suecia", categoria: "ropa", wiki_es: "H&M", angulos: [origen]}
+  - {nombre: "Mango", pais: "España", categoria: "ropa", wiki_es: "Mango (empresa)", angulos: [origen]}
+  - {nombre: "Tommy Hilfiger", pais: "Estados Unidos", categoria: "ropa", wiki_es: "Tommy Hilfiger (empresa)", wiki_en: "Tommy Hilfiger (company)", angulos: [origen]}
+  - {nombre: "Gucci", pais: "Italia", categoria: "ropa", wiki_es: "Gucci", angulos: [origen]}
+  - {nombre: "Louis Vuitton", pais: "Francia", categoria: "ropa", wiki_es: "Louis Vuitton", angulos: [origen]}
+  - {nombre: "Chanel", pais: "Francia", categoria: "ropa", wiki_es: "Chanel", angulos: [origen]}
+  - {nombre: "Havaianas", pais: "Brasil", categoria: "ropa", wiki_es: "Havaianas", angulos: [origen, nombre]}
+  - {nombre: "Crocs", pais: "Estados Unidos", categoria: "ropa", wiki_es: "Crocs", angulos: [origen, casi_quiebra]}
+  - {nombre: "The North Face", pais: "Estados Unidos", categoria: "ropa", wiki_es: "The North Face", wiki_en: "The North Face", angulos: [origen]}
+  - {nombre: "Arturo Calle", pais: "Colombia", categoria: "ropa", wiki_es: "Arturo Calle", angulos: [origen]}
+  - {nombre: "Totto", pais: "Colombia", categoria: "ropa", wiki_es: "Totto", angulos: [origen]}
+  - {nombre: "Topitop", pais: "Perú", categoria: "ropa", wiki_es: "Topitop", angulos: [origen]}
+  - {nombre: "Ford", pais: "Estados Unidos", categoria: "autos", wiki_es: "Ford Motor Company", angulos: [origen, nombre, logo, producto_fracasado]}
+  - {nombre: "Toyota", pais: "Japón", categoria: "autos", wiki_es: "Toyota", angulos: [origen, nombre, logo]}
+  - {nombre: "Chevrolet", pais: "Estados Unidos", categoria: "autos", wiki_es: "Chevrolet", angulos: [origen, nombre, logo]}
+  - {nombre: "Fiat", pais: "Italia", categoria: "autos", wiki_es: "Fiat S.p.A.", angulos: [origen, nombre]}
+  - {nombre: "Renault", pais: "Francia", categoria: "autos", wiki_es: "Renault", angulos: [origen]}
+  - {nombre: "Peugeot", pais: "Francia", categoria: "autos", wiki_es: "Peugeot", angulos: [origen, nombre]}
+  - {nombre: "Honda", pais: "Japón", categoria: "autos", wiki_es: "Honda", angulos: [origen, nombre]}
+  - {nombre: "Nissan", pais: "Japón", categoria: "autos", wiki_es: "Nissan", angulos: [origen, nombre]}
+  - {nombre: "Mazda", pais: "Japón", categoria: "autos", wiki_es: "Mazda", angulos: [origen, nombre]}
+  - {nombre: "Hyundai", pais: "Corea del Sur", categoria: "autos", wiki_es: "Hyundai Motor Company", angulos: [origen, nombre]}
+  - {nombre: "Kia", pais: "Corea del Sur", categoria: "autos", wiki_es: "Kia Motors", angulos: [origen, nombre]}
+  - {nombre: "Ferrari", pais: "Italia", categoria: "autos", wiki_es: "Ferrari", angulos: [origen, nombre, logo, rival]}
+  - {nombre: "Lamborghini", pais: "Italia", categoria: "autos", wiki_es: "Lamborghini", angulos: [origen, nombre, rival]}
+  - {nombre: "Porsche", pais: "Alemania", categoria: "autos", wiki_es: "Porsche", angulos: [origen, nombre]}
+  - {nombre: "BMW", pais: "Alemania", categoria: "autos", wiki_es: "BMW", angulos: [origen, nombre, logo]}
+  - {nombre: "Mercedes-Benz", pais: "Alemania", categoria: "autos", wiki_es: "Mercedes-Benz", angulos: [origen, nombre, logo]}
+  - {nombre: "Audi", pais: "Alemania", categoria: "autos", wiki_es: "Audi", angulos: [origen, nombre, logo]}
+  - {nombre: "Jeep", pais: "Estados Unidos", categoria: "autos", wiki_es: "Jeep", angulos: [origen, nombre]}
+  - {nombre: "Mitsubishi Motors", pais: "Japón", categoria: "autos", wiki_es: "Mitsubishi Motors", angulos: [origen, nombre]}
+  - {nombre: "Subaru", pais: "Japón", categoria: "autos", wiki_es: "Subaru", angulos: [origen, nombre, logo]}
+  - {nombre: "Suzuki", pais: "Japón", categoria: "autos", wiki_es: "Suzuki", angulos: [origen]}
+  - {nombre: "Yamaha", pais: "Japón", categoria: "autos", wiki_es: "Yamaha Corporation", angulos: [origen]}
+  - {nombre: "Harley-Davidson", pais: "Estados Unidos", categoria: "autos", wiki_es: "Harley-Davidson", angulos: [origen, casi_quiebra]}
+  - {nombre: "Ducati", pais: "Italia", categoria: "autos", wiki_es: "Ducati", angulos: [origen]}
+  - {nombre: "Volvo", pais: "Suecia", categoria: "autos", wiki_es: "Volvo Cars", angulos: [origen, nombre]}
+  - {nombre: "Citroën", pais: "Francia", categoria: "autos", wiki_es: "Citroën", angulos: [origen]}
+  - {nombre: "Vespa", pais: "Italia", categoria: "autos", wiki_es: "Vespa", wiki_en: "Hornet", angulos: [origen, nombre]}
+  - {nombre: "Michelin", pais: "Francia", categoria: "autos", wiki_es: "Michelin", angulos: [origen, mascota]}
+  - {nombre: "Pirelli", pais: "Italia", categoria: "autos", wiki_es: "Pirelli", angulos: [origen]}
+  - {nombre: "Goodyear", pais: "Estados Unidos", categoria: "autos", wiki_es: "Goodyear", angulos: [origen, nombre]}
+  - {nombre: "Bridgestone", pais: "Japón", categoria: "autos", wiki_es: "Bridgestone", angulos: [origen, nombre]}
+  - {nombre: "Shell", pais: "Reino Unido", categoria: "energía", wiki_es: "Shell plc", angulos: [origen, nombre, logo]}
+  - {nombre: "YPF", pais: "Argentina", categoria: "energía", wiki_es: "YPF", angulos: [origen]}
+  - {nombre: "Pemex", pais: "México", categoria: "energía", wiki_es: "Petróleos Mexicanos", angulos: [origen]}
+  - {nombre: "Petrobras", pais: "Brasil", categoria: "energía", wiki_es: "Petrobras", angulos: [origen]}
+  - {nombre: "Ecopetrol", pais: "Colombia", categoria: "energía", wiki_es: "Ecopetrol", angulos: [origen]}
+  - {nombre: "Copec", pais: "Chile", categoria: "energía", wiki_es: "Copec", angulos: [origen]}
+  - {nombre: "Walmart", pais: "Estados Unidos", categoria: "supermercados", wiki_es: "Walmart", angulos: [origen, nombre]}
+  - {nombre: "Carrefour", pais: "Francia", categoria: "supermercados", wiki_es: "Carrefour", angulos: [origen, nombre]}
+  - {nombre: "Costco", pais: "Estados Unidos", categoria: "supermercados", wiki_es: "Costco", angulos: [origen]}
+  - {nombre: "IKEA", pais: "Suecia", categoria: "tiendas", wiki_es: "IKEA", angulos: [origen, nombre, producto_fracasado]}
+  - {nombre: "Oxxo", pais: "México", categoria: "tiendas", wiki_es: "Oxxo", angulos: [origen, nombre]}
+  - {nombre: "7-Eleven", pais: "Estados Unidos", categoria: "tiendas", wiki_es: "7-Eleven", angulos: [origen, nombre]}
+  - {nombre: "Falabella", pais: "Chile", categoria: "tiendas", wiki_es: "Falabella", angulos: [origen]}
+  - {nombre: "Ripley", pais: "Chile", categoria: "tiendas", wiki_es: "Ripley (tienda)", angulos: [origen]}
+  - {nombre: "Liverpool", pais: "México", categoria: "tiendas", wiki_es: "El Puerto de Liverpool", angulos: [origen, nombre]}
+  - {nombre: "Soriana", pais: "México", categoria: "supermercados", wiki_es: "Organización Soriana", angulos: [origen]}
+  - {nombre: "Grupo Éxito", pais: "Colombia", categoria: "supermercados", wiki_es: "Grupo Éxito", angulos: [origen]}
+  - {nombre: "Coto", pais: "Argentina", categoria: "supermercados", wiki_es: "Coto (supermercado)", angulos: [origen]}
+  - {nombre: "Cencosud", pais: "Chile", categoria: "supermercados", wiki_es: "Cencosud", angulos: [origen]}
+  - {nombre: "Sodimac", pais: "Chile", categoria: "tiendas", wiki_es: "Sodimac", angulos: [origen]}
+  - {nombre: "The Home Depot", pais: "Estados Unidos", categoria: "tiendas", wiki_es: "The Home Depot", angulos: [origen]}
+  - {nombre: "Toys \"R\" Us", pais: "Estados Unidos", categoria: "tiendas", wiki_es: "Toys \"R\" Us", angulos: [origen, casi_quiebra]}
+  - {nombre: "Sears", pais: "Estados Unidos", categoria: "tiendas", wiki_es: "Sears", angulos: [origen, casi_quiebra]}
+  - {nombre: "Frávega", pais: "Argentina", categoria: "tiendas", wiki_es: "Frávega", angulos: [origen]}
+  - {nombre: "Grupo Elektra", pais: "México", categoria: "tiendas", wiki_es: "Grupo Elektra", angulos: [origen]}
+  - {nombre: "Coppel", pais: "México", categoria: "tiendas", wiki_es: "Coppel", angulos: [origen]}
+  - {nombre: "Sanborns", pais: "México", categoria: "tiendas", wiki_es: "Sanborns", angulos: [origen]}
+  - {nombre: "El Palacio de Hierro", pais: "México", categoria: "tiendas", wiki_es: "El Palacio de Hierro", angulos: [origen]}
+  - {nombre: "Chedraui", pais: "México", categoria: "supermercados", wiki_es: "Chedraui", angulos: [origen]}
+  - {nombre: "Farmacias Similares", pais: "México", categoria: "tiendas", wiki_es: "Farmacias Similares", angulos: [origen, mascota]}
+  - {nombre: "E. Wong", pais: "Perú", categoria: "supermercados", wiki_es: "Wong (supermercado)", angulos: [origen]}
+  - {nombre: "Avon", pais: "Estados Unidos", categoria: "higiene", wiki_es: "Avon Products", angulos: [origen]}
+  - {nombre: "L'Oréal", pais: "Francia", categoria: "higiene", wiki_es: "L'Oréal", angulos: [origen, nombre, slogan]}
+  - {nombre: "Nivea", pais: "Alemania", categoria: "higiene", wiki_es: "Nivea", wiki_en: "Nivea", angulos: [origen]}
+  - {nombre: "Colgate", pais: "Estados Unidos", categoria: "higiene", wiki_es: "Colgate-Palmolive", angulos: [origen, nombre, rival]}
+  - {nombre: "Pantene", pais: "Suiza", categoria: "higiene", wiki_es: "Pantene", wiki_en: "Pantene", angulos: [origen]}
+  - {nombre: "Johnson & Johnson", pais: "Estados Unidos", categoria: "higiene", wiki_es: "Johnson & Johnson", angulos: [origen]}
+  - {nombre: "Huggies", pais: "Estados Unidos", categoria: "higiene", wiki_es: "Huggies", wiki_en: "Huggies", angulos: [origen]}
+  - {nombre: "Kleenex", pais: "Estados Unidos", categoria: "higiene", wiki_es: "Kleenex", wiki_en: "Kleenex", angulos: [origen, nombre]}
+  - {nombre: "Rexona", pais: "Australia", categoria: "higiene", wiki_es: "Rexona", wiki_en: "Rexona", angulos: [origen]}
+  - {nombre: "Old Spice", pais: "Estados Unidos", categoria: "higiene", wiki_es: "Old Spice", angulos: [origen, slogan]}
+  - {nombre: "Listerine", pais: "Estados Unidos", categoria: "higiene", wiki_es: "Listerine", wiki_en: "Listerine", angulos: [origen]}
+  - {nombre: "Alka-Seltzer", pais: "Estados Unidos", categoria: "higiene", wiki_es: "Alka-Seltzer", angulos: [origen, mascota]}
+  - {nombre: "Visa", pais: "Estados Unidos", categoria: "bancos", wiki_es: "Visa Inc.", angulos: [origen, nombre]}
+  - {nombre: "Mastercard", pais: "Estados Unidos", categoria: "bancos", wiki_es: "Mastercard", angulos: [origen, nombre]}
+  - {nombre: "PayPal", pais: "Estados Unidos", categoria: "bancos", wiki_es: "PayPal", angulos: [origen]}
+  - {nombre: "Western Union", pais: "Estados Unidos", categoria: "bancos", wiki_es: "Western Union", angulos: [origen]}
+  - {nombre: "Banco Santander", pais: "España", categoria: "bancos", wiki_es: "Banco Santander", angulos: [origen]}
+  - {nombre: "BBVA", pais: "España", categoria: "bancos", wiki_es: "BBVA", angulos: [origen]}
+  - {nombre: "Itaú", pais: "Brasil", categoria: "bancos", wiki_es: "Itaú Unibanco", angulos: [origen]}
+  - {nombre: "Nubank", pais: "Brasil", categoria: "bancos", wiki_es: "Nubank", angulos: [origen, nombre]}
+  - {nombre: "Movistar", pais: "España", categoria: "telecomunicaciones", wiki_es: "Movistar", wiki_en: "Movistar", angulos: [origen, nombre]}
+  - {nombre: "Claro", pais: "México", categoria: "telecomunicaciones", wiki_es: "América Móvil", angulos: [origen]}
+  - {nombre: "Telcel", pais: "México", categoria: "telecomunicaciones", wiki_es: "Telcel", angulos: [origen]}
+  - {nombre: "Telmex", pais: "México", categoria: "telecomunicaciones", wiki_es: "Telmex", angulos: [origen]}
+  - {nombre: "Telefónica", pais: "España", categoria: "telecomunicaciones", wiki_es: "Telefónica", angulos: [origen]}
+  - {nombre: "Entel", pais: "Chile", categoria: "telecomunicaciones", wiki_es: "Entel (Chile)", angulos: [origen]}
+  - {nombre: "Televisa", pais: "México", categoria: "medios", wiki_es: "Televisa", angulos: [origen]}
+  - {nombre: "TV Globo", pais: "Brasil", categoria: "medios", wiki_es: "TV Globo", angulos: [origen]}
+  - {nombre: "Telefe", pais: "Argentina", categoria: "medios", wiki_es: "Telefe", angulos: [origen]}
+  - {nombre: "Disney", pais: "Estados Unidos", categoria: "entretenimiento", wiki_es: "The Walt Disney Company", angulos: [origen, nombre, logo, mascota]}
+  - {nombre: "Warner Bros.", pais: "Estados Unidos", categoria: "entretenimiento", wiki_es: "Warner Bros.", angulos: [origen]}
+  - {nombre: "Pixar", pais: "Estados Unidos", categoria: "entretenimiento", wiki_es: "Pixar", angulos: [origen, nombre]}
+  - {nombre: "DreamWorks Animation", pais: "Estados Unidos", categoria: "entretenimiento", wiki_es: "DreamWorks Animation", angulos: [origen]}
+  - {nombre: "Marvel Comics", pais: "Estados Unidos", categoria: "entretenimiento", wiki_es: "Marvel Comics", angulos: [origen, casi_quiebra]}
+  - {nombre: "DC Comics", pais: "Estados Unidos", categoria: "entretenimiento", wiki_es: "DC Comics", angulos: [origen]}
+  - {nombre: "Cartoon Network", pais: "Estados Unidos", categoria: "entretenimiento", wiki_es: "Cartoon Network", angulos: [origen]}
+  - {nombre: "Nickelodeon", pais: "Estados Unidos", categoria: "entretenimiento", wiki_es: "Nickelodeon", angulos: [origen]}
+  - {nombre: "MTV", pais: "Estados Unidos", categoria: "entretenimiento", wiki_es: "MTV", angulos: [origen, nombre]}
+  - {nombre: "HBO", pais: "Estados Unidos", categoria: "entretenimiento", wiki_es: "HBO", angulos: [origen]}
+  - {nombre: "Paramount Pictures", pais: "Estados Unidos", categoria: "entretenimiento", wiki_es: "Paramount Pictures", angulos: [origen, logo]}
+  - {nombre: "Billiken", pais: "Argentina", categoria: "medios", wiki_es: "Billiken", angulos: [origen]}
+  - {nombre: "LATAM Airlines", pais: "Chile", categoria: "aerolíneas", wiki_es: "LATAM Airlines Group", angulos: [origen, nombre]}
+  - {nombre: "Avianca", pais: "Colombia", categoria: "aerolíneas", wiki_es: "Avianca", angulos: [origen]}
+  - {nombre: "Aerolíneas Argentinas", pais: "Argentina", categoria: "aerolíneas", wiki_es: "Aerolíneas Argentinas", angulos: [origen]}
+  - {nombre: "Aeroméxico", pais: "México", categoria: "aerolíneas", wiki_es: "Aeroméxico", angulos: [origen]}
+  - {nombre: "Copa Airlines", pais: "Panamá", categoria: "aerolíneas", wiki_es: "Copa Airlines", angulos: [origen]}
+  - {nombre: "Volaris", pais: "México", categoria: "aerolíneas", wiki_es: "Volaris", angulos: [origen]}
+  - {nombre: "American Airlines", pais: "Estados Unidos", categoria: "aerolíneas", wiki_es: "American Airlines", angulos: [origen]}
+  - {nombre: "Ryanair", pais: "Irlanda", categoria: "aerolíneas", wiki_es: "Ryanair", angulos: [origen]}
+  - {nombre: "FedEx", pais: "Estados Unidos", categoria: "logística", wiki_es: "FedEx", angulos: [origen, nombre, logo]}
+  - {nombre: "DHL", pais: "Alemania", categoria: "logística", wiki_es: "DHL", angulos: [origen, nombre]}
+  - {nombre: "Embraer", pais: "Brasil", categoria: "industria", wiki_es: "Embraer", angulos: [origen]}
+  - {nombre: "Cemex", pais: "México", categoria: "industria", wiki_es: "Cemex", angulos: [origen]}
+  - {nombre: "FEMSA", pais: "México", categoria: "industria", wiki_es: "Fomento Económico Mexicano", angulos: [origen]}
+  - {nombre: "Despegar.com", pais: "Argentina", categoria: "internet", wiki_es: "Despegar", angulos: [origen]}
+  - {nombre: "Globant", pais: "Argentina", categoria: "tecnología", wiki_es: "Globant", angulos: [origen]}
+  - {nombre: "Xerox", pais: "Estados Unidos", categoria: "tecnología", wiki_es: "Xerox", angulos: [origen, nombre]}
+  - {nombre: "Dyson", pais: "Reino Unido", categoria: "hogar", wiki_es: "Dyson", wiki_en: "Dyson (company)", angulos: [origen]}
+  - {nombre: "Singer", pais: "Estados Unidos", categoria: "hogar", wiki_es: "Singer Corporation", wiki_en: "Singer Corporation", angulos: [origen]}
+  - {nombre: "Whirlpool", pais: "Estados Unidos", categoria: "hogar", wiki_es: "Whirlpool Corporation", angulos: [origen]}
+  - {nombre: "Electrolux", pais: "Suecia", categoria: "hogar", wiki_es: "Electrolux", angulos: [origen]}
+  - {nombre: "Mabe", pais: "México", categoria: "hogar", wiki_es: "Mabe", angulos: [origen]}
+  - {nombre: "Crayola", pais: "Estados Unidos", categoria: "hogar", wiki_es: "Crayola", angulos: [origen]}
+  - {nombre: "Moleskine", pais: "Italia", categoria: "hogar", wiki_es: "Moleskine", wiki_en: "Moleskine", angulos: [origen]}
+  - {nombre: "GoPro", pais: "Estados Unidos", categoria: "tecnología", wiki_es: "GoPro", angulos: [origen]}
+  - {nombre: "Bose", pais: "Estados Unidos", categoria: "tecnología", wiki_es: "Bose Corporation", angulos: [origen]}
+  - {nombre: "JBL", pais: "Estados Unidos", categoria: "tecnología", wiki_es: "JBL", angulos: [origen]}
+  - {nombre: "Beats Electronics", pais: "Estados Unidos", categoria: "tecnología", wiki_es: "Beats Electronics", angulos: [origen]}
+  - {nombre: "iPod", pais: "Estados Unidos", categoria: "tecnología", wiki_es: "IPod", angulos: [origen, producto_fracasado]}
+  - {nombre: "iPhone", pais: "Estados Unidos", categoria: "tecnología", wiki_es: "IPhone", angulos: [origen]}
+  - {nombre: "Android", pais: "Estados Unidos", categoria: "tecnología", wiki_es: "Android", angulos: [origen, nombre, mascota]}
+  - {nombre: "Microsoft Windows", pais: "Estados Unidos", categoria: "tecnología", wiki_es: "Microsoft Windows", angulos: [origen, producto_fracasado]}
+  - {nombre: "Mozilla Firefox", pais: "Estados Unidos", categoria: "internet", wiki_es: "Mozilla Firefox", angulos: [origen, nombre]}
+  - {nombre: "Netscape Navigator", pais: "Estados Unidos", categoria: "internet", wiki_es: "Netscape Navigator", angulos: [origen, casi_quiebra, rival]}
+  - {nombre: "Internet Explorer", pais: "Estados Unidos", categoria: "internet", wiki_es: "Internet Explorer", angulos: [origen, rival]}
+  - {nombre: "Google Chrome", pais: "Estados Unidos", categoria: "internet", wiki_es: "Google Chrome", angulos: [origen]}
+  - {nombre: "Gmail", pais: "Estados Unidos", categoria: "internet", wiki_es: "Gmail", angulos: [origen]}
+  - {nombre: "Pinterest", pais: "Estados Unidos", categoria: "internet", wiki_es: "Pinterest", angulos: [origen]}
+  - {nombre: "Snapchat", pais: "Estados Unidos", categoria: "internet", wiki_es: "Snapchat", angulos: [origen, nombre]}
+  - {nombre: "Reddit", pais: "Estados Unidos", categoria: "internet", wiki_es: "Reddit", angulos: [origen, mascota]}
+  - {nombre: "LinkedIn", pais: "Estados Unidos", categoria: "internet", wiki_es: "LinkedIn", wiki_en: "LinkedIn", angulos: [origen]}
+  - {nombre: "Telegram", pais: "Rusia", categoria: "internet", wiki_es: "Telegram", angulos: [origen]}
+  - {nombre: "Shein", pais: "China", categoria: "internet", wiki_es: "Shein", angulos: [origen]}
+  - {nombre: "AliExpress", pais: "China", categoria: "internet", wiki_es: "AliExpress", wiki_en: "AliExpress", angulos: [origen]}
+  - {nombre: "Alibaba Group", pais: "China", categoria: "internet", wiki_es: "Alibaba Group", angulos: [origen]}
+  - {nombre: "Tencent", pais: "China", categoria: "internet", wiki_es: "Tencent", angulos: [origen]}
+  - {nombre: "Duolingo", pais: "Estados Unidos", categoria: "internet", wiki_es: "Duolingo", angulos: [origen, mascota]}
+  - {nombre: "Waze", pais: "Israel", categoria: "internet", wiki_es: "Waze", angulos: [origen]}
+  - {nombre: "Shazam", pais: "Reino Unido", categoria: "internet", wiki_es: "Shazam (aplicación)", angulos: [origen]}
+  - {nombre: "Candy Crush Saga", pais: "Reino Unido", categoria: "videojuegos", wiki_es: "Candy Crush Saga", angulos: [origen]}
+  - {nombre: "Angry Birds", pais: "Finlandia", categoria: "videojuegos", wiki_es: "Angry Birds", angulos: [origen, casi_quiebra]}
+  - {nombre: "Capcom", pais: "Japón", categoria: "videojuegos", wiki_es: "Capcom", angulos: [origen]}
+  - {nombre: "Konami", pais: "Japón", categoria: "videojuegos", wiki_es: "Konami", angulos: [origen]}
+  - {nombre: "Ubisoft", pais: "Francia", categoria: "videojuegos", wiki_es: "Ubisoft", angulos: [origen]}
+  - {nombre: "Electronic Arts", pais: "Estados Unidos", categoria: "videojuegos", wiki_es: "Electronic Arts", angulos: [origen]}
+  - {nombre: "Activision", pais: "Estados Unidos", categoria: "videojuegos", wiki_es: "Activision", angulos: [origen]}
+  - {nombre: "Epic Games", pais: "Estados Unidos", categoria: "videojuegos", wiki_es: "Epic Games", angulos: [origen]}
+  - {nombre: "Fortnite", pais: "Estados Unidos", categoria: "videojuegos", wiki_es: "Fortnite", angulos: [origen]}
+  - {nombre: "Minecraft", pais: "Suecia", categoria: "videojuegos", wiki_es: "Minecraft", angulos: [origen]}
+  - {nombre: "Roblox", pais: "Estados Unidos", categoria: "videojuegos", wiki_es: "Roblox", angulos: [origen]}
+  - {nombre: "Rockstar Games", pais: "Estados Unidos", categoria: "videojuegos", wiki_es: "Rockstar Games", angulos: [origen]}
+  - {nombre: "Valve Corporation", pais: "Estados Unidos", categoria: "videojuegos", wiki_es: "Valve Corporation", angulos: [origen]}
+  - {nombre: "Steam", pais: "Estados Unidos", categoria: "videojuegos", wiki_es: "Steam", angulos: [origen]}
+  - {nombre: "Blizzard Entertainment", pais: "Estados Unidos", categoria: "videojuegos", wiki_es: "Blizzard Entertainment", angulos: [origen]}
+  - {nombre: "Square Enix", pais: "Japón", categoria: "videojuegos", wiki_es: "Square Enix", angulos: [origen]}
+  - {nombre: "Bandai Namco", pais: "Japón", categoria: "videojuegos", wiki_es: "Bandai Namco Holdings", angulos: [origen]}
+  - {nombre: "Pac-Man", pais: "Japón", categoria: "videojuegos", wiki_es: "Pac-Man", angulos: [origen, nombre, mascota]}
+  - {nombre: "Sonic the Hedgehog", pais: "Japón", categoria: "videojuegos", wiki_es: "Sonic (personaje)", angulos: [origen, mascota]}
+  - {nombre: "Riot Games", pais: "Estados Unidos", categoria: "videojuegos", wiki_es: "Riot Games", angulos: [origen]}
+  - {nombre: "Twitch", pais: "Estados Unidos", categoria: "internet", wiki_es: "Twitch", angulos: [origen, nombre]}
+  - {nombre: "Discord", pais: "Estados Unidos", categoria: "internet", wiki_es: "Discord", angulos: [origen]}
+  - {nombre: "Coca-Cola Zero", pais: "Estados Unidos", categoria: "bebidas", wiki_es: "Coca-Cola Zero", angulos: [origen]}
+  - {nombre: "Ambev", pais: "Brasil", categoria: "cervezas", wiki_es: "AmBev", wiki_en: "Ambev", angulos: [origen]}
+  - {nombre: "Hamburguesas El Corral", pais: "Colombia", categoria: "comida rápida", wiki_es: "Hamburguesas El Corral", angulos: [origen]}
+  - {nombre: "Grido", pais: "Argentina", categoria: "comida rápida", wiki_es: "Grido Helado", wiki_en: "Grido Helado", angulos: [origen]}
+  - {nombre: "Garbarino", pais: "Argentina", categoria: "tiendas", wiki_es: "Garbarino", angulos: [origen, casi_quiebra]}
+  - {nombre: "Paris", pais: "Chile", categoria: "tiendas", wiki_es: "París (tienda por departamento)", angulos: [origen]}
+  - {nombre: "Lider", pais: "Chile", categoria: "supermercados", wiki_es: "Líder (supermercado)", angulos: [origen]}
+  - {nombre: "Tottus", pais: "Perú", categoria: "supermercados", wiki_es: "Tottus", angulos: [origen]}
+  - {nombre: "Plaza Vea", pais: "Perú", categoria: "supermercados", wiki_es: "Plaza Vea", angulos: [origen]}
+  - {nombre: "Jumbo", pais: "Chile", categoria: "supermercados", wiki_es: "Jumbo (hipermercado)", angulos: [origen]}
+  - {nombre: "Easy", pais: "Chile", categoria: "tiendas", wiki_es: "Easy (tienda)", wiki_en: "Easy (store)", angulos: [origen]}
+  - {nombre: "Club Colombia", pais: "Colombia", categoria: "cervezas", wiki_es: "Cerveza Club Colombia", angulos: [origen]}
+  - {nombre: "Patagonia", pais: "Argentina", categoria: "cervezas", wiki_es: "Cerveza Patagonia", angulos: [origen]}
+  - {nombre: "Pilsen", pais: "Uruguay", categoria: "cervezas", wiki_es: "Cerveza Pilsen (Uruguay)", angulos: [origen]}
+  - {nombre: "Presidente", pais: "República Dominicana", categoria: "cervezas", wiki_es: "Presidente (cerveza)", wiki_en: "Presidente (beer)", angulos: [origen]}
+  - {nombre: "Imperial", pais: "Costa Rica", categoria: "cervezas", wiki_es: "Cerveza Imperial", angulos: [origen]}
+  - {nombre: "Paceña", pais: "Bolivia", categoria: "cervezas", wiki_es: "Cerveza Paceña", angulos: [origen]}
+  - {nombre: "Lux", pais: "Reino Unido", categoria: "higiene", wiki_es: "Lux (jabón)", wiki_en: "Lux (soap)", angulos: [origen]}
+  - {nombre: "Palmolive", pais: "Estados Unidos", categoria: "higiene", wiki_es: "Palmolive", angulos: [origen]}
+  - {nombre: "Sedal", pais: "Argentina", categoria: "higiene", wiki_es: "Sedal", angulos: [origen]}
+  - {nombre: "Trident", pais: "Estados Unidos", categoria: "golosinas", wiki_es: "Trident (chicle)", wiki_en: "Trident (gum)", angulos: [origen]}
+  - {nombre: "Bubbaloo", pais: "Brasil", categoria: "golosinas", wiki_es: "Bubbaloo", wiki_en: "Bubbaloo", angulos: [origen]}
+  - {nombre: "Chiclets", pais: "Estados Unidos", categoria: "golosinas", wiki_es: "Chiclets", wiki_en: "Chiclets", angulos: [origen]}
+  - {nombre: "Skittles", pais: "Estados Unidos", categoria: "golosinas", wiki_es: "Skittles", wiki_en: "Skittles (confectionery)", angulos: [origen, slogan]}
+  - {nombre: "Twix", pais: "Reino Unido", categoria: "golosinas", wiki_es: "Twix", wiki_en: "Twix", angulos: [origen]}
+  - {nombre: "Ferrero", pais: "Italia", categoria: "golosinas", wiki_es: "Ferrero", angulos: [origen]}
+  - {nombre: "Lindt", pais: "Suiza", categoria: "golosinas", wiki_es: "Lindt & Sprüngli", wiki_en: "Lindt", angulos: [origen]}
+  - {nombre: "Cadbury", pais: "Reino Unido", categoria: "golosinas", wiki_es: "Cadbury", wiki_en: "Cadbury", angulos: [origen]}

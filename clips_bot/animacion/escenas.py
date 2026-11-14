@@ -136,8 +136,93 @@ def fondo_globo(semilla: int = 4) -> str:
     return "".join(p)
 
 
+def fondo_fabrica(semilla: int = 5) -> str:
+    """Una fábrica genérica por dentro: cinta transportadora con cajas, engranajes en la pared,
+    caños y chimeneas en la ventana (canal de marcas, 2026-11-14)."""
+    rnd = random.Random(semilla)
+    p = [rect(0, 0, W, H, "#d9dde6", borde=False),
+         rect(0, H * 0.7, W, H * 0.3, "#8a8f9c", borde=False),
+         f'<path d="M0 {n(H * 0.7)} L{W} {n(H * 0.7)}" {trazo()}/>']
+    # ventanal con chimeneas y humo
+    p.append(rect(80, 200, 920, 420, "#ffcf9e", r=8))
+    for i, x in enumerate((200, 420, 700)):
+        alto = 220 + 60 * (i % 2)
+        p.append(rect(x, 620 - alto, 70, alto, P.GRIS_OSCURO))
+        p.append(g(nube(), x + 35 + rnd.uniform(-20, 20), 620 - alto - 70, escala=0.45))
+    p.append(f'<path d="M80 410 L1000 410 M540 200 L540 620" {trazo()}/>')
+    # caños y engranajes
+    p.append(rect(-20, 700, W + 40, 34, P.ROJO))
+    for x, r in ((170, 90), (330, 60), (880, 110)):
+        p.append(g(prop_engranaje(color=P.GRIS), x, 900, escala=r / 100))
+    # cinta transportadora con cajas
+    y = H * 0.66
+    p.append(rect(-20, y, W + 40, 60, P.GRIS_OSCURO, r=30))
+    for x in range(30, W, 120):
+        p.append(circulo(x, y + 30, 18, P.GRIS, ancho=P.TRAZO_FINO))
+    for x in range(60, W, 300):
+        p.append(rect(x, y - 130, 150, 130, P.MADERA, r=6))
+        p.append(f'<path d="M{x} {n(y - 95)} L{x + 150} {n(y - 95)}" {trazo(ancho=P.TRAZO_FINO)}/>')
+    return "".join(p)
+
+
+def fondo_tienda(semilla: int = 6) -> str:
+    """Góndolas de un almacén/supermercado con productos genéricos de colores (sin marcas)."""
+    rnd = random.Random(semilla)
+    colores = [P.ROJO, P.AZUL, P.VERDE, P.AMARILLO, P.NARANJA, P.VIOLETA, P.ROSA, P.TURQUESA]
+    p = [rect(0, 0, W, H, "#fff3dc", borde=False),
+         rect(0, H * 0.74, W, H * 0.26, "#e9c9a0", borde=False),
+         f'<path d="M0 {n(H * 0.74)} L{W} {n(H * 0.74)}" {trazo()}/>']
+    # baldosas
+    for x in range(0, W, 180):
+        p.append(f'<path d="M{x} {n(H * 0.74)} L{x - 120} {H}" stroke="#c9a77c" stroke-width="5"/>')
+    # dos estanterías con 4 estantes
+    for x0 in (40, 560):
+        p.append(rect(x0, 260, 480, 1130, "#b98a5e", r=10))
+        for k in range(4):
+            ye = 300 + k * 270
+            p.append(rect(x0 + 20, ye + 200, 440, 26, P.MADERA, r=4))
+            x = x0 + 34
+            while x < x0 + 430:
+                w, h = rnd.choice([(60, 150), (80, 110), (50, 180), (90, 90)])
+                if x + w > x0 + 455:
+                    break
+                c = rnd.choice(colores)
+                if h > 140:   # botella
+                    p.append(camino(f"M{x + w * 0.35} {ye + 200 - h} L{x + w * 0.65} {ye + 200 - h} "
+                                    f"L{x + w * 0.65} {ye + 230 - h} Q{x + w} {ye + 250 - h} {x + w} "
+                                    f"{ye + 280 - h} L{x + w} {ye + 200} L{x} {ye + 200} L{x} {ye + 280 - h} "
+                                    f"Q{x} {ye + 250 - h} {x + w * 0.35} {ye + 230 - h} Z", c,
+                                    ancho=P.TRAZO_FINO))
+                else:
+                    p.append(rect(x, ye + 200 - h, w, h, c, r=6, ancho=P.TRAZO_FINO))
+                    p.append(rect(x + 8, ye + 200 - h * 0.65, w - 16, h * 0.3, P.BLANCO, r=3,
+                                  borde=False))
+                x += w + 14
+    # cartel de oferta genérico
+    p.append(g(prop_cartel("OFERTA", P.AMARILLO), 860, 150, escala=0.7))
+    return "".join(p)
+
+
+def fondo_escenario(semilla: int = 7) -> str:
+    """Un escenario/estudio de TV: telón, reflectores y piso de tablas (para slogans y publicidades)."""
+    p = [rect(0, 0, W, H, "#3b1f4a", borde=False)]
+    for x in range(0, W, 90):   # telón con pliegues
+        p.append(rect(x, 0, 90, H * 0.72, "#b3263a" if (x // 90) % 2 else "#c9384b", borde=False))
+    p.append(camino(f"M0 0 L{W} 0 L{W} 120 Q{W * 0.75} 200 {W / 2} 140 Q{W * 0.25} 200 0 120 Z",
+                    "#8e1b2c"))
+    for x in (180, 900):   # haces de luz
+        p.append(f'<path d="M{x} 0 L{x - 260} {n(H * 0.74)} L{x + 260} {n(H * 0.74)} Z" '
+                 f'fill="#fff3b0" opacity="0.18"/>')
+        p.append(circulo(x, 40, 50, P.GRIS_OSCURO))
+    p.append(rect(-20, H * 0.72, W + 40, H * 0.28 + 20, "#a8714a"))
+    for y in range(int(H * 0.76), H, 70):
+        p.append(f'<path d="M0 {y} L{W} {y}" stroke="#8a5a38" stroke-width="5"/>')
+    return "".join(p)
+
+
 FONDOS = {"cielo": fondo_cielo, "ciudad": fondo_ciudad, "oficina": fondo_oficina,
-          "globo": fondo_globo, "mapa": fondo_globo}
+          "globo": fondo_globo, "mapa": fondo_globo, "fabrica": fondo_fabrica,
+          "tienda": fondo_tienda, "escenario": fondo_escenario}
 
 
 def fondo(tipo: str, semilla: int | None = None) -> str:
@@ -192,9 +277,174 @@ def prop_nube(**_) -> str:
     return nube()
 
 
+# ---- props genéricos del canal de marcas (2026-11-14) -----------------------------------------
+# Productos SIN marca dibujada: la etiqueta lleva, como mucho, un texto en la fuente común del canal
+# (nunca un logo ni la tipografía de la marca). El color lo pone quien llama (paleta del canal).
+
+def _etiqueta(texto: str, y: float, ancho: float, tam: int = 40) -> str:
+    if not texto:
+        return ""
+    tam = min(tam, int(ancho * 1.6 / max(1, len(texto))))
+    return texto_con_borde(texto[:14], 0, y, max(18, tam), color=P.CONTORNO, borde=P.BLANCO,
+                           ancho_borde=5)
+
+
+def prop_botella(texto: str = "", color: str = P.ROJO, **_) -> str:
+    return (camino("M-26 -230 L26 -230 L26 -170 Q80 -130 80 -60 L80 200 Q80 230 50 230 L-50 230 "
+                   "Q-80 230 -80 200 L-80 -60 Q-80 -130 -26 -170 Z", color)
+            + rect(-30, -262, 60, 36, P.GRIS_OSCURO, r=6)
+            + rect(-80, -10, 160, 110, P.BLANCO, ancho=P.TRAZO_FINO)
+            + _etiqueta(texto, 58, 150)
+            + camino("M-50 -100 Q-58 -40 -54 40", borde=True, ancho=10, color="#ffffff"))
+
+
+def prop_lata(texto: str = "", color: str = P.AZUL, **_) -> str:
+    return (rect(-80, -150, 160, 300, color, r=18)
+            + elipse(0, -150, 80, 18, P.GRIS)
+            + elipse(0, -150, 22, 6, P.GRIS_OSCURO, borde=False)
+            + rect(-80, -50, 160, 100, P.BLANCO, ancho=P.TRAZO_FINO)
+            + _etiqueta(texto, 14, 150))
+
+
+def prop_caja(texto: str = "", color: str = P.AMARILLO, **_) -> str:
+    """Un paquete (galletitas, cereal, alfajores) con una ventana y el texto al frente."""
+    return (camino("M-110 -150 L110 -150 L140 -180 L-80 -180 Z", color)
+            + camino("M110 -150 L140 -180 L140 140 L110 170 Z", color)
+            + rect(-110, -150, 220, 320, color)
+            + rect(-80, -110, 160, 90, P.BLANCO, r=10, ancho=P.TRAZO_FINO)
+            + _etiqueta(texto, -50, 150)
+            + circulo(-40, 80, 34, P.MADERA, ancho=P.TRAZO_FINO)
+            + circulo(40, 80, 34, P.MADERA, ancho=P.TRAZO_FINO))
+
+
+def prop_zapatilla(color: str = P.ROJO, **_) -> str:
+    return (camino("M-170 60 L-170 -40 Q-160 -90 -110 -90 L-40 -90 Q-20 -40 40 -30 L140 -10 "
+                   "Q190 0 190 50 L190 60 Z", color)
+            + rect(-180, 60, 380, 44, P.BLANCO, r=20)
+            + f'<path d="M-60 -70 L-20 -40 M-80 -50 L-40 -24 M-100 -30 L-60 -6" '
+              f'{trazo(ancho=P.TRAZO_FINO)} fill="none"/>')
+
+
+def prop_billete(texto: str = "$", color: str = P.VERDE, **_) -> str:
+    return (rect(-170, -85, 340, 170, color, r=12)
+            + rect(-140, -60, 280, 120, "#a8e6a1", r=8, ancho=P.TRAZO_FINO)
+            + circulo(0, 0, 46, color, ancho=P.TRAZO_FINO)
+            + texto_con_borde(texto if 0 < len(texto) <= 3 else "$", 0, 22, 64, color=P.BLANCO, borde=P.CONTORNO,
+                              ancho_borde=8))
+
+
+def prop_bolsa_plata(color: str = "#d6a45a", **_) -> str:
+    return (camino("M-40 -120 Q-60 -150 -30 -160 L30 -160 Q60 -150 40 -120 Q150 -40 140 80 "
+                   "Q130 160 0 160 Q-130 160 -140 80 Q-150 -40 -40 -120 Z", color)
+            + f'<path d="M-50 -118 L50 -118" {trazo(ancho=12)}/>'
+            + texto_con_borde("$", 0, 70, 150, color=P.VERDE, ancho_borde=12))
+
+
+def _grafico(sube: bool, color: str) -> str:
+    pts = [(-150, 80), (-80, 30), (-20, 60), (50, -20), (130, -110)] if sube else \
+          [(-150, -110), (-80, -40), (-20, -70), (50, 20), (130, 90)]
+    d = "M" + " L".join(f"{x} {y}" for x, y in pts)
+    x1, y1 = pts[-1]
+    punta = (camino(f"M{x1 - 34} {y1 + 4} L{x1 + 16} {y1 - 16} L{x1 - 4} {y1 + 34} Z", color)
+             if sube else camino(f"M{x1 - 34} {y1 - 4} L{x1 + 16} {y1 + 16} L{x1 - 4} {y1 - 34} Z", color))
+    return (rect(-190, -170, 380, 320, P.BLANCO, r=14)
+            + f'<path d="M-160 130 L170 130 M-160 130 L-160 -150" {trazo(ancho=P.TRAZO_FINO)}/>'
+            + f'<path d="{d}" fill="none" {trazo(P.CONTORNO, 30)}/>'
+            + f'<path d="{d}" fill="none" {trazo(color, 16)}/>' + punta)
+
+
+def prop_grafico_sube(color: str = P.VERDE, **_) -> str:
+    return _grafico(True, color)
+
+
+def prop_grafico_baja(color: str = P.ROJO, **_) -> str:
+    return _grafico(False, color)
+
+
+def prop_trofeo(color: str = P.AMARILLO, **_) -> str:
+    return (camino("M-100 -150 L100 -150 Q100 0 0 40 Q-100 0 -100 -150 Z", color)
+            + camino("M-100 -120 Q-170 -120 -160 -60 Q-150 -10 -80 -10", ancho=14)
+            + camino("M100 -120 Q170 -120 160 -60 Q150 -10 80 -10", ancho=14)
+            + rect(-22, 36, 44, 70, color)
+            + rect(-80, 100, 160, 50, P.MADERA, r=8))
+
+
+def prop_megafono(color: str = P.ROJO, **_) -> str:
+    return (camino("M-120 -40 L60 -130 L60 130 L-120 40 Z", color)
+            + rect(-170, -46, 60, 92, P.GRIS_OSCURO, r=10)
+            + rect(-120, 30, 40, 100, P.GRIS_OSCURO, r=8)
+            + "".join(f'<path d="M{90 + i * 34} {-60 + i * 0} Q{120 + i * 34} 0 {90 + i * 34} 60" '
+                      f'fill="none" {trazo(ancho=10)}/>' for i in range(3)))
+
+
+def prop_calendario(texto: str = "", color: str = P.ROJO, **_) -> str:
+    return (rect(-130, -130, 260, 260, P.BLANCO, r=16)
+            + rect(-130, -130, 260, 70, color, r=16)
+            + "".join(circulo(x, -130, 14, P.GRIS) for x in (-70, 70))
+            + texto_con_borde(texto[:8], 0, 60, max(34, min(96, int(400 / max(1, len(texto[:8]))))),
+                              color=P.CONTORNO, borde=P.BLANCO, ancho_borde=6))
+
+
+def prop_control(color: str = P.GRIS_OSCURO, **_) -> str:
+    """Un control de consola genérico (no copia el de ninguna marca)."""
+    return (camino("M-170 -50 Q-170 -110 -110 -110 L110 -110 Q170 -110 170 -50 L190 70 "
+                   "Q200 130 140 130 Q100 130 80 80 L-80 80 Q-100 130 -140 130 Q-200 130 -190 70 Z",
+                   color)
+            + rect(-130, -50, 70, 22, P.BLANCO, borde=False) + rect(-106, -74, 22, 70, P.BLANCO, borde=False)
+            + circulo(90, -60, 18, P.ROJO, ancho=P.TRAZO_FINO)
+            + circulo(130, -24, 18, P.AMARILLO, ancho=P.TRAZO_FINO)
+            + circulo(50, -24, 18, P.AZUL, ancho=P.TRAZO_FINO)
+            + circulo(90, 12, 18, P.VERDE, ancho=P.TRAZO_FINO))
+
+
+def prop_engranaje(color: str = P.GRIS, **_) -> str:
+    dientes = "".join(g(rect(-22, -120, 44, 50, color, r=6), rot=a) for a in range(0, 360, 45))
+    return dientes + circulo(0, 0, 90, color) + circulo(0, 0, 30, P.BLANCO)
+
+
+def prop_camion(color: str = P.AZUL, texto: str = "", **_) -> str:
+    return (rect(-200, -110, 260, 150, color, r=10)
+            + g(_etiqueta(texto, -20, 220, 44), -70, 0)
+            + camino("M60 -70 L140 -70 L190 -10 L190 40 L60 40 Z", P.AMARILLO)
+            + rect(110, -60, 50, 40, "#9fe3ff", r=4, ancho=P.TRAZO_FINO)
+            + circulo(-130, 50, 36, P.GRIS_OSCURO) + circulo(120, 50, 36, P.GRIS_OSCURO))
+
+
+def prop_celular(color: str = P.GRIS_OSCURO, texto: str = "", **_) -> str:
+    return (rect(-95, -180, 190, 360, color, r=28)
+            + rect(-78, -150, 156, 290, "#9fe3ff", r=10, ancho=P.TRAZO_FINO)
+            + _etiqueta(texto, 4, 140, 40)
+            + circulo(0, 160, 10, P.GRIS, borde=False))
+
+
+def prop_corona(color: str = P.AMARILLO, **_) -> str:
+    return (camino("M-150 80 L-150 -60 L-80 10 L0 -110 L80 10 L150 -60 L150 80 Z", color)
+            + rect(-150, 80, 300, 50, color)
+            + "".join(circulo(x, 105, 14, P.ROJO, ancho=P.TRAZO_FINO) for x in (-80, 0, 80)))
+
+
+def prop_cohete(color: str = P.BLANCO, **_) -> str:
+    return (camino("M0 -200 Q70 -120 70 40 L-70 40 Q-70 -120 0 -200 Z", color)
+            + camino("M-70 -10 L-120 80 L-70 60 Z", P.ROJO) + camino("M70 -10 L120 80 L70 60 Z", P.ROJO)
+            + circulo(0, -80, 30, "#9fe3ff", ancho=P.TRAZO_FINO)
+            + camino("M-40 40 Q0 150 40 40 Z", P.NARANJA))
+
+
+def prop_bombilla_rota(**_) -> str:
+    """Una idea que no anduvo (producto fracasado): la lamparita apagada con una rajadura."""
+    return (prop_lamparita(encendida=False)
+            + f'<path d="M-30 -110 L-6 -70 L-30 -40 L4 -6" fill="none" {trazo(ancho=7)}/>')
+
+
 PROPS = {"cartel": prop_cartel, "flecha": prop_flecha, "pregunta": prop_pregunta,
          "exclamacion": prop_exclamacion, "moneda": prop_moneda, "lamparita": prop_lamparita,
-         "nube": prop_nube}
+         "nube": prop_nube, "botella": prop_botella, "lata": prop_lata, "caja": prop_caja,
+         "zapatilla": prop_zapatilla, "billete": prop_billete, "bolsa_plata": prop_bolsa_plata,
+         "grafico_sube": prop_grafico_sube, "grafico_baja": prop_grafico_baja,
+         "trofeo": prop_trofeo, "megafono": prop_megafono, "calendario": prop_calendario,
+         "control": prop_control, "engranaje": prop_engranaje, "camion": prop_camion,
+         "celular": prop_celular, "corona": prop_corona, "cohete": prop_cohete,
+         "idea_fallida": prop_bombilla_rota}
 
 
 def prop(nombre: str, **params) -> str:
