@@ -21,7 +21,7 @@ from __future__ import annotations
 import json
 import logging
 import statistics
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 
 import requests
 
@@ -232,3 +232,76 @@ def por_video(datos: dict, desde: date = DESDE) -> str:
             lineas.append(f"Facebook {x['publicado']} · {vid}: se va la mayoría en el "
                           f"{_f(x.get('se_va_s'), ' s')}, {x.get('reproducciones')} reproducciones")
     return "\n".join(lineas)
+
+
+# ---- análisis de un video puntual y la mezcla del canal (Santi, 2026-11-14) ----------------------
+CLAVE_ANALISIS = "analisis_video_pedido"   # bot_estado: el id de YouTube cuyo análisis pidió Santi
+CLAVE_MEZCLA = "mezcla_propuesta"          # bot_estado: el día en que ya se propuso cambiar la mezcla
+MEZCLA_DESDE = date(2026, 11, 12)          # desde acá: 1 de tecnología + 2 de Latinoamérica en YouTube
+MEZCLA_DIAS = 3                            # un video entra en la cuenta con 3 días publicado
+MEZCLA_MIN_TEC, MEZCLA_MIN_LATAM = 4, 6
+MEZCLA_FACTOR = 1.3                        # la tecnología rinde "más" si su mediana es ≥ 1,3× la otra
+METRICAS_VIDEO = ("views,engagedViews,averageViewDuration,averageViewPercentage,likes,comments,shares,"
+                  "subscribersGained")
+FUENTES = {"SHORTS": "feed de Shorts", "YT_SEARCH": "búsqueda", "SUBSCRIBER": "suscriptores",
+           "YT_CHANNEL": "el canal", "EXT_URL": "afuera de YouTube", "RELATED_VIDEO": "videos sugeridos",
+           "NO_LINK_OTHER": "otros", "PLAYLIST": "listas", "YT_OTHER_PAGE": "otras páginas de YouTube"}
+
+
+def _fila(vals) -> dict:
+    v, eng, avd, avp, lk, com, sh, subs = (vals + [0] * 8)[:8]
+    return {"vistas": int(v), "se_queda": calibrado(100 * eng / v) if v else None, "avd": int(avd),
+            "avp": round(float(avp), 1), "likes": int(lk), "comentarios": int(com), "compartidos": int(sh),
+            "suscriptores": int(subs)}
+
+
+def analisis_video(cliente, vid: str, desde: date = date(2026, 10, 25)) -> str | None:
+    """El análisis de UN Short contra los demás del canal, con Analytics. None si Analytics todavía no
+    tiene sus datos (llegan con 1-2 días de atraso)."""
+    hoy = datetime.now(timezone.utc).date().isoformat()
+    rango = {"startDate": desde.isoformat(), "endDate": hoy}
+    filas = cliente._analytics({**rango, "metrics": METRICAS_VIDEO, "dimensions": "video",
+                                "maxResults": 200, "sort": "-views"})
+    todos = {f[0]: _fila(list(f[1:])) for f in filas}
+    if vid not in todos or not todos[vid]["vistas"]:
+        return None
+    x = todos[vid]
+    otros = [y for k, y in todos.items() if k != vid and y["vistas"] >= 100]
+    med = lambda k: _mediana([y[k] for y in otros if y[k] is not None])  # noqa: E731
+    fuentes = cliente._analytics({**rango, "metrics": "views", "dimensions": "insightTrafficSourceType",
+                                  "filters": f"video=={vid}"})
+    total = sum(int(f[1]) for f in fuentes) or 1
+    dias = cliente._analytics({**rango, "metrics": "views", "dimensions": "day", "filters": f"video=={vid}",
+                               "sort": "day"})
+    por_dia = [int(d[1]) for d in dias if int(d[1])]
+    cada_mil = lambda y, k: round(1000 * y[k] / y["vistas"], 1) if y["vistas"] else 0  # noqa: E731
+    lineas = [f"<b>El Short {vid} contra los otros {len(otros)} del canal</b> (mediana de los otros entre paréntesis)",
+              f"• Vistas: {x['vistas']} ({_f(med('vistas'))})",
+              f"• Se quedó a mirar: {_f(x['se_queda'], ' %')} ({_f(med('se_queda'), ' %')})",
+              f"• Duración media vista: {x['avd']} s ({_f(med('avd'), ' s')}) · % visto: {x['avp']} % ({_f(med('avp'), ' %')})",
+              f"• Cada 1.000 vistas: {cada_mil(x, 'likes')} likes, {cada_mil(x, 'comentarios')} comentarios, "
+              f"{cada_mil(x, 'compartidos')} compartidos (los otros: "
+              f"{_f(_mediana([cada_mil(y, 'likes') for y in otros]))} / "
+              f"{_f(_mediana([cada_mil(y, 'comentarios') for y in otros]))} / "
+              f"{_f(_mediana([cada_mil(y, 'compartidos') for y in otros]))})",
+              f"• Suscriptores ganados: {x['suscriptores']} ({_f(med('suscriptores'))})",
+              "• De dónde vinieron: " + ", ".join(f"{FUENTES.get(f[0], f[0])} {round(100 * int(f[1]) / total)} %"
+                                                  for f in sorted(fuentes, key=lambda f: -int(f[1]))),
+              f"• Vistas por día: {' · '.join(str(v) for v in por_dia)} → "
+              + ("tuvo segundo empujón" if hubo_empujon(por_dia) else "sin segundo empujón")]
+    return "\n".join(lineas)
+
+
+def comparar_mezcla(yt: dict, hoy: date) -> dict | None:
+    """Tecnología contra Latinoamérica en YouTube desde que cambió la mezcla (12/11), con los videos de
+    3 días o más. None si todavía no hay suficientes de cada uno."""
+    lim = (hoy - timedelta(days=MEZCLA_DIAS)).isoformat()
+    tec = [x["vistas"] for x in yt.values() if x.get("tipo") == "tecnologia"
+           and MEZCLA_DESDE.isoformat() <= x.get("publicado", "") <= lim and x.get("vistas")]
+    lat = [x["vistas"] for x in yt.values() if x.get("tipo") == "latam"
+           and MEZCLA_DESDE.isoformat() <= x.get("publicado", "") <= lim and x.get("vistas")]
+    if len(tec) < MEZCLA_MIN_TEC or len(lat) < MEZCLA_MIN_LATAM:
+        return None
+    mt, ml = _mediana(tec), _mediana(lat)
+    return {"tec": mt, "latam": ml, "n_tec": len(tec), "n_latam": len(lat),
+            "rinde_mas": bool(ml and mt >= MEZCLA_FACTOR * ml)}

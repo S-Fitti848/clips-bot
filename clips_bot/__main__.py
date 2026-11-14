@@ -3687,6 +3687,34 @@ def _medir_ph(conn, settings: Settings) -> dict:
     return medicion_ph.guardar(conn, fb, yt)
 
 
+def _analisis_y_mezcla(conn, tg: TelegramClient, datos: dict, hoy, cliente=None) -> None:
+    """(Santi, 2026-11-14) (1) El análisis de un Short puntual (el de Intel rompió el techo de ~1.200)
+    apenas YouTube Analytics tiene sus datos: una vez, y se borra el pedido. (2) Si con datos suficientes
+    la tecnología rinde ≥ 1,3× Latinoamérica en YouTube, la propuesta de cambiar la mezcla (una vez)."""
+    from . import medicion_ph as mp
+
+    vid = db.get_valor(conn, mp.CLAVE_ANALISIS)
+    if vid:
+        try:
+            from . import youtube
+
+            texto = mp.analisis_video(cliente or youtube.Cliente("pequena_historia"), vid)
+        except Exception as e:      # YouTube caído: se intenta mañana
+            log.info("análisis de %s: %s", vid, e)
+            texto = None
+        if texto:
+            db.borrar_valor(conn, mp.CLAVE_ANALISIS)
+            tg.send_message(DUENO, "🔧 Claude Code: " + texto)
+    comp = mp.comparar_mezcla(datos.get("yt") or {}, hoy)
+    if comp and comp["rinde_mas"] and not db.get_valor(conn, mp.CLAVE_MEZCLA):
+        db.set_valor(conn, mp.CLAVE_MEZCLA, hoy.isoformat())
+        tg.send_message(DUENO, (
+            "🔧 Claude Code: <b>En YouTube, tecnología rinde más que Latinoamérica</b> (videos con 3 días o "
+            f"más desde el 12/11): mediana de vistas {mp._f(comp['tec'])} (tecnología, {comp['n_tec']} videos) "
+            f"contra {mp._f(comp['latam'])} (Latinoamérica, {comp['n_latam']}). Propuesta: en YouTube 2 de "
+            "tecnología y 1 de Latinoamérica (Facebook sigue con las 2 de Latinoamérica). ¿Lo cambio?"))
+
+
 def _medicion_ph_tick(conn, tg: TelegramClient, settings: Settings, ahora=None, medir=None) -> None:
     """Una vez por día desde medicion_ph.HORA: mide los videos de Pequeña Historia; a la semana del
     gancho primero (Santi, 2026-11-12), le manda a Santi la comparación con los de antes (una vez)."""
@@ -3700,6 +3728,7 @@ def _medicion_ph_tick(conn, tg: TelegramClient, settings: Settings, ahora=None, 
         return
     db.set_valor(conn, mp.CLAVE_DIA, hoy.isoformat())
     datos = (medir or _medir_ph)(conn, settings)
+    _analisis_y_mezcla(conn, tg, datos, hoy)
     if hoy >= mp.DESDE + timedelta(days=mp.DIAS_INFORME) and not db.get_valor(conn, mp.CLAVE_INFORME):
         db.set_valor(conn, mp.CLAVE_INFORME, hoy.isoformat())
         from .telegram import partir_html
