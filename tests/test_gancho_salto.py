@@ -40,3 +40,19 @@ def test_el_montaje_toma_la_mejor_de_las_frases_siguientes():
                  hashtags=[], ranking=[[0], [1, 4], [2]], corto=True)
     plan, movs = ef.plan_rapido([(0, 0, 3.0), (1, 1, 3.0), (2, 2, 3.0)], g, montaje=True)
     assert [f for i, f, _ in plan if i == 0] == [0, 1, 2] and movs[:3] == ["golpe"] * 3
+
+
+def test_el_mapa_llega_cuando_se_dice_el_lugar():
+    from clips_bot import efemerides as ef
+    from clips_bot.subtitles import Palabra
+
+    ps = [Palabra(5.0, 5.3, "Fue"), Palabra(5.3, 5.5, "en"), Palabra(5.5, 6.0, "1817,"),
+          Palabra(6.1, 6.2, "en"), Palabra(6.2, 6.8, "Bogotá,")]
+    assert ef.momento_de_palabra(ps, "Bogotá") == 6.2
+    assert ef.momento_de_palabra(ps, "Lima") is None
+    plan = [(0, 0, 3.0), (1, 1, 2.5), (2, 2, 3.0)]
+    nuevo, movs = ef.insertar_tramo(plan, ["a", "b", "c"], 4.4, 2.3, ef.MAPA, "mapa")
+    assert abs(sum(s for *_, s in nuevo) - 8.5) < 0.01                 # el largo no cambia
+    k = [x[1] for x in nuevo].index(ef.MAPA)
+    assert abs(sum(s for *_, s in nuevo[:k]) - 4.4) < 0.01 and nuevo[k][2] == 2.3 and movs[k] == "mapa"
+    assert all(s >= 0.4 for *_, s in nuevo)

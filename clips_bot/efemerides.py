@@ -742,6 +742,11 @@ nombre, ni un número, ni una fecha que no esté ahí. Si el artículo no lo dic
   sobre el hecho, sin hashtags ni links. `hashtags`: 3 a 5, incluido #Shorts.
 - `tono`: el clima de la historia, para elegir la música de fondo: alegre, epico, misterioso,
   curioso o emotivo.
+- HUMOR (Santi, 2026-11-14): cuando la historia lo permite, UN toque de humor o ironía suave, como lo
+  diría alguien que cuenta algo con gracia ("y sí, le salió bastante mal"), en una frase que no sea el
+  gancho ni el pago. Nada de chistes forzados ni de remates de stand-up: si no sale natural, sin
+  humor. NUNCA en muertes, ejecuciones, tragedias, guerras, enfermedades, abusos ni temas sensibles:
+  ahí el tono es serio de punta a punta.
 Respondé solo con el JSON pedido."""
 
 SISTEMA_GUION_HABLADO = SISTEMA_GUION.replace(
@@ -1282,13 +1287,22 @@ ninguna frase.
 
 `impactantes`: de las fotos que SIRVEN (que no descartaste), las 3 más impactantes a la vista, la
 mejor primero: la que haría frenar el dedo en el feed (un momento fuerte, una cara, algo raro o
-enorme), del hecho o del lugar. La primera va al principio del video, con el gancho.
+enorme), del hecho o del lugar. La primera va al principio del video, con el gancho: tiene que ser
+la MÁS LLAMATIVA, no la más "oficial" (una estatua o un monumento vistos de lejos son flojos). Si hay
+una foto con una CARA HUMANA clara del protagonista real (un retrato, una pintura, una foto de él o
+de ella), esa va primera; si no, la escena más fuerte.
 Respondé solo con el JSON pedido."""
 
 ORDEN_FOTOS = """REGLAS DE SANTI PARA ESTE VIDEO (le ganan a lo que diga más abajo):
-- Frases marcadas CENTRAL (cuentan el hecho mismo, su lugar o su protagonista): solo una foto REAL
-  de eso. Si habla del pueblo inundado, una foto de ESE pueblo inundado; no otro pueblo, no un
-  objeto parecido, no una foto de stock. Si no hay, dejá la lista vacía.
+- Frases marcadas CENTRAL (cuentan el hecho mismo, su lugar o su protagonista): primero una foto
+  REAL de eso (si habla del pueblo inundado, ESE pueblo inundado). Si no hay, sirve una ESCENA
+  ILUSTRATIVA que muestre la situación que dice la frase aunque no sea del hecho exacto (Santi,
+  2026-11-14: para "ya presa, leía las cartas", un preso leyendo papeles en una celda): manos que
+  escriben una carta, soldados marchando, una celda, una vela, una multitud. Nunca una que se
+  confunda con lo central: nada de una cara en primer plano que parezca ser el protagonista real,
+  ni otro lugar presentado como el del hecho, ni nada que no existía en esa época. Si la primera
+  que ponés es una escena así, marcá `escena` true (ahí `de_epoca` puede ir false: lo que importa es
+  que no se vea nada moderno, eso va en `anacronismo`). Si no hay nada, dejá la lista vacía.
 - Frases marcadas AL PASAR (nombran una cosa de pasada: un muro, Pokémon, un tren): sirve una foto
   genérica de esa cosa, de Commons o de stock, aunque no sea del hecho ni de la época. Si la frase
   dice "Pokémon", un Pikachu o unas cartas de Pokémon sirven: ahí `seguro` va true. `de_epoca` no
@@ -1308,7 +1322,8 @@ SCHEMA_FOTOS = {
                            "fotos": {"type": "ARRAY", "items": {"type": "INTEGER"}},
                            "de_epoca": {"type": "BOOLEAN"}, "seguro": {"type": "BOOLEAN"},
                            "video": {"type": "INTEGER"}, "momento": {"type": "INTEGER"},
-                           "video_de_epoca": {"type": "BOOLEAN"}, "contradice": {"type": "BOOLEAN"}},
+                           "video_de_epoca": {"type": "BOOLEAN"}, "contradice": {"type": "BOOLEAN"},
+                           "escena": {"type": "BOOLEAN"}},
             "required": ["se_ve", "fotos", "de_epoca", "seguro", "contradice"]}},
         "descartadas": {"type": "ARRAY", "items": {"type": "INTEGER"}},
         "impactantes": {"type": "ARRAY", "items": {"type": "INTEGER"}},
@@ -1444,7 +1459,9 @@ def rankings_de(d: dict, candidatas: list[list[int]],
         ok = [x - 1 for x in (f or {}).get("fotos") or [] if isinstance(x, int)]
         ok = [x for x in dict.fromkeys(ok) if x in cands and x not in descartadas]
         hoy = bool(presente and i < len(presente) and presente[i])
-        if ok and (f or {}).get("de_epoca") is False and not hoy:
+        # Una escena ilustrativa (2026-11-14) no es "de la época" pero puede ir: lo que no puede es
+        # tener algo moderno a la vista, y eso lo filtra `anacronismo` (stock).
+        if ok and (f or {}).get("de_epoca") is False and not hoy and not (f or {}).get("escena"):
             ok = ok[1:]
         # Relevancia dura (2026-10-02: en la de 4chan entró una página militar de Facebook): si
         # Gemini no está seguro de que la primera muestre lo que dice la frase, sale.
@@ -1680,6 +1697,11 @@ def clave_archivo(archivo: str) -> str:
     return nombre.replace("_", " ").strip().lower()
 
 
+# Escenas ilustrativas también en las frases centrales (Santi, 2026-11-14: "más escenas así, que
+# ilustran lo que se dice aunque no sean del hecho exacto, sin confundir sobre lo central"). Antes el
+# stock iba solo en las frases "al pasar" y las centrales sin foto de época quedaban con tarjetas:
+# el 14/11 La Pola (8,5) llegó a 68 % de fotos reales y no salió.
+ESCENAS_EN_CENTRALES = True
 MAX_IMAGENES_ELECTOR = 100     # el tope de imágenes por pedido de Claude
 
 
@@ -1807,6 +1829,12 @@ def fotos_para_guion(wiki: Wiki, cliente, e: Evento, g: Guion, fotos_articulo: l
             # Pexels: solo para lo que se nombra al pasar (objetos genéricos).
             halladas += [_foto_de(h, obj) for h in otras.stock([obj], FOTOS_PEXELS_FRASE, avisar)
                          if h["fuente"] == "pexels"]
+        elif orden and central and ESCENAS_EN_CENTRALES and not corrida.vencida():
+            # Una escena que ilustra la situación (2026-11-14): Pexels con el objeto o la acción de la
+            # frase. La elige el modelo solo si no hay foto real y no se confunde con lo central.
+            obj = (g.objeto[i] if i < len(g.objeto) else "") or sin_anios(mostrar)
+            halladas += [_foto_de(h, obj) for h in otras.stock([obj], FOTOS_PEXELS_FRASE, avisar)
+                         if h["fuente"] == "pexels"]
         propias.append([i for i in sumar(halladas, len(halladas) if orden else FOTOS_BUSQUEDA_MAX)
                         if i not in descartadas])
     # Regla fija de época: las fotos sacadas más de MARGEN_EPOCA años después del hecho no son
@@ -1832,7 +1860,7 @@ def fotos_para_guion(wiki: Wiki, cliente, e: Evento, g: Guion, fotos_articulo: l
                  if es_stock(f) or f.articulo.startswith("Commons (objeto)")} if g.imagen_frase else set()
     candidatas = [[x for x in dict.fromkeys(p + del_hecho + todas)
                    if (libre or x not in modernas) and (web or x not in capturas)
-                   and not (g.imagen_frase and es_central(g, k) and x in genericas)]
+                   and not (g.imagen_frase and es_central(g, k) and x in genericas and not ESCENAS_EN_CENTRALES)]
                   for k, (p, libre, web) in enumerate(zip(propias, libres, de_web))]
     if videos and corrida.vencida():
         avisar("    videos: sin buscar (pasó el tope de la búsqueda)")
@@ -2733,6 +2761,66 @@ def filtro_movimiento(frames: int, fx: float, fy: float, mov: str, W: int, H: in
     return f"zoompan=z='{z}':x='{x}':y='{cy}':d={frames}:s={W}x{H}:fps={fps},setsar=1,format=yuv420p"
 
 
+MAPA_ANTES_S, MAPA_DESPUES_S = 1.8, 0.5   # el mapa arranca 1,8 s antes de que se diga el lugar
+
+
+def momento_de_palabra(palabras: list, texto: str) -> float | None:
+    """Cuándo empieza a decirse `texto` (su primera palabra) en la voz, o None."""
+    clave = _norm(str(texto or "").split(",")[0]).split()
+    if not clave:
+        return None
+    norm = [_norm(getattr(w, "texto", "")).strip(".,;:!?¡¿«»\"'") for w in palabras]
+    for k in range(len(norm) - len(clave) + 1):
+        if norm[k:k + len(clave)] == clave:
+            return float(palabras[k].inicio)
+    return None
+
+
+def insertar_tramo(plan: list, movs: list | None, desde: float, dur: float, item: int, mov: str):
+    """Mete (frase, item, dur) en el plan a partir del segundo `desde`, recortando lo que tapa. El
+    largo total no cambia. La frase del tramo nuevo es la del corte donde cae."""
+    movs = list(movs) if movs is not None else [""] * len(plan)
+    out, out_m, t, puesto = [], [], 0.0, False
+    hasta = desde + dur
+    for (i, f, s), m in zip(plan, movs):
+        a, b = t, t + s
+        t = b
+        if b <= desde or a >= hasta:
+            out.append((i, f, s))
+            out_m.append(m)
+            continue
+        if a < desde:
+            out.append((i, f, round(desde - a, 3)))
+            out_m.append(m)
+        if not puesto:
+            out.append((i, item, round(dur, 3)))
+            out_m.append(mov)
+            puesto = True
+        if b > hasta:
+            out.append((i, f, round(b - hasta, 3)))
+            out_m.append(m)
+    # Pedacitos de menos de 0,4 s: se los come el corte de al lado que no es el tramo nuevo (el tramo
+    # nuevo tiene que durar justo lo que su video).
+    limpio, limpio_m, arrastre = [], [], 0.0
+    for x, m in zip(out, out_m):
+        if x[1] != item and x[2] < 0.4:
+            if limpio and limpio[-1][1] != item:
+                limpio[-1] = (limpio[-1][0], limpio[-1][1], round(limpio[-1][2] + x[2], 3))
+            else:
+                arrastre += x[2]
+            continue
+        if arrastre and x[1] != item:
+            x = (x[0], x[1], round(x[2] + arrastre, 3))
+            arrastre = 0.0
+        limpio.append(x)
+        limpio_m.append(m)
+    if arrastre and limpio:      # quedó al final después del tramo nuevo: se lo come el anterior
+        j = max(k for k, x in enumerate(limpio) if x[1] != item) if any(x[1] != item for x in limpio) else None
+        if j is not None:
+            limpio[j] = (limpio[j][0], limpio[j][1], round(limpio[j][2] + arrastre, 3))
+    return limpio, limpio_m
+
+
 def plan_de(p: Propuesta, duraciones: list[float] | None = None) -> list[tuple[int, int, float]]:
     """(frase, foto, segundos) de la propuesta: con las duraciones reales de la voz, o estimadas.
     Las frases con video salen como (frase, VIDEO, segundos de la frase)."""
@@ -3297,18 +3385,26 @@ def hacer_video(p: Propuesta, settings, carpeta: Path, avisar=log.info, conn=Non
             lugar = str((p.local or {}).get("lugar") or "")
             if not coords and lugar:
                 coords = wiki.coordenadas("es", lugar)
-            k = next((k for k, (i, f, _) in enumerate(plan) if i == 1 and f != VIDEO), None)
-            if coords and gr.distancia_ok(*coords) and k is not None:
-                i, f, s = plan[k]
-                dur = round(min(2.0, s), 3)
-                ruta_mapa = gr.mapa_zoom(wiki.mapa_base(carpeta), *coords, carpeta / "mapa_zoom.mp4",
-                                         segundos=dur, W=settings.render.ancho, H=settings.render.alto)
-                encuadres[str(ruta_mapa)] = (0.5, True)     # ya es 9:16: a pantalla completa
-                resto = [(i, f, round(s - dur, 3))] if s - dur >= 0.6 else []
-                plan[k:k + 1] = [(i, MAPA, dur)] + resto
-                if movimientos is not None:
-                    movimientos[k:k + 1] = ["mapa"] + [movimientos[k]] * len(resto)
-                avisar(f"mapa con zoom: {coords[0]:.2f}, {coords[1]:.2f}, {dur:.1f} s")
+            # Sincronizado con la voz (Santi, 2026-11-14: "tiene que llegar a Bogotá justo cuando la voz
+            # dice Bogotá"): el acercamiento termina cuando se dice el lugar. Si no se encuentra la
+            # palabra, al empezar la segunda frase, como antes.
+            t_lugar = momento_de_palabra(palabras, lugar)
+            if coords and gr.distancia_ok(*coords):
+                if t_lugar is not None:
+                    a = max(0.0, t_lugar - MAPA_ANTES_S)
+                    dur = round(t_lugar + MAPA_DESPUES_S - a, 3)
+                else:
+                    k = next((k for k, (i, f, _) in enumerate(plan) if i == 1 and f != VIDEO), None)
+                    a = sum(x[2] for x in plan[:k]) if k is not None else 0.0
+                    dur = round(min(2.0, plan[k][2]), 3) if k is not None else 0.0
+                if dur >= 1.0:
+                    ruta_mapa = gr.mapa_zoom(wiki.mapa_base(carpeta), *coords, carpeta / "mapa_zoom.mp4",
+                                             segundos=dur, W=settings.render.ancho, H=settings.render.alto,
+                                             llegada=(dur - MAPA_DESPUES_S) / dur)
+                    encuadres[str(ruta_mapa)] = (0.5, True)     # ya es 9:16: a pantalla completa
+                    plan, movimientos = insertar_tramo(plan, movimientos, a, dur, MAPA, "mapa")
+                    avisar(f"mapa con zoom: {coords[0]:.2f}, {coords[1]:.2f}, de {a:.1f} a {a + dur:.1f} s"
+                           + (f" (llega cuando dice «{lugar}», {t_lugar:.1f} s)" if t_lugar is not None else ""))
         except (WikiError, OSError, KeyError, ValueError, RuntimeError, subprocess.SubprocessError) as err:
             avisar(f"mapa con zoom: no salió ({str(err)[:100]})")
     tramos = [(rutas_video[i] if f == VIDEO else ruta_mapa if f == MAPA else Path(p.fotos[f]["ruta"]), s)

@@ -115,7 +115,7 @@ def gancho_animado(frase: str, hasta_s: float, entrada_s: float = 0.5) -> list[s
 
 def mapa_zoom(base: Path, lat: float, lon: float, salida: Path, segundos: float = 2.0,
               W: int = 1080, H: int = 1920, fps: int = 30, span_desde: float = 75.0,
-              span_hasta: float = 9.0) -> Path:
+              span_hasta: float = 9.0, llegada: float = 1.0) -> Path:
     """Estilo nuevo: el mapa a pantalla completa acercándose hasta el lugar (Latinoamérica), con el
     punto que aparece con un golpe al final. Cuadro por cuadro con PIL (el recorte del Blue Marble
     se achica en escala logarítmica, así el acercamiento se siente parejo) y a ffmpeg por un caño."""
@@ -134,7 +134,7 @@ def mapa_zoom(base: Path, lat: float, lon: float, salida: Path, segundos: float 
                            "-pix_fmt", "yuv420p", str(salida)], stdin=subprocess.PIPE)
     try:
         for k in range(n):
-            t = k / (n - 1)
+            t = min(1.0, k / (n - 1) / max(llegada, 0.2))   # `llegada`: en qué parte del tramo llega
             suave = 1 - (1 - t) ** 3            # frena al llegar
             span = math.exp(math.log(span_desde) + (math.log(span_hasta) - math.log(span_desde)) * suave)
             cw = span / 360 * BW
