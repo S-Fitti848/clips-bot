@@ -301,6 +301,12 @@ def _lista(xs) -> str:
 PARTES = ("gancho", "problema", "idea", "que_paso", "giro", "final")
 # el orden que se exige: el giro va dentro de "qué pasó" (puede haber qué pasó después del giro)
 RANGO_PARTE = {"gancho": 0, "problema": 1, "idea": 2, "que_paso": 3, "giro": 3, "final": 4}
+# El objeto PROTAGONISTA de la historia (Santi, 2026-11-14: "el juego de mesa es una caja con la
+# palabra 'Juego'; queda pobre"): se dibuja con detalle y se entiende SIN leer. Nada de rótulos.
+DETALLADOS = {"pelota_espuma", "juego_mesa", "hamburguesa", "chocolate", "galletitas", "auto", "telefono_disco",
+              "radio", "consola", "tele", "botella", "lata", "zapatilla", "control", "celular", "lampara",
+              "cohete", "camion", "reloj_bolsillo", "megafono", "trofeo", "pelota", "jarron", "moneda", "billete"}
+ROTULOS = {"caja", "cartel", "calendario"}
 # Lo que se puede romper en la cadena del gancho (cosas de una casa, una oficina o un negocio).
 ROMPIBLES = {"tele", "lampara", "cuadro", "jarron", "ventana", "botella", "lata", "caja", "trofeo", "celular"}
 CADENA_MIN, CADENA_MAX = 2, 4
@@ -347,6 +353,17 @@ antes) marcá `viaje_a_anio` con el año: Tito levanta el reloj, la escena gira 
 cuenta hacia atrás y todo pasa a tono antiguo hasta que la historia vuelve al presente
 (`vuelve_al_presente` en la frase que habla de hoy). El gancho es en el presente (sin viaje). El año
 tiene que estar en el TEXTO.
+
+REGLA 7 — OBJETOS LLAMATIVOS. El objeto de la historia (el producto de la marca o lo que la historia
+necesita) es el `protagonista`: elegí el prop que lo DIBUJA ({_lista(sorted(DETALLADOS))}) y decí qué es
+(`que_es`). Tiene que aparecer en al menos 2 escenas (en `objetos`, o como lo que se tira en la
+cadena). NADA de una caja o un cartel con un rótulo ("Juego") en lugar del objeto: si no hay prop
+para algo, elegí otro que se entienda sin leer.
+
+REGLA 8 — MOVIMIENTO Y LUGARES. Los personajes reaccionan con el cuerpo (caminan, corren, saltan,
+festejan, se asustan) y la cara (`cara`). Nunca dos en el mismo lugar: si hay 2 o 3, cada uno en su
+`desde` (izquierda, centro, derecha) y sin cruzarse. Variá los lugares (casa, taller, fábrica,
+oficina, ciudad, tienda); el render decora cada lugar según la época del viaje en el tiempo.
 
 ESTRUCTURA:
 - La PRIMERA frase es el GANCHO: lo más sorprendente o divertido, máximo 8 palabras (dura menos de 3 s),
@@ -420,11 +437,15 @@ SCHEMA_GUION = {
         "locutor": {"type": "ARRAY", "items": {"type": "OBJECT", "properties": {
             "despues_de_frase": {"type": "INTEGER"}, "texto": {"type": "STRING"}},
             "required": ["despues_de_frase", "texto"]}},
+        "protagonista": {"type": "OBJECT", "properties": {
+            "prop": {"type": "STRING", "enum": sorted(DETALLADOS)}, "que_es": {"type": "STRING"}},
+            "required": ["prop", "que_es"]},
         "entidades": {"type": "ARRAY", "items": {"type": "OBJECT", "properties": {
             "nombre": {"type": "STRING"}, "presentacion": {"type": "STRING"},
             "frase": {"type": "INTEGER"}}, "required": ["nombre", "presentacion", "frase"]}},
     },
-    "required": ["titulo", "descripcion", "tono", "pregunta_gancho", "escenas", "locutor", "entidades"],
+    "required": ["titulo", "descripcion", "tono", "pregunta_gancho", "escenas", "locutor", "entidades",
+                 "protagonista"],
 }
 
 
@@ -562,6 +583,32 @@ def errores_escenas_con_sentido(escenas: list[dict]) -> list[str]:
     return errores
 
 
+def errores_protagonista(d: dict) -> list[str]:
+    """Regla 7: el objeto de la historia, dibujado con detalle (no un rótulo) y en 2 escenas o más."""
+    errores = []
+    pr = d.get("protagonista") or {}
+    prop = pr.get("prop")
+    if prop not in DETALLADOS:
+        errores.append(f"`protagonista`: {prop!r} no es un objeto dibujado con detalle (elegí uno de: "
+                       f"{', '.join(sorted(DETALLADOS))})")
+    elif not str(pr.get("que_es") or "").strip():
+        errores.append("`protagonista`: falta `que_es`")
+    else:
+        apariciones = 0
+        for e in d.get("escenas") or []:
+            en_objetos = any(o.get("prop") == prop for o in e.get("objetos") or [])
+            en_cadena = bool(e.get("cadena")) and prop in ac.LANZABLES
+            apariciones += en_objetos or en_cadena
+        if apariciones < 2:
+            errores.append(f"el protagonista ({prop}) aparece en {apariciones} escena(s): que se vea en 2 o más")
+    for i, e in enumerate(d.get("escenas") or [], 1):
+        for o in e.get("objetos") or []:
+            if o.get("prop") == "caja" and str(o.get("texto") or "").strip():
+                errores.append(f"escena {i}: una caja con el rótulo «{o['texto']}» no se entiende: dibujá el objeto "
+                               "(juego_mesa, chocolate, galletitas…) o sacale el rótulo")
+    return errores
+
+
 def errores_viajes(d: dict, presente: int | None = None) -> list[str]:
     """Regla 6: cada vez que la historia cambia de época hay un viaje (Tito, el reloj, el año contando).
     Una frase que nombra un año del pasado tiene que estar en el pasado (un viaje en ella o antes); una
@@ -652,6 +699,7 @@ def validar_guion(d: dict, m: Marca, fuente: str) -> list[str]:
     if not str(d.get("pregunta_gancho") or "").strip():
         errores.append("falta `pregunta_gancho`")
     errores += errores_escenas_con_sentido(escenas)
+    errores += errores_protagonista(d)
     errores += errores_viajes(d)
     # El locutor (Tito).
     if not LOCUTOR_MIN <= len(loc) <= LOCUTOR_MAX:
@@ -710,6 +758,8 @@ Marcá SOLO problemas reales:
   algo que pasa sin que se haya contado el problema o la idea).
 - `no_muestra`: frases cuya escena no muestra lo que dice la frase (ej. la frase habla de una fábrica
   y la escena es alguien saltando en la calle), o que son solo gente parada.
+- `rotulo`: un objeto clave de la historia que se muestra como una caja o un cartel con su nombre
+  escrito en vez de dibujarlo (ej. una caja que dice "Juego" en vez de un juego de mesa).
 - `sin_sentido`: objetos en lugares absurdos (una lámpara en el medio de la calle, una tele en el piso
   de una fábrica) o cosas que aparecen o caen de la nada. OJO: los ÍCONOS de dibujo animado (la
   lamparita de una idea arriba de la cabeza, un signo de pregunta, un gráfico, un cartel, un
@@ -721,12 +771,14 @@ SCHEMA_CALIDAD = {"type": "OBJECT", "properties": {
     "sin_presentar": {"type": "ARRAY", "items": {"type": "STRING"}},
     "confuso": {"type": "ARRAY", "items": {"type": "STRING"}},
     "no_muestra": {"type": "ARRAY", "items": {"type": "STRING"}},
-    "sin_sentido": {"type": "ARRAY", "items": {"type": "STRING"}}},
-    "required": ["sin_presentar", "confuso", "no_muestra", "sin_sentido"]}
+    "sin_sentido": {"type": "ARRAY", "items": {"type": "STRING"}},
+    "rotulo": {"type": "ARRAY", "items": {"type": "STRING"}}},
+    "required": ["sin_presentar", "confuso", "no_muestra", "sin_sentido", "rotulo"]}
 
 
 def describir(d: dict) -> str:
-    lineas = []
+    pr = d.get("protagonista") or {}
+    lineas = [f"PROTAGONISTA: {pr.get('que_es') or '?'} (dibujado como {pr.get('prop') or '?'})"] if pr else []
     loc = dict(locutor_de(d))
     for i, e in enumerate(d.get("escenas") or [], 1):
         actores = "; ".join(f"{a.get('rol')} {a.get('accion')}" + (
@@ -761,6 +813,8 @@ def chequear_calidad(cliente, d: dict, m: Marca) -> list[str]:
         errores.append("no se entiende (contalo con causa y efecto): " + "; ".join(r["confuso"][:4]))
     if r.get("no_muestra"):
         errores.append("la escena no muestra lo que dice la frase: " + "; ".join(r["no_muestra"][:4]))
+    if r.get("rotulo"):
+        errores.append("objeto clave que es solo un rótulo (dibujalo con su prop): " + "; ".join(r["rotulo"][:3]))
     if r.get("sin_sentido"):
         errores.append("escena sin sentido (cada cosa en su lugar real, nada de la nada): "
                        + "; ".join(r["sin_sentido"][:4]))
@@ -818,7 +872,10 @@ def linea_de_tiempo(d: dict, inicios: list[float], fin: float, palabras: list,
     durs = cortes(inicios, fin)
     escenas, sfx, t = [], [], 0.0
     anio_actual, pasado = presente, False
-    for (tipo, k, _), dur in zip(segs, durs):
+    prota = str((d.get("protagonista") or {}).get("prop") or "")
+    proyectil = prota if prota in ac.LANZABLES else "pelota"
+    vistas: dict[tuple, int] = {}     # (fondo, década) → cuántas veces: la variante, para no repetir igual
+    for n_seg, ((tipo, k, _), dur) in enumerate(zip(segs, durs)):
         if tipo == "locutor":
             esc_d, fx = ac.escena_locutor(dur, k)
             escenas.append(esc_d)
@@ -840,7 +897,17 @@ def linea_de_tiempo(d: dict, inicios: list[float], fin: float, palabras: list,
             t += dv
             dur = round(dur - dv, 3)
             anio_actual, pasado = destino, destino < presente
-        esc_d, fx = ac.escena_accion(e, dur, k, primera=(k == 0), tono=1.0 if pasado else 0.0)
+        sigue = segs[n_seg + 1] if n_seg + 1 < len(segs) else None
+        reservar = ac.lado_tito(sigue[1]) if sigue and sigue[0] == "locutor" else None
+        clave = (e.get("fondo"), anio_actual // 10)
+        variante = vistas.get(clave, 0)
+        vistas[clave] = variante + 1
+        esc_d, fx = ac.escena_accion(e, dur, k, primera=(k == 0), tono=1.0 if pasado else 0.0,
+                                     anio=anio_actual, variante=variante, reservar=reservar,
+                                     proyectil=proyectil)
+        pisados = ac.superposiciones(esc_d)
+        if pisados:
+            log.warning("escena %d: personajes que se pisan en %s", k + 1, pisados[:3])
         if destino is not None:
             esc_d["transicion"] = {"tipo": "zoom", "duracion": 0.25}
         escenas.append(esc_d)

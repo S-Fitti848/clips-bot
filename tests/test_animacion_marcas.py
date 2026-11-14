@@ -161,7 +161,7 @@ def _c(prop, soporte, donde):
 
 ESCENAS = [
     ("¡Otra caja de alfajores voló por el aire!", "gancho", "casa",
-     [_a("joven", "tirar", "izquierda")], [_o("caja", "vuela"), _o("jarron", "se_rompe", "derecha")]),
+     [_a("joven", "tirar", "izquierda")], [_o("galletitas", "vuela"), _o("jarron", "se_rompe", "derecha")]),
     ("Unos socios tenían un bar en Mar del Plata, una ciudad de playa.", "problema", "ciudad",
      [_a("empresario", "caminar", "izquierda", "centro")], []),
     ("El bar se llamaba Havanna Bar, pero vendía poco.", "problema", "tienda",
@@ -169,11 +169,11 @@ ESCENAS = [
     ("Entonces pensaron vender alfajores con el mismo nombre.", "idea", "oficina",
      [_a("empresario", "pensar", "izquierda"), _a("fundador", "saltar", "derecha")], []),
     ("En 1947 fundaron la empresa y empezaron a fabricar alfajores.", "que_paso", "fabrica",
-     [_a("fundador", "martillar", "izquierda")], [_o("caja", "quieto", "derecha", "1947")]),
+     [_a("fundador", "martillar", "izquierda")], [_o("galletitas", "quieto", "derecha")]),
     ("Los alfajores se volvieron famosos en toda la costa.", "que_paso", "ciudad",
      [_a("cliente", "correr", "izquierda", "derecha")], [_o("billete", "llueve")]),
     ("La gente los llevaba de regalo después de las vacaciones.", "que_paso", "casa",
-     [_a("mama", "entrar", "izquierda", "centro"), _a("nene", "festejar", "derecha")], [_o("caja", "quieto", soporte="mano")]),
+     [_a("mama", "entrar", "izquierda", "centro"), _a("nene", "festejar", "derecha")], [_o("galletitas", "quieto", soporte="mano")]),
     ("¿Y el bar? Cerró, y el alfajor se quedó con el nombre.", "final", "escenario",
      [_a("fundador", "festejar", "centro")], [_o("corona", "crece", "derecha")]),
 ]
@@ -188,6 +188,7 @@ def guion(**cambios):
     d = {"titulo": "Havanna: el alfajor que se llama como un bar", "descripcion": "La historia del nombre.",
          "tono": "curioso", "pregunta_gancho": "¿Por qué se llama así?", "escenas": escenas,
          "locutor": [{"despues_de_frase": 3, "texto": "Spoiler: el bar no la pasó nada bien."}],
+         "protagonista": {"prop": "galletitas", "que_es": "los alfajores Havanna"},
          "entidades": [{"nombre": "Mar del Plata", "presentacion": "una ciudad de playa", "frase": 2},
                        {"nombre": "Havanna Bar", "presentacion": "el bar se llamaba", "frase": 3}]}
     d.update(cambios)
@@ -347,8 +348,8 @@ def test_escribir_guion_reintenta_con_los_errores():
 def test_el_chequeo_de_haiku_tambien_hace_reintentar():
     e = mk.Elegido(marca(), "nombre", {c: 9 for c in mk.CRITERIOS})
     haiku = ClienteFalso({"sin_presentar": ["Havanna Bar: no se dice qué es"], "confuso": [], "no_muestra": [],
-                          "sin_sentido": []},
-                         {"sin_presentar": [], "confuso": [], "no_muestra": [], "sin_sentido": []})
+                          "sin_sentido": [], "rotulo": []},
+                         {"sin_presentar": [], "confuso": [], "no_muestra": [], "sin_sentido": [], "rotulo": []})
     cliente = ClienteFalso(guion(), guion())
     mk.escribir_guion(cliente, e, FUENTE, avisar=lambda *_: None, revisor=haiku)
     assert len(cliente.pedidos) == 2 and "presentá" in cliente.pedidos[1]
@@ -496,6 +497,123 @@ def test_un_salto_chico_no_es_otro_viaje():
     assert sum(1 for e in datos["escenas"] if e.get("girar")) == 2           # ida y vuelta, nada más
     v, _ = ac.escena_viaje(1.2, 1947, 1890, presente=2026)
     assert v["tono"] == [1.0, 1.0]                                           # de pasado a pasado: sepia
+
+
+# ---- movimiento, lugares, escenarios y objetos (Santi, 2026-11-14, después del Nerf con Tito) -----
+
+def _personaje(escena_d):
+    return next(e for e in escena_d["elementos"] if e.get("tipo") == "personaje")
+
+
+def test_caminar_con_ciclo_rodillas_brazos_en_contrafase_y_rebote():
+    from clips_bot.animacion.timeline import Elemento
+
+    d, _ = ac.escena_accion({"fondo": "casa", "actores": [_a("nene", "caminar", "izquierda", "derecha")]}, 3.0, 0)
+    pj = _personaje(d)
+    assert pj["ciclos"][0]["tipo"] == "caminar"
+    el = Elemento.desde_dict(pj, "x", 3.0)
+    t0 = pj["ciclos"][0]["t0"]
+    vistos = set()
+    for k in range(12):
+        t = t0 + 0.2 + k * 0.07
+        e, dy = el._estado(t, 0.0, int(t * 30), 0.0)
+        assert not (e.pierna_izq > 0.05 and e.pierna_der > 0.05)          # una pierna por vez
+        if e.pierna_izq > 0.3:
+            vistos.add("izq")
+            assert e.brazo_izq[0] > e.brazo_der[0]                       # brazos en contrafase
+        if e.pierna_der > 0.3:
+            vistos.add("der")
+        assert dy <= 0                                                    # el cuerpo sube con el paso
+    assert vistos == {"izq", "der"}
+    assert "<path" in el.svg(t0 + 0.3, 0.0, 10)
+
+
+def test_saltar_con_anticipacion_y_squash():
+    d, _ = ac.escena_accion({"fondo": "casa", "actores": [_a("nene", "saltar")]}, 2.0, 0)
+    est = [k["estirar"] for k in _personaje(d)["keyframes"] if "estirar" in k]
+    assert min(est) < 0.9 and max(est) > 1.05                             # se agacha, se estira, se aplasta
+    assert any(c["cara"] == "risa" for c in _personaje(d)["caras"])
+    Video.desde_dict({"escenas": [d]}).cuadro(20)
+
+
+def test_la_cara_cambia_con_la_accion():
+    from clips_bot.animacion.timeline import Elemento
+
+    d, _ = ac.escena_accion({"fondo": "casa", "actores": [_a("nene", "caerse")]}, 2.5, 0)
+    el = Elemento.desde_dict(_personaje(d), "x", 2.5)
+    antes, _ = el._estado(0.3, 0.0, 9, 0.0)
+    despues, _ = el._estado(2.2, 0.0, 66, 0.0)
+    assert antes.boca == "o" and despues.cejas == "triste"
+
+
+@pytest.mark.parametrize("semilla", range(60))
+def test_nunca_un_personaje_encima_de_otro(semilla):
+    import random
+
+    rnd = random.Random(semilla)
+    actores = [_a(rnd.choice(list(ac.ROLES)), rnd.choice(ac.ACCIONES), rnd.choice(ac.LADOS),
+                  rnd.choice(list(ac.POS) + ["ninguno"])) for _ in range(rnd.randint(2, 3))]
+    reservar = rnd.choice([None, "izquierda", "derecha"])
+    d, _ = ac.escena_accion({"fondo": "casa", "actores": actores}, rnd.uniform(1.5, 4.0), semilla,
+                            reservar=reservar)
+    assert ac.superposiciones(d) == []
+    if reservar:      # el costado de Tito queda libre al final (la escena congelada)
+        for x, hw in ac.posiciones_finales(d):
+            assert abs(x - ac.X_TITO[reservar]) >= ac.ANCHO_MEDIO_TITO + hw
+
+
+def test_tito_no_tapa_a_nadie_en_la_pausa():
+    d = guion()
+    segs = mk.segmentos(d)
+    inicios = [i * 3.0 for i in range(len(segs))]
+    datos, _ = mk.linea_de_tiempo(d, inicios, inicios[-1] + 3.0, [], None, presente=2026)
+    for i, e in enumerate(datos["escenas"]):
+        assert ac.superposiciones(e) == [], i
+        if e.get("congela") and not e.get("girar"):           # la pausa: Tito contra la escena congelada
+            tito = e["elementos"][0]
+            previa = next(x for x in reversed(datos["escenas"][:i]) if not x.get("congela"))
+            for x, hw in ac.posiciones_finales(previa):
+                assert abs(x - tito["x"]) >= ac.ANCHO_MEDIO_TITO + hw
+
+
+def test_escenarios_con_epoca_y_variantes():
+    casa_60 = esc.fondo("casa", ac.semilla_fondo(1969, 0))
+    casa_hoy = esc.fondo("casa", ac.semilla_fondo(2026, 0))
+    casa_40 = esc.fondo("casa", ac.semilla_fondo(1940, 0))
+    assert len({casa_60, casa_hoy, casa_40}) == 3
+    assert "scale(-1 1)" in esc.fondo("casa", ac.semilla_fondo(1969, 1))     # otra toma: espejada
+    assert "scale(-1 1)" not in casa_60
+    for f in ("oficina", "taller", "fabrica", "tienda", "ciudad"):
+        esc.fondo(f, ac.semilla_fondo(1969, 1))
+    assert esc.fondo("oficina", ac.semilla_fondo(1965, 0)) != esc.fondo("oficina", ac.semilla_fondo(2026, 0))
+    # dos escenas seguidas en la casa no son idénticas
+    d = guion()
+    for e in d["escenas"]:
+        e["fondo"] = "casa"
+    segs = mk.segmentos(d)
+    datos, _ = mk.linea_de_tiempo(d, [i * 3.0 for i in range(len(segs))], len(segs) * 3.0, [], None, presente=2026)
+    accion = [e["fondo"]["semilla"] for e in datos["escenas"] if not e.get("congela")]
+    assert all(a != b for a, b in zip(accion, accion[1:]))
+    assert any(s_ // 100 == 194 for s_ in accion) and any(s_ // 100 == 202 for s_ in accion)   # 1947 y hoy
+
+
+def test_objetos_llamativos():
+    for nombre in ("pelota_espuma", "juego_mesa", "hamburguesa", "chocolate", "galletitas", "auto",
+                   "telefono_disco", "radio", "consola"):
+        assert esc.prop(nombre).count("<") >= 8, nombre                   # con detalle, no un rótulo
+    d = guion()
+    d["escenas"][4]["objetos"] = [_o("caja", "quieto", texto="Juego")]
+    assert any("rótulo" in e for e in mk.validar_guion(d, marca(), FUENTE))
+    d = guion(protagonista={"prop": "caja", "que_es": "un juego"})
+    assert any("protagonista" in e for e in mk.validar_guion(d, marca(), FUENTE))
+    d = guion(protagonista={"prop": "radio", "que_es": "una radio"})
+    assert any("aparece en 0" in e for e in mk.validar_guion(d, marca(), FUENTE))
+    # en la cadena se tira el protagonista si se puede tirar
+    d = guion(protagonista={"prop": "pelota_espuma", "que_es": "la pelota de espuma"})
+    d["escenas"][0]["objetos"] = [_o("jarron", "quieto", "derecha")]
+    segs = mk.segmentos(d)
+    datos, _ = mk.linea_de_tiempo(d, [i * 3.0 for i in range(len(segs))], len(segs) * 3.0, [], None, presente=2026)
+    assert any(e.get("nombre") == "pelota_espuma" for e in datos["escenas"][0]["elementos"])
 
 
 def test_sepia():

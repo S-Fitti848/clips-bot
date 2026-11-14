@@ -31,6 +31,11 @@ class Estado:
     respiracion: float = 0.0       # -1..1 (seno)
     mirada: float = 0.0            # -1 izquierda .. 1 derecha
     inclinacion: float = 0.0       # grados de la cabeza
+    # Piernas (2026-11-14, "se mueven rígidos"): cuánto se levanta cada pie (0..1); la rodilla se
+    # dobla hacia afuera y el pie sube. `agachar` (0..1): las dos rodillas dobladas (anticipación).
+    pierna_izq: float = 0.0
+    pierna_der: float = 0.0
+    agachar: float = 0.0
 
 
 # Gestos: ángulos (hombro, codo) de cada brazo. Hombro 0 = colgando, 90 = horizontal hacia afuera,
@@ -110,7 +115,7 @@ class Personaje:
         cy_cabeza = tope_torso - self.R_CABEZA + 22
         hombro_y = tope_torso + 38
         return "".join([
-            self._piernas(piso_torso),
+            self._piernas(piso_torso, e),
             self._torso(piso_torso, tope_torso),
             self._brazo(-1, hombro_y, *e.brazo_izq),
             self._brazo(1, hombro_y, *e.brazo_der),
@@ -118,14 +123,23 @@ class Personaje:
         ])
 
     # -- partes --
-    def _piernas(self, piso_torso: float) -> str:
+    def _piernas(self, piso_torso: float, e: Estado | None = None) -> str:
+        """Cadera → rodilla → pie. Con la pierna levantada (caminar, correr) el pie sube y la rodilla
+        sale hacia afuera; agachado, las dos rodillas se abren. Recta = como antes."""
         p = []
         for s in (-1, 1):
             x = s * 42
-            p.append(linea_gruesa([(x, piso_torso + 10), (x, -28)], self.pantalon, 44))
+            lev = 0.0 if e is None else max(0.0, min(1.0, e.pierna_izq if s < 0 else e.pierna_der))
+            ag = 0.0 if e is None else max(0.0, min(1.0, e.agachar))
+            cadera = (x, piso_torso + 10)
+            pie_y = -28 - 70 * lev
+            rodilla = (x + s * (26 * lev + 30 * ag), (cadera[1] + pie_y) / 2 - 6 * lev)
+            pie = (x + s * 6 * lev, pie_y)
+            p.append(linea_gruesa([cadera, rodilla, pie], self.pantalon, 44))
+            dy = pie_y + 28
             # zapato: del talón (adentro) a la punta (afuera)
-            p.append(camino(f"M{n(x - s * 30)} 0 Q{n(x - s * 30)} -46 {n(x + s * 6)} -46 "
-                            f"Q{n(x + s * 50)} -46 {n(x + s * 52)} 0 Z", "#2a2a33",
+            p.append(camino(f"M{n(x - s * 30)} {n(dy)} Q{n(x - s * 30)} {n(dy - 46)} {n(x + s * 6)} {n(dy - 46)} "
+                            f"Q{n(x + s * 50)} {n(dy - 46)} {n(x + s * 52)} {n(dy)} Z", "#2a2a33",
                             ancho=P.TRAZO_FINO + 2))
         return "".join(p)
 

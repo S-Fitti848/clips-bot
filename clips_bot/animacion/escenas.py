@@ -77,6 +77,7 @@ GRIS_CALLE = "#5d6270"
 
 
 def fondo_oficina(semilla: int = 3) -> str:
+    decada, _ = epoca_de(semilla)
     p = [rect(0, 0, W, H, P.PARED, borde=False),
          rect(0, H * 0.72, W, H * 0.28, P.PISO, borde=False),
          f'<path d="M0 {n(H * 0.72)} L{W} {n(H * 0.72)}" {trazo()}/>']
@@ -93,9 +94,16 @@ def fondo_oficina(semilla: int = 3) -> str:
     p.append(rect(80, H * 0.62, 620, 46, P.MADERA, r=8))
     p.append(rect(110, H * 0.62 + 40, 40, 280, P.MADERA))
     p.append(rect(630, H * 0.62 + 40, 40, 280, P.MADERA))
-    p.append(rect(260, H * 0.62 - 190, 250, 170, P.GRIS_OSCURO, r=10))   # monitor
-    p.append(rect(278, H * 0.62 - 172, 214, 134, "#9fe3ff", r=4, ancho=P.TRAZO_FINO))
-    p.append(rect(365, H * 0.62 - 22, 40, 24, P.GRIS_OSCURO))
+    if decada and decada < 199:   # máquina de escribir y teléfono de disco
+        p.append(rect(270, H * 0.62 - 90, 230, 90, "#3d4250", r=14))
+        p.append(rect(300, H * 0.62 - 150, 170, 70, P.BLANCO, ancho=P.TRAZO_FINO))
+        for k in range(5):
+            p.append(circulo(300 + k * 40, H * 0.62 - 30, 12, "#cfd3da", ancho=3))
+        p.append(rect(560, H * 0.62 - 60, 110, 60, "#2b2b33", r=14) + circulo(615, H * 0.62 - 34, 20, "#ddd", ancho=3))
+    else:
+        p.append(rect(260, H * 0.62 - 190, 250, 170, P.GRIS_OSCURO, r=10))   # monitor
+        p.append(rect(278, H * 0.62 - 172, 214, 134, "#9fe3ff", r=4, ancho=P.TRAZO_FINO))
+        p.append(rect(365, H * 0.62 - 22, 40, 24, P.GRIS_OSCURO))
     # planta
     p.append(rect(860, H * 0.66, 120, 130, P.NARANJA, r=10))
     for ang in (-40, -15, 10, 35):
@@ -220,25 +228,149 @@ def fondo_escenario(semilla: int = 7) -> str:
     return "".join(p)
 
 
+def epoca_de(semilla: int) -> tuple[int, int]:
+    """(década, variante) de una semilla: década*100 + variante (19601 = los 60, variante 1); las
+    semillas chicas de antes (1, 2, 8…) son el presente."""
+    return (semilla // 100, semilla % 100) if semilla >= 1000 else (0, semilla)
+
+
+def _libros(x: float, y: float, ancho: float, rnd) -> str:
+    out, cx = [], x
+    colores = [P.ROJO, P.AZUL, P.VERDE, P.AMARILLO, P.VIOLETA, P.NARANJA, P.TURQUESA]
+    while cx < x + ancho - 18:
+        w, h = rnd.choice([(18, 70), (22, 80), (16, 62), (26, 74)])
+        out.append(rect(cx, y - h, w, h, rnd.choice(colores), r=2, ancho=4))
+        cx += w + 2
+    return "".join(out)
+
+
+def _ventana_cortinas(x: float, y: float, w: float, h: float, cortina: str, rnd) -> str:
+    out = [rect(x, y, w, h, "#bfe9ff", r=6), g(nube(), x + w * 0.35, y + h * 0.3, escala=0.4),
+           f'<path d="M{n(x + w / 2)} {n(y)} L{n(x + w / 2)} {n(y + h)} M{n(x)} {n(y + h / 2)} '
+           f'L{n(x + w)} {n(y + h / 2)}" {trazo(ancho=8)}/>',
+           rect(x - 30, y - 30, w + 60, 18, P.MADERA, r=6, ancho=4)]
+    for lado in (0, 1):   # cortinas recogidas a los costados, con pliegues
+        cx = x - 26 if lado == 0 else x + w - 50
+        out.append(camino(f"M{n(cx)} {n(y - 14)} L{n(cx + 76)} {n(y - 14)} Q{n(cx + 40)} {n(y + h * 0.5)} "
+                          f"{n(cx + 70)} {n(y + h + 30)} L{n(cx + 6)} {n(y + h + 30)} Q{n(cx - 6)} {n(y + h * 0.5)} "
+                          f"{n(cx)} {n(y - 14)} Z", cortina, ancho=P.TRAZO_FINO))
+        for k in (18, 38, 58):
+            out.append(f'<path d="M{n(cx + k)} {n(y)} Q{n(cx + k - 6)} {n(y + h * 0.5)} {n(cx + k + 4)} {n(y + h + 20)}" '
+                       f'fill="none" stroke="{P.CONTORNO}" stroke-opacity="0.2" stroke-width="4"/>')
+    return "".join(out)
+
+
+ESTILOS_CASA = {
+    # década: pared, dibujo de la pared, sillón, alfombra (afuera, adentro), cortina
+    0: ("#eef1f4", "#e3e8ee", "#7b8fa6", ("#9aa5b1", "#d5dbe1"), "#c9d6e3"),
+    190: ("#d8c9a3", "#c9b88d", "#8e2c2c", ("#8e2c2c", "#d9a441"), "#7a1f2b"),
+    195: ("#f7d9a0", "#e8b96a", "#2a9d8f", ("#e76f51", "#f4a261"), "#e76f51"),
+    196: ("#f2b25c", "#c9762e", "#e9c46a", ("#bc6c25", "#dda15e"), "#bc4749"),
+    197: ("#c99a5b", "#8a5a2b", "#a3542b", ("#6b4226", "#d4a373"), "#606c38"),
+    198: ("#f6d6e6", "#9fd8d0", "#7fc8f8", ("#ff99c8", "#fcf6bd"), "#a9def9"),
+    199: ("#e4ecd5", "#c3d7a4", "#5e8c61", ("#8fa38a", "#dfe8cc"), "#5e8c61"),
+}
+
+
+def _estilo_casa(decada: int):
+    if not decada or decada >= 200:
+        return ESTILOS_CASA[0]
+    if decada < 195:
+        return ESTILOS_CASA[190]
+    return ESTILOS_CASA.get(decada, ESTILOS_CASA[196])
+
+
 def fondo_casa(semilla: int = 8) -> str:
-    """El living de una casa: pared con papel, ventana, cuadro, sillón y alfombra (sin lámpara: la
-    lámpara es un prop, así se puede romper)."""
-    p = [rect(0, 0, W, H, "#f7d9b5", borde=False)]
-    for x in range(0, W, 120):   # papel a rayas
-        p.append(rect(x, 0, 60, H * 0.72, "#f1cda4", borde=False))
-    p.append(rect(0, H * 0.72, W, H * 0.28, "#b98a5e", borde=False))
+    """El living de una casa, con la DÉCADA de la escena (2026-11-14, "la casa es muy genérica"): papel
+    de pared, sillón, alfombra, cortinas y objetos de la época (radio y teléfono de disco en los 60,
+    gramófono antes de 1950, equipo de música en los 80, plantas y estantes en el presente), biblioteca
+    con libros y juguetes. La variante cambia la decoración (y en las impares, `fondo` la espeja). Sin
+    lámpara ni tele: son props, así se pueden romper."""
+    import random as _random
+
+    decada, var = epoca_de(semilla)
+    rnd = _random.Random(semilla)
+    pared, dibujo, sillon, (alf1, alf2), cortina = _estilo_casa(decada)
+    p = [rect(0, 0, W, H, pared, borde=False)]
+    if decada and decada < 195:          # papel de flores chiquitas + boiserie de madera abajo
+        for y in range(40, int(H * 0.5), 110):
+            for x in range(40 + (y // 110 % 2) * 55, W, 110):
+                p.append(circulo(x, y, 9, dibujo, borde=False))
+        p.append(rect(0, H * 0.5, W, H * 0.22, "#8a6a45", borde=False))
+        for x in range(30, W, 170):
+            p.append(rect(x, H * 0.52, 130, H * 0.17, "#9c7b52", r=6, ancho=4))
+    elif decada and decada < 198:        # años 50-70: círculos grandes y rombos de época
+        for y in range(70, int(H * 0.7), 170):
+            for x in range(60 + (y // 170 % 2) * 85, W, 170):
+                p.append(circulo(x, y, 34, dibujo, borde=False) + circulo(x, y, 16, pared, borde=False))
+    elif decada and decada < 200:        # 80-90: zigzag pastel
+        for y in range(80, int(H * 0.7), 140):
+            d = "M0 {y} ".format(y=y) + " ".join(f"L{x} {y + (28 if (x // 60) % 2 else 0)}" for x in range(0, W + 60, 60))
+            p.append(f'<path d="{d}" fill="none" stroke="{dibujo}" stroke-width="12"/>')
+    else:                                 # presente: pared lisa con una guarda suave
+        p.append(rect(0, H * 0.36, W, 14, dibujo, borde=False))
+    p.append(rect(0, H * 0.72, W, H * 0.28, "#b98a5e" if decada else "#c8a27a", borde=False))
+    for x in range(-200, W + 200, 160):   # tablas del piso en perspectiva
+        p.append(f'<path d="M{x} {n(H * 0.72)} L{x - 140} {H}" stroke="#a4774c" stroke-width="5"/>')
     p.append(f'<path d="M0 {n(H * 0.72)} L{W} {n(H * 0.72)}" {trazo()}/>')
-    p.append(rect(0, H * 0.70, W, 30, P.BLANCO))                     # zócalo
-    p.append(elipse(W / 2, H * 0.86, 420, 90, "#d9534f", ancho=P.TRAZO_FINO))   # alfombra
-    p.append(elipse(W / 2, H * 0.86, 340, 62, "#f0ad4e", borde=False))
-    p.append(rect(120, 300, 300, 230, P.BLANCO, r=6))                # cuadro
-    p.append(camino("M150 500 L240 390 L300 450 L340 410 L390 500 Z", P.VERDE, ancho=P.TRAZO_FINO))
-    # sillón
-    p.append(rect(560, 1050, 460, 200, P.VIOLETA, r=40))
-    p.append(rect(530, 1150, 520, 160, P.VIOLETA, r=40))
-    p.append(rect(560, 1180, 460, 60, "#a78bfa", r=20, ancho=P.TRAZO_FINO))
-    p.append(rect(560, 1300, 30, 60, P.MADERA) + rect(990, 1300, 30, 60, P.MADERA))
+    p.append(rect(0, H * 0.70, W, 30, P.BLANCO))                      # zócalo
+    # ventana con cortinas (arriba, del lado del sillón)
+    p.append(_ventana_cortinas(640, 250, 300, 330, cortina, rnd))
+    # biblioteca con libros y un objeto de la época arriba
+    p.append(rect(30, 330, 200, 1050, P.MADERA, r=6))
+    for k, y in enumerate((520, 760, 1000, 1240)):
+        p.append(rect(42, y, 176, 16, "#7a4b2a", ancho=4))
+        p.append(_libros(48, y, 166, _random.Random(semilla * 7 + k)))
+    p.append(_objeto_epoca(decada, 130, 330))
+    # cuadro de la época arriba de la biblioteca
+    if not decada or decada >= 200:
+        p.append(rect(300, 330, 220, 160, P.BLANCO, r=4) + rect(318, 348, 184, 124, "#7fb7e8", ancho=4)
+                 + circulo(380, 410, 30, P.AMARILLO, ancho=4) + rect(420, 380, 60, 70, P.ROJO, ancho=4))
+    else:
+        p.append(elipse(410, 410, 90, 110, "#c9a24a") + elipse(410, 410, 70, 88, "#efe2c1", ancho=4)
+                 + circulo(410, 390, 28, "#6b4a2e", ancho=4) + elipse(410, 470, 44, 30, "#6b4a2e", ancho=4))
+    # alfombra
+    p.append(elipse(W / 2, H * 0.86, 420, 90, alf1, ancho=P.TRAZO_FINO))
+    p.append(elipse(W / 2, H * 0.86, 340, 62, alf2, borde=False))
+    if decada and decada < 200:
+        p.append(elipse(W / 2, H * 0.86, 220, 36, alf1, borde=False))
+    # sillón de la época (con patitas en los 50-70)
+    p.append(rect(560, 1050, 460, 200, sillon, r=40))
+    p.append(rect(530, 1150, 520, 160, sillon, r=40))
+    p.append(rect(560, 1180, 460, 60, sillon, r=20, ancho=P.TRAZO_FINO))
+    if decada and 195 <= decada < 198:
+        for x in (580, 1000):
+            p.append(camino(f"M{x} 1305 L{x + 14} 1305 L{x + 6} 1380 L{x + 2} 1380 Z", P.MADERA, ancho=4))
+    else:
+        p.append(rect(560, 1300, 30, 60, P.MADERA) + rect(990, 1300, 30, 60, P.MADERA))
+    p.append(rect(600, 1090, 110, 80, cortina, r=24, ancho=P.TRAZO_FINO))    # almohadón
+    # juguetes en el piso (algunas variantes): cubos con letras
+    if var % 3 != 2:
+        for k, (x, c) in enumerate(((820, P.ROJO), (880, P.AZUL), (850, P.AMARILLO))):
+            y = 1440 if k < 2 else 1390
+            p.append(rect(x, y, 56, 56, c, r=6, ancho=5))
+    if not decada or decada >= 200:      # una planta en el presente
+        p.append(rect(965, 1290, 90, 100, P.NARANJA, r=10))
+        for ang in (-35, -10, 15, 40):
+            p.append(g(camino("M0 0 Q-24 -80 0 -150 Q24 -80 0 0 Z", P.VERDE, ancho=P.TRAZO_FINO), 1010, 1290, rot=ang))
     return "".join(p)
+
+
+def _objeto_epoca(decada: int, x: float, y: float) -> str:
+    """Un objeto que cuenta la época, apoyado arriba de la biblioteca (su base en `y`)."""
+    if decada and decada < 195:     # gramófono
+        return (rect(x - 50, y - 50, 100, 50, P.MADERA, r=6)
+                + camino(f"M{x} {y - 50} L{x + 10} {y - 110} Q{x + 70} {y - 190} {x + 90} {y - 120} "
+                         f"Q{x + 40} {y - 110} {x + 20} {y - 60} Z", "#c9a24a"))
+    if decada and decada < 198:     # radio de válvulas y teléfono de disco
+        return (rect(x - 80, y - 90, 120, 90, "#a0522d", r=18) + circulo(x - 50, y - 45, 26, "#e9d8a6", ancho=4)
+                + rect(x - 18, y - 70, 44, 50, "#e9d8a6", r=4, ancho=4)
+                + rect(x + 50, y - 40, 70, 40, "#2b2b33", r=10)
+                + circulo(x + 85, y - 30, 16, "#ddd", ancho=3))
+    if decada and decada < 200:     # equipo de música con casetera
+        return (rect(x - 90, y - 70, 180, 70, "#5b6170", r=8) + circulo(x - 55, y - 35, 22, "#2b2b33", ancho=4)
+                + circulo(x + 55, y - 35, 22, "#2b2b33", ancho=4) + rect(x - 22, y - 55, 44, 28, "#9fe3ff", ancho=3))
+    return rect(x - 30, y - 70, 60, 70, P.TURQUESA, r=10) + circulo(x, y - 90, 30, P.VERDE)   # maceta moderna
 
 
 def fondo_taller(semilla: int = 9) -> str:
@@ -267,10 +399,21 @@ FONDOS = {"casa": fondo_casa, "taller": fondo_taller, "cielo": fondo_cielo, "ciu
 
 
 def fondo(tipo: str, semilla: int | None = None) -> str:
+    """El fondo. Con la semilla nueva (década*100 + variante) las variantes impares salen ESPEJADAS
+    (otro "ángulo" del mismo lugar: dos escenas seguidas en la casa no se ven idénticas)."""
     f = FONDOS.get(tipo)
     if f is None:
         raise ValueError(f"Fondo desconocido: {tipo!r} (hay {', '.join(sorted(FONDOS))})")
-    return f() if semilla is None else f(semilla)
+    if semilla is None:
+        return f()
+    svg_ = f(semilla)
+    if semilla >= 1000 and (semilla % 100) % 2 == 1:
+        return f'<g transform="translate({W} 0) scale(-1 1)">{svg_}</g>'
+    return svg_
+
+
+def espejado(semilla: int) -> bool:
+    return semilla >= 1000 and (semilla % 100) % 2 == 1
 
 
 # ---- props --------------------------------------------------------------------
@@ -572,6 +715,106 @@ def prop_reloj_bolsillo(**_) -> str:
     return reloj(40.0, 90)
 
 
+def prop_pelota_espuma(color: str = P.NARANJA, **_) -> str:
+    """La pelota de ESPUMA (Nerf): colores vivos, una franja, poros de distintos tamaños y un brillo:
+    se tiene que ver blandita. Sin logo."""
+    import random as _random
+
+    rnd = _random.Random(7)
+    poros = []
+    while len(poros) < 34:
+        x, y = rnd.uniform(-62, 62), rnd.uniform(-62, 62)
+        if x * x + y * y < 60 * 60:
+            poros.append(elipse(x, y, rnd.uniform(4, 9), rnd.uniform(3, 7), "#c4561a", borde=False))
+    return (circulo(0, 0, 78, color)
+            + camino("M-72 30 Q0 70 72 30 Q60 60 0 74 Q-60 60 -72 30 Z", "#d9661f", borde=False)   # sombra
+            + rect(-74, -16, 148, 32, P.AMARILLO, borde=False)                                  # franja
+            + "".join(poros)
+            + circulo(0, 0, 78, "none")
+            + elipse(-30, -40, 24, 14, "#ffe3c4", borde=False))
+
+
+def prop_juego_mesa(**_) -> str:
+    """Un juego de mesa abierto: tablero con casillas de colores alrededor, dados y fichas."""
+    out = [camino("M-170 0 L0 -90 L170 0 L0 90 Z", "#e8f3d6")]
+    colores = [P.ROJO, P.AZUL, P.VERDE, P.AMARILLO, P.VIOLETA, P.NARANJA]
+    for k in range(6):   # casillas en el borde (en perspectiva)
+        u0, u1 = k / 6, (k + 1) / 6
+        for (ax, ay), (bx, by) in (((-170, 0), (0, -90)), ((0, 90), (170, 0))):
+            x0, y0 = ax + (bx - ax) * u0, ay + (by - ay) * u0
+            x1, y1 = ax + (bx - ax) * u1, ay + (by - ay) * u1
+            out.append(camino(f"M{n(x0)} {n(y0)} L{n(x1)} {n(y1)} L{n(x1 * 0.8)} {n(y1 * 0.8)} "
+                              f"L{n(x0 * 0.8)} {n(y0 * 0.8)} Z", colores[(k + (1 if ax else 0)) % 6], ancho=3))
+    out.append(rect(-30, -24, 40, 40, P.BLANCO, r=6, ancho=4) + circulo(-20, -14, 4, P.CONTORNO, borde=False)
+               + circulo(0, 6, 4, P.CONTORNO, borde=False))
+    out.append(rect(30, -10, 36, 36, P.BLANCO, r=6, ancho=4) + circulo(48, 8, 4, P.CONTORNO, borde=False))
+    for x, c in ((-80, P.ROJO), (90, P.AZUL)):   # fichas
+        out.append(camino(f"M{x - 12} 30 L{x} -10 L{x + 12} 30 Z", c, ancho=4) + circulo(x, -12, 9, c, ancho=4))
+    out.append(rect(-14, 34, 28, 22, P.VERDE, ancho=3) + camino("M-18 34 L0 20 L18 34 Z", P.ROJO, ancho=3))
+    return "".join(out)
+
+
+def prop_hamburguesa(**_) -> str:
+    return (camino("M-120 30 Q-120 -90 0 -90 Q120 -90 120 30 Z", "#e0a050")
+            + "".join(elipse(x, y, 7, 4, "#fff6dc", borde=False) for x, y in ((-50, -50), (0, -66), (45, -48), (-20, -30), (30, -24)))
+            + camino("M-130 30 Q-110 50 -90 30 Q-70 50 -50 30 Q-30 50 -10 30 Q10 50 30 30 Q50 50 70 30 Q90 50 110 30 Q125 45 130 30 L130 44 L-130 44 Z", P.VERDE, ancho=4)
+            + camino("M-110 44 L110 44 L60 74 L-60 74 Z", P.AMARILLO, ancho=4)
+            + rect(-118, 56, 236, 40, "#7a4b2a", r=18)
+            + camino("M-110 96 L110 96 Q110 130 0 130 Q-110 130 -110 96 Z", "#e0a050"))
+
+
+def prop_chocolate(**_) -> str:
+    out = [rect(-150, -70, 300, 140, "#6b3b1f", r=10)]
+    for x in range(-150, 150, 60):
+        for y in (-70, 0):
+            out.append(rect(x + 6, y + 6, 48, 58, "#7d4826", r=6, ancho=4))
+    out.append(camino("M30 -78 L160 -78 L160 78 L30 78 Q60 40 40 0 Q60 -40 30 -78 Z", P.ROJO))
+    out.append(rect(70, -20, 70, 40, P.AMARILLO, r=6, ancho=4))
+    return "".join(out)
+
+
+def prop_galletitas(**_) -> str:
+    out = []
+    for k, y in enumerate((40, 0, -40)):
+        out.append(elipse(0, y + 14, 100, 26, "#3d2314") + elipse(0, y, 100, 26, "#f4ead5", ancho=4)
+                   + elipse(0, y - 12, 100, 26, "#3d2314"))
+        for x in (-50, 0, 50):
+            out.append(circulo(x, y - 14, 5, "#2a170d", borde=False))
+    return "".join(out)
+
+
+def prop_auto(color: str = P.ROJO, **_) -> str:
+    return (camino("M-180 30 L-180 -20 Q-170 -40 -120 -44 L-70 -100 L80 -100 L130 -44 Q175 -40 180 -10 L180 30 Z", color)
+            + camino("M-60 -90 L-20 -90 L-20 -46 L-100 -46 Z", "#9fe3ff", ancho=5)
+            + camino("M0 -90 L70 -90 L110 -46 L0 -46 Z", "#9fe3ff", ancho=5)
+            + circulo(-110, 34, 38, "#2b2b33") + circulo(-110, 34, 16, P.GRIS, ancho=4)
+            + circulo(110, 34, 38, "#2b2b33") + circulo(110, 34, 16, P.GRIS, ancho=4)
+            + rect(160, -20, 20, 16, P.AMARILLO, r=4, ancho=3))
+
+
+def prop_telefono_disco(**_) -> str:
+    return (camino("M-110 60 L-90 -30 L90 -30 L110 60 Z", "#2b2b33")
+            + circulo(0, 18, 48, "#e8e3d8", ancho=4)
+            + "".join(circulo(30 * math.cos(math.radians(a)), 18 + 30 * math.sin(math.radians(a)), 7, "#2b2b33", borde=False)
+                      for a in range(-60, 240, 30))
+            + camino("M-120 -40 Q-130 -90 -80 -90 L80 -90 Q130 -90 120 -40 L90 -50 L-90 -50 Z", "#2b2b33"))
+
+
+def prop_radio(**_) -> str:
+    return (rect(-130, -90, 260, 180, "#a0522d", r=40)
+            + rect(-100, -60, 120, 120, "#e9d8a6", r=16, ancho=4)
+            + "".join(f'<path d="M-90 {y} L10 {y}" stroke="#a0522d" stroke-width="6"/>' for y in range(-40, 50, 16))
+            + circulo(70, -20, 26, "#e9d8a6", ancho=4) + circulo(70, 45, 18, "#e9d8a6", ancho=4)
+            + f'<path d="M70 -20 L84 -34" {trazo(ancho=5)}/>')
+
+
+def prop_consola(**_) -> str:
+    return (rect(-150, -40, 300, 80, "#3d4250", r=14) + rect(-120, -24, 120, 14, "#2b2b33", r=4, borde=False)
+            + circulo(100, 0, 12, P.ROJO, ancho=3)
+            + f'<path d="M-60 40 Q-60 110 40 110" fill="none" {trazo(ancho=6)}/>'
+            + g(prop_control(), 120, 130, escala=0.6))
+
+
 def icono_pausa() -> str:
     """El "⏸" de la pausa del locutor (dos barras), centrado en (0, 0)."""
     return (circulo(0, 0, 70, "#ffffff", ancho=P.TRAZO_FINO)
@@ -579,7 +822,10 @@ def icono_pausa() -> str:
             + rect(10, -36, 20, 72, P.CONTORNO, r=4, borde=False))
 
 
-PROPS = {"tele": prop_tele, "cuadro": prop_cuadro, "mesa": prop_mesa, "estante": prop_estante,
+PROPS = {"pelota_espuma": prop_pelota_espuma, "juego_mesa": prop_juego_mesa, "hamburguesa": prop_hamburguesa,
+         "chocolate": prop_chocolate, "galletitas": prop_galletitas, "auto": prop_auto,
+         "telefono_disco": prop_telefono_disco, "radio": prop_radio, "consola": prop_consola,
+         "tele": prop_tele, "cuadro": prop_cuadro, "mesa": prop_mesa, "estante": prop_estante,
          "reloj_bolsillo": prop_reloj_bolsillo, "pelota": prop_pelota, "lampara": prop_lampara, "ventana": prop_ventana,
          "pedazo": prop_pedazo, "martillo": prop_martillo, "jarron": prop_jarron,
          "microfono": prop_microfono, "cartel": prop_cartel, "flecha": prop_flecha, "pregunta": prop_pregunta,

@@ -132,7 +132,7 @@ def test_camara_no_se_sale_del_dibujo():
 @pytest.mark.parametrize("cambio,texto", [
     ({"escenas": [{"duracion": 1, "elementos": [{"tipo": "dragon"}]}]}, "dragon"),
     ({"escenas": [{"duracion": 1, "fondo": "playa"}]}, "playa"),
-    ({"escenas": [{"duracion": 1, "elementos": [{"tipo": "prop", "nombre": "auto"}]}]}, "auto"),
+    ({"escenas": [{"duracion": 1, "elementos": [{"tipo": "prop", "nombre": "submarino"}]}]}, "submarino"),
     ({"escenas": [{"duracion": 1, "transicion": "giro"}]}, "giro"),
     ({"escenas": [{"elementos": []}]}, "duracion"),
     ({"escenas": [{"duracion": 1, "elementos": [

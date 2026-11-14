@@ -47,10 +47,14 @@ from .audio import vocal
 from .easing import curva, recortar
 from .svg import g, texto_con_borde
 
-PROPS_ANIMABLES = ("x", "y", "escala", "rotacion", "opacidad", "mirada")
+PROPS_ANIMABLES = ("x", "y", "escala", "rotacion", "opacidad", "mirada", "estirar", "cabeza")
 # "cara" de un personaje: (cejas, boca, apertura de la boca)
 CARAS = {"feliz": ("arriba", "sonrisa", 0.0), "enojado": ("enojo", "cerrada", 0.0),
-         "sorprendido": ("arriba", "o", 0.7), "triste": ("triste", "cerrada", 0.0)}
+         "sorprendido": ("arriba", "o", 0.7), "triste": ("triste", "cerrada", 0.0),
+         "risa": ("arriba", "a", 0.55), "grito": ("enojo", "a", 0.8)}
+# Ciclos (2026-11-14): pasos por segundo de cada pierna, cuánto rebota el cuerpo, cuánto se balancean
+# los brazos (en contrafase con las piernas), cuánto se doblan los codos y cuánto se inclina la cabeza.
+CICLOS = {"caminar": (1.7, 16.0, 24.0, 18.0, 3.0), "correr": (2.8, 30.0, 40.0, 75.0, 4.0)}
 GRIS_PAUSA = "#4a4f5c"
 TIPOS_ELEMENTO = ("personaje", "prop", "gancho", "texto", "tito", "contador")
 TRANSICIONES = ("corte", "fundido", "zoom", "barrido")
@@ -133,7 +137,8 @@ class Elemento:
             raise ErrorGuion(f"{donde}: {tipo} sin texto")
         base = {"x": float(d.get("x", P.ANCHO / 2)), "y": float(d.get("y", P.ALTO / 2)),
                 "escala": float(d.get("escala", 1.0)), "rotacion": float(d.get("rotacion", 0)),
-                "opacidad": float(d.get("opacidad", 1.0)), "mirada": float(d.get("mirada", 0))}
+                "opacidad": float(d.get("opacidad", 1.0)), "mirada": float(d.get("mirada", 0)),
+                "estirar": float(d.get("estirar", 1.0)), "cabeza": float(d.get("cabeza", 0))}
         desde = float(d.get("desde", 0.0))
         hasta = float(d.get("hasta", math.inf))
         claves = list(d.get("keyframes", []))
@@ -189,7 +194,9 @@ class Elemento:
             return ""
         tl = t - self.desde
         if self.tipo == "personaje":
-            contenido = self._pj.svg(self._estado(t, apertura, cuadro, v["mirada"]))
+            est, dy = self._estado(t, apertura, cuadro, v["mirada"], v["cabeza"])
+            contenido = self._pj.svg(est)
+            v["y"] += dy
         elif self.tipo == "prop":
             params = {k: val for k, val in self.datos.items()
                       if k in ("texto", "color", "encendida", "rota", "forma")}
@@ -226,9 +233,26 @@ class Elemento:
             tam = int(self.datos.get("tam", 96))
             contenido = texto_con_borde(str(self.datos["texto"]), 0, tam * 0.35, tam,
                                         color=self.datos.get("color", P.TEXTO))
+        st = max(0.5, min(1.5, v["estirar"]))
+        if abs(st - 1) > 1e-3:   # squash & stretch desde los pies: más alto = más angosto
+            return g(contenido, v["x"], v["y"], v["escala"] * (1 + (1 - st) * 0.5), v["rotacion"],
+                     v["opacidad"], escala_y=v["escala"] * st)
         return g(contenido, v["x"], v["y"], v["escala"], v["rotacion"], v["opacidad"])
 
-    def _estado(self, t: float, apertura: float, cuadro: int, mirada: float) -> per.Estado:
+    def _ciclo(self, t: float):
+        """(tipo, fase, peso 0..1, sentido) del ciclo de caminata/carrera activo en `t`, o None. El peso
+        entra y sale en 0,15 s: nada de saltos de pose."""
+        for c in self.datos.get("ciclos", []):
+            t0, t1 = float(c["t0"]), float(c["t1"])
+            if t0 - 0.15 <= t < t1 + 0.15:
+                peso = recortar((t - t0 + 0.15) / 0.3) * recortar((t1 + 0.15 - t) / 0.3)
+                pasos = CICLOS.get(c.get("tipo"), CICLOS["caminar"])[0]
+                return c.get("tipo", "caminar"), 2 * math.pi * pasos * max(0.0, t - t0), peso, \
+                    float(c.get("sentido", 0))
+        return None
+
+    def _estado(self, t: float, apertura: float, cuadro: int, mirada: float,
+                cabeza: float = 0.0) -> tuple[per.Estado, float]:
         gestos = sorted(self.datos.get("gestos", []), key=lambda x: float(x.get("t", 0)))
         previo, actual, t_cambio = "reposo", "reposo", -10.0
         for gs in gestos:
@@ -238,6 +262,24 @@ class Elemento:
         e = per.mezclar_brazos(per.estado_de_gesto(previo), per.estado_de_gesto(actual), u)
         e.respiracion = math.sin(2 * math.pi * t / 3.2)
         e.mirada = mirada
+        dy = 0.0
+        ciclo = self._ciclo(t)
+        if ciclo:
+            tipo, fase, peso, sentido = ciclo
+            _, rebote, brazo, codo, incl = CICLOS.get(tipo, CICLOS["caminar"])
+            s = math.sin(fase)
+            # piernas alternadas, el cuerpo sube en cada paso, los brazos en contrafase
+            e.pierna_izq, e.pierna_der = peso * max(0.0, s), peso * max(0.0, -s)
+            dy = -peso * rebote * abs(s)
+            bi = (14 + brazo * s, 12 + codo + 10 * max(0.0, s))
+            bd = (14 - brazo * s, 12 + codo + 10 * max(0.0, -s))
+            e.brazo_izq = tuple(a + (b - a) * peso for a, b in zip(e.brazo_izq, bi))
+            e.brazo_der = tuple(a + (b - a) * peso for a, b in zip(e.brazo_der, bd))
+            if sentido:
+                e.mirada = sentido
+        # la expresión cambia con la acción: "caras" = [{t, cara}] (la última que ya empezó)
+        caras = sorted(self.datos.get("caras", []), key=lambda x: float(x.get("t", 0)))
+        cara_t = next((c["cara"] for c in reversed(caras) if float(c.get("t", 0)) <= t), None)
         parp = 0.0
         for tp in self.parpadeos:
             d = abs(t - tp)
@@ -247,7 +289,7 @@ class Elemento:
         e.parpadeo = parp
         # Cara (canal de marcas, 2026-11-14): la expresión de quien no habla ("cara": feliz,
         # enojado, sorprendido, triste); las cejas del gesto mandan solo si no hay cara.
-        cara = self.datos.get("cara")
+        cara = cara_t or self.datos.get("cara")
         if cara in CARAS:
             cejas, boca, ap = CARAS[cara]
             e.cejas, e.boca, e.apertura = cejas, boca, ap
@@ -257,8 +299,11 @@ class Elemento:
         if habla:
             e.apertura = apertura
             e.boca = vocal(cuadro, apertura)
-        e.inclinacion = 2.5 * math.sin(2 * math.pi * t / 4.1) if habla and apertura > 0 else 0.0
-        return e
+        e.inclinacion = (2.5 * math.sin(2 * math.pi * t / 4.1) if habla and apertura > 0 else 0.0) + cabeza
+        if ciclo:
+            e.inclinacion += ciclo[2] * CICLOS.get(ciclo[0], CICLOS["caminar"])[4] * math.sin(ciclo[1])
+        e.agachar = recortar((1.0 - self.pista.valor("estirar", t, 1.0)) / 0.18)   # al agacharse, rodillas
+        return e, dy
 
 
 # ---- escenas y video ---------------------------------------------------------------

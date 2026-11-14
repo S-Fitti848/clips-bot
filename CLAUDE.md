@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-11-14 | **Versión:** v0.96.0 (desplegado) | **Modo:** Fase 2: corriendo solo en la Pi. **Rots APAGADO** (`publicacion.rots: false`). Madrugada desde la escucha: tecnología desde las 04:00 → 2 de Latinoamérica, todo antes de las 05:30; timers 05:00 (no hace nada con Rots apagado) y 06:00 de respaldo
+**Snapshot:** 2026-11-14 | **Versión:** v0.97.0 (desplegado) | **Modo:** Fase 2: corriendo solo en la Pi. **Rots APAGADO** (`publicacion.rots: false`). Madrugada desde la escucha: tecnología desde las 04:00 → 2 de Latinoamérica, todo antes de las 05:30; timers 05:00 (no hace nada con Rots apagado) y 06:00 de respaldo
 
 > **SI ESTÁS EMPEZANDO UNA SESIÓN NUEVA, LEÉ §10.** Ahí está qué está hecho, qué quedó a medias,
 > qué falta, y las trampas que ya nos mordieron.
@@ -959,6 +959,20 @@ Problemas abiertos:
 
 ## 9. CHANGELOG
 
+- v0.97.0 (2026-11-14, noche) — **Así Nació: movimiento, sin superposiciones, escenarios de época y
+  objetos con detalle** (Santi: "muchísimo mejor"; REGLAS PERMANENTES, en el guion y en el chequeo
+  código + Haiku con reintento): (a) movimiento con peso: caminar y correr con ciclo (cadera, rodilla y
+  pie; brazos en contrafase, rebote, cabeza), anticipación y squash & stretch en saltos y golpes, la
+  cara cambia con la acción (caras nuevas: risa y grito); nadie queda de piedra; (b) nunca un personaje
+  encima de otro: cada uno en su carril sin cruzarse, Tito en el borde libre; chequeo cuadro a cuadro en
+  código; (c) escenarios de la época de la historia (la década sale del viaje en el tiempo: papel de
+  pared, sillón, alfombra, cortinas, gramófono / radio y teléfono de disco / equipo de música / planta;
+  oficina con máquina de escribir o monitor) y variados; dos escenas seguidas en el mismo lugar no son
+  idénticas; (d) el objeto protagonista dibujado con detalle, que se entiende sin leer, en 2 o más
+  escenas (pelota de espuma, juego de mesa, hamburguesa, chocolate, galletitas, auto, teléfono de
+  disco, radio, consola); nada de cajas con un rótulo. Remotion no hizo falta. Nerf: 42 s, render 366 s,
+  Claude US$ 0,30 (3 intentos). Flojo: personajes siempre de frente, la década solo cambia casa y
+  oficina, cajas de superposición aproximadas con objetos grandes. 1342 tests OK.
 - v0.96.0 (2026-11-14, noche) — **Así Nació (canal de marcas animadas): reglas permanentes, Tito y
   viaje en el tiempo** (feedback de Santi sobre Nerf y Monopoly: "dos personajes hablando no
   engancha"). REGLAS para TODOS los videos del canal, en el guion, las escenas y el chequeo (código +

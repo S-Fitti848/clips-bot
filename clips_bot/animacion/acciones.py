@@ -104,11 +104,11 @@ def soporte_de(prop: str, soporte: str | None) -> str:
     return "aire" if prop in ICONOS else SOPORTE_NATURAL.get(prop, "mesa")
 
 
-def ubicar(prop: str, soporte: str, donde: str, fondo: str = "") -> tuple[float, float]:
+def ubicar(prop: str, soporte: str, donde: str, fondo: str = "", espejo: bool = False) -> tuple[float, float]:
     """(x, y) del centro del dibujo, apoyado donde corresponde."""
     x = _x(donde if donde in LADOS else "centro")
-    if prop == "lampara" and soporte == "piso" and fondo == "casa" and donde != "izquierda":
-        x = 470.0                       # la lámpara de pie, al lado del sillón
+    if prop == "lampara" and soporte == "piso" and fondo == "casa":
+        x = 610.0 if espejo else 470.0  # la lámpara de pie, al lado del sillón (de un lado o del otro)
     base = ALTO_BASE.get(prop, 120)
     if soporte == "piso":
         return x, PISO_PARED - base
@@ -158,9 +158,10 @@ def _arco(x0, y0, x1, y1, t0, dur, alto, giro=0.0) -> list[dict]:
 class Escena:
     """Arma UNA escena: elementos, cámara y SFX (segundos locales a la escena)."""
 
-    def __init__(self, dur: float, semilla: int = 0, fondo: str = ""):
+    def __init__(self, dur: float, semilla: int = 0, fondo: str = "", espejo: bool = False):
         self.dur = dur
         self.fondo = fondo
+        self.espejo = espejo
         self.fondo_el: list[dict] = []        # muebles de apoyo (mesa, estante): atrás de todo
         self.elementos: list[dict] = []
         self.sfx: list[tuple[float, str]] = []
@@ -171,116 +172,164 @@ class Escena:
 
     # ---- personajes ---------------------------------------------------------------------
     def actor(self, rol: str, accion: str, desde: str = "centro", hacia: str | None = None,
-              cara: str = "normal", k: int = 0) -> None:
+              cara: str = "normal", k: int = 0, x0: float | None = None, x1: float | None = None) -> None:
+        """Un personaje con su acción. Movimiento con peso (Santi, 2026-11-14: "se mueven rígidos"):
+        caminar/correr con el CICLO de la base (piernas que se levantan con la rodilla doblada, brazos
+        en contrafase, el cuerpo sube y baja con cada paso, la cabeza se balancea), anticipación y
+        squash & stretch en saltos y golpes, la cabeza que se inclina y la cara que cambia con la acción.
+        `x0`/`x1` (numéricos) los pone el plan de la escena para que nadie se pise."""
         nombre, cambios, escala = ROLES.get(rol, ROLES["joven"])
-        x0 = _x(desde)
-        x1 = _x(hacia, desde) if hacia and hacia in POS else x0
+        x0 = _x(desde) if x0 is None else x0
+        x1 = (_x(hacia, desde) if hacia and hacia in POS else x0) if x1 is None else x1
         t0 = round(0.05 + 0.18 * k, 2)
         fin = max(t0 + 0.6, self.dur - 0.1)
         el = {"tipo": "personaje", "nombre": nombre, "cambios": cambios, "x": x0, "y": PISO,
               "escala": escala}
-        if cara in ("feliz", "enojado", "sorprendido", "triste"):
-            el["cara"] = cara
         kf: list[dict] = []
         gestos: list[dict] = [{"t": 0, "gesto": "reposo"}]
+        caras: list[dict] = []
+        if cara in ("feliz", "enojado", "sorprendido", "triste"):
+            caras.append({"t": 0, "cara": cara})
         alto = 680 * escala * per_alto(nombre, cambios)
         sentido = 1 if x1 >= x0 else -1
 
-        if accion in ("caminar", "entrar", "salir"):
-            if accion == "entrar":
-                x0 = POS["afuera_izq"] if x1 <= 540 else POS["afuera_der"]
-                el["x"] = x0
-            elif accion == "salir":
-                x1 = POS["afuera_der"] if x0 >= 540 else POS["afuera_izq"]
-            if abs(x1 - x0) < 60:
-                x1 = x0 + (180 if x0 < 540 else -180)
-            tw = min(fin - t0, max(1.0, abs(x1 - x0) / 420))
-            kf += [{"t": t0, "x": x0}, {"t": t0 + tw, "x": x1, "easing": "lineal"}]
-            kf += _bob(PISO, t0, t0 + tw, 14, 0.14)
-            gestos += _alternar("paso_a", "paso_b", t0, t0 + tw, 0.25) + [{"t": t0 + tw, "gesto": "reposo"}]
-        elif accion == "correr":
-            if abs(x1 - x0) < 60:
-                x1 = POS["derecha"] if x0 < 540 else POS["izquierda"]
-            tw = min(fin - t0, max(0.55, abs(x1 - x0) / 1100))
-            kf += [{"t": t0, "x": x0, "rotacion": 0}, {"t": t0 + 0.15, "rotacion": 7 * sentido},
-                   {"t": t0 + tw, "x": x1, "easing": "lineal"}, {"t": t0 + tw + 0.2, "rotacion": 0}]
-            kf += _bob(PISO, t0, t0 + tw, 26, 0.1)
-            gestos += _alternar("correr_a", "correr_b", t0, t0 + tw, 0.16) + [{"t": t0 + tw, "gesto": "reposo"}]
-            self.sfx.append((t0, "whoosh"))
+        def respira(desde_t: float, hasta_t: float, amp: float = 3.0) -> None:
+            """Un balanceo suave de la cabeza mientras está en su lugar (nadie queda de piedra)."""
+            t, s_ = desde_t, 1
+            while t < hasta_t:
+                kf.append({"t": round(t, 3), "cabeza": amp * s_, "easing": "suave"})
+                t += 0.7
+                s_ = -s_
+
+        if accion in ("caminar", "entrar", "salir", "correr"):
+            corre = accion == "correr"
+            if abs(x1 - x0) < 30:
+                x1 = x0          # sin lugar para moverse (lo decidió el plan): camina en el lugar un poco
+            vel = 950 if corre else 380
+            tw = min(fin - t0, max(0.7 if corre else 1.0, abs(x1 - x0) / vel))
+            # arranca y frena con easing (un poco de anticipación: se inclina antes de salir)
+            kf += [{"t": t0, "x": x0, "rotacion": 0}, {"t": t0 + 0.12, "rotacion": (8 if corre else 3) * sentido},
+                   {"t": t0 + tw, "x": x1, "easing": "suave"}, {"t": t0 + tw + 0.2, "rotacion": 0, "easing": "salida"}]
+            el["ciclos"] = [{"t0": t0, "t1": round(t0 + tw, 3), "tipo": "correr" if corre else "caminar",
+                             "sentido": sentido if x1 != x0 else 0}]
+            if corre:
+                self.sfx.append((t0, "whoosh"))
+                caras.append({"t": t0, "cara": cara if cara != "normal" else "sorprendido"})
+            # al frenar, un saltito de squash
+            kf += [{"t": t0 + tw, "estirar": 1.0}, {"t": t0 + tw + 0.08, "estirar": 0.9, "easing": "salida"},
+                   {"t": t0 + tw + 0.25, "estirar": 1.0, "easing": "rebote"}]
+            respira(t0 + tw + 0.3, fin)
         elif accion == "saltar":
-            t, saltos = t0 + 0.15, 0
-            while t + 0.6 <= fin and saltos < 3:
-                kf += [{"t": t, "y": PISO}, {"t": t + 0.28, "y": PISO - 220, "easing": "salida"},
-                       {"t": t + 0.56, "y": PISO, "easing": "entrada"}]
-                gestos += [{"t": t, "gesto": "festejar"}, {"t": t + 0.5, "gesto": "reposo"}]
-                self.sfx.append((t, "boing"))
-                t += 0.75
+            t, saltos = t0 + 0.1, 0
+            caras.append({"t": t0, "cara": "risa"})
+            while t + 0.9 <= fin + 0.1 and saltos < 3:
+                kf += [{"t": t, "y": PISO, "estirar": 1.0},
+                       {"t": t + 0.12, "estirar": 0.82, "y": PISO, "easing": "salida"},        # se agacha
+                       {"t": t + 0.32, "y": PISO - 230, "estirar": 1.12, "easing": "salida"},   # se estira al subir
+                       {"t": t + 0.44, "estirar": 1.0, "cabeza": -6, "easing": "suave"},
+                       {"t": t + 0.62, "y": PISO, "easing": "entrada"},
+                       {"t": t + 0.7, "estirar": 0.84, "cabeza": 4, "easing": "salida"},          # aterriza aplastado
+                       {"t": t + 0.86, "estirar": 1.0, "cabeza": 0, "easing": "rebote"}]
+                gestos += [{"t": t + 0.1, "gesto": "festejar"}, {"t": t + 0.72, "gesto": "explicar"}]
+                self.sfx.append((t + 0.14, "boing"))
+                t += 0.95
                 saltos += 1
         elif accion == "caerse":
-            tc = t0 + 0.3
-            kf += [{"t": tc, "rotacion": 0, "y": PISO}, {"t": tc + 0.1, "y": PISO - 60, "easing": "salida"},
-                   {"t": tc + 0.4, "rotacion": 84 * (1 if x0 < 540 else -1), "y": PISO + 30,
-                    "easing": "entrada"}]
-            gestos += [{"t": tc, "gesto": "sorpresa"}]
-            el["cara"] = "sorprendido"
-            self.sfx.append((tc + 0.4, "golpe"))
-            self.golpes.append((tc + 0.4, 20))
+            tc = t0 + 0.25
+            lado = 1 if x0 < 540 else -1
+            caras += [{"t": tc - 0.1, "cara": "sorprendido"}, {"t": tc + 0.7, "cara": "triste"}]
+            kf += [{"t": tc - 0.1, "rotacion": 0, "y": PISO, "cabeza": 0},
+                   {"t": tc, "rotacion": -8 * lado, "cabeza": -10, "easing": "salida"},          # tambalea
+                   {"t": tc + 0.12, "y": PISO - 50, "rotacion": 10 * lado, "easing": "salida"},
+                   {"t": tc + 0.45, "rotacion": 84 * lado, "y": PISO + 30, "easing": "entrada"},
+                   {"t": tc + 0.5, "estirar": 0.88}, {"t": tc + 0.7, "estirar": 1.0, "easing": "rebote"}]
+            gestos += [{"t": tc - 0.1, "gesto": "sorpresa"}]
+            self.sfx.append((tc + 0.45, "golpe"))
+            self.golpes.append((tc + 0.45, 20))
         elif accion == "retar":
-            gestos += _alternar("retar_a", "retar_b", t0, fin, 0.2)
-            kf += _bob(PISO, t0, fin, 10, 0.4)
-            el.setdefault("cara", "enojado")
+            caras += [{"t": t0, "cara": "enojado"}, {"t": t0 + 0.6, "cara": "grito"}, {"t": t0 + 1.4, "cara": "enojado"}]
+            gestos += [{"t": t0, "gesto": "retar_a"}] + _alternar("retar_a", "retar_b", t0 + 0.3, fin, 0.24)
+            t, s_ = t0, 1
+            while t < fin:   # se inclina hacia adelante y mueve la cabeza con cada sacudida del dedo
+                kf.append({"t": round(t, 3), "cabeza": 7 * s_, "estirar": 1.0 + 0.03 * s_, "easing": "suave"})
+                t += 0.24
+                s_ = -s_
         elif accion == "martillar":
-            gestos += _alternar("martillo_arriba", "martillo_abajo", t0, fin, 0.22)
+            caras.append({"t": t0, "cara": "enojado"})
+            gestos += _alternar("martillo_arriba", "martillo_abajo", t0, fin, 0.26)
             mx, my = x0 + 150 * escala, PISO - alto * 0.62
             mk, t, k2 = [], t0, 0
             while t < fin:
-                mk.append({"t": round(t, 3), "rotacion": -40 if k2 % 2 == 0 else 25, "easing": "salida"})
-                if k2 % 2:
+                arriba = k2 % 2 == 0
+                mk.append({"t": round(t, 3), "rotacion": -40 if arriba else 25, "easing": "entrada" if not arriba else "salida"})
+                kf.append({"t": round(t, 3), "estirar": 1.02 if arriba else 0.95, "cabeza": -3 if arriba else 4,
+                           "easing": "suave"})
+                if not arriba:
                     self.sfx.append((t + 0.12, "tac"))
-                t += 0.22
+                t += 0.26
                 k2 += 1
             self.elementos.append({"tipo": "prop", "nombre": "martillo", "x": mx, "y": my,
                                    "escala": 0.55 * escala, "keyframes": mk})
         elif accion == "tirar":
             gestos += [{"t": t0, "gesto": "lanzar_atras"}, {"t": t0 + 0.35, "gesto": "lanzar"},
                        {"t": t0 + 1.0, "gesto": "reposo"}]
+            kf += [{"t": t0, "estirar": 1.0, "cabeza": 0}, {"t": t0 + 0.3, "estirar": 0.9, "cabeza": -8, "easing": "salida"},
+                   {"t": t0 + 0.42, "estirar": 1.08, "cabeza": 6, "easing": "salida"},
+                   {"t": t0 + 0.7, "estirar": 1.0, "cabeza": 0, "easing": "suave"}]
+            caras += [{"t": t0, "cara": "feliz"}, {"t": t0 + 0.9, "cara": "sorprendido"}]
             self.mano = (x0 + 120 * escala * (1 if x0 <= 540 else -1), PISO - alto * 0.72, t0 + 0.4)
             self.sfx.append((t0 + 0.35, "whoosh"))
         elif accion == "atrapar":
-            kf += [{"t": t0 + 0.2, "y": PISO}, {"t": t0 + 0.4, "y": PISO - 60, "easing": "salida"},
-                   {"t": t0 + 0.6, "y": PISO, "easing": "entrada"}]
-            gestos += [{"t": t0 + 0.1, "gesto": "atrapar"}]
+            kf += [{"t": t0 + 0.1, "y": PISO, "estirar": 1.0}, {"t": t0 + 0.2, "estirar": 0.86, "easing": "salida"},
+                   {"t": t0 + 0.4, "y": PISO - 70, "estirar": 1.08, "easing": "salida"},
+                   {"t": t0 + 0.6, "y": PISO, "estirar": 0.9, "easing": "entrada"},
+                   {"t": t0 + 0.75, "estirar": 1.0, "easing": "rebote"}]
+            gestos += [{"t": t0 + 0.15, "gesto": "atrapar"}]
+            caras += [{"t": t0, "cara": "sorprendido"}, {"t": t0 + 0.6, "cara": "risa"}]
+            respira(t0 + 0.8, fin)
         elif accion == "festejar":
-            gestos += _alternar("festejar", "sorpresa", t0, fin, 0.3)
+            gestos += _alternar("festejar", "sorpresa", t0, fin, 0.32)
+            caras.append({"t": t0, "cara": "risa"})
             t = t0
-            while t + 0.4 <= fin:
-                kf += [{"t": t, "y": PISO}, {"t": t + 0.2, "y": PISO - 90, "easing": "salida"},
-                       {"t": t + 0.4, "y": PISO, "easing": "entrada"}]
-                t += 0.6
-            el.setdefault("cara", "feliz")
+            while t + 0.5 <= fin:
+                kf += [{"t": t, "y": PISO, "estirar": 1.0}, {"t": t + 0.08, "estirar": 0.88, "easing": "salida"},
+                       {"t": t + 0.25, "y": PISO - 100, "estirar": 1.08, "cabeza": 5, "easing": "salida"},
+                       {"t": t + 0.45, "y": PISO, "estirar": 0.9, "cabeza": -5, "easing": "entrada"},
+                       {"t": t + 0.55, "estirar": 1.0, "easing": "rebote"}]
+                t += 0.65
         elif accion == "asustarse":
-            kf += [{"t": t0 + 0.1, "y": PISO}, {"t": t0 + 0.25, "y": PISO - 120, "easing": "salida"},
-                   {"t": t0 + 0.45, "y": PISO, "easing": "entrada"}]
-            kf += [{"t": t0 + 0.45 + i * 0.07, "rotacion": (4 if i % 2 else -4)} for i in range(6)]
-            kf += [{"t": t0 + 0.9, "rotacion": 0}]
+            kf += [{"t": t0, "y": PISO, "estirar": 1.0}, {"t": t0 + 0.1, "estirar": 0.86, "easing": "salida"},
+                   {"t": t0 + 0.25, "y": PISO - 130, "estirar": 1.18, "cabeza": -10, "easing": "salida"},
+                   {"t": t0 + 0.48, "y": PISO, "estirar": 0.9, "easing": "entrada"},
+                   {"t": t0 + 0.62, "estirar": 1.0, "easing": "rebote"}]
+            kf += [{"t": round(t0 + 0.62 + i * 0.07, 3), "rotacion": (4 if i % 2 else -4)} for i in range(6)]
+            kf += [{"t": round(t0 + 1.05, 3), "rotacion": 0, "cabeza": 0}]
             gestos += [{"t": t0 + 0.1, "gesto": "cubrirse"}]
-            el["cara"] = "sorprendido"
+            caras.append({"t": t0, "cara": "sorprendido"})
             self.sfx.append((t0 + 0.1, "boing"))
         elif accion == "pensar":
             gestos += [{"t": t0, "gesto": "pensar"}]
-            kf += _bob(PISO, t0, fin, 6, 0.6)
+            ding = round(min(fin - 0.3, t0 + 0.8), 2)
+            kf += [{"t": t0, "cabeza": 0}, {"t": t0 + 0.5, "cabeza": 9, "easing": "suave"},
+                   {"t": ding, "cabeza": 9}, {"t": ding + 0.15, "cabeza": -4, "estirar": 1.06, "easing": "salida"},
+                   {"t": ding + 0.35, "cabeza": 0, "estirar": 1.0, "easing": "rebote"}]
+            gestos += [{"t": ding, "gesto": "senalar" if x0 < 540 else "senalar_izq"}]
+            caras += [{"t": t0, "cara": "normal"}, {"t": ding, "cara": "risa"}]
             self.elementos.append({"tipo": "prop", "nombre": "lamparita", "x": x0,
-                                   "y": PISO - alto - 130, "escala": 0.65, "entrada": "rebote",
-                                   "desde": round(min(fin - 0.3, t0 + 0.7), 2)})
-            self.sfx.append((min(fin - 0.3, t0 + 0.7), "ding"))
+                                   "y": PISO - alto - 130, "escala": 0.65, "entrada": "rebote", "desde": ding})
+            self.sfx.append((ding, "ding"))
         elif accion == "senalar":
             gestos += [{"t": t0, "gesto": "senalar" if x0 < 540 else "senalar_izq"}]
-            kf += _bob(PISO, t0, fin, 6, 0.5)
-        else:   # quieto
+            kf += [{"t": t0, "estirar": 1.0}, {"t": t0 + 0.15, "estirar": 1.05, "easing": "salida"},
+                   {"t": t0 + 0.35, "estirar": 1.0, "easing": "suave"}]
+            respira(t0 + 0.4, fin)
+        else:   # quieto: igual respira, se balancea y gesticula
             gestos += [{"t": t0, "gesto": "explicar"}]
-            kf += _bob(PISO, t0, fin, 5, 0.6)
+            respira(t0, fin, 4.0)
         el["keyframes"] = sorted(kf, key=lambda q: q["t"])
         el["gestos"] = gestos
+        if caras:
+            el["caras"] = [c for c in caras if c["cara"] != "normal"] or caras
         self.elementos.append(el)
 
     # ---- objetos --------------------------------------------------------------------------
@@ -322,7 +371,7 @@ class Escena:
                soporte: str | None = None) -> float | None:
         """Agrega el objeto (apoyado donde corresponde); devuelve el segundo del impacto/rotura si lo hay."""
         sop = soporte_de(prop, soporte)
-        x, y = ubicar(prop, sop, donde, self.fondo)
+        x, y = ubicar(prop, sop, donde, self.fondo, self.espejo)
         self._apoyo(sop, x)
         base = {"tipo": "prop", "nombre": prop, "x": x, "y": y}
         if color:
@@ -434,7 +483,7 @@ class Escena:
         for k, o in enumerate(objetivos[:4]):
             prop = o.get("prop") or "jarron"
             sop = soporte_de(prop, o.get("soporte"))
-            x, y = ubicar(prop, sop, o.get("donde") or LADOS[k % 3], self.fondo)
+            x, y = ubicar(prop, sop, o.get("donde") or LADOS[k % 3], self.fondo, self.espejo)
             self._apoyo(sop, x)
             t_imp = round(t + tramo, 3)
             alto = 300 if k == 0 else 180
@@ -504,6 +553,109 @@ class Escena:
         return kf
 
 
+# ---- lugares: nunca un personaje encima de otro (Santi, 2026-11-14) ------------------------------
+MARGEN = 30                 # px libres entre dos personajes
+ANCHO_MEDIO = 150           # medio ancho de un personaje a escala 1 (torso + brazos levantados)
+X_TITO = {"izquierda": 150.0, "derecha": 930.0}     # pegado al borde, para no tapar a nadie
+ESCALA_TITO = 0.55
+ANCHO_MEDIO_TITO = 175      # Tito a escala 0,55 con el reloj levantado (medido sobre el dibujo)
+
+
+def medio_ancho(rol: str) -> float:
+    return ANCHO_MEDIO * ROLES.get(rol, ROLES["joven"])[2]
+
+
+def planear(actores: list[dict], reservar: str | None = None) -> list[dict]:
+    """Le da a cada actor su lugar (x0 → x1) para que en NINGÚN cuadro dos se pisen: cada uno en su
+    carril; quien camina o corre lo hace sin cruzar a los demás (si no hay lugar, el recorrido se
+    acorta); quien entra o sale lo hace por el costado libre. `reservar` = el costado donde va a
+    aparecer Tito en la pausa que sigue: ahí no termina nadie (si son 3, queda afuera el último)."""
+    carriles = [l for l in LADOS if l != reservar]
+    actores = list(actores)[:len(carriles)]
+    usados: dict[str, dict] = {}
+    for a in actores:   # carril de cada uno: el que pidió (si está libre) o el libre más cercano
+        quiere = a.get("desde") if a.get("desde") in LADOS else (a.get("hacia") if a.get("hacia") in LADOS else "centro")
+        libres = [l for l in carriles if l not in usados]
+        lado = quiere if quiere in libres else min(libres, key=lambda l: abs(POS[l] - POS.get(quiere, 540)))
+        usados[lado] = a
+    plan = []
+    obstaculos: list[tuple[float, float, float]] = []   # (desde x, hasta x, medio ancho)
+    if reservar in X_TITO:
+        obstaculos.append((X_TITO[reservar], X_TITO[reservar], ANCHO_MEDIO_TITO))
+    quietos = {l: a for l, a in usados.items() if a.get("accion") not in ("caminar", "correr", "entrar", "salir")}
+    moviles = {l: a for l, a in usados.items() if l not in quietos}
+    for lado, a in quietos.items():
+        x = float(POS[lado])
+        plan.append({**a, "x0": x, "x1": x, "carril": lado})
+        obstaculos.append((x, x, medio_ancho(a.get("rol"))))
+    planeados: dict[str, tuple[float, float, float]] = {}
+    for lado, a in moviles.items():
+        hw = medio_ancho(a.get("rol"))
+        casa = float(POS[lado])
+        izq_lim, der_lim = -10_000.0, 10_000.0
+        # los otros que se mueven: su recorrido si ya está planeado; si no, su lugar de partida
+        otros = [planeados.get(l, (float(POS[l]), float(POS[l]), medio_ancho(o.get("rol"))))
+                 for l, o in moviles.items() if l != lado]
+        for o0, o1, ohw in obstaculos + otros:
+            lo, hi = min(o0, o1), max(o0, o1)
+            if hi <= casa:
+                izq_lim = max(izq_lim, hi + ohw + hw + MARGEN)
+            elif lo >= casa:
+                der_lim = min(der_lim, lo - ohw - hw - MARGEN)
+        acc = a.get("accion")
+        if acc in ("entrar", "salir"):
+            afuera_izq, afuera_der = float(POS["afuera_izq"]), float(POS["afuera_der"])
+            puede_izq, puede_der = izq_lim <= afuera_izq + 1, der_lim >= afuera_der - 1
+            if not (puede_izq or puede_der):     # sin camino libre: camina un poco en su carril
+                acc, x0, x1 = "caminar", casa, casa
+            else:
+                borde = afuera_izq if (puede_izq and (not puede_der or casa <= 540)) else afuera_der
+                x0, x1 = (borde, casa) if acc == "entrar" else (casa, borde)
+        else:
+            destino = float(POS[a["hacia"]]) if a.get("hacia") in POS else casa + (160 if casa <= 540 else -160)
+            x0, x1 = casa, max(izq_lim, min(der_lim, destino))
+            if izq_lim > der_lim:
+                x1 = casa
+        plan.append({**a, "accion": acc, "x0": x0, "x1": x1, "carril": lado})
+        planeados[lado] = (x0, x1, hw)
+    return plan
+
+
+def superposiciones(esc_d: dict, paso: float = 0.1, margen: float = 0.0) -> list[tuple[float, int, int]]:
+    """(segundo, i, j) de cada par de personajes (o Tito) que se pisan en la escena (cajas horizontales
+    de medio ancho ANCHO_MEDIO × escala, con `margen`). Vacío = nadie encima de nadie."""
+    from .timeline import Elemento
+
+    personas = []
+    for k, d in enumerate(esc_d.get("elementos") or []):
+        if d.get("tipo") in ("personaje", "tito"):
+            el = Elemento.desde_dict(d, f"elemento {k}", esc_d["duracion"])
+            hw = (ANCHO_MEDIO_TITO / ESCALA_TITO if d["tipo"] == "tito" else ANCHO_MEDIO) * float(d.get("escala", 1))
+            personas.append((k, el, hw))
+    out = []
+    t = 0.0
+    while t <= esc_d["duracion"]:
+        xs = [(k, el.pista.valor("x", t, el.base["x"]), hw) for k, el, hw in personas if el.visible(t)]
+        for a in range(len(xs)):
+            for b in range(a + 1, len(xs)):
+                if abs(xs[a][1] - xs[b][1]) < xs[a][2] + xs[b][2] + margen:
+                    out.append((round(t, 2), xs[a][0], xs[b][0]))
+        t += paso
+    return out
+
+
+def posiciones_finales(esc_d: dict) -> list[tuple[float, float]]:
+    """(x, medio ancho) de cada personaje al final de la escena (lo que queda congelado en la pausa)."""
+    from .timeline import Elemento
+
+    out = []
+    for k, d in enumerate(esc_d.get("elementos") or []):
+        if d.get("tipo") == "personaje":
+            el = Elemento.desde_dict(d, f"elemento {k}", esc_d["duracion"])
+            out.append((el.pista.valor("x", esc_d["duracion"], el.base["x"]), ANCHO_MEDIO * float(d.get("escala", 1))))
+    return out
+
+
 def per_alto(nombre: str, cambios: dict) -> float:
     from . import personajes as per
 
@@ -517,26 +669,36 @@ def es_dinamica(spec: dict) -> bool:
         any(o.get("efecto") in DINAMICOS for o in spec.get("objetos") or [])
 
 
-def escena_accion(spec: dict, dur: float, i: int, primera: bool = False,
-                  tono: float = 0.0) -> tuple[dict, list[tuple[float, str]]]:
-    """Una escena del guion → (dict de timeline.Escena, [(segundo local, sfx)])."""
+LANZABLES = {"pelota", "pelota_espuma", "zapatilla", "lata", "botella", "caja", "hamburguesa", "galletitas",
+             "chocolate", "control", "celular", "moneda"}
+
+
+def semilla_fondo(anio: int, variante: int) -> int:
+    """La semilla del fondo: década*100 + variante (1969 → 19600 + v): la decoración de la época y,
+    con variante impar, el lugar espejado (otro ángulo)."""
+    return (int(anio) // 10) * 100 + int(variante) % 100
+
+
+def escena_accion(spec: dict, dur: float, i: int, primera: bool = False, tono: float = 0.0,
+                  anio: int = 2026, variante: int = 0, reservar: str | None = None,
+                  proyectil: str = "pelota") -> tuple[dict, list[tuple[float, str]]]:
+    """Una escena del guion → (dict de timeline.Escena, [(segundo local, sfx)]). `anio` y `variante`
+    eligen la decoración del fondo; `reservar` deja libre el costado de Tito si después viene la pausa;
+    `proyectil` es lo que se tira en la cadena (el protagonista, si se puede tirar)."""
+    from . import escenas as _esc
+
     fondo = spec.get("fondo") or "ciudad"
-    e = Escena(dur, semilla=i + 1, fondo=fondo)
-    actores = list(spec.get("actores") or [])[:3]
-    usados = set()
-    for k, a in enumerate(actores):
-        desde = a.get("desde") if a.get("desde") in POS else LADOS[k % 3] if len(actores) > 1 else "centro"
-        if desde in usados and desde in LADOS:
-            desde = next((l for l in LADOS if l not in usados), desde)
-        usados.add(desde)
-        e.actor(a.get("rol") or "joven", a.get("accion") or "quieto", desde, a.get("hacia"),
-                a.get("cara") or "normal", k)
+    semilla = semilla_fondo(anio, variante)
+    e = Escena(dur, semilla=i + 1, fondo=fondo, espejo=_esc.espejado(semilla))
+    for k, a in enumerate(planear(spec.get("actores") or [], reservar)):
+        e.actor(a.get("rol") or "joven", a.get("accion") or "quieto", a["carril"], a.get("hacia"),
+                a.get("cara") or "normal", k, x0=a["x0"], x1=a["x1"])
     colores = (P.NARANJA, P.AZUL, P.ROJO, P.VERDE, P.VIOLETA)
     objetos = list(spec.get("objetos") or [])[:3]
     cadena = [o for o in (spec.get("cadena") or []) if o.get("prop")][:4]
     if cadena:
         proy = next((o for o in objetos if o.get("efecto") in ("vuela", "rebota")), None)
-        e.cadena(cadena, (proy or {}).get("prop") or "pelota", colores[i % len(colores)])
+        e.cadena(cadena, (proy or {}).get("prop") or proyectil, colores[i % len(colores)])
         objetos = [o for o in objetos if o is not proy]
     rompible = next((o for o in objetos if o.get("efecto") == "se_rompe"), None)
     blanco = None
@@ -581,7 +743,7 @@ def escena_accion(spec: dict, dur: float, i: int, primera: bool = False,
         elementos.append({"tipo": "gancho", "texto": texto, "y": 330, "modo": "palabras" if primera else "rebote",
                           "tam": 100, "desde": 0.0 if primera else 0.2})
     tr = spec.get("transicion") if spec.get("transicion") in ("corte", "fundido", "zoom", "barrido") else "barrido"
-    d = {"duracion": dur, "fondo": {"tipo": fondo, "semilla": i + 1},
+    d = {"duracion": dur, "fondo": {"tipo": fondo, "semilla": semilla},
          "transicion": {"tipo": "corte" if primera else tr, "duracion": 0.25},
          "camara": e.camara(spec.get("camara") or "fija"), "elementos": elementos, "tono": tono}
     sfx = sorted((round(t, 3), s) for t, s in e.sfx if 0 <= t < dur)
@@ -592,18 +754,24 @@ def escena_locutor(dur: float, k: int = 0) -> tuple[dict, list[tuple[float, str]
     """La PAUSA: la escena de atrás congelada y gris, y Tito (la mascota de "Así Nació") entra por el
     costado, comenta (la boca sigue la voz) y se va. Del lado izquierdo señala la escena; del derecho
     saluda y levanta el reloj."""
-    izq = k % 2 == 0
-    x = 255 if izq else 825
+    izq = lado_tito(k) == "izquierda"
+    # Al costado y con los brazos hacia arriba (saluda y levanta el reloj): señalando de costado el
+    # brazo tapaba al de al lado (visto en el Nerf del 14/11).
+    x = X_TITO["izquierda" if izq else "derecha"]
     afuera = -420 if izq else 1500
-    poses = ([{"t": 0, "pose": "saluda"}, {"t": 0.6, "pose": "senala"}] if izq else
-             [{"t": 0, "pose": "saluda"}, {"t": max(0.7, dur * 0.5), "pose": "reloj"}])
-    tito = {"tipo": "tito", "x": x, "y": PISO + 20, "escala": 0.66, "habla": True,
+    poses = [{"t": 0, "pose": "saluda"}, {"t": max(0.7, dur * 0.5), "pose": "reloj"}]
+    tito = {"tipo": "tito", "x": x, "y": PISO + 20, "escala": ESCALA_TITO, "habla": True,
             "entrada": "izquierda" if izq else "derecha",
             "keyframes": [{"t": max(0.6, dur - 0.3), "x": x}, {"t": dur, "x": afuera, "easing": "entrada"}],
             "poses": poses}
     return ({"duracion": dur, "congela": True, "fondo": {"tipo": "color", "color": "#000000"},
              "transicion": {"tipo": "corte"}, "elementos": [tito]},
             [(0.0, "tac"), (0.05, "whoosh")])
+
+
+def lado_tito(k: int) -> str:
+    """De qué costado aparece Tito en su pausa número `k` (se alterna)."""
+    return "izquierda" if k % 2 == 0 else "derecha"
 
 
 VIAJE_S = 1.25
