@@ -790,11 +790,12 @@ def test_linea_de_tiempo_con_locutor_y_sfx():
     assert sum(1 for e in v.escenas if e.congela and not e.girar) == 1   # la pausa de Tito
     assert v.duracion == pytest.approx(fin + 0.8, abs=0.01)
     assert v.subtitulos and v.cuadro(5).encima
-    assert v.sub_y == mk.SUBTITULOS_Y and f"translate(540 {mk.SUBTITULOS_Y})" in v.cuadro(5).encima
-    assert 'opacity="0.42"' in v.cuadro(5).encima and v.sub_tam == mk.SUBTITULOS_TAM
-    # la banda de los subtítulos está arriba, antes de donde puede subir la escena
-    assert mk.SUBTITULOS_Y + mk.SUBTITULOS_TAM * 1.45 / 2 < ac.BANDA_SUBTITULOS
-    assert mk.SUBTITULOS_Y - mk.SUBTITULOS_TAM * 1.45 / 2 > 150        # margen para la interfaz de Shorts
+    assert v.sub_y == mk.SUBTITULOS_Y and v.sub_estilo == "viral" and v.sub_tam == mk.SUBTITULOS_TAM
+    # los subtítulos (estilo viral) están arriba, antes de donde puede subir la escena
+    from clips_bot.animacion import subtitulos_virales as sv
+
+    x0, x1, y0, y1 = sv.limites(v.subtitulos, v.sub_y)
+    assert y1 < ac.BANDA_SUBTITULOS and y0 > 150 and x0 > 0 and x1 < 1080
     assert sfx and all(0 <= t < v.duracion for t, _ in sfx) and sfx == sorted(sfx)
 
 

@@ -413,6 +413,9 @@ class Video:
     sub_y: float = 1500.0          # alto de los subtítulos ("subtitulos_y" en el dict)
     sub_tam: int = 92              # tamaño de letra ("subtitulos_tam")
     sub_banda: bool = False        # franja semitransparente detrás ("subtitulos_banda")
+    # "viral" (Así Nació, 2026-11-14): 1-3 palabras, Montserrat Black, pop por palabra, claves en color con
+    # temblor y emoji (subtitulos_virales.py); "clasico" = el de siempre ("subtitulos_estilo")
+    sub_estilo: str = "clasico"
 
     @classmethod
     def desde_dict(cls, d: dict, base: Path | None = None) -> "Video":
@@ -422,7 +425,8 @@ class Video:
         if escenas[0].congela:
             raise ErrorGuion("escena 1: una pausa (congela) necesita una escena antes")
         v = cls(escenas, fps=int(d.get("fps", P.FPS)), sub_y=float(d.get("subtitulos_y", 1500.0)),
-                sub_tam=int(d.get("subtitulos_tam", 92)), sub_banda=bool(d.get("subtitulos_banda", False)))
+                sub_tam=int(d.get("subtitulos_tam", 92)), sub_banda=bool(d.get("subtitulos_banda", False)),
+                sub_estilo=str(d.get("subtitulos_estilo") or "clasico"))
         if d.get("audio"):
             ruta = Path(d["audio"])
             if base and not ruta.is_absolute():
@@ -436,12 +440,34 @@ class Video:
         palabras: list[tx.Palabra] = []
         for s in d.get("subtitulos", []):
             if "palabras" in s:   # tiempos por palabra (ej. de Whisper)
-                palabras += [tx.Palabra(p["texto"], float(p["inicio"]), float(p["fin"]))
+                palabras += [tx.Palabra(p["texto"], float(p["inicio"]), float(p["fin"]),
+                                        bool(p.get("clave", False)), bool(p.get("impacto", False)),
+                                        str(p.get("emoji") or ""))
                              for p in s["palabras"]]
             else:
                 palabras += tx.palabras_de_texto(s["texto"], float(s["inicio"]), float(s["fin"]))
-        v.subtitulos = tx.agrupar(palabras)
+        if v.sub_estilo == "viral":
+            from . import subtitulos_virales as sv
+
+            v.subtitulos = sv.agrupar(palabras)
+        else:
+            v.subtitulos = tx.agrupar(palabras)
         return v
+
+    def encima(self, t: float) -> str:
+        """Los subtítulos del segundo `t` (SVG en coordenadas de pantalla; los usa también Remotion)."""
+        if not self.subtitulos:
+            return ""
+        if self.sub_estilo == "viral":
+            from . import subtitulos_virales as sv
+
+            return sv.subtitulo(self.subtitulos, t, y=self.sub_y)
+        encima = tx.subtitulo(self.subtitulos, t, y=self.sub_y, tam=self.sub_tam)
+        if encima and self.sub_banda:
+            alto = self.sub_tam * 1.45
+            encima = (f'<rect x="0" y="{round(self.sub_y - alto / 2, 1)}" width="{P.ANCHO}" '
+                      f'height="{round(alto, 1)}" fill="#000000" opacity="0.42"/>') + encima
+        return encima
 
     @classmethod
     def desde_json(cls, ruta: Path) -> "Video":
@@ -497,12 +523,6 @@ class Video:
                     prev = self.escenas[k - 1]
                     b = self._capa_k(k - 1, prev.duracion + tl, i)
                     trans = (tipo, round(tl / tdur, 4))
-                encima = tx.subtitulo(self.subtitulos, t, y=self.sub_y, tam=self.sub_tam) \
-                    if self.subtitulos else ""
-                if encima and self.sub_banda:
-                    alto = self.sub_tam * 1.45
-                    encima = (f'<rect x="0" y="{round(self.sub_y - alto / 2, 1)}" width="{P.ANCHO}" '
-                              f'height="{round(alto, 1)}" fill="#000000" opacity="0.42"/>') + encima
-                return Cuadro(a, b, trans, encima, e.tono_en(tl))
+                return Cuadro(a, b, trans, self.encima(t), e.tono_en(tl))
             inicio += e.duracion
         raise IndexError(i)

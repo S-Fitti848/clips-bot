@@ -67,6 +67,10 @@ class Palabra:
     texto: str
     inicio: float
     fin: float
+    # subtítulos virales de Así Nació (subtitulos_virales.py): palabra clave, de impacto y su emoji
+    clave: bool = False
+    impacto: bool = False
+    emoji: str = ""
 
 
 def palabras_de_texto(texto: str, inicio: float, fin: float) -> list[Palabra]:

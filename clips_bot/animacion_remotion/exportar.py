@@ -22,7 +22,6 @@ from dataclasses import asdict
 from pathlib import Path
 
 from clips_bot.animacion import escenas as esc
-from clips_bot.animacion import texto as tx
 from clips_bot.animacion import timeline as tl
 from clips_bot.animacion.easing import recortar
 
@@ -162,11 +161,7 @@ class Exportador:
                     prev = v.escenas[k - 1]
                     b = self._capa_k(k - 1, prev.duracion + tl_, i)
                     tr = [tipo, _r(tl_ / tdur, 4)]
-                sub = tx.subtitulo(v.subtitulos, t, y=v.sub_y, tam=v.sub_tam) if v.subtitulos else ""
-                if sub and v.sub_banda:
-                    alto = v.sub_tam * 1.45
-                    sub = (f'<rect x="0" y="{round(v.sub_y - alto / 2, 1)}" width="{v.ancho}" '
-                           f'height="{round(alto, 1)}" fill="#000000" opacity="0.42"/>') + sub
+                sub = v.encima(t)       # los MISMOS subtítulos que el motor actual (caminos SVG)
                 return {"t": _r(t, 3), "esc": k, "tl": _r(tl_, 3), "tono": e.tono_en(tl_), "a": a, "b": b,
                         "tr": tr, "sub": sub}
             inicio += e.duracion

@@ -34,6 +34,8 @@ import yaml
 from . import acciones as ac
 from . import escenas as esc
 from . import paleta as P
+from . import subtitulos_virales as sv
+from . import texto as tx
 
 log = logging.getLogger(__name__)
 
@@ -369,6 +371,12 @@ festejan, se asustan) y la cara (`cara`). Nunca dos en el mismo lugar: si hay 2 
 `desde` (izquierda, centro, derecha) y sin cruzarse. Variá los lugares (casa, taller, fábrica,
 oficina, ciudad, tienda); el render decora cada lugar según la época del viaje en el tiempo.
 
+REGLA 9 — SUBTÍTULOS CON GANCHO. En cada frase y en cada comentario de Tito marcá `claves`: 0 a 2
+palabras COPIADAS TAL CUAL del texto que más importan (un nombre, un número o año, la palabra del giro o
+la del chiste); salen más grandes y en color. Y `emoji` (ninguno, explosion si algo se rompe, plata si hay
+plata, susto en una sorpresa, risa en el chiste): pocas veces, solo cuando suma (como mucho uno cada 2 o 3
+frases).
+
 ESTRUCTURA:
 - La PRIMERA frase es el GANCHO: lo más sorprendente o divertido, máximo 8 palabras (dura menos de 3 s),
   sin año, sin "¿Sabías que…?", sin saludar. Su escena es pura ACCIÓN.
@@ -416,6 +424,9 @@ _CADENA = {"type": "OBJECT", "properties": {
     "soporte": {"type": "STRING", "enum": list(ac.SOPORTES)},
     "donde": {"type": "STRING", "enum": list(ac.LADOS)}},
     "required": ["prop", "soporte", "donde"]}
+EMOJIS_SUB = ("ninguno", "explosion", "plata", "susto", "risa")
+_CLAVES = {"type": "ARRAY", "items": {"type": "STRING"}}
+_EMOJI = {"type": "STRING", "enum": list(EMOJIS_SUB)}
 SCHEMA_GUION = {
     "type": "OBJECT",
     "properties": {
@@ -436,12 +447,14 @@ SCHEMA_GUION = {
                 "cadena": {"type": "ARRAY", "items": _CADENA},
                 "viaje_a_anio": {"type": "INTEGER"},
                 "vuelve_al_presente": {"type": "BOOLEAN"},
+                "claves": _CLAVES, "emoji": _EMOJI,
             },
             "required": ["frase", "parte", "fondo", "actores", "objetos", "camara", "texto_pantalla",
-                         "transicion", "cadena", "viaje_a_anio", "vuelve_al_presente"]}},
+                         "transicion", "cadena", "viaje_a_anio", "vuelve_al_presente", "claves", "emoji"]}},
         "locutor": {"type": "ARRAY", "items": {"type": "OBJECT", "properties": {
-            "despues_de_frase": {"type": "INTEGER"}, "texto": {"type": "STRING"}},
-            "required": ["despues_de_frase", "texto"]}},
+            "despues_de_frase": {"type": "INTEGER"}, "texto": {"type": "STRING"},
+            "claves": _CLAVES, "emoji": _EMOJI},
+            "required": ["despues_de_frase", "texto", "claves", "emoji"]}},
         "protagonista": {"type": "OBJECT", "properties": {
             "prop": {"type": "STRING", "enum": sorted(DETALLADOS)}, "que_es": {"type": "STRING"}},
             "required": ["prop", "que_es"]},
@@ -920,13 +933,76 @@ def linea_de_tiempo(d: dict, inicios: list[float], fin: float, palabras: list,
         sfx += [(round(t + x, 3), s) for x, s in fx]
         t += dur
     out = {"fps": P.FPS, "escenas": escenas, "subtitulos_y": SUBTITULOS_Y, "subtitulos_tam": SUBTITULOS_TAM,
-           "subtitulos_banda": True}
+           "subtitulos_estilo": "viral"}
     if voz is not None:
         out["audio"] = str(voz)
     if palabras:
+        golpes = [t_ for t_, s_ in sfx if s_ in ("golpe", "vidrio")]
+        marcadas = sv.marcar([tx.Palabra(p.texto, p.inicio, p.fin) for p in palabras],
+                             segmentos_subtitulos(d), golpes)
         out["subtitulos"] = [{"palabras": [{"texto": p.texto, "inicio": round(p.inicio, 3),
-                                            "fin": round(p.fin, 3)} for p in palabras]}]
+                                            "fin": round(p.fin, 3), "clave": p.clave, "impacto": p.impacto,
+                                            "emoji": p.emoji} for p in marcadas]}]
     return out, sorted(sfx)
+
+
+def segmentos_subtitulos(d: dict) -> list[dict]:
+    """Lo que dice la voz, en orden, con lo que el guion marcó para los subtítulos (claves, emoji) y si es
+    un REMATE (la frase del giro, la última frase o el chiste de Tito): ahí la clave tiembla."""
+    escenas_d = d.get("escenas") or []
+    loc = [x for x in d.get("locutor") or [] if str(x.get("texto") or "").strip()]
+    out = []
+    ultima = len(escenas_d) - 1
+    for tipo, k, texto in segmentos(d):
+        if tipo == "frase":
+            e = escenas_d[k]
+            out.append({"texto": texto, "claves": e.get("claves") or [], "emoji": _emoji(e.get("emoji")),
+                        "remate": e.get("parte") == "giro" or k == ultima})
+        else:
+            x = next((y for y in loc if str(y.get("texto") or "").strip() == texto), {})
+            out.append({"texto": texto, "claves": x.get("claves") or [], "emoji": _emoji(x.get("emoji")),
+                        "remate": x.get("emoji") == "risa"})
+    return out
+
+
+def _emoji(e) -> str:
+    return str(e) if e in sv.EMOJIS else ""
+
+
+# Guiones escritos antes de la REGLA 9 (o si el modelo no marcó nada): una llamada chica (Haiku) marca las
+# claves y los emojis SOBRE el guion ya hecho, sin reescribirlo.
+SISTEMA_CLAVES = """Marcás los SUBTÍTULOS de un video corto ya escrito (no cambiás ni reescribís nada).
+Para cada texto (en orden, con su índice) devolvé `claves`: 0 a 2 palabras COPIADAS TAL CUAL del texto que
+más importan para enganchar (un nombre propio, un número o año, la palabra del giro o la del chiste), y
+`emoji`: ninguno, explosion (algo se rompe), plata (plata, ventas, millones), susto (una sorpresa) o risa
+(el chiste). Emojis POCOS: como mucho uno cada 2 o 3 textos, solo cuando suma."""
+SCHEMA_CLAVES = {"type": "OBJECT", "properties": {"textos": {"type": "ARRAY", "items": {
+    "type": "OBJECT", "properties": {"indice": {"type": "INTEGER"}, "claves": _CLAVES, "emoji": _EMOJI},
+    "required": ["indice", "claves", "emoji"]}}}, "required": ["textos"]}
+
+
+def tiene_claves(d: dict) -> bool:
+    return any("claves" in e for e in d.get("escenas") or [])
+
+
+def marcar_claves(cliente, d: dict) -> dict:
+    """Agrega `claves` y `emoji` a cada frase y comentario de Tito de `d` (en el lugar), con una llamada."""
+    segs = segmentos(d)
+    pedido = "\n".join(f"[{i}] {texto}" for i, (_, _, texto) in enumerate(segs))
+    r = json.loads(cliente.json(SISTEMA_CLAVES, pedido, SCHEMA_CLAVES, 0.3))
+    por_indice = {int(x.get("indice", -1)): x for x in r.get("textos") or []}
+    loc = d.get("locutor") or []
+    for i, (tipo, k, texto) in enumerate(segs):
+        x = por_indice.get(i, {})
+        marca = {"claves": [str(c) for c in x.get("claves") or []][:2],
+                 "emoji": _emoji(x.get("emoji")) or "ninguno"}
+        if tipo == "frase":
+            d["escenas"][k].update(marca)
+        else:
+            for y in loc:
+                if str(y.get("texto") or "").strip() == texto:
+                    y.update(marca)
+    return d
 
 
 # ---- 7. el video entero -----------------------------------------------------------------------
@@ -1192,11 +1268,12 @@ def proponer(conn, cliente, wiki, hoy: date, catalogo: list[Marca] | None = None
 
 
 VOLUMEN_SFX = 0.32
-# Subtítulos (Santi, 2026-11-14): chicos, en una franja angosta ARRIBA, con banda semitransparente; la
-# escena no sube de ac.BANDA_SUBTITULOS (lo controla acciones.composicion), así que no tapan nada.
-SUBTITULOS_Y = 232          # ARRIBA (Santi, 2026-11-14): debajo de la interfaz de Shorts, la escena no sube de 300
+# Subtítulos (Santi, 2026-11-14): ARRIBA, en la franja que la escena no pisa (ac.BANDA_SUBTITULOS, la
+# controla acciones.composicion). Desde la REGLA 9, estilo Shorts virales (subtitulos_virales.py): 1-3
+# palabras, Montserrat Black con contorno y sombra, pop por palabra, claves en color, temblor y emoji.
+SUBTITULOS_Y = sv.Y
 SALTO_MIN = 10       # un "viaje" de menos de 10 años (1969 → 1970) no es cambio de época: no se hace
-SUBTITULOS_TAM = 52
+SUBTITULOS_TAM = sv.TAM
 
 
 def armar_video(conn, settings, carpeta: Path, cliente=None, wiki=None, hoy: date | None = None,
@@ -1233,6 +1310,11 @@ def armar_video(conn, settings, carpeta: Path, cliente=None, wiki=None, hoy: dat
         e, d, fuente = proponer(conn, cliente, wiki, hoy, catalogo, cfg.candidatos, cfg.puntaje_min,
                                 cfg.max_intentos, avisar, revisor=revisor, forzar=forzar)
     tiempos["guion_s"] = round(time.time() - t0, 1)
+    if not tiene_claves(d) and revisor is not None:     # REGLA 9 con un guion que no la trae
+        try:
+            marcar_claves(revisor, d)
+        except Exception as err:   # sin marcas el video sale igual (sin claves ni emojis)
+            avisar(f"no pude marcar las claves de los subtítulos: {str(err)[:150]}")
     (carpeta / "guion.json").write_text(json.dumps({"marca": e.marca.nombre, "angulo": e.angulo,
                                                     "notas": e.notas, "guion": d}, ensure_ascii=False,
                                                    indent=1), encoding="utf-8")

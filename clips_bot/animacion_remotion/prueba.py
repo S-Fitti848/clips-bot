@@ -44,7 +44,7 @@ GUION_PRUEBA = {
                                    {"prop": "lampara", "soporte": "piso", "donde": "derecha"},
                                    {"prop": "cuadro", "soporte": "pared", "donde": "izquierda"}],
          "camara": "sacudon", "texto_pantalla": "", "transicion": "corte", "viaje_a_anio": 0,
-         "vuelve_al_presente": False},
+         "vuelve_al_presente": False, "claves": ["desastre!"], "emoji": "explosion"},
         {"frase": "Las mamás de todo el mundo lo sabían.", "parte": "problema", "fondo": "casa",
          "actores": [{"rol": "mama", "accion": "retar", "desde": "centro", "hacia": "ninguno", "cara": "enojado"}],
          "objetos": [{"prop": "tele", "efecto": "quieto", "donde": "derecha", "soporte": "mesa", "texto": ""}],
@@ -55,7 +55,7 @@ GUION_PRUEBA = {
          "actores": [{"rol": "inventor", "accion": "pensar", "desde": "centro", "hacia": "ninguno", "cara": "sorprendido"}],
          "objetos": [{"prop": "lamparita", "efecto": "aparece", "donde": "derecha", "soporte": "aire", "texto": ""}],
          "cadena": [], "camara": "acercar", "texto_pantalla": "1969", "transicion": "zoom", "viaje_a_anio": 1969,
-         "vuelve_al_presente": False},
+         "vuelve_al_presente": False, "claves": ["Reyn", "Guyer,"], "emoji": "ninguno"},
         {"frase": "Probó con espuma: blanda, liviana y no rompía nada.", "parte": "que_paso", "fondo": "taller",
          "actores": [{"rol": "inventor", "accion": "martillar", "desde": "izquierda", "hacia": "ninguno", "cara": "feliz"}],
          "objetos": [{"prop": "pelota_espuma", "efecto": "rebota", "donde": "derecha", "soporte": "piso", "texto": ""}],
@@ -70,7 +70,7 @@ GUION_PRUEBA = {
          "actores": [{"rol": "cliente", "accion": "festejar", "desde": "derecha", "hacia": "ninguno", "cara": "feliz"}],
          "objetos": [{"prop": "pelota_espuma", "efecto": "aparece", "donde": "izquierda", "soporte": "mesa", "texto": ""}],
          "cadena": [], "camara": "alejar", "texto_pantalla": "4 MILLONES", "transicion": "zoom", "viaje_a_anio": 0,
-         "vuelve_al_presente": False},
+         "vuelve_al_presente": False, "claves": ["millones."], "emoji": "plata"},
         {"frase": "Hoy los chicos juegan adentro y la tele sobrevive.", "parte": "final", "fondo": "casa",
          "actores": [{"rol": "nene", "accion": "festejar", "desde": "izquierda", "hacia": "ninguno", "cara": "feliz"},
                      {"rol": "nena", "accion": "saltar", "desde": "derecha", "hacia": "ninguno", "cara": "feliz"}],
@@ -83,8 +83,8 @@ GUION_PRUEBA = {
          "cadena": [], "camara": "fija", "texto_pantalla": "", "transicion": "barrido", "viaje_a_anio": 0,
          "vuelve_al_presente": False},
     ],
-    "locutor": [{"despues_de_frase": 2, "texto": "Spoiler: la tele no sobrevivió."},
-                {"despues_de_frase": 5, "texto": "Sí, era una pelota de espuma. Nada más."}],
+    "locutor": [{"despues_de_frase": 2, "texto": "Spoiler: la tele no sobrevivió.", "claves": ["sobrevivió"], "emoji": "risa"},
+                {"despues_de_frase": 5, "texto": "Sí, era una pelota de espuma. Nada más.", "claves": ["espuma."], "emoji": "susto"}],
 }
 
 
@@ -212,6 +212,69 @@ def cmd_rehacer(a) -> int:
     return 0
 
 
+def con_subtitulos_virales(carpeta: Path, haiku=None, log=print) -> dict:
+    """La MISMA línea de tiempo (escenas, voz, revisión visual) con los subtítulos nuevos (REGLA 9): si el
+    guion no trae claves/emoji, una llamada chica a Haiku las marca sin reescribirlo."""
+    from clips_bot.animacion import subtitulos_virales as sv
+    from clips_bot.animacion import texto as tx
+
+    ya = carpeta / "guion_subs.json"          # si ya se marcó una vez, se reusa (no se vuelve a llamar a Haiku)
+    guion = json.loads((ya if ya.exists() else carpeta / "guion.json").read_text(encoding="utf-8"))
+    d = guion["guion"]
+    if not marcas.tiene_claves(d):
+        if haiku is None:
+            from clips_bot import claude
+
+            haiku = claude.cliente(claude.HAIKU)
+        marcas.marcar_claves(haiku, d)
+        log("claves marcadas con Haiku: " + json.dumps([(e.get("claves"), e.get("emoji")) for e in d["escenas"]],
+                                                       ensure_ascii=False))
+    (carpeta / "guion_subs.json").write_text(json.dumps(guion, ensure_ascii=False, indent=1), encoding="utf-8")
+    linea = json.loads((carpeta / "linea_de_tiempo.json").read_text(encoding="utf-8"))
+    video = linea["video"]
+    palabras = [tx.Palabra(p["texto"], p["inicio"], p["fin"]) for s in video.get("subtitulos", [])
+                for p in s.get("palabras", [])]
+    golpes = [t for t, s in linea.get("sfx", []) if s in ("golpe", "vidrio")]
+    sv.marcar(palabras, marcas.segmentos_subtitulos(d), golpes)
+    video.update(subtitulos_y=marcas.SUBTITULOS_Y, subtitulos_tam=marcas.SUBTITULOS_TAM, subtitulos_estilo="viral")
+    video.pop("subtitulos_banda", None)
+    video["subtitulos"] = [{"palabras": [{"texto": p.texto, "inicio": p.inicio, "fin": p.fin, "clave": p.clave,
+                                          "impacto": p.impacto, "emoji": p.emoji} for p in palabras]}]
+    (carpeta / "linea_subs.json").write_text(json.dumps(linea, ensure_ascii=False, indent=1), encoding="utf-8")
+    log("marcadas: " + ", ".join(f"{p.texto}{'!' if p.impacto else ''}{'+' + p.emoji if p.emoji else ''}"
+                                for p in palabras if p.clave))
+    return video
+
+
+def cmd_subs(a) -> int:
+    """El Nerf de la comparación con los subtítulos nuevos, en los DOS motores (mismo guion, voz y audio)."""
+    from clips_bot.animacion import render as rd
+
+    carpeta = Path(a.carpeta).expanduser()
+    c = tomar_turno()
+    try:
+        video_d = con_subtitulos_virales(carpeta)
+        audio = carpeta / "audio_final.wav"
+        v = Video.desde_dict(video_d, carpeta)
+        v.audio = str(audio)
+        t0 = time.time()
+        r = rd.renderizar(v, carpeta / "nerf_actual_subs.mp4", "auto", 2, crf=22, preset="medium",
+                          hilos_x264=rd.hilos_x264_defecto())
+        actual = {"render_s": round(time.time() - t0, 1), "resumen": r.resumen()}
+        print("motor actual:", json.dumps(actual, ensure_ascii=False), flush=True)
+        if franja_prohibida():
+            raise SystemExit("llegó una franja prohibida: Remotion queda para después")
+        datos = carpeta / "remotion_subs.json"
+        print("exportado:", ex.exportar(Video.desde_dict(video_d, carpeta), datos), flush=True)
+        res = rr.renderizar(datos, Path(a.proyecto).expanduser(), carpeta / "nerf_remotion_subs.mp4", audio=audio,
+                            concurrencia=a.concurrencia)
+    finally:
+        soltar_turno(c)
+    (carpeta / "resultado_subs.json").write_text(json.dumps({"actual": actual, "remotion": res}, ensure_ascii=False,
+                                                            indent=1), encoding="utf-8")
+    return 0
+
+
 def cmd_exportar(a) -> int:
     """Solo los datos (sin render): para mirar cuadros en Remotion Studio en la compu."""
     if a.linea:
@@ -233,7 +296,7 @@ def main(argv=None) -> int:
     m.add_argument("--segundos", type=float, default=35.0)
     m.add_argument("--frames", default="")
     m.add_argument("--enfriar", type=float, default=60.0)
-    for nombre in ("nerf", "rehacer"):
+    for nombre in ("nerf", "rehacer", "subs"):
         n = sub.add_parser(nombre)
         n.add_argument("--proyecto", required=True)
         n.add_argument("--carpeta", required=True)
@@ -243,7 +306,8 @@ def main(argv=None) -> int:
     e.add_argument("--linea", default="")
     e.add_argument("--segundos", type=float, default=35.0)
     a = ap.parse_args(argv)
-    return {"medir": cmd_medir, "nerf": cmd_nerf, "rehacer": cmd_rehacer, "exportar": cmd_exportar}[a.cmd](a)
+    return {"medir": cmd_medir, "nerf": cmd_nerf, "rehacer": cmd_rehacer, "subs": cmd_subs,
+            "exportar": cmd_exportar}[a.cmd](a)
 
 
 if __name__ == "__main__":
