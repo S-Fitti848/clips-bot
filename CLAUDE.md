@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-11-13 | **Versión:** v0.93.0 | **Modo:** Fase 2: corriendo solo en la Pi. Madrugada desde la escucha (v0.91.0): Rots 03:30 → tecnología → 2 de Latinoamérica, todo antes de las 05:30; timers 05:00 y 06:00 de respaldo
+**Snapshot:** 2026-11-14 | **Versión:** v0.93.0 (`18eb5ee`, desplegado) | **Modo:** Fase 2: corriendo solo en la Pi. Madrugada desde la escucha (v0.91.0): "pegó" 01:30 → Rots 03:30 → tecnología → 2 de Latinoamérica, todo antes de las 05:30; timers 05:00 y 06:00 de respaldo
 
 > **SI ESTÁS EMPEZANDO UNA SESIÓN NUEVA, LEÉ §10.** Ahí está qué está hecho, qué quedó a medias,
 > qué falta, y las trampas que ya nos mordieron.
@@ -2290,37 +2290,64 @@ Problemas abiertos:
 
 ## 10. DÓNDE ESTAMOS (leer primero en una sesión nueva)
 
-**Snapshot del 2026-11-09.** El bot corre solo en la Raspberry: timer de clips a las 05:00 AR, timer
-aparte de Pequeña Historia a las 06:00 (`clips-bot-efemeride`) y la escucha de Telegram 24/7
-(comandos, modo en vivo, reintentos de la efeméride, "pegó" a las 02:00).
+**Snapshot del 2026-11-14 (01:50 AR).** El bot corre solo en la Raspberry. La escucha de Telegram
+(24/7) arma toda la madrugada; los timers de 05:00 (clips) y 06:00 (efeméride) quedan de respaldo y
+no repiten lo que ya corrió.
 
-### Estado real de la Pi (verificado el 2026-11-09)
+### Horarios (hora AR)
+
+| hora | qué | dónde |
+|---|---|---|
+| 01:30 | "pegó" (tope 15 min, rota el streamer) | escucha, `_pego_tick` |
+| 03:30 | corrida de Rots (`sudo -n systemctl restart clips-bot.service`) → entrega + subida sola a Rots | `_madrugada_tick` |
+| apenas termina Rots (desde 04:00) | propuesta de tecnología (puntaje ≥ 7,5) | `_madrugada_tick` → `efemeride_del_dia` |
+| después (desde 04:00) | 2 propuestas de Latinoamérica (puntaje ≥ 8, sin repetir país ni artículo) | `_fb_tick` |
+| 05:30 | tope de "todo en Telegram" (`LISTO_DESDE`) | |
+| 05:00 / 06:00 | timers de respaldo (no corren si ya se hizo: `DIARIO_FIN`, `EFE_DIA`) | systemd |
+| 13:00 / 18:00 / 21:30 | publicación de los 3 clips de Rots | YouTube, `publishAt` |
+| 11:00 / 15:30 / 20:00 | Pequeña Historia en YouTube (primer horario libre, ≥ 4 h entre videos) | `efemerides.horas_youtube` |
+| 08:30 del país de la historia (11:00 AR sin país) | Latinoamérica en Facebook (≥ 4 h entre las dos) | `hora_historia_fb` |
+| desde 09:00 | medición por video de Pequeña Historia (una vez por día) | `_medicion_ph_tick` |
+| lunes 08:00 | lista de fechas de la semana a Santi | `_calendario_tick` |
+| al terminar el día pedido | costo real de Claude a Santi | `_costo_claude_tick` |
+
+### Qué está prendido (settings.yaml)
 
 | | |
 |---|---|
-| commit | v0.79.2 (`fe57bbb`), desplegado y la escucha reiniciada el 2026-11-09 22:49; 835 tests OK en la compu |
-| historia de Facebook | la escucha la propone a las 06:30; fijados: 10/11 Epecuén (`historias_fb_hecho`) y 12/11 Sor Juana (`historias_fb_hecho:2026-11-12`); publica 19:00 AR solo en la página |
-| claves | `ANTHROPIC_API_KEY` en el .env de clips de la Pi (no en la compu); FACEBOOK_PAGE_TOKEN = token de página con `read_insights`, no vence (huella ab2e94551f81) |
-| timers y escucha | `clips-bot.timer`, `clips-bot-efemeride.timer` y `clips-bot-telegram` activos; 56 °C en reposo |
-| corrida del 09/11 | clips 05:02 (tope 6, entrega, métricas: 66 clips con métricas, "pegó": 7 Shorts sin original); efeméride 06:00 propuesta al grupo |
-| subida a YouTube | PRENDIDA (`youtube_upload_enabled: true`, desde 2026-10-30): 📤 programa en Rots o en Pequeña Historia; los dos canales conectados (tokens en `config/`, fuera de git) |
-| Facebook (Pequeña Historia) | `facebook.activo: true`; la app de Meta seguía en modo desarrollo el 20/10 (el público no ve los Reels): pasarla a Live lo hace Santi en el panel |
-| ajustes que cambiaron con datos | `textos.puntaje_min` 7, `seleccion.peso_momento` 1,0, `pego.activo`, `peso_chat` 0,5, `ejemplos_gusto` 3, `render.zoom_picos`, `efemerides.videos`, `efecto_fotos: fija` |
+| Rots | `render.edicion_rots: true`, `publicacion.subir_solo: true`, `textos.motor: claude` (Sonnet textos y chequeo visual, Haiku desempate, Gemini de respaldo), `textos.puntaje_min` 7, `seleccion.peso_momento` 1,0, `peso_chat` 0,5, `ejemplos_gusto` 3, `pego.activo`, `render.zoom_picos` |
+| Pequeña Historia | 3 por día: `efemerides.tema: tecnologia` + `corto: true` (20-30 s, solo YouTube: `facebook.efemeride: false`) y `historias_fb.por_dia: 2` (30-40 s, YouTube + Facebook: `historias_fb.youtube: true`); `efemerides.imagen_frase: true`, `historias_fb.formato_corto: true`, `efemerides.videos: true`, `efecto_fotos: fija`; gancho primero, intriga en la 2.ª, año/lugar en la 3.ª-4.ª, revisión del final con Claude |
+| Claude | Sonnet elige, puntúa, escribe guiones, revisa el final y elige fotos; Haiku clasifica; Gemini SOLO voces y audio (y de respaldo) |
+| subidas | YouTube PRENDIDA (Rots y Pequeña Historia conectados); Facebook `facebook.activo: true` (la app de Meta en modo desarrollo al 20/10: pasarla a Live es de Santi) |
+| apagado | multi-POV (desde 2026-09-28), prueba manual vs API (cancelada 2026-11-10), portadas con IA (en pausa) |
+
+### Estado real de la Pi (verificado el 2026-11-14 01:51)
+
+| | |
+|---|---|
+| commit | v0.93.0 + arreglo de la revisión del final (`18eb5ee`), escucha reiniciada; 949 tests OK |
+| timers y escucha | `clips-bot.timer`, `clips-bot-efemeride.timer` y `clips-bot-telegram` activos; 75 °C mientras corría "pegó" |
+| última madrugada completa | la del 13/11 (`diario_fin` y `efemeride_dia` = 2026-11-13); la del 14/11 arranca a las 03:30 |
+| pedido de costo | `bot_estado.costo_claude_pedido` = 2026-11-14: el informe le llega a Santi apenas termina ese día |
+| claves | `ANTHROPIC_API_KEY` en el .env de clips de la Pi (no en la compu); FACEBOOK_PAGE_TOKEN de página con `read_insights`, no vence (huella ab2e94551f81); `GEMINI_API_KEY_2` para las voces de Latinoamérica |
 | destinos de la entrega diaria y de la efeméride | el grupo **Rots clips** (`-5453399767`) |
 | chats conocidos | Rots clips (grupo), Santi (`8668060171`, `DUENO`), Tommy Bildo y Micheal Lanlin (`8988378175`) |
-| multi-POV | APAGADO desde el 2026-09-28 |
 | música de Pequeña Historia | `musica/` fuera de git |
 
-### Lo que se hizo en la última sesión (2026-11-01 → 2026-11-09)
+### Lo que se hizo en la última sesión (2026-11-11 → 2026-11-13, v0.86.0 a v0.93.0)
 
-- v0.73.0 a v0.77.0 (ver changelog): 🔥 SUBIR YA público al instante, "📅 En diarios" por streamer
-  (Brunenger), clips aburridos (`momento` obligatorio, corte 7), /buscar viejos = lo que pegó
-  cortado del stream, y las dos fallas del 05/11 (/ya con `max_procesar=None`; el video de Android
-  sin botones por el CSS de Commons en los créditos).
-- **Android (05/11) reenviado a mano** con botones: la foto de la frase 4 ("inversores", billetes de
-  rupias de Pexels que el relleno repitió de otra frase) se cambió por "File:HTC Dream opened.jpg"
-  (Marcus Sümnick, CC BY 3.0). El video viejo quedó como `.antes.mp4` al lado del nuevo.
-- Portadas e ilustraciones con IA: **en pausa** (`docs/portadas-ia.md`). Sigue "nada de IA".
+- Calendario de fechas de Latinoamérica, control del 70 % de fotos reales, ficción solo desde la vida
+  real, karaoke, topes por foto y tarjetas, ruido del final de la voz, horarios de Facebook por país.
+- Gancho primero en todo Pequeña Historia y medición por video (`medicion_ph`, calibrada con Studio).
+- Nicho: 3 videos por día (2 Latinoamérica + 1 tecnología), YouTube a 4 h, aviso de voces.
+- Madrugada: todo en Telegram antes de las 05:30.
+- Guiones que retienen (intriga en la 2.ª frase, estructura gancho → tensión → giro → pago),
+  Latinoamérica de 30-40 s con puntaje ≥ 8, textos de Rots y de tecnología con Claude.
+- v0.93.0: revisión del final que paga el gancho (con el artículo entero: en La Pola el billete
+  estaba después de los 8.000 caracteres), puntaje propio de tecnología (≥ 7,5, ejemplo de 10:
+  Netscape) y el costo real de Claude por día. **Ojo para el 14/11:** el Netscape de ese día es el
+  lanzamiento de Netscape 6 (2000), no la guerra de los navegadores: puede que no pase el 7,5 y ese
+  día no salga el de tecnología (sale el aviso). Si pasa seguido, bajar el corte o sumar fuentes.
 
 ### Decisiones de Santi vigentes (además de §1)
 
@@ -2333,20 +2360,16 @@ aparte de Pequeña Historia a las 06:00 (`clips-bot-efemeride`) y la escucha de 
 
 ### Esperando respuesta de Santi (NO programar sin su OK)
 
-0. **Edición nueva: TODO PRENDIDO desde el 2026-11-12** (v0.89.0: `render.edicion_rots`,
-   `efemerides.imagen_frase`, `historias_fb.formato_corto`, y el gancho primero en todo Pequeña
-   Historia; desde v0.90.0, 3 videos por día: 2 de Latinoamérica + 1 de tecnología; el 26/11 llega la
-   comparación de `medicion_ph`). Lo de abajo es la historia: **Rots APROBADO y prendido; Pequeña Historia esperando los
-   ejemplos rehechos** (los de v0.85.0 salieron flojos: Hatuey con 2 tarjetas, Einstein con 4; desde
-   v0.86.0 un video así no se arma) (historia de Facebook y efeméride, con Claude eligiendo las fotos y los
-   cambios de v0.85.0). Con su OK se prenden `efemerides.imagen_frase` (también activa Claude para
-   las fotos) e `historias_fb.formato_corto`. Santi aprobó de Pequeña Historia: karaoke,
-   movimiento de las fotos y el gancho primero. Decisiones de Santi: Pexels solo para objetos
-   genéricos y con Gemini confirmando la época; el formato corto SOLO en la historia de Facebook (la
-   efeméride de YouTube y su Reel de las 12:00 solo cambian la imagen; si Facebook rinde mejor,
-   después se pasa); Rots todo, con la pregunta en la pantalla final y en la descripción. Con su OK
-   se prenden `efemerides.imagen_frase`, `historias_fb.formato_corto` y `render.edicion_rots`.
-   El script de los ejemplos: `~/clips/ejemplos_edicion.py fb|efe|rots <clip_id>` (fuera de git).
+0. **Voz de Pequeña Historia** (v0.88.0): muestras de Fenrir más calmo, Achird, Sadaltager y Charon
+   con energía media mandadas; falta que elija. Al elegir: `efemerides.tts_modelo:
+   gemini-2.5-flash-preview-tts`, `tts_instruccion` (la de energía media/calma, terminada en ":"),
+   `tts_voz`. Con ese modelo la instrucción NO se lee en voz alta (probado con Whisper).
+- **Descripciones de los canales** (propuestas el 2026-11-12, no aplicadas): las cambia Santi.
+- **Fechas con datos que llegan solos:** 15/11 el costo real de Claude del 14/11; **24/11** la
+   comparación de Facebook (historias vs Reels anteriores); **26/11** `medicion_ph` (los videos
+   nuevos contra los 10 Shorts anteriores, tecnología contra Latinoamérica). Con esos datos, revisar
+   los horarios de Facebook por hora y los cortes de puntaje (8 Latinoamérica, 7,5 tecnología).
+   El script de ejemplos de la edición: `~/clips/ejemplos_edicion.py fb|efe|rots <clip_id>` (fuera de git).
 
 1. **Diseño del algoritmo de ROTS y Pequeña Historia** (mandado el 2026-11-05): `/analisis`;
    ponderación del rendimiento 40/40/20 (vistas / % que llega al final / comentarios cada 1.000
@@ -2367,8 +2390,11 @@ aparte de Pequeña Historia a las 06:00 (`clips-bot-efemeride`) y la escucha de 
    las fundaciones de ciudades de Wikipedia en español; la historia del artículo de cada ciudad.
    Detalles vistos en la prueba de Epecuén: los créditos repiten la foto base de las tarjetas (4
    veces la misma línea) y la miniatura de la tarjeta en la hoja corta el texto del medio.
-4. **Pruebas de voz** (v0.72.0): muestras A / B / B+ mandadas; falta que elija. La C (ElevenLabs)
-   necesita una clave que no está.
+4. **Pruebas de voz viejas** (v0.72.0, A / B / B+): reemplazadas por las de v0.88.0 (punto 0). La C
+   (ElevenLabs) necesita una clave que no está.
+5. **Cuota de voces:** Lo Encontré comparte la GEMINI_API_KEY principal (tope ~10 por día, aviso a
+   Santi en 8). Pequeña Historia usa 3 por día (las 2 de Latinoamérica por la segunda clave). El repo
+   bot-videos no se toca.
 
 ### Problemas vistos y no arreglados
 
