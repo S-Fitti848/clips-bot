@@ -9,7 +9,7 @@ import math
 import random
 
 from . import paleta as P
-from .svg import camino, circulo, elipse, g, n, rect, texto_con_borde, trazo
+from .svg import camino, circulo, elipse, g, linea_gruesa, n, rect, texto_con_borde, trazo
 
 W, H = P.ANCHO, P.ALTO
 
@@ -48,7 +48,7 @@ def fondo_cielo(semilla: int = 1) -> str:
     return "".join(p)
 
 
-def fondo_ciudad(semilla: int = 2) -> str:
+def _fondo_ciudad_base(semilla: int = 2) -> str:
     rnd = random.Random(semilla)
     p = [rect(0, 0, W, H, "#ffd9a8", borde=False),
          rect(0, 0, W, H * 0.4, "#ffb98a", borde=False),
@@ -144,7 +144,7 @@ def fondo_globo(semilla: int = 4) -> str:
     return "".join(p)
 
 
-def fondo_fabrica(semilla: int = 5) -> str:
+def _fondo_fabrica_base(semilla: int = 5) -> str:
     """Una fábrica genérica por dentro: cinta transportadora con cajas, engranajes en la pared,
     caños y chimeneas en la ventana (canal de marcas, 2026-11-14)."""
     rnd = random.Random(semilla)
@@ -173,7 +173,7 @@ def fondo_fabrica(semilla: int = 5) -> str:
     return "".join(p)
 
 
-def fondo_tienda(semilla: int = 6) -> str:
+def _fondo_tienda_base(semilla: int = 6) -> str:
     """Góndolas de un almacén/supermercado con productos genéricos de colores (sin marcas)."""
     rnd = random.Random(semilla)
     colores = [P.ROJO, P.AZUL, P.VERDE, P.AMARILLO, P.NARANJA, P.VIOLETA, P.ROSA, P.TURQUESA]
@@ -208,6 +208,111 @@ def fondo_tienda(semilla: int = 6) -> str:
                 x += w + 14
     # cartel de oferta genérico
     p.append(g(prop_cartel("OFERTA", P.AMARILLO), 860, 150, escala=0.7))
+    return "".join(p)
+
+
+# ---- decoración de época en la calle, la fábrica y la tienda (Santi, 2026-11-14) -------------------
+
+def _rango(decada: int) -> str:
+    """"antes" (antes de 1950), "medio" (50-70), "ochentas" (80-90) o "hoy"."""
+    if not decada or decada >= 200:
+        return "hoy"
+    if decada < 195:
+        return "antes"
+    return "medio" if decada < 198 else "ochentas"
+
+
+def auto_epoca(rango: str, color: str) -> str:
+    """Un auto estacionado de la época, de costado, centrado en (0, 0) y apoyado en y = 60."""
+    ruedas = circulo(-110, 40, 36, "#2b2b33") + circulo(-110, 40, 14, P.GRIS, ancho=4) + \
+        circulo(110, 40, 36, "#2b2b33") + circulo(110, 40, 14, P.GRIS, ancho=4)
+    if rango == "antes":     # alto y cuadrado, con estribos y guardabarros
+        return (camino("M-170 30 L-170 -40 L-90 -40 L-80 -140 L80 -140 L90 -40 L170 -40 L170 30 Z", color)
+                + rect(-60, -124, 50, 70, "#9fe3ff", ancho=4) + rect(10, -124, 50, 70, "#9fe3ff", ancho=4)
+                + rect(-190, 20, 380, 14, "#2b2b33", r=6, ancho=3) + ruedas)
+    if rango == "medio":     # redondeado con aletas atrás
+        return (camino("M-200 30 Q-210 -30 -150 -40 L-90 -44 Q-60 -110 20 -110 Q90 -110 110 -44 L180 -40 "
+                       "L210 -70 L210 30 Z", color)
+                + camino("M-70 -46 Q-50 -96 0 -96 L0 -46 Z", "#9fe3ff", ancho=4)
+                + camino("M10 -46 L10 -96 Q70 -96 92 -46 Z", "#9fe3ff", ancho=4)
+                + rect(-200, 10, 410, 12, P.GRIS, r=6, ancho=3) + ruedas)
+    if rango == "ochentas":  # cuadrado y bajo
+        return (camino("M-200 30 L-200 -30 L-110 -40 L-70 -100 L90 -100 L130 -40 L200 -30 L200 30 Z", color)
+                + rect(-60, -92, 70, 46, "#9fe3ff", ancho=4) + rect(20, -92, 90, 46, "#9fe3ff", ancho=4) + ruedas)
+    return prop_auto(color=color)    # hoy
+
+
+def farol(rango: str) -> str:
+    """Un farol de la época, con la base en (0, 0)."""
+    if rango == "antes":     # farol a gas, negro y labrado
+        return (rect(-10, -520, 20, 520, "#2b2b33", ancho=4) + rect(-30, -40, 60, 40, "#2b2b33", r=6, ancho=4)
+                + camino("M-40 -520 L40 -520 L28 -600 L-28 -600 Z", "#fff3b0", ancho=5)
+                + camino("M-46 -600 L46 -600 L0 -640 Z", "#2b2b33", ancho=4))
+    if rango in ("medio", "ochentas"):   # alumbrado curvo
+        return (rect(-10, -600, 20, 600, P.GRIS_OSCURO, ancho=4)
+                + camino("M0 -600 Q0 -660 80 -660 L120 -660", ancho=16) + elipse(120, -650, 40, 14, "#fff3b0", ancho=4))
+    return (rect(-8, -620, 16, 620, P.GRIS, ancho=4) + rect(-8, -640, 120, 18, P.GRIS, r=6, ancho=4)
+            + rect(60, -626, 50, 10, "#e6f7ff", borde=False))   # LED
+
+
+def fondo_ciudad(semilla: int = 2) -> str:
+    """La calle de la época: un auto estacionado, un farol y la vidriera de un negocio según la década
+    (y los edificios de siempre atrás)."""
+    decada, var = epoca_de(semilla)
+    rango = _rango(decada)
+    p = [_fondo_ciudad_base(semilla)]
+    # vidriera de un negocio (toldo a rayas y vidrio), abajo a la izquierda, contra la vereda
+    toldo = {"antes": "#8e2c2c", "medio": "#2a9d8f", "ochentas": "#ff99c8", "hoy": "#3a86ff"}[rango]
+    p.append(rect(40, 1180, 380, 290, "#f5e6c8" if rango == "antes" else "#e9eef3", r=6))
+    p.append(rect(70, 1240, 320, 200, "#bfe9ff", ancho=5))
+    for k in range(6):
+        p.append(camino(f"M{40 + k * 64} 1150 L{104 + k * 64} 1150 L{98 + k * 64} 1200 L{46 + k * 64} 1200 Z",
+                        toldo if k % 2 == 0 else P.BLANCO, ancho=4))
+    p.append(g(farol(rango), 980, 1520))
+    colores = (P.ROJO, P.AZUL, P.VERDE, P.AMARILLO)
+    p.append(g(auto_epoca(rango, colores[var % 4]), 640, 1500, escala=0.9))
+    return "".join(p)
+
+
+def fondo_fabrica(semilla: int = 5) -> str:
+    """La fábrica de la época: caldera a vapor antes de 1950, reloj para fichar y palancas en los
+    50-80, brazo robot y pantallas hoy."""
+    decada, _ = epoca_de(semilla)
+    rango = _rango(decada)
+    p = [_fondo_fabrica_base(semilla)]
+    if rango == "antes":
+        p.append(rect(770, 760, 240, 380, "#8d6e63", r=60) + circulo(890, 860, 50, "#e9d8a6", ancho=5)
+                 + f'<path d="M890 860 L920 830" {trazo(ancho=6)}/>' + rect(840, 1140, 100, 40, "#5d4037"))
+    elif rango in ("medio", "ochentas"):
+        p.append(rect(800, 780, 180, 240, P.GRIS, r=10) + circulo(890, 850, 50, P.BLANCO, ancho=5)
+                 + f'<path d="M890 850 L890 815 M890 850 L915 860" {trazo(ancho=6)}/>' + rect(840, 930, 100, 60, "#e9d8a6", ancho=4))
+        for k, c in enumerate((P.ROJO, P.VERDE, P.AMARILLO)):
+            p.append(rect(800 + k * 60, 1060, 22, 90, P.GRIS_OSCURO, ancho=4) + circulo(811 + k * 60, 1060, 18, c, ancho=4))
+    else:
+        p.append(rect(780, 760, 240, 160, "#2b2b33", r=10) + rect(800, 780, 200, 120, "#3fd1a8", ancho=4)
+                 + linea_gruesa([(900, 1180), (860, 1040), (960, 980)], P.NARANJA, 36)
+                 + rect(840, 1160, 120, 40, P.GRIS_OSCURO, r=6))
+    return "".join(p)
+
+
+def fondo_tienda(semilla: int = 6) -> str:
+    """La tienda de la época: caja registradora de bronce y frascos antes de 1950, registradora
+    mecánica en los 50-80, pantalla y lector de código de barras hoy."""
+    decada, _ = epoca_de(semilla)
+    rango = _rango(decada)
+    p = [_fondo_tienda_base(semilla)]
+    p.append(rect(40, 1260, 300, 160, "#8a5a2b" if rango != "hoy" else "#cfd8dc", r=6))       # mostrador
+    if rango == "antes":
+        p.append(camino("M100 1260 L110 1170 L250 1170 L270 1260 Z", "#c9a24a")
+                 + rect(130, 1150, 110, 30, "#e9d8a6", ancho=4))
+        for k in range(3):
+            p.append(rect(60 + k * 30, 1200, 24, 60, "#bfe9ff", r=6, ancho=4))
+    elif rango in ("medio", "ochentas"):
+        p.append(rect(110, 1170, 160, 90, P.GRIS, r=8) + rect(130, 1140, 120, 34, "#2b2b33", ancho=4)
+                 + "".join(circulo(130 + k * 30, 1210, 9, P.BLANCO, ancho=3) for k in range(5)))
+    else:
+        p.append(rect(120, 1140, 140, 100, "#2b2b33", r=8) + rect(132, 1152, 116, 76, "#3fd1a8", ancho=4)
+                 + rect(60, 1210, 50, 30, P.ROJO, r=6, ancho=4))
     return "".join(p)
 
 

@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-11-14 | **Versión:** v0.97.0 (desplegado) | **Modo:** Fase 2: corriendo solo en la Pi. **Rots APAGADO** (`publicacion.rots: false`). Madrugada desde la escucha: tecnología desde las 04:00 → 2 de Latinoamérica, todo antes de las 05:30; timers 05:00 (no hace nada con Rots apagado) y 06:00 de respaldo
+**Snapshot:** 2026-11-14 | **Versión:** v0.98.0 (desplegado) | **Modo:** Fase 2: corriendo solo en la Pi. **Rots APAGADO** (`publicacion.rots: false`). Madrugada desde la escucha: tecnología desde las 04:00 → 2 de Latinoamérica, todo antes de las 05:30; timers 05:00 (no hace nada con Rots apagado) y 06:00 de respaldo
 
 > **SI ESTÁS EMPEZANDO UNA SESIÓN NUEVA, LEÉ §10.** Ahí está qué está hecho, qué quedó a medias,
 > qué falta, y las trampas que ya nos mordieron.
@@ -959,6 +959,21 @@ Problemas abiertos:
 
 ## 9. CHANGELOG
 
+- v0.98.0 (2026-11-14, noche) — **Así Nació: ritmo, subtítulos arriba, composición, revisión visual,
+  perfil al caminar, época en todos los lugares y audio** (REGLAS PERMANENTES, guion + escenas +
+  chequeo): (a) 30-40 s con ritmo: voz ×1,13 sin cambiar el tono, pausas ≤ 0,22 s, cambio de plano en
+  las escenas de más de 2,6 s; si la voz real sale de 30-40 s se reescribe el guion (nunca se acelera
+  más); (b) subtítulos chicos en una franja angosta ARRIBA, debajo de la interfaz de Shorts; nada de la
+  escena sube a esa franja; (c) composición: muebles contra la pared a los costados y detrás de los
+  personajes, objetos en la mano o sobre algo lógico, ningún brazo u objeto sobre una cara, nada
+  tapado: lo verifica y corrige el código cuadro a cuadro; (d) **revisión visual** antes del render:
+  Sonnet mira 8 cuadros clave a 512 px, se corrige el guion de la escena marcada (máx. 2 vueltas) y
+  queda anotado en el mensaje; (e) de perfil al caminar o correr de costado, de frente quietos; (f)
+  decoración de época también en calle (auto, farol, vidriera), fábrica y tienda; (g) música de
+  `musica.py` con ducking y SFX sintetizados, con los niveles medidos en el mensaje (voz −15,8 dB,
+  música −27,6, SFX −27,3, mezcla −14,0). Nerf: 28,8 s (corto: el alargue de guiones cortos se sumó
+  después y no está probado), render 221 s, Claude US$ 0,20. Imágenes de Tito con fondo plano o
+  patrón de productos (sin rayos). Así Nació sigue APAGADO. 1390 tests OK.
 - v0.97.0 (2026-11-14, noche) — **Así Nació: movimiento, sin superposiciones, escenarios de época y
   objetos con detalle** (Santi: "muchísimo mejor"; REGLAS PERMANENTES, en el guion y en el chequeo
   código + Haiku con reintento): (a) movimiento con peso: caminar y correr con ciclo (cadera, rodilla y

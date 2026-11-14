@@ -36,6 +36,11 @@ class Estado:
     pierna_izq: float = 0.0
     pierna_der: float = 0.0
     agachar: float = 0.0
+    # De PERFIL al caminar de costado (Santi, 2026-11-14): 1 = mira a la derecha de la pantalla, -1 a la
+    # izquierda, 0 = de frente. `zancada` (-1..1) abre las piernas y balancea los brazos en el plano.
+    perfil: int = 0
+    zancada: float = 0.0
+    corre: bool = False
 
 
 # Gestos: ángulos (hombro, codo) de cada brazo. Hombro 0 = colgando, 90 = horizontal hacia afuera,
@@ -83,6 +88,14 @@ def mezclar_brazos(a: Estado, b: Estado, t: float) -> Estado:
                    cejas=b.cejas if t >= 0.5 else a.cejas)
 
 
+def _oscurecer(color: str, f: float = 0.78) -> str:
+    """El mismo color, más oscuro (el brazo y la pierna de atrás, de perfil)."""
+    c = color.lstrip("#")
+    if len(c) != 6:
+        return color
+    return "#" + "".join(f"{int(int(c[i:i + 2], 16) * f):02x}" for i in (0, 2, 4))
+
+
 # ---- el personaje -------------------------------------------------------------
 
 
@@ -108,6 +121,9 @@ class Personaje:
 
     def svg(self, e: Estado | None = None) -> str:
         e = e or Estado()
+        if e.perfil:
+            cuerpo = self._svg_perfil(e)
+            return cuerpo if e.perfil > 0 else g(cuerpo, escala=-1, escala_y=1)
         k = self.alto_cuerpo
         resp = 1 + 0.014 * e.respiracion           # el torso "respira" (alto del torso)
         piso_torso = -150 * k
@@ -121,6 +137,133 @@ class Personaje:
             self._brazo(1, hombro_y, *e.brazo_der),
             g(self._cabeza(e), 0, cy_cabeza, rot=e.inclinacion),
         ])
+
+    # -- geometría (para el chequeo de composición: brazos que atraviesan caras) --
+    def cara(self, e: Estado | None = None) -> tuple[float, float, float]:
+        """(x, y, radio) de la cabeza en coordenadas locales (sin sombrero)."""
+        k = self.alto_cuerpo
+        tope = -150 * k - 270 * k
+        return (8.0 * (e.perfil if e else 0), tope - self.R_CABEZA + 22, float(self.R_CABEZA))
+
+    def alto_sombrero(self) -> float:
+        return {"galera": 150.0, "gorra": 40.0}.get(self.sombrero, 0.0)
+
+    def brazos(self, e: Estado) -> list[list[tuple[float, float]]]:
+        """Las dos poligonales hombro → codo → mano, en coordenadas locales."""
+        k = self.alto_cuerpo
+        tope = -150 * k - 270 * k
+        hy = tope + 38
+        if e.perfil:
+            return [[(x * e.perfil, y) for x, y in pl] for pl in self._brazos_perfil(e, hy)]
+        out = []
+        for lado, (hombro, codo) in ((-1, e.brazo_izq), (1, e.brazo_der)):
+            x0 = lado * 92
+            a1, a2 = math.radians(hombro), math.radians(hombro + codo)
+            x1, y1 = x0 + lado * math.sin(a1) * self.LARGO_BRAZO, hy + math.cos(a1) * self.LARGO_BRAZO
+            out.append([(x0, hy), (x1, y1), (x1 + lado * math.sin(a2) * self.LARGO_ANTEBRAZO,
+                                             y1 + math.cos(a2) * self.LARGO_ANTEBRAZO)])
+        return out
+
+    # -- de perfil (mirando a la derecha; a la izquierda se espeja) --
+    def _brazos_perfil(self, e: Estado, hy: float) -> list[list[tuple[float, float]]]:
+        sw = (34 if e.corre else 26) * e.zancada
+        codo = 70 if e.corre else 25
+        out = []
+        for signo in (-1, 1):            # el de atrás primero
+            a1 = math.radians(signo * sw)
+            x1, y1 = 4 + math.sin(a1) * self.LARGO_BRAZO, hy + math.cos(a1) * self.LARGO_BRAZO
+            a2 = a1 + math.radians(codo)
+            out.append([(4, hy), (x1, y1), (x1 + math.sin(a2) * self.LARGO_ANTEBRAZO,
+                                            y1 + math.cos(a2) * self.LARGO_ANTEBRAZO)])
+        return out
+
+    def _svg_perfil(self, e: Estado) -> str:
+        k = self.alto_cuerpo
+        resp = 1 + 0.014 * e.respiracion
+        piso_torso = -150 * k
+        tope = piso_torso - 270 * k * resp
+        hy = tope + 38
+        R = self.R_CABEZA
+        cy = tope - R + 22
+        p = []
+        # piernas en el plano: una adelante y otra atrás, la de atrás con la rodilla doblada
+        largo = (-28) - (piso_torso + 10)
+        zan = (40 if e.corre else 28) * e.zancada
+        piernas = []
+        for signo, oscuro in ((-1, True), (1, False)):
+            a = math.radians(signo * zan)
+            cad = (0.0, piso_torso + 10)
+            rod = (cad[0] + math.sin(a) * largo / 2, cad[1] + math.cos(a) * largo / 2)
+            dobla = math.radians(-25 * max(0.0, -signo * e.zancada)) if not e.corre else math.radians(-45 * abs(e.zancada))
+            pie = (rod[0] + math.sin(a + dobla) * largo / 2, rod[1] + math.cos(a + dobla) * largo / 2)
+            color = "#2b3247" if oscuro else self.pantalon
+            piernas.append(linea_gruesa([cad, rod, pie], color, 44)
+                           + camino(f"M{n(pie[0] - 26)} {n(pie[1] + 26)} Q{n(pie[0] - 26)} {n(pie[1] - 18)} "
+                                    f"{n(pie[0] + 6)} {n(pie[1] - 18)} Q{n(pie[0] + 58)} {n(pie[1] - 14)} "
+                                    f"{n(pie[0] + 60)} {n(pie[1] + 26)} Z", "#2a2a33", ancho=P.TRAZO_FINO + 2))
+        brazos = self._brazos_perfil(e, hy)
+        p.append(piernas[0])
+        p.append(linea_gruesa(brazos[0], _oscurecer(self.ropa), self.ANCHO_BRAZO)
+                 + circulo(*brazos[0][-1], 22, _oscurecer(self.piel)))
+        p.append(piernas[1])
+        # torso de costado (más angosto, la panza hacia adelante)
+        p.append(camino(f"M-56 {n(piso_torso)} L64 {n(piso_torso)} Q78 {n(tope + 60)} 50 {n(tope + 8)} "
+                        f"Q0 {n(tope - 6)} -48 {n(tope + 12)} Q-66 {n(tope + 80)} -56 {n(piso_torso)} Z", self.ropa))
+        p.append(linea_gruesa(brazos[1], self.ropa, self.ANCHO_BRAZO) + circulo(*brazos[1][-1], 24, self.piel))
+        # cabeza de perfil: oreja atrás, nariz adelante, un ojo
+        cab = [circulo(-22, 14, 26, self.piel), circulo(8, 0, R, self.piel)]
+        cab.append(self._pelo_perfil())
+        if self.cachetes:
+            cab.append(f'<ellipse cx="52" cy="38" rx="22" ry="13" fill="{P.ROSA}" opacity="0.45"/>')
+        ojo_x = 62
+        cierre = max(0.0, min(1.0, e.parpadeo))
+        if cierre > 0.85:
+            cab.append(camino(f"M{ojo_x - 16} -6 Q{ojo_x} 4 {ojo_x + 16} -6", ancho=P.TRAZO_FINO + 1))
+        else:
+            ry = 24 * (1 - cierre)
+            cab.append(elipse(ojo_x, -8, 16, ry, P.BLANCO, ancho=P.TRAZO_FINO))
+            cab.append(circulo(ojo_x + 6, -5, min(10, ry * 0.6), P.CONTORNO, borde=False))
+        dy_ceja = {"arriba": -16, "enojo": 2, "triste": -6}.get(e.cejas, 0)
+        cab.append(g(f'<path d="M-18 0 L18 0" {trazo(ancho=11)}/>', ojo_x, -52 + dy_ceja,
+                     rot={"enojo": 14, "triste": -14}.get(e.cejas, 0)))
+        if self.anteojos:
+            cab.append(f'<circle cx="{ojo_x}" cy="-8" r="30" fill="none" {trazo(ancho=P.TRAZO_FINO + 1)}/>'
+                       f'<path d="M{ojo_x - 30} -10 L-10 -14" {trazo(ancho=P.TRAZO_FINO)}/>')
+        cab.append(circulo(R + 6, 22, 22, self.piel))                        # nariz
+        if self.bigote:
+            cab.append(camino(f"M{R - 30} 44 Q{R} 34 {R + 14} 50 Q{R - 6} 62 {R - 30} 52 Z", self.pelo,
+                              ancho=P.TRAZO_FINO))
+        ap = max(0.0, min(1.0, e.apertura))
+        if e.boca in ("cerrada", "sonrisa") or ap < 0.08:
+            cab.append(camino(f"M{R - 50} 62 Q{R - 30} {74 if e.boca == 'sonrisa' else 66} {R - 10} 60"))
+        else:
+            cab.append(elipse(R - 28, 66, 14, 6 + 14 * ap, "#5a1e2a", ancho=P.TRAZO_FINO))
+        cab.append(self._sombrero_perfil())
+        p.append(g("".join(cab), 0, cy, rot=e.inclinacion))
+        return "".join(p)
+
+    def _pelo_perfil(self) -> str:
+        R = self.R_CABEZA
+        c = self.pelo
+        if self.peinado == "pelado":
+            return camino(f"M{-R + 4} -10 Q{-R - 10} 40 {-R + 30} 70 Q{-R + 10} 20 {-R + 30} -20 Z", c)
+        if self.peinado == "rulos":
+            return "".join(circulo(x, y, 40, c) for x, y in ((-70, -80), (-30, -105), (15, -112), (-95, -30), (-100, 25)))
+        largo = 120 if self.peinado == "largo" else 40
+        return camino(f"M{R - 10} -60 Q{R - 30} {-R - 20} -10 {-R - 10} Q{-R - 20} {-R + 10} {-R - 6} 10 "
+                      f"L{-R + 4} {largo} Q{-R + 40} {largo - 30} -40 0 Q0 -50 {R - 10} -60 Z", c)
+
+    def _sombrero_perfil(self) -> str:
+        R = self.R_CABEZA
+        c = self.color_sombrero
+        if self.sombrero == "gorra":
+            return (camino(f"M{-R + 4} -40 Q{-R + 10} {-R - 30} 8 {-R - 30} Q{R - 10} {-R - 30} {R - 4} -40 Z", c)
+                    + camino(f"M{R - 20} -44 Q{R + 70} -46 {R + 80} -30 Q{R + 20} -24 {R - 20} -30 Z", c))
+        if self.sombrero == "galera":
+            return (camino(f"M-72 {-R + 10} L-66 {-R - 120} L82 {-R - 120} L88 {-R + 10} Z", c)
+                    + f'<rect x="-70" y="{-R - 20}" width="156" height="24" fill="{P.ROJO}" '
+                      f'{trazo(ancho=P.TRAZO_FINO)}/>' + elipse(8, -R + 12, 130, 22, c))
+        return ""
 
     # -- partes --
     def _piernas(self, piso_torso: float, e: Estado | None = None) -> str:

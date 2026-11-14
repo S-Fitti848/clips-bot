@@ -277,6 +277,10 @@ class Elemento:
             e.brazo_der = tuple(a + (b - a) * peso for a, b in zip(e.brazo_der, bd))
             if sentido:
                 e.mirada = sentido
+                if peso > 0.5:     # de costado: se da vuelta, de perfil hacia donde camina
+                    e.perfil = 1 if sentido > 0 else -1
+                    e.zancada = s
+                    e.corre = tipo == "correr"
         # la expresión cambia con la acción: "caras" = [{t, cara}] (la última que ya empezó)
         caras = sorted(self.datos.get("caras", []), key=lambda x: float(x.get("t", 0)))
         cara_t = next((c["cara"] for c in reversed(caras) if float(c.get("t", 0)) <= t), None)
@@ -476,7 +480,7 @@ class Video:
         u = recortar(t / 0.2) * recortar((e.duracion - t) / 0.2)
         gris = (f'<rect width="{P.ANCHO}" height="{P.ALTO}" fill="{GRIS_PAUSA}" '
                 f'opacity="{round(0.62 * u, 3)}"/>')
-        icono = g(esc.icono_pausa(), 110, 150, opacidad=u) if u > 0.01 else ""
+        icono = g(esc.icono_pausa(), 110, 390, opacidad=u) if u > 0.01 else ""
         return CapaEscena(base.fondo, base.camara, base.frente,
                           base.fijo + gris + icono + propia.frente + propia.fijo)
 

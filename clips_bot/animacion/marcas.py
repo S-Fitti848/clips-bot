@@ -66,10 +66,13 @@ CRITERIOS = ("marca_conocida", "dato_sorprendente", "giro", "humor")
 PUNTAJE_MIN = 8.0
 DIAS_SIN_REPETIR_MARCA = 7
 
-PALABRAS_MIN, PALABRAS_MAX = 75, 118     # frases + locutor, a ~2,5 palabras/s: 30-47 s
+PALABRAS_MIN, PALABRAS_MAX = 68, 98      # frases + locutor: con la voz ×1,13 y pausas cortas, 30-40 s
 FRASES_MIN, FRASES_MAX = 7, 12
 GANCHO_MAX_PALABRAS = 8                   # el gancho dura menos de 3 s
-MAX_S = 48.0
+MAX_S = 40.0            # Santi (2026-11-14): 30-40 s; si la voz se pasa, se ACORTA el guion
+MIN_S = 30.0
+VELOCIDAD_VOZ = 1.13    # atempo (sin cambiar el tono): "medio lento"
+PAUSA_MAX_S = 0.22      # el silencio entre frases, como mucho
 
 # Nunca humor sobre tragedias, muertes, accidentes ni temas sensibles (Santi). El modelo lo marca al
 # elegir y, además, el guion no puede nombrarlos.
@@ -84,7 +87,8 @@ _ARRANQUES_PROHIBIDOS = re.compile(r"^\s*(¿?\s*sab[ií]as|un d[ií]a como hoy|h
 
 # Escenas: lo que puede pedir el guion (la base de animación + lo del canal de marcas).
 FONDOS = ("casa", "taller", "fabrica", "tienda", "oficina", "ciudad", "escenario", "cielo", "globo")
-PROPS = tuple(sorted(n for n in esc.PROPS if n not in ("pedazo", "microfono")))
+# mesa y estante no son objetos de la historia: son el APOYO (`soporte`) y el render los pone contra la pared
+PROPS = tuple(sorted(n for n in esc.PROPS if n not in ("pedazo", "microfono", "mesa", "estante")))
 TRANSICIONES = ("corte", "fundido", "zoom", "barrido")
 
 
@@ -313,7 +317,7 @@ CADENA_MIN, CADENA_MAX = 2, 4
 _PRESENTE = re.compile(r"\b(hoy|actualmente|en la actualidad|hoy en d[ií]a|ahora)\b", re.I)
 LOCUTOR_MIN, LOCUTOR_MAX = 1, 3
 
-SISTEMA_GUION = f"""Escribís un video vertical ANIMADO de 35 a 45 segundos para un canal sobre el origen de las
+SISTEMA_GUION = f"""Escribís un video vertical ANIMADO de 30 a 40 segundos (ritmo ágil) para un canal sobre el origen de las
 marcas. Castellano neutro latinoamericano con algo de rioplatense, informal, tuteo. TONO: sarcasmo y humor.
 
 El canal se llama "Así Nació". Su locutor y mascota es el ABUELO TITO: un inventor jubilado con
@@ -369,7 +373,8 @@ ESTRUCTURA:
 - La PRIMERA frase es el GANCHO: lo más sorprendente o divertido, máximo 8 palabras (dura menos de 3 s),
   sin año, sin "¿Sabías que…?", sin saludar. Su escena es pura ACCIÓN.
 - El final paga el gancho (responde la pregunta que dejó abierta: `pregunta_gancho`).
-- 7 a 11 frases, 60 a 85 palabras en total en las frases; el locutor suma 15 a 35 más.
+- 7 a 11 frases cortas, 55 a 75 palabras en total en las frases; Tito suma 12 a 25 más (todo junto,
+  70 a 95). Frases cortas y con ritmo: el video dura 30 a 40 segundos.
 
 DATOS: todo nombre, cifra, año, mes y lugar sale del TEXTO (Wikipedia). Nada de tu memoria. Los chistes
 son comentarios, no datos inventados. NUNCA humor sobre muertes, accidentes, tragedias, guerras,
@@ -822,12 +827,12 @@ def chequear_calidad(cliente, d: dict, m: Marca) -> list[str]:
 
 
 def escribir_guion(cliente, e: Elegido, fuente: str, reintentos: int = 5, avisar=log.info,
-                   revisor=None) -> dict:
+                   revisor=None, extra: str = "") -> dict:
     """El guion validado (dict del schema). Primero el chequeo del código; si pasa, el de Haiku
     (`revisor`). Si no valida, reintenta con los errores; si nunca valida, GuionInvalido."""
     pedido = (f"MARCA: {e.marca.nombre} ({e.marca.pais})\nÁNGULO: {e.angulo} — {ANGULOS[e.angulo]}\n"
               f"Dato para el gancho (sugerido): {e.dato}\n\nTEXTO (Wikipedia; los datos salen SOLO de "
-              f"acá):\n{fuente[:20000]}")
+              f"acá):\n{fuente[:20000]}" + (f"\n\n{extra}" if extra else ""))
     correccion, ultimo = "", []
     for intento in range(reintentos):
         d = json.loads(cliente.json(SISTEMA_GUION, pedido + correccion, SCHEMA_GUION, 0.9))
@@ -905,6 +910,7 @@ def linea_de_tiempo(d: dict, inicios: list[float], fin: float, palabras: list,
         esc_d, fx = ac.escena_accion(e, dur, k, primera=(k == 0), tono=1.0 if pasado else 0.0,
                                      anio=anio_actual, variante=variante, reservar=reservar,
                                      proyectil=proyectil)
+        esc_d["frase"] = k          # para la revisión visual: qué frase del guion es esta escena
         pisados = ac.superposiciones(esc_d)
         if pisados:
             log.warning("escena %d: personajes que se pisan en %s", k + 1, pisados[:3])
@@ -924,6 +930,188 @@ def linea_de_tiempo(d: dict, inicios: list[float], fin: float, palabras: list,
 
 
 # ---- 7. el video entero -----------------------------------------------------------------------
+
+def acortar_pausas(wav: Path, max_s: float = PAUSA_MAX_S, umbral_db: float = -38.0,
+                   ventana_s: float = 0.01) -> float:
+    """Los silencios ENTRE frases a `max_s` como mucho (Santi: "menos pausas"): se saca el medio de cada
+    silencio largo y queda la mitad de `max_s` de cada lado (nada de cortes secos en una palabra).
+    Devuelve los segundos sacados. Solo PCM de 16 bits; el principio y el final no se tocan acá."""
+    import wave
+
+    import numpy as np
+
+    with wave.open(str(wav)) as w:
+        prm = w.getparams()
+        datos = w.readframes(w.getnframes())
+    if prm.sampwidth != 2 or not prm.nframes:
+        return 0.0
+    x = np.frombuffer(datos, dtype="<i2").reshape(-1, prm.nchannels)
+    sr = prm.framerate
+    paso = max(1, int(sr * ventana_s))
+    xf = x.astype(np.float32).mean(axis=1) / 32768.0
+    n_v = len(xf) // paso
+    rms = np.sqrt(np.mean(xf[:n_v * paso].reshape(n_v, paso) ** 2, axis=1) + 1e-12)
+    silencio = 20 * np.log10(rms) < umbral_db
+    quedan, i, sacado = [], 0, 0
+    tramos = []
+    k = 0
+    while k < n_v:
+        if silencio[k]:
+            j = k
+            while j < n_v and silencio[j]:
+                j += 1
+            if k > 0 and j < n_v and (j - k) * ventana_s > max_s:
+                tramos.append((k * paso, j * paso))
+            k = j
+        else:
+            k += 1
+    if not tramos:
+        return 0.0
+    medio = int(sr * max_s / 2)
+    for a, b in tramos:
+        quedan.append(x[i:a + medio])
+        sacado += (b - a) - 2 * medio
+        i = b - medio
+    quedan.append(x[i:])
+    y = np.concatenate(quedan)
+    with wave.open(str(wav), "wb") as w:
+        w.setparams(prm)
+        w.writeframes(y.astype("<i2").tobytes())
+    return round(sacado / sr, 2)
+
+
+def niveles(ruta: Path) -> dict:
+    """{"medio": dB, "pico": dB} con ffmpeg volumedetect (para confirmar que se oyen voz, música y SFX)."""
+    import subprocess
+
+    from clips_bot.media import find_bin
+
+    r_ = subprocess.run([find_bin("ffmpeg"), "-hide_banner", "-nostats", "-i", str(ruta), "-vn", "-af",
+                         "volumedetect", "-f", "null", "-"], capture_output=True, text=True, timeout=120)
+    medio = re.search(r"mean_volume: (-?[\d.]+) dB", r_.stderr)
+    pico = re.search(r"max_volume: (-?[\d.]+) dB", r_.stderr)
+    return {"medio": float(medio.group(1)) if medio else None, "pico": float(pico.group(1)) if pico else None}
+
+
+# ---- revisión visual automática (Santi, 2026-11-14) -------------------------------------------------
+SISTEMA_REVISION = """Revisás cuadros de un video animado corto (dibujos planos, estilo dibujo animado) ANTES de
+publicarlo. Cada imagen es un cuadro clave (te digo de qué escena). Marcá SOLO cosas absurdas o feas
+que un espectador notaría:
+- un objeto flotando sin razón (salvo íconos de dibujo animado: una lamparita de idea arriba de una
+  cabeza, un signo de pregunta, la lluvia de billetes o monedas, un objeto que vuela porque lo tiraron);
+- un brazo o un objeto que atraviesa la cara de alguien;
+- un personaje tapado por un mueble u otro personaje;
+- un objeto donde no va (una pelota sobre un sombrero, una tele en el piso de la calle);
+- un texto ilegible o cortado; un subtítulo tapando algo importante.
+Para cada problema: `cuadro` (el número), `que` (corto) y `arreglo`: mover_objeto (a otro lugar),
+cambiar_soporte (apoyarlo en otro lado), sacar_objeto, separar_personajes, sacar_texto u otro; y
+`objeto` (el nombre del objeto, si es un objeto). Si está todo bien, lista vacía. No inventes problemas."""
+
+SCHEMA_REVISION = {"type": "OBJECT", "properties": {"problemas": {"type": "ARRAY", "items": {
+    "type": "OBJECT", "properties": {
+        "cuadro": {"type": "INTEGER"}, "que": {"type": "STRING"},
+        "arreglo": {"type": "STRING", "enum": ["mover_objeto", "cambiar_soporte", "sacar_objeto",
+                                               "separar_personajes", "sacar_texto", "otro"]},
+        "objeto": {"type": "STRING"}},
+    "required": ["cuadro", "que", "arreglo", "objeto"]}}}, "required": ["problemas"]}
+CUADROS_REVISION = 8
+
+
+def cuadros_clave(datos: dict, maximo: int = CUADROS_REVISION) -> list[tuple[float, int, str]]:
+    """(segundo, índice de escena en `datos`, qué es) de los cuadros a revisar: el gancho, el viaje en
+    el tiempo y el medio de cada escena de acción (hasta `maximo`)."""
+    t, out = 0.0, []
+    for i, e in enumerate(datos["escenas"]):
+        dur = float(e["duracion"])
+        if e.get("girar"):
+            out.append((t + dur * 0.55, i, "viaje en el tiempo"))
+        elif not e.get("congela"):
+            frac = 0.75 if not out else 0.55
+            out.append((t + dur * frac, i, "gancho" if not out else f"escena {e.get('frase', i) + 1}"))
+        t += dur
+    if len(out) > maximo:   # el gancho, el viaje y repartidas las demás
+        fijos = [c for c in out if c[2] in ("gancho", "viaje en el tiempo")]
+        resto = [c for c in out if c not in fijos]
+        paso = len(resto) / max(1, maximo - len(fijos))
+        out = sorted(fijos + [resto[int(k * paso)] for k in range(maximo - len(fijos))])
+    return out
+
+
+def _jpeg_512(png: Path) -> bytes:
+    import io
+
+    from PIL import Image
+
+    im = Image.open(png).convert("RGB")
+    im.thumbnail((512, 512))
+    b = io.BytesIO()
+    im.save(b, "JPEG", quality=80)
+    return b.getvalue()
+
+
+def aplicar_revision(d: dict, problemas: list[dict], claves: list[tuple[float, int, str]],
+                     datos: dict) -> list[str]:
+    """Corrige el GUION según lo que vio la revisión (en la escena de cada cuadro). Devuelve qué hizo."""
+    hechos = []
+    for pr in problemas:
+        n = int(pr.get("cuadro") or 0) - 1
+        if not 0 <= n < len(claves):
+            continue
+        esc_d = datos["escenas"][claves[n][1]]
+        k = esc_d.get("frase")
+        if k is None:
+            continue
+        e = d["escenas"][k]
+        arreglo, obj = pr.get("arreglo"), str(pr.get("objeto") or "").strip().lower()
+        objs = e.get("objetos") or []
+        cual = next((o for o in objs if obj and obj in str(o.get("prop"))), objs[0] if objs else None)
+        if arreglo == "sacar_objeto" and cual is not None:
+            objs.remove(cual)
+            hechos.append(f"escena {k + 1}: saqué {cual['prop']} ({pr.get('que')})")
+        elif arreglo in ("mover_objeto", "cambiar_soporte") and cual is not None:
+            cual["soporte"] = "estante" if cual.get("soporte") in ("mesa", "piso", "aire", "mano") else "piso"
+            cual["donde"] = "derecha" if cual.get("donde") != "derecha" else "izquierda"
+            hechos.append(f"escena {k + 1}: {cual['prop']} al {cual['soporte']} ({pr.get('que')})")
+        elif arreglo == "separar_personajes" and len(e.get("actores") or []) > 1:
+            e["actores"] = e["actores"][:-1] if len(e["actores"]) > 2 else e["actores"]
+            for a, lado in zip(e["actores"], ("izquierda", "derecha")):
+                a["desde"], a["hacia"] = lado, "ninguno" if a.get("accion") not in ("entrar", "salir") else a.get("hacia")
+            hechos.append(f"escena {k + 1}: separé a los personajes ({pr.get('que')})")
+        elif arreglo == "sacar_texto" and e.get("texto_pantalla"):
+            e["texto_pantalla"] = ""
+            hechos.append(f"escena {k + 1}: saqué el texto en pantalla ({pr.get('que')})")
+        else:
+            hechos.append(f"escena {k + 1}: visto sin arreglo automático: {pr.get('que')}")
+    return hechos
+
+
+def revisar_visual(cliente, d: dict, datos: dict, carpeta: Path, capturar=None, avisar=log.info) -> tuple[list, list]:
+    """Claude mira los cuadros clave (JPEG de ~512 px) y dice qué está mal. Devuelve (problemas, claves).
+    `capturar(datos, segundo, png)` dibuja un cuadro (por defecto, render.cuadro_png)."""
+    from . import render as rd
+    from .timeline import Video
+
+    claves = cuadros_clave(datos)
+    if cliente is None or not claves:
+        return [], claves
+    video = Video.desde_dict({**datos, "audio": None})
+    imagenes = []
+    for n, (t, _i, _q) in enumerate(claves):
+        png = carpeta / f"revision_{n + 1}.png"
+        if capturar:
+            capturar(datos, t, png)
+        else:
+            rd.cuadro_png(video, min(video.total_cuadros - 1, int(t * video.fps)), png, escala=0.5)
+        imagenes.append(_jpeg_512(png))
+    lista = "\n".join(f"Cuadro {n + 1}: {q}" for n, (_t, _i, q) in enumerate(claves))
+    try:
+        r_ = json.loads(cliente.json(SISTEMA_REVISION, f"Los cuadros, en orden:\n{lista}", SCHEMA_REVISION, 0.2,
+                                     imagenes=imagenes))
+    except Exception as err:   # la revisión es una red de seguridad: si no responde, sigue
+        avisar(f"revisión visual: no respondió ({str(err)[:120]})")
+        return [], claves
+    return list(r_.get("problemas") or []), claves
+
 
 @dataclass
 class Resultado:
@@ -945,6 +1133,8 @@ class Resultado:
     total_s: float = 0.0
     costo_usd: float = 0.0
     tiempos: dict = field(default_factory=dict)
+    revision: list = field(default_factory=list)      # lo que vio la revisión visual y lo que se corrigió
+    niveles: dict = field(default_factory=dict)       # dB de la voz, la música, los SFX y la mezcla
 
     def a_dict(self) -> dict:
         return asdict(self)
@@ -1002,11 +1192,11 @@ def proponer(conn, cliente, wiki, hoy: date, catalogo: list[Marca] | None = None
 
 
 VOLUMEN_SFX = 0.32
-# Subtítulos (Santi, 2026-11-14: "tapan mucho la escena"): más chicos, en la franja de abajo, con una
-# banda semitransparente angosta; los personajes pisan en ac.PISO (1640), así que la banda no los tapa.
-SUBTITULOS_Y = 1782
+# Subtítulos (Santi, 2026-11-14): chicos, en una franja angosta ARRIBA, con banda semitransparente; la
+# escena no sube de ac.BANDA_SUBTITULOS (lo controla acciones.composicion), así que no tapan nada.
+SUBTITULOS_Y = 232          # ARRIBA (Santi, 2026-11-14): debajo de la interfaz de Shorts, la escena no sube de 300
 SALTO_MIN = 10       # un "viaje" de menos de 10 años (1969 → 1970) no es cambio de época: no se hace
-SUBTITULOS_TAM = 60
+SUBTITULOS_TAM = 52
 
 
 def armar_video(conn, settings, carpeta: Path, cliente=None, wiki=None, hoy: date | None = None,
@@ -1035,25 +1225,48 @@ def armar_video(conn, settings, carpeta: Path, cliente=None, wiki=None, hoy: dat
     revisor = revisor or claude.cliente(claude.HAIKU)
     wiki = wiki or ef.Wiki()
     t0 = time.time()
+    fuente = ""
     if guion is not None and forzar is not None:   # rearmar un guion ya validado (sin gastar Claude)
         e, d = forzar, guion
     else:
-        e, d, _ = proponer(conn, cliente, wiki, hoy, catalogo, cfg.candidatos, cfg.puntaje_min,
-                           cfg.max_intentos, avisar, revisor=revisor, forzar=forzar)
+        e, d, fuente = proponer(conn, cliente, wiki, hoy, catalogo, cfg.candidatos, cfg.puntaje_min,
+                                cfg.max_intentos, avisar, revisor=revisor, forzar=forzar)
     tiempos["guion_s"] = round(time.time() - t0, 1)
     (carpeta / "guion.json").write_text(json.dumps({"marca": e.marca.nombre, "angulo": e.angulo,
                                                     "notas": e.notas, "guion": d}, ensure_ascii=False,
                                                    indent=1), encoding="utf-8")
-    segs = segmentos(d)
-    hablado = [t for _, _, t in segs]
     # Voz: la misma cadena que Pequeña Historia (ElevenLabs si está, Gemini TTS, Piper de respaldo).
-    # El locutor es la misma voz: la mascota ES el que narra.
+    # Tito es la misma voz: la mascota ES el que narra. Ritmo (Santi, 2026-11-14: "medio lento"): ×1,13
+    # sin cambiar el tono y los silencios entre frases a 0,22 s; si igual pasa de 40 s, se ACORTA el
+    # guion (no se acelera más).
     t0 = time.time()
-    wav, duraciones, motor = ef.voz_efemeride(hablado, settings, carpeta, avisar)
-    ef.ajustar_duracion(wav, duraciones, MAX_S, settings.efemerides.tts_acelerar_max, avisar)
-    narrar.a_48k(wav)
-    narrar.sacar_silencio_inicial(wav)
-    fin = narrar.duracion_wav(wav)
+    for intento in range(3):
+        segs = segmentos(d)
+        hablado = [t for _, _, t in segs]
+        wav, _duraciones, motor = ef.voz_efemeride(hablado, settings, carpeta, avisar)
+        narrar.a_48k(wav)
+        ef.acelerar(wav, VELOCIDAD_VOZ)
+        sacado = acortar_pausas(wav)
+        narrar.sacar_silencio_inicial(wav)
+        fin = narrar.duracion_wav(wav)
+        avisar(f"voz: {fin:.1f} s (×{VELOCIDAD_VOZ}, {sacado:.1f} s de pausas menos)")
+        if MIN_S - 1 <= fin <= MAX_S or intento == 2:
+            break
+        # fuera de 30-40 s: se reescribe el guion (más corto o más largo), nunca se acelera más
+        palabras_hoy = sum(len(x.split()) for x in hablado)
+        largo = fin > MAX_S
+        objetivo = int(palabras_hoy * ((MAX_S - 2) if largo else (MIN_S + 3)) / fin)
+        avisar(f"la voz dura {fin:.1f} s: {'acorto' if largo else 'alargo'} el guion a {objetivo} palabras")
+        if not fuente:
+            fuente = fuente_de(wiki, e.marca)
+        try:
+            d = escribir_guion(cliente, e, fuente, avisar=avisar, revisor=revisor,
+                               extra=(f"OJO: tu guion anterior, leído en voz alta, duró {fin:.0f} segundos y tiene "
+                                      f"que durar entre {MIN_S:g} y {MAX_S:g}. Escribilo con unas {objetivo} palabras "
+                                      "en total (frases + Tito), con la misma historia:\n" + describir(d)))
+        except GuionInvalido as err:
+            avisar(f"no pude acortar el guion: {err}")
+            break
     tiempos["voz_s"] = round(time.time() - t0, 1)
     t0 = time.time()
     oidas = narrar.palabras_de_voz(wav, settings.subtitulos)
@@ -1064,6 +1277,20 @@ def armar_video(conn, settings, carpeta: Path, cliente=None, wiki=None, hoy: dat
     tiempos["whisper_s"] = round(time.time() - t0, 1)
     avisar(f"voz ({motor}): {fin:.1f} s")
     datos, eventos = linea_de_tiempo(d, inicios, fin, palabras, wav)
+    # Revisión visual (Santi, 2026-11-14): Claude mira los cuadros clave ANTES del render y, si ve algo
+    # absurdo, se corrige el guion de esa escena y se vuelve a armar; como mucho 2 vueltas.
+    revision: list[str] = []
+    t0 = time.time()
+    for vuelta in range(2):
+        problemas, claves = revisar_visual(cliente, d, datos, carpeta, avisar=avisar)
+        if not problemas:
+            revision.append(f"vuelta {vuelta + 1}: sin problemas" if vuelta else "revisión visual: sin problemas")
+            break
+        hechos = aplicar_revision(d, problemas, claves, datos)
+        revision += [f"vuelta {vuelta + 1}: {h}" for h in hechos]
+        avisar("revisión visual: " + "; ".join(hechos)[:300])
+        datos, eventos = linea_de_tiempo(d, inicios, fin, palabras, wav)
+    tiempos["revision_s"] = round(time.time() - t0, 1)
     (carpeta / "linea_de_tiempo.json").write_text(json.dumps({"video": datos, "sfx": eventos},
                                                              ensure_ascii=False, indent=1), encoding="utf-8")
     video = Video.desde_dict(datos)
@@ -1071,14 +1298,37 @@ def armar_video(conn, settings, carpeta: Path, cliente=None, wiki=None, hoy: dat
     tema = None
     if cfg.musica:
         carpeta_musica = ROOT / settings.efemerides.carpeta_musica
-        tema = musica.elegir(musica.cargar(carpeta_musica), str(d.get("tono") or "curioso"),
-                             musica.recientes(conn), musica.vetados(conn))
+        # un tema CON RITMO (alegre), bajo la voz con ducking (musica.mezclar); licencia verificada
+        tema = musica.elegir(musica.cargar(carpeta_musica), "alegre", musica.recientes(conn), musica.vetados(conn))
     audio = (musica.mezclar(wav, ROOT / settings.efemerides.carpeta_musica / tema.ruta,
                             carpeta / "voz_musica.wav", cfg.musica_volumen) if tema else wav)
     if tema:
         musica.anotar_uso(conn, tema.ruta)   # así no sale siempre el mismo tema
     audio = efectos.mezclar(audio, eventos, carpeta / "audio_final.wav", video.duracion, VOLUMEN_SFX)
     video.audio = str(audio)
+    # Niveles (que se oiga todo): la voz sola, la música sola al volumen de la mezcla, los SFX solos y
+    # la mezcla final.
+    import wave as _wave
+
+    import numpy as np
+
+    niv = {"voz": niveles(wav), "mezcla": niveles(audio)}
+    pista = efectos.pista(eventos, video.duracion, VOLUMEN_SFX)
+    with _wave.open(str(carpeta / "sfx_solos.wav"), "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(efectos.SR)
+        w.writeframes((np.clip(pista, -1, 1) * 32767).astype("<i2").tobytes())
+    niv["sfx"] = niveles(carpeta / "sfx_solos.wav")
+    if tema:
+        from clips_bot.media import find_bin, run
+
+        sola = carpeta / "musica_sola.wav"
+        run([find_bin("ffmpeg"), "-hide_banner", "-loglevel", "error", "-y", "-stream_loop", "-1", "-i",
+             str((ROOT / settings.efemerides.carpeta_musica / tema.ruta).resolve()), "-t", f"{video.duracion:.2f}",
+             "-af", f"aformat=channel_layouts=mono,volume={cfg.musica_volumen}", "-ar", "48000", str(sola.resolve())])
+        niv["musica"] = niveles(sola)
+    avisar(f"niveles: {niv}")
     salida = carpeta / f"marca_{re.sub(r'[^a-z0-9]+', '_', e.marca.nombre.lower())}_{e.angulo}.mp4"
     t0 = time.time()
     r = rd.renderizar(video, salida, "auto", procesos, crf=22, preset="medium",
@@ -1092,7 +1342,7 @@ def armar_video(conn, settings, carpeta: Path, cliente=None, wiki=None, hoy: dat
         motor_voz=motor, musica=tema.ruta if tema else "", credito_musica=tema.credito() if tema else "",
         articulo=f"https://es.wikipedia.org/wiki/{e.marca.wiki_es.replace(' ', '_')}",
         render_s=tiempos["render_s"], total_s=round(time.time() - t_total, 1),
-        costo_usd=costo_desde(conn, fila0), tiempos=tiempos)
+        costo_usd=costo_desde(conn, fila0), tiempos=tiempos, revision=revision, niveles=niv)
 
 
 # ---- 8. a Telegram (sin subir a ningún lado) -----------------------------------------------------
@@ -1119,6 +1369,11 @@ def texto_mensaje(r: Resultado, encabezado: str = "") -> str:
         "",
         "📵 No se sube a ningún lado: el canal de YouTube todavía no está conectado.",
     ]
+    if r.revision:
+        partes += ["", "<b>Revisión visual:</b> " + html.escape("; ".join(r.revision))[:900]]
+    if r.niveles:
+        partes += ["<b>Audio (dB medio / pico):</b> " + html.escape(" · ".join(
+            f"{k} {v.get('medio')} / {v.get('pico')}" for k, v in r.niveles.items()))]
     return "\n".join(partes)
 
 

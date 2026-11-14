@@ -616,6 +616,137 @@ def test_objetos_llamativos():
     assert any(e.get("nombre") == "pelota_espuma" for e in datos["escenas"][0]["elementos"])
 
 
+# ---- ritmo, subtítulos arriba, composición, revisión visual, perfil, época y audio (2026-11-14) ----
+
+def _wav(ruta, tramos, sr=48000):
+    import wave
+
+    import numpy as np
+
+    partes = []
+    for tipo, seg in tramos:
+        t = np.arange(int(seg * sr)) / sr
+        partes.append(0.4 * np.sin(2 * np.pi * 220 * t) if tipo == "voz" else np.zeros(len(t)))
+    with wave.open(str(ruta), "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(sr)
+        w.writeframes((np.concatenate(partes) * 32767).astype("<i2").tobytes())
+    return ruta
+
+
+def test_pausas_entre_frases_a_022(tmp_path):
+    from clips_bot.narrar import duracion_wav
+
+    w = _wav(tmp_path / "v.wav", [("voz", 1.0), ("sil", 0.9), ("voz", 1.0), ("sil", 0.15), ("voz", 0.5)])
+    sacado = mk.acortar_pausas(w)
+    assert sacado == pytest.approx(0.9 - mk.PAUSA_MAX_S, abs=0.03)        # la pausa corta no se toca
+    assert duracion_wav(w) == pytest.approx(3.55 - sacado, abs=0.02)
+
+
+def test_niveles_de_audio(tmp_path):
+    w = _wav(tmp_path / "v.wav", [("voz", 1.0)])
+    n = mk.niveles(w)
+    assert -14 < n["medio"] < -8 and n["pico"] < 0
+
+
+def test_ritmo_30_a_40_s():
+    assert (mk.MIN_S, mk.MAX_S) == (30.0, 40.0) and 1.12 <= mk.VELOCIDAD_VOZ <= 1.15
+    assert "30 a 40 segundos" in mk.SISTEMA_GUION
+
+
+def _dos_cerca(gesto_a="senalar"):
+    """Dos personajes pegados, uno señalando hacia el otro (el brazo le cruza la cara)."""
+    return {"duracion": 1.0, "fondo": {"tipo": "casa", "semilla": 20200}, "elementos": [
+        {"tipo": "personaje", "nombre": "narrador", "x": 400, "y": ac.PISO, "escala": 0.74,
+         "gestos": [{"t": 0, "gesto": gesto_a}]},
+        {"tipo": "personaje", "nombre": "abuelo", "x": 560, "y": ac.PISO, "escala": 0.74,
+         "gestos": [{"t": 0, "gesto": "reposo"}]}]}
+
+
+def test_composicion_brazo_que_atraviesa_una_cara():
+    d = _dos_cerca()
+    malos = ac.composicion(d)
+    assert any(q == "brazo_en_cara" for _, q, _, _ in malos)
+    assert ac.arreglar_composicion(d) == []
+    assert all(g["gesto"] not in ac.GESTOS_QUE_ALCANZAN for g in d["elementos"][0]["gestos"])
+
+
+def test_composicion_objeto_sobre_la_cabeza_mueble_en_medio_y_franja():
+    d = _dos_cerca("reposo")
+    d["elementos"] = d["elementos"][1:] + [
+        {"tipo": "prop", "nombre": "pelota_espuma", "x": 560, "y": ac.PISO - 640},       # sobre la cabeza
+        {"tipo": "prop", "nombre": "mesa", "x": 540, "y": ac.Y_MESA, "mueble": True},     # en el medio
+        {"tipo": "prop", "nombre": "cuadro", "x": 200, "y": 200}]                         # en la franja
+    assert ac.composicion(d)[0][1] == "mueble_en_medio"
+    assert ac.arreglar_composicion(d) == []
+
+
+@pytest.mark.parametrize("semilla", range(40))
+def test_ninguna_escena_queda_mal_compuesta(semilla):
+    import random
+
+    rnd = random.Random(1000 + semilla)
+    props = ["pelota_espuma", "tele", "lampara", "jarron", "radio", "juego_mesa", "botella", "cuadro", "trofeo"]
+    actores = [_a(rnd.choice(list(ac.ROLES)), rnd.choice(ac.ACCIONES), rnd.choice(ac.LADOS),
+                  rnd.choice(list(ac.POS) + ["ninguno"])) for _ in range(rnd.randint(1, 3))]
+    objetos = [_o(rnd.choice(props), rnd.choice(["quieto", "se_rompe", "cae_y_se_rompe", "gira"]), rnd.choice(ac.LADOS),
+                  soporte=rnd.choice(["mesa", "estante", "piso", "mano", "pared"])) for _ in range(rnd.randint(0, 3))]
+    d, _ = ac.escena_accion({"fondo": rnd.choice(["casa", "taller", "tienda"]), "actores": actores,
+                             "objetos": objetos, "camara": rnd.choice(ac.CAMARAS),
+                             "cadena": [_c("tele", "mesa", "izquierda"), _c("lampara", "piso", "centro")]
+                             if semilla % 3 == 0 else []}, rnd.uniform(1.5, 4.0), semilla,
+                            reservar=rnd.choice([None, "izquierda", "derecha"]))
+    assert ac.composicion(d) == [] and ac.superposiciones(d) == []
+    assert all(not (el.get("mueble") and 330 < el["x"] < 750) for el in d["elementos"])
+
+
+def test_de_perfil_al_caminar_de_costado():
+    from clips_bot.animacion.timeline import Elemento
+
+    d, _ = ac.escena_accion({"fondo": "casa", "actores": [_a("nene", "caminar", "izquierda", "derecha")]}, 3.0, 0)
+    pj = _personaje(d)
+    el = Elemento.desde_dict(pj, "x", 3.0)
+    t0 = pj["ciclos"][0]["t0"]
+    caminando, _ = el._estado(t0 + 0.5, 0.0, 15, 1.0)
+    quieto, _ = el._estado(2.9, 0.0, 87, 0.0)
+    assert caminando.perfil == 1 and quieto.perfil == 0
+    assert el._pj.svg(caminando) != el._pj.svg(quieto)
+    from clips_bot.animacion import personajes as per
+
+    izq = el._pj.svg(per.Estado(perfil=-1))
+    assert "scale(-1" in izq                                          # mirando a la izquierda: espejado
+
+
+def test_cuadros_clave_y_revision_visual(tmp_path):
+    d = guion()
+    segs = mk.segmentos(d)
+    inicios = [i * 3.0 for i in range(len(segs))]
+    datos, _ = mk.linea_de_tiempo(d, inicios, inicios[-1] + 3.0, [], None, presente=2026)
+    claves = mk.cuadros_clave(datos)
+    assert 6 <= len(claves) <= 8
+    assert claves[0][2] == "gancho" and any(q == "viaje en el tiempo" for _, _, q in claves)
+
+    def capturar(_datos, _t, png):
+        from PIL import Image
+
+        Image.new("RGB", (540, 960), "white").save(png)
+
+    n_escena = next(n for n, (_t, _i, q) in enumerate(claves) if q.startswith("escena 7")) + 1
+    cliente = ClienteFalso({"problemas": [{"cuadro": n_escena, "que": "la caja flota", "arreglo": "cambiar_soporte",
+                                           "objeto": "galletitas"}]})
+    problemas, cl = mk.revisar_visual(cliente, d, datos, tmp_path, capturar=capturar)
+    assert problemas and cl == claves
+    hechos = mk.aplicar_revision(d, problemas, claves, datos)
+    assert hechos and d["escenas"][6]["objetos"][0]["soporte"] == "estante"
+
+
+def test_epoca_en_la_calle_la_fabrica_y_la_tienda():
+    for f in ("ciudad", "fabrica", "tienda"):
+        versiones = {esc.fondo(f, ac.semilla_fondo(a, 0)) for a in (1930, 1965, 1985, 2026)}
+        assert len(versiones) == 4, f
+
+
 def test_sepia():
     import numpy as np
 
@@ -660,8 +791,9 @@ def test_linea_de_tiempo_con_locutor_y_sfx():
     assert v.subtitulos and v.cuadro(5).encima
     assert v.sub_y == mk.SUBTITULOS_Y and f"translate(540 {mk.SUBTITULOS_Y})" in v.cuadro(5).encima
     assert 'opacity="0.42"' in v.cuadro(5).encima and v.sub_tam == mk.SUBTITULOS_TAM
-    # la banda de los subtítulos no pisa a los personajes: arranca debajo de donde pisan
-    assert mk.SUBTITULOS_Y - mk.SUBTITULOS_TAM * 1.45 / 2 > ac.PISO
+    # la banda de los subtítulos está arriba, antes de donde puede subir la escena
+    assert mk.SUBTITULOS_Y + mk.SUBTITULOS_TAM * 1.45 / 2 < ac.BANDA_SUBTITULOS
+    assert mk.SUBTITULOS_Y - mk.SUBTITULOS_TAM * 1.45 / 2 > 150        # margen para la interfaz de Shorts
     assert sfx and all(0 <= t < v.duracion for t, _ in sfx) and sfx == sorted(sfx)
 
 

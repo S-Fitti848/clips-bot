@@ -25,29 +25,32 @@ from . import paleta as P
 
 FPS_FISICA = 15            # keyframes por segundo en las trayectorias (el resto lo interpola)
 G = 3600.0                 # gravedad en px/s² (a 1080 de ancho, se ve "de dibujo animado")
-PISO = 1640                # donde pisan los personajes (más arriba que antes: abajo van los subtítulos)
+PISO = 1830                # donde pisan los personajes (2026-11-14: los subtítulos pasaron ARRIBA; abajo
+                           # los personajes quedan por delante de los muebles, que van contra la pared)
+BANDA_SUBTITULOS = 300     # nada de la escena sube de acá (y < 300): ahí van los subtítulos
+Y_TEXTO_PANTALLA = 430
 PISO_PARED = 1420          # la línea del piso contra la pared: ahí se apoyan los muebles y cae lo que cae
 POS = {"izquierda": 250, "centro": 540, "derecha": 830, "afuera_izq": -300, "afuera_der": 1380}
 LADOS = ("izquierda", "centro", "derecha")
 
 # rol → (personaje del elenco, cambios, escala)
 ROLES = {
-    "nene": ("nene", {}, 0.95),
-    "nena": ("nene", {"peinado": "largo", "pelo": P.PELO[2], "ropa": P.ROSA}, 0.95),
-    "mama": ("mama", {}, 0.85),
-    "papa": ("narrador", {"anteojos": False, "bigote": True, "ropa": P.AZUL, "peinado": "corto"}, 0.85),
-    "abuela": ("vecina", {"pelo": P.PELO[4], "ropa": P.VIOLETA}, 0.82),
-    "fundador": ("abuelo", {}, 0.85),
+    "nene": ("nene", {}, 0.8),
+    "nena": ("nene", {"peinado": "largo", "pelo": P.PELO[2], "ropa": P.ROSA}, 0.8),
+    "mama": ("mama", {}, 0.74),
+    "papa": ("narrador", {"anteojos": False, "bigote": True, "ropa": P.AZUL, "peinado": "corto"}, 0.74),
+    "abuela": ("vecina", {"pelo": P.PELO[4], "ropa": P.VIOLETA}, 0.72),
+    "fundador": ("abuelo", {}, 0.74),
     "inventor": ("abuelo", {"anteojos": True, "ropa": P.BLANCO, "sombrero": "ninguno",
-                            "peinado": "rulos", "pelo": P.PELO[4]}, 0.85),
+                            "peinado": "rulos", "pelo": P.PELO[4]}, 0.74),
     "empresario": ("narrador", {"ropa": P.GRIS_OSCURO, "anteojos": False, "bigote": True,
-                                "sombrero": "galera", "color_sombrero": "#2b2b33"}, 0.85),
+                                "sombrero": "galera", "color_sombrero": "#2b2b33"}, 0.74),
     "rival": ("narrador", {"ropa": P.ROJO, "peinado": "corto", "bigote": True, "anteojos": False,
-                           "pelo": P.PELO[3]}, 0.85),
-    "cliente": ("vecina", {}, 0.82),
-    "joven": ("pibe", {}, 0.88),
-    "vendedor": ("pibe", {"ropa": P.TURQUESA, "sombrero": "ninguno"}, 0.88),
-    "publicista": ("vecina", {"ropa": P.VIOLETA, "anteojos": True, "peinado": "largo"}, 0.82),
+                           "pelo": P.PELO[3]}, 0.74),
+    "cliente": ("vecina", {}, 0.72),
+    "joven": ("pibe", {}, 0.76),
+    "vendedor": ("pibe", {"ropa": P.TURQUESA, "sombrero": "ninguno"}, 0.76),
+    "publicista": ("vecina", {"ropa": P.VIOLETA, "anteojos": True, "peinado": "largo"}, 0.72),
 }
 
 # Acciones de un personaje. Las de MOVIMIENTO son las que hacen que una escena no sea "estática".
@@ -104,9 +107,16 @@ def soporte_de(prop: str, soporte: str | None) -> str:
     return "aire" if prop in ICONOS else SOPORTE_NATURAL.get(prop, "mesa")
 
 
+X_MUEBLE = {"izquierda": 175.0, "centro": 905.0, "derecha": 905.0}   # contra la pared, al costado
+
+
 def ubicar(prop: str, soporte: str, donde: str, fondo: str = "", espejo: bool = False) -> tuple[float, float]:
-    """(x, y) del centro del dibujo, apoyado donde corresponde."""
+    """(x, y) del centro del dibujo, apoyado donde corresponde. Las mesas y los estantes van contra
+    la pared A LOS COSTADOS (Santi: "una mesita en el medio tapando al inventor"): lo que está arriba
+    de una mesa o un estante queda a un costado, nunca en el medio."""
     x = _x(donde if donde in LADOS else "centro")
+    if soporte in ("mesa", "estante"):
+        x = X_MUEBLE.get(donde, 930.0)
     if prop == "lampara" and soporte == "piso" and fondo == "casa":
         x = 610.0 if espejo else 470.0  # la lámpara de pie, al lado del sillón (de un lado o del otro)
     base = ALTO_BASE.get(prop, 120)
@@ -155,6 +165,32 @@ def _arco(x0, y0, x1, y1, t0, dur, alto, giro=0.0) -> list[dict]:
     return pts
 
 
+def anclar_abajo(kf: list[dict], dur: float) -> list[dict]:
+    """La cámara, al acercarse, se queda pegada ABAJO (los personajes pisan en PISO, cerca del borde
+    inferior: con el zoom centrado se les cortaban los pies). A cada cuadro clave con zoom se le suma
+    la corrida vertical que deja el borde de abajo quieto; a los del sacudón, encima de esa corrida."""
+    zooms = sorted((k["t"], k["zoom"]) for k in kf if "zoom" in k)
+
+    def z_en(t: float) -> float:
+        if not zooms:
+            return 1.0
+        if t <= zooms[0][0]:
+            return zooms[0][1]
+        for (t0, z0), (t1, z1) in zip(zooms, zooms[1:]):
+            if t <= t1:
+                return z0 + (z1 - z0) * ((t - t0) / (t1 - t0) if t1 > t0 else 1)
+        return zooms[-1][1]
+
+    out = []
+    for k in kf:
+        k = dict(k)
+        ancla = 960 * (1 - 1 / max(1.0, z_en(k["t"])))
+        if "zoom" in k or "y" in k:
+            k["y"] = round(ancla + float(k.get("y", 0)), 1)
+        out.append(k)
+    return out
+
+
 class Escena:
     """Arma UNA escena: elementos, cámara y SFX (segundos locales a la escena)."""
 
@@ -168,6 +204,7 @@ class Escena:
         self.golpes: list[tuple[float, float]] = []   # (segundo, fuerza) para el sacudón de cámara
         self.rnd = random.Random(semilla)
         self.mano: tuple[float, float, float] | None = None   # (x, y, t) de un "tirar"
+        self.actores: list[dict] = []    # el elemento de cada personaje (para lo que llevan en la mano)
         self._soportes: set = set()
 
     # ---- personajes ---------------------------------------------------------------------
@@ -328,6 +365,7 @@ class Escena:
             respira(t0, fin, 4.0)
         el["keyframes"] = sorted(kf, key=lambda q: q["t"])
         el["gestos"] = gestos
+        self.actores.append(el)
         if caras:
             el["caras"] = [c for c in caras if c["cara"] != "normal"] or caras
         self.elementos.append(el)
@@ -338,7 +376,7 @@ class Escena:
         if soporte not in ("mesa", "estante") or (soporte, x) in self._soportes:
             return
         self._soportes.add((soporte, x))
-        self.fondo_el.append({"tipo": "prop", "nombre": soporte, "x": x,
+        self.fondo_el.append({"tipo": "prop", "nombre": soporte, "x": x, "mueble": True,
                               "y": Y_MESA if soporte == "mesa" else Y_ESTANTE})
 
     def _romper(self, prop: str, base: dict, x: float, y: float, t: float, fuerza: float = 14) -> None:
@@ -374,6 +412,18 @@ class Escena:
         x, y = ubicar(prop, sop, donde, self.fondo, self.espejo)
         self._apoyo(sop, x)
         base = {"tipo": "prop", "nombre": prop, "x": x, "y": y}
+        if sop == "mano" and self.actores and efecto in ("quieto", "gira"):
+            # en la mano del primero que aparece: a la altura de la mano y siguiéndolo si camina
+            quien = self.actores[0]
+            esc_ = float(quien.get("escala", 1))
+            lado = 1 if float(quien["x"]) <= 540 else -1
+            off = 125 * esc_ * lado
+            y = PISO - 330 * esc_
+            kx = [{"t": k["t"], "x": round(float(k["x"]) + off, 1), "easing": k.get("easing", "suave")}
+                  for k in quien.get("keyframes", []) if "x" in k]
+            self.elementos.append({**base, "x": float(quien["x"]) + off, "y": y, "escala": 0.55,
+                                   "keyframes": kx, "en_mano": True})
+            return None
         if color:
             base["color"] = color
         if texto:
@@ -399,8 +449,10 @@ class Escena:
             for i in range(8):
                 xi = 80 + i * 130 + self.rnd.uniform(-30, 30)
                 ti = te + i * 0.12
-                self.elementos.append({**base, "x": xi, "y": -200, "escala": 0.55, "desde": round(ti, 2),
-                                       "keyframes": [{"t": ti, "y": -200, "rotacion": 0},
+                self.elementos.append({**base, "x": xi, "y": BANDA_SUBTITULOS + 60, "escala": 0.55,
+                                       "desde": round(ti, 2),
+                                       "keyframes": [{"t": ti, "y": BANDA_SUBTITULOS + 60, "rotacion": 0, "opacidad": 0},
+                                                     {"t": ti + 0.15, "opacidad": 1},
                                                      {"t": ti + 1.4, "y": 2200, "rotacion": 220 * (1 if i % 2 else -1),
                                                       "easing": "entrada"}]})
             return None
@@ -540,6 +592,26 @@ class Escena:
         kf = [{"t": 0, "zoom": z0}, {"t": d, "zoom": z1, "easing": "suave"}]
         if tipo == "paneo":
             kf += [{"t": 0, "x": -70}, {"t": d, "x": 70, "easing": "suave"}]
+        # cambio de plano (Santi: "medio lento"): en las escenas de más de 2,6 s, a la mitad la cámara
+        # salta a un plano más cerrado sobre el primer personaje (corte seco, sin reiniciar la acción)
+        # El plano nuevo encuadra a TODOS los personajes (más cerrado si son pocos o están juntos):
+        # nunca corta a uno por la mitad.
+        xs = []
+        for el in self.actores:
+            xs += [float(k["x"]) for k in el.get("keyframes", []) if "x" in k] or [float(el["x"])]
+        z_corte = 1.0
+        if xs:
+            medio = (max(xs) - min(xs)) / 2 + 150
+            z_corte = min(1.24, 540 / max(1.0, medio))
+        if d > 2.6 and tipo != "paneo" and z_corte >= 1.08 and not any(tg > d * 0.45 for tg, _ in golpes):
+            tc = round(d * 0.5, 3)
+            dx = (max(xs) + min(xs)) / 2 - 540
+            mx = 540 * (1 - 1 / z_corte)
+            dx = max(-mx, min(mx, dx))
+            kf += [{"t": round(tc - 0.01, 3), "zoom": round(z0 + (z1 - z0) * 0.5, 3), "x": 0},
+                   {"t": tc, "zoom": round(z_corte, 3), "x": round(dx, 1), "easing": "escalon"},
+                   {"t": d, "zoom": round(z_corte + 0.03, 3), "x": round(dx, 1), "easing": "suave"}]
+            kf = [k for k in kf if not (k["t"] == d and k.get("zoom") == z1)]
         ultimo = -1.0
         for tg, fuerza in golpes[:4]:   # sacudón: 0,35 s de corridas cortas que se apagan
             if tg - ultimo < 0.3:
@@ -550,7 +622,7 @@ class Escena:
                 kf.append({"t": round(tg + i * 0.05, 3), "x": round(a * (1 if i % 2 else -1), 1),
                            "y": round(a * 0.6 * (1 if i % 3 else -1), 1), "easing": "lineal"})
             kf.append({"t": round(tg + 0.32, 3), "x": 0, "y": 0, "easing": "suave"})
-        return kf
+        return anclar_abajo(kf, d)
 
 
 # ---- lugares: nunca un personaje encima de otro (Santi, 2026-11-14) ------------------------------
@@ -656,6 +728,157 @@ def posiciones_finales(esc_d: dict) -> list[tuple[float, float]]:
     return out
 
 
+# Caja de cada prop a escala 1: (medio ancho, arriba, abajo) respecto de su origen. Medido sobre los
+# dibujos de escenas.py (los muebles grandes tienen su caja real: la mesa es 300 × 226).
+CAJAS = {"mesa": (150, 0, 226), "estante": (140, 0, 70), "lampara": (110, -150, 187), "tele": (150, -190, 130),
+         "cuadro": (130, -150, 90), "ventana": (170, -200, 200), "jarron": (100, -120, 120),
+         "botella": (80, -262, 230), "lata": (80, -170, 150), "caja": (140, -180, 170), "pelota": (70, -70, 70),
+         "pelota_espuma": (78, -78, 78), "juego_mesa": (170, -90, 90), "hamburguesa": (130, -90, 130),
+         "chocolate": (160, -80, 80), "galletitas": (100, -70, 70), "auto": (180, -100, 72),
+         "telefono_disco": (120, -90, 60), "radio": (130, -90, 90), "consola": (150, -40, 170),
+         "trofeo": (160, -150, 150), "celular": (95, -180, 180), "zapatilla": (180, -90, 104),
+         "control": (190, -110, 130), "camion": (200, -110, 86), "cohete": (120, -200, 150),
+         "martillo": (70, -90, 160), "lamparita": (90, -200, 140), "grafico_sube": (190, -170, 150),
+         "grafico_baja": (190, -170, 150), "cartel": (190, -140, 230), "calendario": (130, -144, 130)}
+NO_CHOCAN = {"pedazo", "lamparita", "gancho", "nube", "martillo", "pregunta", "exclamacion", "flecha", "idea_fallida"}
+
+
+def _en_mundo(el, t: float):
+    """(x, y, escala, dy, estado) de un personaje en `t` (sin la rotación: un caído no cuenta)."""
+    v = {k: el.pista.valor(k, t, el.base[k]) for k in ("x", "y", "escala", "mirada", "cabeza", "rotacion")}
+    est, dy = el._estado(t, 0.0, 0, v["mirada"], v["cabeza"])
+    return v, dy, est
+
+
+def _dist_segmento(px, py, a, b) -> float:
+    (x1, y1), (x2, y2) = a, b
+    dx, dy = x2 - x1, y2 - y1
+    L = dx * dx + dy * dy
+    u = 0.0 if L == 0 else max(0.0, min(1.0, ((px - x1) * dx + (py - y1) * dy) / L))
+    return math.hypot(px - (x1 + u * dx), py - (y1 + u * dy))
+
+
+def composicion(esc_d: dict, paso: float = 0.1) -> list[tuple[float, str, int, int]]:
+    """Lo que está MAL compuesto en la escena, cuadro a cuadro (Santi, 2026-11-14): (segundo, qué,
+    elemento a, elemento b). Qué:
+      "brazo_en_cara"   el brazo (o la mano) de un personaje atraviesa la cara de otro;
+      "objeto_en_cara"  un objeto quieto (apoyado) queda sobre la cara o el sombrero de alguien;
+      "mueble_en_medio" una mesa o un estante en el medio de la escena;
+      "franja"          algo de la escena sube a la franja de los subtítulos.
+    Vacío = la escena está bien compuesta."""
+    from .timeline import Elemento
+
+    dur = esc_d["duracion"]
+    personas, cosas = [], []
+    for k, d in enumerate(esc_d.get("elementos") or []):
+        if d.get("tipo") == "personaje":
+            personas.append((k, Elemento.desde_dict(d, f"elemento {k}", dur)))
+        elif d.get("tipo") == "prop":
+            cosas.append((k, d, Elemento.desde_dict(d, f"elemento {k}", dur)))
+        if d.get("tipo") == "prop" and d.get("nombre") in ("mesa", "estante") and 330 < float(d.get("x", 0)) < 750:
+            return [(0.0, "mueble_en_medio", k, -1)]
+    out, vistos = [], set()
+    t = 0.0
+    while t <= dur:
+        caras, brazos, cuerpos_altos = [], [], []
+        for k, el in personas:
+            if not el.visible(t):
+                continue
+            v, dy, est = _en_mundo(el, t)
+            if abs(v["rotacion"]) > 40:          # tirado en el piso: no cuenta
+                continue
+            pj, e_ = el._pj, v["escala"]
+            cx, cy, R = pj.cara(est)
+            X, Y = v["x"] + e_ * cx, v["y"] + dy + e_ * cy
+            caras.append((k, X, Y, R * e_, e_ * pj.alto_sombrero()))
+            brazos.append((k, [[(v["x"] + e_ * px, v["y"] + dy + e_ * py) for px, py in pl] for pl in pj.brazos(est)]))
+            cuerpos_altos.append((k, Y - R * e_ - e_ * pj.alto_sombrero()))
+        for k, pls in brazos:
+            for k2, X, Y, R, _ in caras:
+                if k2 == k:
+                    continue
+                if any(_dist_segmento(X, Y, a, b) < R * 0.85 for pl in pls for a, b in zip(pl, pl[1:])):
+                    clave = ("brazo_en_cara", k, k2)
+                    if clave not in vistos:
+                        vistos.add(clave)
+                        out.append((round(t, 2), *clave))
+        for k, top in cuerpos_altos:
+            if top < BANDA_SUBTITULOS and ("franja", k, -1) not in vistos:
+                vistos.add(("franja", k, -1))
+                out.append((round(t, 2), "franja", k, -1))
+        for k, d, el in cosas:
+            if not el.visible(t) or d.get("nombre") in NO_CHOCAN:
+                continue
+            x = el.pista.valor("x", t, el.base["x"])
+            y = el.pista.valor("y", t, el.base["y"])
+            e_ = el.pista.valor("escala", t, el.base["escala"])
+            if el.pista.valor("opacidad", t, 1.0) < 0.2:
+                continue
+            hw, arriba, abajo = CAJAS.get(d.get("nombre"), (100, -100, 100))
+            x0, x1, y0, y1 = x - hw * e_, x + hw * e_, y + arriba * e_, y + abajo * e_
+            if y0 < BANDA_SUBTITULOS and ("franja", k, -1) not in vistos:
+                vistos.add(("franja", k, -1))
+                out.append((round(t, 2), "franja", k, -1))
+            quieto = not any(("x" in q or "y" in q) for q in d.get("keyframes", [])) or d.get("en_mano")
+            if not quieto or d.get("mueble"):
+                continue
+            for k2, X, Y, R, som in caras:   # la caja del objeto contra la cara + el sombrero
+                cerca_x = max(x0, min(X, x1))
+                cerca_y = max(y0, min(Y, y1))
+                toca_cara = math.hypot(X - cerca_x, Y - cerca_y) < R * 0.9
+                toca_sombrero = som and x0 < X + R * 0.6 and x1 > X - R * 0.6 and y0 < Y - R and y1 > Y - R - som
+                if (toca_cara or toca_sombrero) and ("objeto_en_cara", k, k2) not in vistos:
+                    vistos.add(("objeto_en_cara", k, k2))
+                    out.append((round(t, 2), "objeto_en_cara", k, k2))
+        t += paso
+    return out
+
+
+GESTOS_QUE_ALCANZAN = {"senalar", "senalar_izq", "lanzar", "lanzar_atras", "atrapar", "saludar"}
+
+
+def arreglar_composicion(esc_d: dict, vueltas: int = 3) -> list[tuple[float, str, int, int]]:
+    """Corrige lo que marca `composicion` en el lugar: el gesto que mete el brazo en la cara de otro
+    pasa a "explicar"; un objeto sobre una cara se sube a un estante (o se saca si no hay dónde); lo
+    que sube a la franja de los subtítulos se baja. Devuelve lo que quede mal (vacío = bien)."""
+    for _ in range(vueltas):
+        malos = composicion(esc_d)
+        if not malos:
+            return []
+        els = esc_d["elementos"]
+        sacar = set()
+        for _t, que, a, b in malos:
+            if que == "brazo_en_cara":
+                el = els[a]
+                el["gestos"] = [{**gs, "gesto": "explicar"} if gs.get("gesto") in GESTOS_QUE_ALCANZAN else gs
+                                for gs in el.get("gestos", [])]
+                if all(gs.get("gesto") not in GESTOS_QUE_ALCANZAN for gs in el["gestos"]):
+                    # sigue tocando: los brazos quietos al costado del cuerpo
+                    el["gestos"] = [{"t": 0, "gesto": "reposo"}]
+            elif que == "objeto_en_cara":
+                d = els[a]
+                if d.get("en_mano") or d.get("y", 0) <= Y_ESTANTE:
+                    sacar.add(a)
+                else:   # al estante del costado, arriba de las cabezas
+                    d["x"] = X_MUEBLE["derecha"] if float(d["x"]) >= 540 else X_MUEBLE["izquierda"]
+                    d["y"] = Y_ESTANTE - ALTO_BASE.get(d.get("nombre"), 120) * 0.75
+                    els.append({"tipo": "prop", "nombre": "estante", "x": d["x"], "y": Y_ESTANTE, "mueble": True})
+            elif que == "franja":
+                d = els[a]
+                if d.get("tipo") == "prop":
+                    d["y"] = max(float(d.get("y", 0)), BANDA_SUBTITULOS + 200)
+                    for kf in d.get("keyframes", []):
+                        if "y" in kf:
+                            kf["y"] = max(float(kf["y"]), BANDA_SUBTITULOS + 200)
+            elif que == "mueble_en_medio":
+                els[a]["x"] = X_MUEBLE["derecha"]
+        if sacar:
+            esc_d["elementos"] = [el for i, el in enumerate(els) if i not in sacar]
+        # los muebles siempre atrás de todo
+        esc_d["elementos"].sort(key=lambda el: 0 if el.get("mueble") else 1)
+    return composicion(esc_d)
+
+
 def per_alto(nombre: str, cambios: dict) -> float:
     from . import personajes as per
 
@@ -740,13 +963,14 @@ def escena_accion(spec: dict, dur: float, i: int, primera: bool = False, tono: f
     elementos = e.fondo_el + e.elementos
     texto = str(spec.get("texto_pantalla") or "").strip()
     if texto:
-        elementos.append({"tipo": "gancho", "texto": texto, "y": 330, "modo": "palabras" if primera else "rebote",
+        elementos.append({"tipo": "gancho", "texto": texto, "y": Y_TEXTO_PANTALLA, "modo": "palabras" if primera else "rebote",
                           "tam": 100, "desde": 0.0 if primera else 0.2})
     tr = spec.get("transicion") if spec.get("transicion") in ("corte", "fundido", "zoom", "barrido") else "barrido"
     d = {"duracion": dur, "fondo": {"tipo": fondo, "semilla": semilla},
          "transicion": {"tipo": "corte" if primera else tr, "duracion": 0.25},
          "camara": e.camara(spec.get("camara") or "fija"), "elementos": elementos, "tono": tono}
     sfx = sorted((round(t, 3), s) for t, s in e.sfx if 0 <= t < dur)
+    arreglar_composicion(d)
     return d, sfx
 
 
@@ -782,7 +1006,7 @@ def escena_viaje(dur: float, de: int, a: int, presente: int = 2026) -> tuple[dic
     velocidad), la escena de atrás se va en remolino, el año cuenta de `de` a `a` y la imagen pasa a
     sepia (al pasado) o vuelve al color (al presente). Dura `dur` (~1,25 s)."""
     al_pasado = a < de
-    tito = {"tipo": "tito", "x": 830, "y": PISO + 20, "escala": 0.6, "entrada": "derecha",
+    tito = {"tipo": "tito", "x": 830, "y": PISO + 20, "escala": 0.5, "entrada": "derecha",
             "giro_aguja": 1440, "poses": [{"t": 0, "pose": "reloj"}],
             "keyframes": [{"t": max(0.5, dur - 0.2), "x": 830}, {"t": dur, "x": 1500, "easing": "entrada"}]}
     contador = {"tipo": "contador", "de": de, "a": a, "dur": max(0.4, dur - 0.45), "desde": 0.15,
