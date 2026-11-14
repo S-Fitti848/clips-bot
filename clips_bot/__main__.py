@@ -3850,17 +3850,85 @@ def _fb_tick(conn, tg: TelegramClient, settings: Settings, ahora=None, proponer=
 ANIM_DIA = "animacion_dia"   # bot_estado: el día (AR) en que ya se armó (o se intentó) el de marcas
 
 
+PREFIJO_ASINACIO = "asinacio_"   # clip_id de los videos de Así Nació (asinacio_AAAAMMDD)
+
+
 def _animacion_armar(conn, tg: TelegramClient, chats: list[str], settings: Settings, hoy) -> None:
     from .animacion import marcas
 
     carpeta = DATA_DIR.parent / "output" / "animacion" / hoy.strftime("%Y%m%d")
     r = marcas.armar_video(conn, settings, carpeta, hoy=hoy, avisar=log.info,
                            procesos=settings.animacion.procesos)
-    marcas.enviar(tg, chats, r)
+    avisos = _animacion_subir(conn, settings, r, carpeta, hoy) if settings.animacion.subir else []
+    clip_id = f"{PREFIJO_ASINACIO}{hoy:%Y%m%d}"
+    programado = any(a.startswith(("📤", "📘")) for a in avisos)
+    encabezado = (("🤖 <b>Se publica sola</b>: si no tocás nada sale a su hora; ❌ Cancelar la frena.\n"
+                   if programado else "") + "\n".join(avisos))
+    marcas.enviar(tg, chats, r, encabezado=encabezado, subida=programado)
+    if programado:
+        for chat in chats:
+            tg.send_message(chat, "¿La frenás?", {"inline_keyboard": [[
+                {"text": "❌ Cancelar la publicación", "callback_data": f"sub:x:{clip_id}"}]]})
     # Recién entregado entra en la rotación (un ángulo nunca se repite; la marca no vuelve en 7 días).
     marcas.registrar(conn, r.marca, r.angulo, hoy, r.promedio, r.titulo, r.video)
     log.info("animación: %s / %s (%.1f) en %.0f s, Claude US$ %.3f", r.marca, r.angulo, r.promedio,
              r.total_s, r.costo_usd)
+
+
+def _animacion_subir(conn, settings: Settings, r, carpeta: Path, hoy) -> list[str]:
+    """Programa el video de Así Nació en YouTube (y en Facebook, si está conectado) para
+    animacion.hora_publicacion. Guarda el meta al lado del video (para ❌ Cancelar). Devuelve los avisos."""
+    descripcion = (f"{r.descripcion}\n\nFuente: {r.articulo}"
+                   + (f"\nMúsica: {r.credito_musica}" if r.credito_musica else ""))
+    meta = {"clip_id": f"{PREFIJO_ASINACIO}{hoy:%Y%m%d}", "salida": r.video, "streamer": "Así Nació",
+            "duracion_s": r.duracion_s, "subtitulos_quemados": True,
+            "textos": {"titulo": r.titulo, "descripcion": descripcion, "hashtags": list(r.hashtags)},
+            "animacion": {"marca": r.marca, "angulo": r.angulo, "fecha": hoy.isoformat()}}
+    carpeta.mkdir(parents=True, exist_ok=True)
+    (carpeta / f"{meta['clip_id']}.json").write_text(json.dumps(meta, ensure_ascii=False, indent=1),
+                                                    encoding="utf-8")
+    avisos = [_programar_subida(conn, settings, meta, "animacion", settings.animacion.hora_publicacion)]
+    if settings.animacion.facebook:
+        avisos.append(_subir_facebook_asinacio(conn, settings, meta))
+    return [a for a in avisos if a]
+
+
+ASINACIO_FB = "facebook_asinacio"   # canal en la tabla subidas: el Reel en la página de Así Nació
+
+
+def _fb_asinacio_credenciales() -> tuple[str, str]:
+    from . import facebook
+
+    page = env("ASINACIO_FACEBOOK_PAGE_ID", requerido=False)
+    token = env("ASINACIO_FACEBOOK_PAGE_TOKEN", requerido=False)
+    if not page or not token:
+        raise facebook.FacebookError("faltan ASINACIO_FACEBOOK_PAGE_ID o ASINACIO_FACEBOOK_PAGE_TOKEN en el .env")
+    return page, token
+
+
+def _subir_facebook_asinacio(conn, settings: Settings, meta: dict, ahora: datetime | None = None) -> str:
+    """El Reel en la página de Facebook de Así Nació, a la misma hora que YouTube."""
+    import requests
+
+    from . import facebook, youtube
+
+    clip_id = meta["clip_id"]
+    if any(s["canal"] == ASINACIO_FB for s in db.subidas(conn, ("programada", "publicada"), clip_id=clip_id)):
+        return ""
+    hoy = (ahora or datetime.now(timezone.utc)).astimezone(AR)
+    cuando = youtube.proximo_horario(settings.animacion.hora_publicacion, ahora=hoy)
+    t = meta["textos"]
+    texto = f"{t['titulo']}\n\n{t['descripcion']}\n\n{' '.join(t.get('hashtags') or [])}"
+    try:
+        page, token = _fb_asinacio_credenciales()
+        vid = facebook.subir_reel(Path(meta["salida"]), texto, cuando, settings.facebook.version,
+                                  page_id=page, token=token)
+    except (facebook.FacebookError, OSError, requests.RequestException) as e:
+        db.crear_subida(conn, clip_id, ASINACIO_FB, "error", error=str(e)[:500])
+        return f"⚠️ No pude subirlo a Facebook (Así Nació): {html.escape(str(e)[:300])}"
+    iso = cuando.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    db.crear_subida(conn, clip_id, ASINACIO_FB, "programada", video_id=vid, publish_at=iso)
+    return f"📘 Programado en la página de Facebook de Así Nació para el {cuando:%d/%m a las %H:%M} (AR)."
 
 
 def _animacion_tick(conn, tg: TelegramClient, settings: Settings, ahora=None, armar=None) -> None:
@@ -4730,6 +4798,8 @@ def _canal_de(clip_id: str, meta: dict) -> str | None:
     propios (/editar, /narrar, /serie) no tienen canal fijo: sin botón de subida."""
     if clip_id.startswith(PREFIJO_DEMO):
         return "rots"          # /demo: el video de prueba para la auditoría
+    if clip_id.startswith(PREFIJO_ASINACIO):
+        return "animacion"     # Así Nació (2026-11-14)
     if clip_id.startswith("efemeride_") or meta.get("efemeride"):
         return "pequena_historia"
     if meta.get("plataforma") in ("twitch", "kick") or clip_id.startswith(db.PREFIJO_MULTIPOV):
@@ -4830,6 +4900,9 @@ def _meta_de(clip_id: str) -> dict:
     from .process import READY_DIR
 
     ruta = READY_DIR / f"{clip_id}.json"
+    if clip_id.startswith(PREFIJO_ASINACIO):
+        # Así Nació guarda su meta al lado del video (no en ready/: ahí lo vería la selección de Rots).
+        ruta = next(iter(sorted((DATA_DIR.parent / "output" / "animacion").glob(f"*/{clip_id}.json"))), ruta)
     try:
         return json.loads(ruta.read_text(encoding="utf-8")) if ruta.exists() else {}
     except ValueError:
@@ -4887,6 +4960,9 @@ def _subir_callback(conn, tg: TelegramClient, cb: dict, settings: Settings, d: d
             try:
                 if s["canal"] == "facebook":
                     facebook.cancelar(s["video_id"], settings.facebook.version)
+                elif s["canal"] == ASINACIO_FB:
+                    facebook.cancelar(s["video_id"], settings.facebook.version,
+                                      token=_fb_asinacio_credenciales()[1])
                 else:
                     _cancelar_youtube(conn, s)
             except (youtube.YouTubeError, facebook.FacebookError) as e:

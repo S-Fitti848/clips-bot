@@ -851,10 +851,13 @@ def _ahora(hhmm: str) -> datetime:
 def test_tick_apagado_no_hace_nada(conn):
     import clips_bot.__main__ as m
 
+    from dataclasses import replace
+
     llamadas = []
-    m._animacion_tick(conn, TgFalso(), load_settings(), _ahora("08:00"),
-                      armar=lambda *a: llamadas.append(a))
-    assert not llamadas and load_settings().animacion.activo is False
+    s = load_settings()
+    s = replace(s, animacion=replace(s.animacion, activo=False))   # prendido desde el 2026-11-14
+    m._animacion_tick(conn, TgFalso(), s, _ahora("08:00"), armar=lambda *a: llamadas.append(a))
+    assert not llamadas
 
 
 def test_tick_nunca_en_la_franja_de_pequena_historia(conn):
@@ -924,4 +927,4 @@ def test_mensaje_con_marca_angulo_y_puntaje():
                      render_s=150, costo_usd=0.08)
     t = mk.texto_mensaje(r, "🔧 Claude Code: ejemplo")
     assert "Havanna" in t and "casi quiebra" in t and "Puntaje 9" in t and "humor 9" in t
-    assert "#Havanna" in t and "No se sube" in t
+    assert "#Havanna" in t and "No quedó programado" in t

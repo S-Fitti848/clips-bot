@@ -1352,7 +1352,7 @@ NOMBRES_CRITERIOS = {"marca_conocida": "marca conocida", "dato_sorprendente": "d
                      "giro": "giro", "humor": "humor"}
 
 
-def texto_mensaje(r: Resultado, encabezado: str = "") -> str:
+def texto_mensaje(r: Resultado, encabezado: str = "", subida: bool = False) -> str:
     import html
 
     notas = " · ".join(f"{NOMBRES_CRITERIOS[c]} {r.notas[c]}" for c in CRITERIOS)
@@ -1368,8 +1368,7 @@ def texto_mensaje(r: Resultado, encabezado: str = "") -> str:
         f"Fuente: {html.escape(r.articulo)}"
         + (f"\nMúsica: {html.escape(r.credito_musica)}" if r.credito_musica else "") + "</code>",
         "",
-        "📵 No se sube a ningún lado: el canal de YouTube todavía no está conectado.",
-    ]
+    ] + ([] if subida else ["📵 No quedó programado en ningún lado (mirá el aviso de arriba)."])
     if r.revision:
         partes += ["", "<b>Revisión visual:</b> " + html.escape("; ".join(r.revision))[:900]]
     if r.niveles:
@@ -1378,7 +1377,7 @@ def texto_mensaje(r: Resultado, encabezado: str = "") -> str:
     return "\n".join(partes)
 
 
-def enviar(tg, chats, r: Resultado, encabezado: str = "") -> int:
+def enviar(tg, chats, r: Resultado, encabezado: str = "", subida: bool = False) -> int:
     """El mp4 (con ancho, alto y duración: si no, Telegram lo muestra angosto) + el mensaje."""
     from clips_bot.media import miniatura, probe
     from clips_bot.telegram import partir_html
@@ -1393,7 +1392,7 @@ def enviar(tg, chats, r: Resultado, encabezado: str = "") -> int:
         enviado = tg.send_video(chat, video, caption[:1024], width=info.ancho, height=info.alto,
                                 duration=round(info.duracion), thumbnail=thumb, file_id=file_id)
         file_id = file_id or (enviado or {}).get("video", {}).get("file_id")
-        for parte in partir_html(texto_mensaje(r, encabezado)):
+        for parte in partir_html(texto_mensaje(r, encabezado, subida)):
             tg.send_message(chat, parte)
         llegaron += 1
     return llegaron

@@ -458,6 +458,13 @@ class Animacion:
     procesos: int = 2                  # rasterizadores en la Pi (el x264 también usa CPU)
     franja_libre_desde: str = "03:45"  # ahí el bot arma Pequeña Historia: la animación no corre
     franja_libre_hasta: str = "06:00"
+    # Subida (Santi, 2026-11-14): el video llega al privado YA programado en YouTube (canal "animacion",
+    # @asinacio.oficial) para hora_publicacion, con ❌ Cancelar; si no se toca nada, se publica solo.
+    subir: bool = False
+    hora_publicacion: str = "19:00"
+    # El Reel en la página de Facebook de Así Nació, cuando esté conectada (ASINACIO_FACEBOOK_PAGE_ID y
+    # ASINACIO_FACEBOOK_PAGE_TOKEN en el .env; otra página que la de Pequeña Historia).
+    facebook: bool = False
 
 
 @dataclass(frozen=True)

@@ -612,7 +612,12 @@ pego:
 # salen los candidatos con promedio >= puntaje_min (marca conocida, dato sorprendente, giro, humor);
 # si ninguno llega, ese día no sale y se avisa. Nunca entre las 03:45 y las 06:00 (Pequeña Historia).
 animacion:
-  activo: false              # APAGADO hasta que Santi apruebe los ejemplos
+  # Así Nació PRENDIDO (Santi aprobó el Nerf el 2026-11-14): 1 video por día al privado, ya programado
+  # en YouTube (@asinacio.oficial) a las 19:00 AR, con ❌ Cancelar; si no se toca nada, sale solo.
+  activo: true
+  subir: true
+  hora_publicacion: "19:00"
+  facebook: false            # el Reel en la página de Facebook de Así Nació, cuando esté conectada
   hora: "07:00"              # AR: desde cuándo la escucha arma el del día
   chat: ""                   # vacío = el privado de Santi
   modelo_texto: "claude-sonnet-5-5"
