@@ -1673,6 +1673,27 @@ def buscar_videos(g: Guion, anio: int, carpeta: Path, buscador=None, avisar=log.
     return out
 
 
+MAX_IMAGENES_ELECTOR = 100     # el tope de imágenes por pedido de Claude
+
+
+def recortar_videos(videos: dict, lugar: int) -> dict:
+    """{frase: [Video]} sin pasarse de `lugar` cuadros en total: se baja de a uno el tope de
+    candidatos por frase (se quedan los primeros, que son los mejores de la búsqueda) y, si ni con
+    uno por frase entra, quedan las primeras frases."""
+    videos = {i: list(vs) for i, vs in videos.items() if vs}
+
+    def cuadros(d):
+        return sum(len(v.frames) for vs in d.values() for v in vs)
+
+    tope = max((len(vs) for vs in videos.values()), default=0)
+    while tope > 1 and cuadros(videos) > max(lugar, 0):
+        tope -= 1
+        videos = {i: vs[:tope] for i, vs in videos.items()}
+    while videos and cuadros(videos) > max(lugar, 0):
+        videos.pop(max(videos))
+    return videos
+
+
 def fotos_para_guion(wiki: Wiki, cliente, e: Evento, g: Guion, fotos_articulo: list[Foto],
                      carpeta: Path, avisar=log.info, pool: list[Foto] | None = None,
                      descartadas: set[int] | None = None, videos: bool = False,
@@ -1803,6 +1824,9 @@ def fotos_para_guion(wiki: Wiki, cliente, e: Evento, g: Guion, fotos_articulo: l
         avisar("    videos: sin buscar (pasó el tope de la búsqueda)")
     candidatos_video = (buscar_videos(g, e.anio, carpeta, buscador, avisar, tema=e.paginas[0])
                         if videos and not corrida.vencida() else {})
+    # Claude ve hasta 100 imágenes por pedido: los cuadros de los videos no pueden empujar las fotos
+    # a Gemini (con el estilo nuevo buscan video hasta 6 frases).
+    candidatos_video = recortar_videos(candidatos_video, MAX_IMAGENES_ELECTOR - len(pool))
     corrida.con_tope(None)
     elegidos: dict = {}
     # Qué parte de cada foto es texto (OCR): una captura, un documento o una placa no pasan.

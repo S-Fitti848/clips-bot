@@ -92,3 +92,16 @@ def test_mapa_zoom_hace_un_video(tmp_path):
                                       str(out)], capture_output=True, text=True).stdout)
     v = info["streams"][0]
     assert (v["width"], v["height"]) == (108, 192) and int(v["nb_frames"]) == 4
+
+
+def test_los_cuadros_de_video_no_pasan_el_tope_de_claude():
+    class V:
+        def __init__(self):
+            self.frames = ["a", "b", "c"]
+
+    vids = {i: [V() for _ in range(4)] for i in range(6)}            # 72 cuadros
+    r = ef.recortar_videos(vids, 100 - 56)                          # con un pool de 56 fotos
+    assert sum(len(v.frames) for vs in r.values() for v in vs) <= 44
+    assert all(len(vs) == 2 for vs in r.values())                   # 2 por frase, las 6 frases
+    assert ef.recortar_videos(vids, 10) == {0: vids[0][:1], 1: vids[1][:1], 2: vids[2][:1]}
+    assert ef.recortar_videos(vids, 200) == vids
