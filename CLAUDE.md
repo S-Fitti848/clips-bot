@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-11-14 | **Versión:** v0.93.0 (`18eb5ee`, desplegado) | **Modo:** Fase 2: corriendo solo en la Pi. Madrugada desde la escucha (v0.91.0): "pegó" 01:30 → Rots 03:30 → tecnología → 2 de Latinoamérica, todo antes de las 05:30; timers 05:00 y 06:00 de respaldo
+**Snapshot:** 2026-11-14 | **Versión:** v0.94.0 (desplegado) | **Modo:** Fase 2: corriendo solo en la Pi. **Rots APAGADO** (`publicacion.rots: false`). Madrugada desde la escucha: tecnología desde las 04:00 → 2 de Latinoamérica, todo antes de las 05:30; timers 05:00 (no hace nada con Rots apagado) y 06:00 de respaldo
 
 > **SI ESTÁS EMPEZANDO UNA SESIÓN NUEVA, LEÉ §10.** Ahí está qué está hecho, qué quedó a medias,
 > qué falta, y las trampas que ya nos mordieron.
@@ -756,6 +756,9 @@ clips_bot/metricas.py    §4b: métricas de los Shorts del canal y pesos por str
 clips_bot/claude.py      texto con Claude (SDK oficial `anthropic`, ANTHROPIC_API_KEY): misma forma
                          que GeminiClient.json; schema de Gemini → JSON Schema; uso en gemini_uso
                          con clave "claude"; Sonnet con fallbacks "default"
+clips_bot/elevenlabs.py  voz de ElevenLabs (preparada; solo con ELEVENLABS_API_KEY y efemerides.elevenlabs_voz)
+clips_bot/animacion/     canal de animación (2026-11-14, sin conectar): personajes/escenas SVG, línea de
+                         tiempo en JSON, render cairosvg → ffmpeg; demo: python -m clips_bot.animacion.demo
 clips_bot/locales.py     §3d: historias de Facebook (Wikipedia en español por día, Haiku, Sonnet)
 clips_bot/calendario.py  §3d: calendario de 90 días de fechas de Latinoamérica + la lista de los lunes
 clips_bot/medicion_ph.py §1: seguimiento por video (segundo en que se va la mayoría en FB, % que se queda en YT calibrado con Studio, empujones)
@@ -956,6 +959,33 @@ Problemas abiertos:
 
 ## 9. CHANGELOG
 
+- v0.94.0 (2026-11-14) — **Rots apagado, Pequeña Historia sin aprobar y con estilo nuevo (los dos
+  APAGADOS hasta que Santi apruebe), ElevenLabs preparado, base de animación y nicho** (pedido de
+  Santi en dos partes: investigación + mejoras con diseño y ejemplos antes de activar). (1) **Rots
+  APAGADO** (`publicacion.rots: false`): `cmd_diario` no corre (ni la de las 03:30 ni el timer de
+  las 05:00), sin "pegó", modo en vivo, reintento de clips ni /ya; Pequeña Historia ya no lo espera
+  (`_rots_listo(settings)`). /buscar a mano sigue. Los tests de Rots usan el fixture `rots_prendido`.
+  (2) **Sin aprobar** (`efemerides.sin_aprobar`, apagado): las 3 diarias se arman en el mismo turno
+  (`_efe_auto` → `_efe_armar(auto=True)`), se programan con `_subir` ANTES de mandarse y llegan con
+  "🤖 Se publica sola" y ❌ Cancelar; /efemeride e /historia a mano siguen con ✅. (3) **Estilo nuevo**
+  (`efemerides.estilo_nuevo`, apagado): el gancho como montaje de hasta 3 imágenes con golpe de zoom
+  y whoosh (`plan_rapido(montaje=True)`, movimiento "golpe"; con video en la frase 1, el video), el
+  mapa a pantalla completa acercándose al lugar en la de Latinoamérica (`graficos.mapa_zoom`, tramo
+  `MAPA` al empezar la 2.ª frase; si el artículo es de una persona, las coordenadas del lugar), el
+  gancho entrando palabra por palabra con rebote (`gancho_animado`, un solo evento con `\t` por
+  palabra), subtítulos de 100 px con borde 9, 2-3 palabras y la activa con un saltito (`REBOTE`), y
+  hasta 6 frases buscando video (`frases_video`: gancho, acción y lo que se nombra al pasar en Pexels;
+  `recortar_videos` para no pasar las 100 imágenes de Claude). (4) **ElevenLabs preparado**
+  (`elevenlabs.py`): solo con `ELEVENLABS_API_KEY` en el .env y `efemerides.elevenlabs_voz`; si falla,
+  la voz de siempre; CLI `voces-elevenlabs [--muestra <id>]`. (5) **Arreglo en producción:** el gancho
+  escrito no hacía salto de línea (WrapStyle 2) y desde el 12/11 salía cortado a los costados
+  (`lineas_gancho`, 18 letras por línea). (6) **Base de animación** (`clips_bot/animacion/`, sin
+  conectar al bot): personajes y escenas SVG por código, línea de tiempo en JSON, cairosvg →
+  ffmpeg; en la Pi 45 s de video en ~170 s (0,12 s por cuadro, 1 proceso; el cuello es x264), pico
+  84 °C. (7) **Nicho** (`docs/nicho-animacion/informe.md`, 5.692 unidades de la API): top 5 =
+  origen de las palabras, origen de marcas, economía con historias, cuerpo humano, mitología.
+  **Ejemplo de La Pola** con el estilo nuevo (en la Pi): propuesta 562 s, video 390 s, Claude US$ 0,36.
+  1041 tests OK.
 - v0.93.0 (2026-11-13) — **Final que paga, puntaje de tecnología y costo real de Claude** (Santi,
   después de ver los guiones del 14/11). (1) **Segunda revisión del final** (`ef.final_que_paga`,
   `SISTEMA_PAGO`, dentro de `escribir_guion`, `revisar_final=True`, en los 3 videos): el mismo
@@ -2298,13 +2328,13 @@ no repiten lo que ya corrió.
 
 | hora | qué | dónde |
 |---|---|---|
-| 01:30 | "pegó" (tope 15 min, rota el streamer) | escucha, `_pego_tick` |
-| 03:30 | corrida de Rots (`sudo -n systemctl restart clips-bot.service`) → entrega + subida sola a Rots | `_madrugada_tick` |
-| apenas termina Rots (desde 04:00) | propuesta de tecnología (puntaje ≥ 7,5) | `_madrugada_tick` → `efemeride_del_dia` |
+| 01:30 | "pegó" — APAGADO con Rots (2026-11-14) | escucha, `_pego_tick` |
+| 03:30 | corrida de Rots — APAGADA (`publicacion.rots: false`, 2026-11-14) | `_madrugada_tick` |
+| 04:00 | propuesta de tecnología (puntaje ≥ 7,5) | `_madrugada_tick` → `efemeride_del_dia` |
 | después (desde 04:00) | 2 propuestas de Latinoamérica (puntaje ≥ 8, sin repetir país ni artículo) | `_fb_tick` |
 | 05:30 | tope de "todo en Telegram" (`LISTO_DESDE`) | |
 | 05:00 / 06:00 | timers de respaldo (no corren si ya se hizo: `DIARIO_FIN`, `EFE_DIA`) | systemd |
-| 13:00 / 18:00 / 21:30 | publicación de los 3 clips de Rots | YouTube, `publishAt` |
+| ~~13:00 / 18:00 / 21:30~~ | (los clips de Rots, apagados) | |
 | 11:00 / 15:30 / 20:00 | Pequeña Historia en YouTube (primer horario libre, ≥ 4 h entre videos) | `efemerides.horas_youtube` |
 | 08:30 del país de la historia (11:00 AR sin país) | Latinoamérica en Facebook (≥ 4 h entre las dos) | `hora_historia_fb` |
 | desde 09:00 | medición por video de Pequeña Historia (una vez por día) | `_medicion_ph_tick` |
@@ -2315,11 +2345,11 @@ no repiten lo que ya corrió.
 
 | | |
 |---|---|
-| Rots | `render.edicion_rots: true`, `publicacion.subir_solo: true`, `textos.motor: claude` (Sonnet textos y chequeo visual, Haiku desempate, Gemini de respaldo), `textos.puntaje_min` 7, `seleccion.peso_momento` 1,0, `peso_chat` 0,5, `ejemplos_gusto` 3, `pego.activo`, `render.zoom_picos` |
+| Rots | **APAGADO desde 2026-11-14** (`publicacion.rots: false`; código y canal intactos). Al prenderlo vuelve con: `render.edicion_rots: true`, `publicacion.subir_solo: true`, `textos.motor: claude` (Sonnet textos y chequeo visual, Haiku desempate, Gemini de respaldo), `textos.puntaje_min` 7, `seleccion.peso_momento` 1,0, `peso_chat` 0,5, `ejemplos_gusto` 3, `pego.activo`, `render.zoom_picos` |
 | Pequeña Historia | 3 por día: `efemerides.tema: tecnologia` + `corto: true` (20-30 s, solo YouTube: `facebook.efemeride: false`) y `historias_fb.por_dia: 2` (30-40 s, YouTube + Facebook: `historias_fb.youtube: true`); `efemerides.imagen_frase: true`, `historias_fb.formato_corto: true`, `efemerides.videos: true`, `efecto_fotos: fija`; gancho primero, intriga en la 2.ª, año/lugar en la 3.ª-4.ª, revisión del final con Claude |
 | Claude | Sonnet elige, puntúa, escribe guiones, revisa el final y elige fotos; Haiku clasifica; Gemini SOLO voces y audio (y de respaldo) |
 | subidas | YouTube PRENDIDA (Rots y Pequeña Historia conectados); Facebook `facebook.activo: true` (la app de Meta en modo desarrollo al 20/10: pasarla a Live es de Santi) |
-| apagado | multi-POV (desde 2026-09-28), prueba manual vs API (cancelada 2026-11-10), portadas con IA (en pausa) |
+| apagado | Rots (2026-11-14), `efemerides.sin_aprobar` y `efemerides.estilo_nuevo` (esperan el OK de Santi), ElevenLabs (sin clave ni voz), multi-POV (desde 2026-09-28), prueba manual vs API (cancelada 2026-11-10), portadas con IA (en pausa) |
 
 ### Estado real de la Pi (verificado el 2026-11-14 01:51)
 
@@ -2359,6 +2389,16 @@ no repiten lo que ya corrió.
 - Mensajes míos por Telegram empiezan con "🔧 Claude Code:".
 
 ### Esperando respuesta de Santi (NO programar sin su OK)
+
+- **(2026-11-14) Diseño y ejemplo mandados:** prender `efemerides.sin_aprobar` (publicar solo con
+  ❌ Cancelar) y `efemerides.estilo_nuevo` (ejemplo de La Pola en su Telegram). Visto en el ejemplo:
+  en historias de 1800 casi no hay video libre de la época (salió 1 de Pexels: la copa de vino), y el
+  montaje del gancho repitió dos fotos casi iguales de la misma estatua.
+- **ElevenLabs:** cuando Santi ponga `ELEVENLABS_API_KEY`, `python -m clips_bot voces-elevenlabs` y
+  `--muestra <id>`; con la voz elegida, `efemerides.elevenlabs_voz` / `elevenlabs_nombre`.
+- **Canal de animación:** elegir nicho con `docs/nicho-animacion/informe.md`; la base técnica está en
+  `clips_bot/animacion/` (sin conectar al bot: falta guion → JSON, tiempos de Whisper, música, más
+  personajes, integrarlo a la escucha).
 
 0. **Voz de Pequeña Historia** (v0.88.0): muestras de Fenrir más calmo, Achird, Sadaltager y Charon
    con energía media mandadas; falta que elija. Al elegir: `efemerides.tts_modelo:

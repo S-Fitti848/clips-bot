@@ -1673,6 +1673,13 @@ def buscar_videos(g: Guion, anio: int, carpeta: Path, buscador=None, avisar=log.
     return out
 
 
+def clave_archivo(archivo: str) -> str:
+    """El mismo archivo de Commons llega como "Archivo:X.jpg" (es.wikipedia) y "File:X.jpg" (Commons): sin
+    el prefijo, para no meterlo dos veces en el pool (2026-11-14: en La Pola la misma estatua dos veces)."""
+    nombre = str(archivo or "").split(":", 1)[-1] if ":" in str(archivo or "")[:12] else str(archivo or "")
+    return nombre.replace("_", " ").strip().lower()
+
+
 MAX_IMAGENES_ELECTOR = 100     # el tope de imágenes por pedido de Claude
 
 
@@ -1709,19 +1716,26 @@ def fotos_para_guion(wiki: Wiki, cliente, e: Evento, g: Guion, fotos_articulo: l
     `pool`: el de una propuesta anterior (✏️), para que los números no cambien. NarrarError si no
     se llega a ilustrar.MIN_FOTOS_DISTINTAS."""
     pool = list(pool or [])
-    por_archivo = {f.archivo: i for i, f in enumerate(pool)}
+    por_archivo = {clave_archivo(f.archivo): i for i, f in enumerate(pool)}
     descartadas = set(descartadas or ())
 
     def sumar(fotos: list[Foto], cuantas: int) -> list[int]:
-        nuevas = [f for f in fotos if f.archivo not in por_archivo][:cuantas]
+        nuevas, vistas = [], set()
+        for f in fotos:
+            k = clave_archivo(f.archivo)
+            if k not in por_archivo and k not in vistas:
+                vistas.add(k)
+                nuevas.append(f)
+        nuevas = nuevas[:cuantas]
         espacio = (POOL_MAX_ORDEN if g.imagen_frase else POOL_MAX) - len(pool)
         # El nombre lleva la posición en el pool: con ✏️ el pool crece y nada pisa lo anterior.
         bajadas, _ = bajar_fotos(wiki, nuevas, carpeta, f"{e.anio}_p{len(pool):02d}",
                                  max(espacio, 0), avisar)
         for f in bajadas:
-            por_archivo[f.archivo] = len(pool)
+            por_archivo[clave_archivo(f.archivo)] = len(pool)
             pool.append(f)
-        return [por_archivo[f.archivo] for f in fotos if f.archivo in por_archivo][:cuantas]
+        claves = dict.fromkeys(clave_archivo(f.archivo) for f in fotos)
+        return [por_archivo[k] for k in claves if k in por_archivo][:cuantas]
 
     g.segunda_busqueda = segunda
     g.tarjetas = []
@@ -2643,8 +2657,9 @@ def plan_rapido(plan: list[tuple[int, int, float]], g: Guion,
             # de zoom: la más impactante primero (es la primera del ranking), después otras de la
             # frase o del tema general. Cada una cuenta como aparición (ninguna en más de 2 cortes).
             n = max(1, min(MONTAJE_CORTES, int(s // MONTAJE_MIN_S)))
+            # Si la frase del gancho tiene pocas, la mejor de cada frase siguiente (un adelanto).
             cand = list(dict.fromkeys([f] + [x for x in (rk[i] if i < len(rk) else []) if x != VIDEO]
-                                      + gen))
+                                      + gen + [r[0] for r in rk[1:] if r and r[0] != VIDEO]))
             cand = [x for x in cand if x is not None and x >= 0][:n] or [f]
             trozos = [round(s / len(cand), 3)] * len(cand)
             for x, t in zip(cand, trozos):
