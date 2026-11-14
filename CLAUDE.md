@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-11-14 | **Versión:** v0.99.0 (desplegado) | **Modo:** Fase 2: corriendo solo en la Pi. **Rots APAGADO** (`publicacion.rots: false`). Madrugada desde la escucha: tecnología desde las 04:00 → 2 de Latinoamérica, todo antes de las 05:30; timers 05:00 (no hace nada con Rots apagado) y 06:00 de respaldo
+**Snapshot:** 2026-11-14 | **Versión:** v1.00.0 (desplegado) | **Modo:** Fase 2: corriendo solo en la Pi. **Rots APAGADO** (`publicacion.rots: false`). Madrugada desde la escucha: tecnología desde las 04:00 → 2 de Latinoamérica, todo antes de las 05:30; timers 05:00 (no hace nada con Rots apagado) y 06:00 de respaldo
 
 > **SI ESTÁS EMPEZANDO UNA SESIÓN NUEVA, LEÉ §10.** Ahí está qué está hecho, qué quedó a medias,
 > qué falta, y las trampas que ya nos mordieron.
@@ -959,6 +959,21 @@ Problemas abiertos:
 
 ## 9. CHANGELOG
 
+- v1.00.0 (2026-11-14, noche) — **Prototipo de Así Nació con Remotion (NO en producción)** y análisis de
+  Pequeña Historia. (1) Licencia de Remotion: gratis para una persona sola, también con fines
+  comerciales (remotion.dev/docs/license/faq). (2) En la Pi (Node 24 del sistema + el navegador headless
+  arm64 de Remotion, sin sudo): 35,8 s de video en 9,1 min con concurrencia 2 (0,51 s/cuadro), 86 °C
+  como el motor actual; 3-4 no aceleran. (3) Estilo nuevo: sombras y brillos planos, contornos de
+  grosor variable, más detalle, cuartos en perspectiva con parallax; mismo esqueleto y posiciones que
+  el motor actual (sirven los chequeos). Open Peeps (CC0) no se usó: no encaja con el estilo. Código en
+  `clips_bot/animacion_remotion/` y `remotion/` (`node_modules`, `out/` y lo generado fuera de git).
+  Nerf con los dos motores mandado a Santi (actual 5,4 min de render, Remotion 10,1 min). Falta para
+  producción: conectarlo a `marcas.armar_video` detrás de un interruptor (con el actual de respaldo),
+  revisión visual sobre los cuadros de Remotion, `npm ci` en `~/clips/remotion`, redibujar los objetos
+  que faltan. (4) Skill oficial `remotion-best-practices` en `.claude/skills/` (fuera de git). (5)
+  Pequeña Historia: el análisis del Short de Intel (3.220 vistas el 14/11, rompió el techo de ~1.200)
+  llega solo cuando Analytics tenga sus datos (`analisis_video_pedido`), y si tecnología rinde ≥ 1,3×
+  Latinoamérica en YouTube (≥ 4 y ≥ 6 videos con 3 días) llega la propuesta de mezcla 2 + 1. 1401 tests OK.
 - v0.99.0 (2026-11-14, noche) — **Así Nació PRENDIDO y conectado** (Santi aprobó el Nerf). Canal de
   YouTube @asinacio.oficial («Asinacio.oficial», `UCPUKDAf5NJbdINUC2Rka69A`) conectado con
   `youtube-auth animacion` desde la compu (token en `config/youtube_token_animacion.json` de la compu y

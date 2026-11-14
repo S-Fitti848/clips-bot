@@ -1,0 +1,20 @@
+{
+  "name": "asinacio-remotion",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Prototipo: render de Así Nació con Remotion (React + SVG). Los datos por cuadro salen de clips_bot/animacion_remotion/exportar.py",
+  "scripts": {
+    "studio": "remotion studio",
+    "render": "remotion render"
+  },
+  "dependencies": {
+    "@remotion/cli": "4.0.543",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
+    "remotion": "4.0.543"
+  },
+  "devDependencies": {
+    "@types/react": "19.3.0",
+    "typescript": "5.9.3"
+  }
+}
