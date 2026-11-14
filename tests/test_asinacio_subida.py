@@ -33,6 +33,7 @@ def test_prendido_y_a_las_19():
 
 def test_programa_youtube_y_guarda_el_meta(conn, tmp_path, monkeypatch):
     s = load_settings()
+    s = replace(s, animacion=replace(s.animacion, facebook=False))
     vistos = []
     monkeypatch.setattr(m, "_programar_subida", lambda c, st, meta, canal, hora: (
         vistos.append((meta, canal, hora)), "📤 Programado en <b>Así Nació</b> para el 15/11 a las 19:00 (AR).")[1])
@@ -74,3 +75,11 @@ def test_sin_la_pagina_de_facebook_avisa_y_no_rompe(conn, monkeypatch):
     aviso = m._subir_facebook_asinacio(conn, s, {"clip_id": "asinacio_1", "salida": "v.mp4",
                                                  "textos": {"titulo": "t", "descripcion": "d", "hashtags": []}})
     assert "ASINACIO_FACEBOOK_PAGE_ID" in aviso
+
+
+def test_con_facebook_prendido_tambien_va_el_reel(conn, tmp_path, monkeypatch):
+    s = load_settings()
+    monkeypatch.setattr(m, "_programar_subida", lambda *a: "📤 Programado en YouTube.")
+    monkeypatch.setattr(m, "_subir_facebook_asinacio", lambda c, st, meta: "📘 Programado en Facebook.")
+    avisos = m._animacion_subir(conn, s, R(), tmp_path, date(2026, 11, 15))
+    assert avisos == ["📤 Programado en YouTube.", "📘 Programado en Facebook."]
