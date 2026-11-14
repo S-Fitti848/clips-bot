@@ -340,10 +340,47 @@ def _transicion_cairo(sale, entra, tipo: str, u: float):
     return entra
 
 
+def sepia(rgb, k: float, bgr: bool = False):
+    """Tono antiguo (viaje al pasado): mezcla `k` (0..1) de la matriz sepia clásica, sobre un array
+    numpy HxWx3 o HxWx4 (uint8) en el lugar. `bgr` = el orden de cairo (B, G, R, A)."""
+    import numpy as np
+    from PIL import Image
+
+    if k <= 0.001:
+        return rgb
+    S = [[0.393, 0.769, 0.189], [0.349, 0.686, 0.168], [0.272, 0.534, 0.131]]
+    if bgr:   # mismos coeficientes con los canales al revés (B, G, R)
+        S = [list(reversed(f)) for f in reversed(S)]
+    m = []
+    for i in range(3):   # (1 - k)·identidad + k·(0,92·sepia), y +8·k de brillo
+        m += [(1 - k) * (i == j) + k * 0.92 * S[i][j] for j in range(3)] + [8 * k]
+    img = Image.fromarray(np.ascontiguousarray(rgb[..., :3]), "RGB").convert("RGB", tuple(m))
+    rgb[..., :3] = np.asarray(img)
+    return rgb
+
+
+def _sepia_cairo(sup, k: float) -> None:
+    import numpy as np
+
+    if k <= 0.001:
+        return
+    sup.flush()
+    arr = np.ndarray((sup.get_height(), sup.get_stride() // 4, 4), dtype=np.uint8, buffer=sup.get_data())
+    sepia(arr, k, bgr=True)
+    sup.mark_dirty()
+
+
 def _componer_cairo(cuadro: Cuadro) -> bytes:
+    k = getattr(cuadro, "tono", 0.0)
     if cuadro.b is not None and cuadro.transicion:
         sup = _transicion_cairo(_capa_cairo(cuadro.b), _capa_cairo(cuadro.a),
                                 *cuadro.transicion)
+        _sepia_cairo(sup, k)
+        if cuadro.encima:
+            _W["r"].dibujar_en(_doc(cuadro.encima), sup)
+    elif k > 0.001:      # el sepia no toca los subtítulos: van después
+        sup = _capa_cairo(cuadro.a)
+        _sepia_cairo(sup, k)
         if cuadro.encima:
             _W["r"].dibujar_en(_doc(cuadro.encima), sup)
     else:
@@ -362,12 +399,21 @@ def componer(cuadro: Cuadro) -> tuple[bytes, float]:
     t0 = time.perf_counter()
     if getattr(_W["r"], "nativo", False):
         return _componer_cairo(cuadro), time.perf_counter() - t0
+    k = getattr(cuadro, "tono", 0.0)
     if cuadro.b is not None and cuadro.transicion:
         img = _transicion(_capa(cuadro.b), _capa(cuadro.a), *cuadro.transicion)
-        if cuadro.encima:   # los subtítulos no participan de la transición
-            img.alpha_composite(_W["r"].rgba(_doc(cuadro.encima), _W["w"], _W["h"]))
+    elif k > 0.001:
+        img = _capa(cuadro.a)
     else:
         img = _capa(cuadro.a, cuadro.encima)
+    if k > 0.001:
+        import numpy as np
+        from PIL import Image
+
+        img = Image.fromarray(sepia(np.array(img.convert("RGBA")), k))
+    if cuadro.encima and (k > 0.001 or (cuadro.b is not None and cuadro.transicion)):
+        # los subtítulos no participan de la transición ni del sepia
+        img.alpha_composite(_W["r"].rgba(_doc(cuadro.encima), _W["w"], _W["h"]))
     return img.convert("RGB").tobytes(), time.perf_counter() - t0
 
 

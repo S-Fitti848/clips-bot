@@ -48,7 +48,11 @@ from .easing import curva, recortar
 from .svg import g, texto_con_borde
 
 PROPS_ANIMABLES = ("x", "y", "escala", "rotacion", "opacidad", "mirada")
-TIPOS_ELEMENTO = ("personaje", "prop", "gancho", "texto")
+# "cara" de un personaje: (cejas, boca, apertura de la boca)
+CARAS = {"feliz": ("arriba", "sonrisa", 0.0), "enojado": ("enojo", "cerrada", 0.0),
+         "sorprendido": ("arriba", "o", 0.7), "triste": ("triste", "cerrada", 0.0)}
+GRIS_PAUSA = "#4a4f5c"
+TIPOS_ELEMENTO = ("personaje", "prop", "gancho", "texto", "tito", "contador")
 TRANSICIONES = ("corte", "fundido", "zoom", "barrido")
 ENTRADAS = ("rebote", "izquierda", "derecha", "abajo", "arriba", "fundido")
 
@@ -149,8 +153,20 @@ class Elemento:
             claves = claves_de_entrada(d["entrada"], base, desde) + claves
         if d.get("salida") == "fundido" and hasta < math.inf:
             claves += [{"t": hasta - 0.35, "opacidad": 1.0}, {"t": hasta, "opacidad": 0.0}]
-        fijo = bool(d.get("fijo", tipo in ("gancho", "texto")))
+        fijo = bool(d.get("fijo", tipo in ("gancho", "texto", "contador")))
         el = cls(tipo, d, Pista(claves), base, desde, hasta, fijo)
+        if tipo == "tito":   # la mascota de "Así Nació" (tito.py): poses en vez de gestos
+            from . import tito as _tito
+
+            for ps in d.get("poses", []):
+                if ps.get("pose") not in _tito.POSES:
+                    raise ErrorGuion(f"{donde}: pose {ps.get('pose')!r} de Tito desconocida "
+                                     f"(hay {', '.join(_tito.POSES)})")
+            rnd = random.Random(zlib.crc32(json.dumps(d, sort_keys=True, default=str).encode()))
+            t = rnd.uniform(0.6, 1.6)
+            while t < dur_escena + 2:
+                el.parpadeos.append(t)
+                t += rnd.uniform(2.0, 4.0)
         if tipo == "personaje":
             for gs in d.get("gestos", []):
                 if gs.get("gesto") not in per.GESTOS:
@@ -175,7 +191,8 @@ class Elemento:
         if self.tipo == "personaje":
             contenido = self._pj.svg(self._estado(t, apertura, cuadro, v["mirada"]))
         elif self.tipo == "prop":
-            params = {k: val for k, val in self.datos.items() if k in ("texto", "color", "encendida")}
+            params = {k: val for k, val in self.datos.items()
+                      if k in ("texto", "color", "encendida", "rota", "forma")}
             contenido = esc.prop(self.datos["nombre"], **params)
         elif self.tipo == "gancho":
             # el gancho se ubica con su propio x/y (centro de la línea): sin traslado extra
@@ -184,6 +201,27 @@ class Elemento:
                                   color=self.datos.get("color", P.TEXTO_GANCHO))
             return g(g(contenido, -v["x"], -v["y"]), v["x"], v["y"], escala=v["escala"],
                      rot=v["rotacion"], opacidad=v["opacidad"])
+        elif self.tipo == "tito":
+            from . import tito as _tito
+
+            pose = "saluda"
+            for ps in sorted(self.datos.get("poses", []), key=lambda x: float(x.get("t", 0))):
+                if float(ps.get("t", 0)) <= tl:
+                    pose = ps["pose"]
+            habla = bool(self.datos.get("habla", False)) and apertura > 0
+            parp = max([1 - abs(t - tp) / 0.09 for tp in self.parpadeos if abs(t - tp) < 0.09] or [0.0])
+            giro = float(self.datos.get("giro_aguja", 0.0))     # grados por segundo (viaje en el tiempo)
+            contenido = _tito.tito_svg(pose, apertura=apertura if habla else 0.0, parpadeo=parp,
+                                       aguja=(giro * tl) % 360 if giro else 40.0,
+                                       respiracion=math.sin(2 * math.pi * t / 3.2),
+                                       inclinacion=2.5 * math.sin(2 * math.pi * t / 4.1) if habla else 0.0)
+        elif self.tipo == "contador":
+            # un año que cuenta (viaje en el tiempo): de "de" a "a" en "dur" segundos
+            a, b = float(self.datos.get("de", 2026)), float(self.datos.get("a", 1900))
+            u = curva("salida")(recortar(tl / max(0.05, float(self.datos.get("dur", 0.8)))))
+            tam = int(self.datos.get("tam", 200))
+            contenido = texto_con_borde(str(int(round(a + (b - a) * u))), 0, tam * 0.35, tam,
+                                        color=self.datos.get("color", P.TEXTO_GANCHO))
         else:   # texto suelto
             tam = int(self.datos.get("tam", 96))
             contenido = texto_con_borde(str(self.datos["texto"]), 0, tam * 0.35, tam,
@@ -207,6 +245,12 @@ class Elemento:
                 parp = 1 - d / 0.09
                 break
         e.parpadeo = parp
+        # Cara (canal de marcas, 2026-11-14): la expresión de quien no habla ("cara": feliz,
+        # enojado, sorprendido, triste); las cejas del gesto mandan solo si no hay cara.
+        cara = self.datos.get("cara")
+        if cara in CARAS:
+            cejas, boca, ap = CARAS[cara]
+            e.cejas, e.boca, e.apertura = cejas, boca, ap
         habla = self.datos.get("habla", False)
         if isinstance(habla, list):   # tramos [inicio, fin] locales
             habla = any(a <= t < b for a, b in habla)
@@ -227,6 +271,14 @@ class Escena:
     camara: Pista
     transicion: tuple[str, float]   # (tipo, duración)
     elementos: list[Elemento]
+    # Pausa (canal de marcas, 2026-11-14): la escena ANTERIOR queda congelada en su último cuadro y
+    # en gris, con el "⏸" arriba; encima, en color, van los elementos de esta (la mascota que comenta).
+    congela: bool = False
+    # Viaje en el tiempo (2026-11-14): tono sepia de la escena (0 = color, 1 = sepia), de `tono[0]` al
+    # empezar a `tono[1]` al terminar; y en una pausa, `girar` = la escena congelada se va en remolino
+    # con la cámara de la pausa (sin el gris).
+    tono: tuple[float, float] = (0.0, 0.0)
+    girar: bool = False
 
     @classmethod
     def desde_dict(cls, d: dict, i: int) -> "Escena":
@@ -255,10 +307,20 @@ class Escena:
                              f"(hay {', '.join(TRANSICIONES)})")
         tdur = 0.0 if tr.get("tipo", "corte") == "corte" else float(tr.get("duracion", 0.4))
         tdur = min(tdur, dur * 0.5)
-        elementos = [Elemento.desde_dict(e, f"{donde}, elemento {k + 1}", dur)
-                     for k, e in enumerate(d.get("elementos", []))]
+        congela = bool(d.get("congela", False))
+        elementos = []
+        for k, e in enumerate(d.get("elementos", [])):
+            if congela:      # sobre la escena congelada todo va en coordenadas de pantalla
+                e = {**e, "fijo": True}
+            elementos.append(Elemento.desde_dict(e, f"{donde}, elemento {k + 1}", dur))
+        tono = d.get("tono", 0.0)
+        tono = (float(tono[0]), float(tono[1])) if isinstance(tono, (list, tuple)) else (float(tono), float(tono))
         return cls(dur, fondo, Pista(d.get("camara", [])), (tr.get("tipo", "corte"), tdur),
-                   elementos)
+                   elementos, congela, tono, bool(d.get("girar", False)))
+
+    def tono_en(self, t: float) -> float:
+        a, b = self.tono
+        return round(a + (b - a) * curva("suave")(recortar(t / self.duracion)), 3) if a != b else a
 
     def camara_en(self, t: float) -> tuple[float, float, float, float]:
         """(zoom, dx, dy, rotación) de la cámara a los `t` segundos de la escena."""
@@ -287,6 +349,7 @@ class Cuadro:
     b: CapaEscena | None = None        # escena que sale (durante una transición)
     transicion: tuple | None = None    # (tipo, u 0..1)
     encima: str = ""                   # subtítulos
+    tono: float = 0.0                  # sepia (0..1) de la imagen, sin tocar los subtítulos
 
 
 @dataclass
@@ -298,13 +361,19 @@ class Video:
     audio: str | None = None
     subtitulos: list[list[tx.Palabra]] = field(default_factory=list)
     envolvente: list[float] = field(default_factory=list)
+    sub_y: float = 1500.0          # alto de los subtítulos ("subtitulos_y" en el dict)
+    sub_tam: int = 92              # tamaño de letra ("subtitulos_tam")
+    sub_banda: bool = False        # franja semitransparente detrás ("subtitulos_banda")
 
     @classmethod
     def desde_dict(cls, d: dict, base: Path | None = None) -> "Video":
         if not d.get("escenas"):
             raise ErrorGuion("el video no tiene escenas")
         escenas = [Escena.desde_dict(e, i) for i, e in enumerate(d["escenas"])]
-        v = cls(escenas, fps=int(d.get("fps", P.FPS)))
+        if escenas[0].congela:
+            raise ErrorGuion("escena 1: una pausa (congela) necesita una escena antes")
+        v = cls(escenas, fps=int(d.get("fps", P.FPS)), sub_y=float(d.get("subtitulos_y", 1500.0)),
+                sub_tam=int(d.get("subtitulos_tam", 92)), sub_banda=bool(d.get("subtitulos_banda", False)))
         if d.get("audio"):
             ruta = Path(d["audio"])
             if base and not ruta.is_absolute():
@@ -337,13 +406,34 @@ class Video:
     def total_cuadros(self) -> int:
         return int(round(self.duracion * self.fps))
 
-    def _capa(self, escena: Escena, t: float, cuadro: int) -> CapaEscena:
-        ap = self.envolvente[cuadro] if cuadro < len(self.envolvente) else 0.0
+    def _capa(self, escena: Escena, t: float, cuadro: int, apertura: float | None = None) -> CapaEscena:
+        ap = (self.envolvente[cuadro] if cuadro < len(self.envolvente) else 0.0)             if apertura is None else apertura
         frente, fijo = [], []
         for el in escena.elementos:
             if el.visible(t):
                 (fijo if el.fijo else frente).append(el.svg(t, ap, cuadro))
         return CapaEscena(escena.fondo, escena.camara_en(t), "".join(frente), "".join(fijo))
+
+    def _capa_k(self, k: int, t: float, cuadro: int, apertura: float | None = None) -> CapaEscena:
+        """La capa de la escena `k`; si es una pausa, la anterior congelada y en gris + la suya."""
+        e = self.escenas[k]
+        if not e.congela or k == 0:
+            return self._capa(e, t, cuadro, apertura)
+        j = k - 1
+        while j > 0 and self.escenas[j].congela:
+            j -= 1
+        prev = self.escenas[j]
+        base = self._capa(prev, prev.duracion - 1e-3, cuadro, apertura=0.0)   # nadie habla atrás
+        propia = self._capa(e, t, cuadro, apertura)
+        if e.girar:     # viaje en el tiempo: la escena congelada se va en remolino, sin gris
+            return CapaEscena(base.fondo, e.camara_en(t), base.frente + base.fijo,
+                              propia.frente + propia.fijo)
+        u = recortar(t / 0.2) * recortar((e.duracion - t) / 0.2)
+        gris = (f'<rect width="{P.ANCHO}" height="{P.ALTO}" fill="{GRIS_PAUSA}" '
+                f'opacity="{round(0.62 * u, 3)}"/>')
+        icono = g(esc.icono_pausa(), 110, 150, opacidad=u) if u > 0.01 else ""
+        return CapaEscena(base.fondo, base.camara, base.frente,
+                          base.fijo + gris + icono + propia.frente + propia.fijo)
 
     def cuadro(self, i: int) -> Cuadro:
         t = i / self.fps
@@ -351,14 +441,19 @@ class Video:
         for k, e in enumerate(self.escenas):
             if t < inicio + e.duracion or k == len(self.escenas) - 1:
                 tl = t - inicio
-                a = self._capa(e, tl, i)
+                a = self._capa_k(k, tl, i)
                 b, trans = None, None
                 tipo, tdur = e.transicion
                 if k > 0 and tdur > 0 and tl < tdur:
                     prev = self.escenas[k - 1]
-                    b = self._capa(prev, prev.duracion + tl, i)
+                    b = self._capa_k(k - 1, prev.duracion + tl, i)
                     trans = (tipo, round(tl / tdur, 4))
-                encima = tx.subtitulo(self.subtitulos, t) if self.subtitulos else ""
-                return Cuadro(a, b, trans, encima)
+                encima = tx.subtitulo(self.subtitulos, t, y=self.sub_y, tam=self.sub_tam) \
+                    if self.subtitulos else ""
+                if encima and self.sub_banda:
+                    alto = self.sub_tam * 1.45
+                    encima = (f'<rect x="0" y="{round(self.sub_y - alto / 2, 1)}" width="{P.ANCHO}" '
+                              f'height="{round(alto, 1)}" fill="#000000" opacity="0.42"/>') + encima
+                return Cuadro(a, b, trans, encima, e.tono_en(tl))
             inicio += e.duracion
         raise IndexError(i)

@@ -248,6 +248,20 @@ def tito(pose: str = "saluda") -> str:
     return "".join(p)
 
 
+# Santi eligió a Tito (2026-11-14): la versión pulida (reloj de bolsillo en vez de la llave inglesa)
+# está en tito.py; acá queda la primera solo como referencia de las 4 opciones.
+def tito_pulido(pose: str = "saluda") -> str:
+    from .tito import tito_svg
+
+    return tito_svg(pose)
+
+
+def tito_cara_pulida(guino: bool = False) -> str:
+    from .tito import tito_cara_svg
+
+    return tito_cara_svg(guino)
+
+
 MASCOTAS = {
     "benito": {"nombre": "Don Benito", "cuerpo": benito, "cara": benito_cara, "fondo": P.ROJO,
                "quien": "vendedor de los de antes: bigote de manubrio, canotier y chaleco a rayas. "
@@ -258,7 +272,7 @@ MASCOTAS = {
     "lampi": {"nombre": "Lampi", "cuerpo": lampi, "cara": lampi_cara, "fondo": P.VIOLETA,
               "quien": "una lamparita con cara (la idea hecha personaje): se prende cuando llega la "
                        "idea genial y se apaga cuando algo sale mal."},
-    "tito": {"nombre": "Abuelo Tito", "cuerpo": tito, "cara": tito_cara, "fondo": P.NARANJA,
+    "tito": {"nombre": "Abuelo Tito", "cuerpo": tito_pulido, "cara": tito_cara_pulida, "fondo": P.NARANJA,
              "quien": "inventor jubilado: pelado con pelos locos, antiparras de soldador en la frente "
                       "y guardapolvo. Vio todo, inventó todo… según él."},
 }

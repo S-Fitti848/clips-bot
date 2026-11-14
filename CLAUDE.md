@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-11-14 | **Versión:** v0.95.0 (desplegado) | **Modo:** Fase 2: corriendo solo en la Pi. **Rots APAGADO** (`publicacion.rots: false`). Madrugada desde la escucha: tecnología desde las 04:00 → 2 de Latinoamérica, todo antes de las 05:30; timers 05:00 (no hace nada con Rots apagado) y 06:00 de respaldo
+**Snapshot:** 2026-11-14 | **Versión:** v0.96.0 (desplegado) | **Modo:** Fase 2: corriendo solo en la Pi. **Rots APAGADO** (`publicacion.rots: false`). Madrugada desde la escucha: tecnología desde las 04:00 → 2 de Latinoamérica, todo antes de las 05:30; timers 05:00 (no hace nada con Rots apagado) y 06:00 de respaldo
 
 > **SI ESTÁS EMPEZANDO UNA SESIÓN NUEVA, LEÉ §10.** Ahí está qué está hecho, qué quedó a medias,
 > qué falta, y las trampas que ya nos mordieron.
@@ -959,6 +959,26 @@ Problemas abiertos:
 
 ## 9. CHANGELOG
 
+- v0.96.0 (2026-11-14, noche) — **Así Nació (canal de marcas animadas): reglas permanentes, Tito y
+  viaje en el tiempo** (feedback de Santi sobre Nerf y Monopoly: "dos personajes hablando no
+  engancha"). REGLAS para TODOS los videos del canal, en el guion, las escenas y el chequeo (código +
+  Haiku, con reintento mostrando los errores): (a) mostrar, no contar: cada frase es una escena con
+  acción, nada de personajes parados hablando; (b) gancho de < 3 s con destrucción en cadena de 2-4
+  cosas (pelota → tele → lámpara → cuadro), cada golpe con su sonido y un sacudón chico; (c) el
+  locutor fijo es el **Abuelo Tito** (`animacion/tito.py`: guardapolvo, antiparras, bigote, reloj de
+  bolsillo dorado; `tito_svg(pose)` / `tito_cara_svg()`), que interrumpe 1-3 veces con la escena
+  congelada en gris; (d) toda empresa o persona se presenta en pocas palabras la primera vez, en orden
+  problema → idea → qué pasó → final sorpresa; (e) escenas con sentido: cada objeto con su `soporte`
+  real (piso, mesa, estante, pared, mano), nada aparece ni cae de la nada (solo íconos en el aire, solo
+  billetes o monedas llueven); (f) **viaje en el tiempo** cuando la historia cambia de época (≥ 10
+  años): Tito levanta el reloj, remolino, el año contando hacia atrás, el pasado en sepia, y al revés al
+  volver (1,25 s); (g) subtítulos chicos (60 px) en una franja semitransparente abajo que no pisa a los
+  personajes; SFX sintetizados (`animacion/sfx.py`), música baja. Remotion no hizo falta (SVG alcanzó).
+  Nerf nuevo: 40,9 s, render 343 s en la Pi, Claude US$ 0,37 (4 intentos de guion: el chequeo es
+  exigente, US$ 0,20-0,40 por video). **Chats:** Pequeña Historia (`efemerides.chat`,
+  `historias_fb.chat`) y Así Nació (`animacion.chat` vacío) van al privado de Santi; el grupo "Rots
+  clips" queda solo para Rots (apagado). Sigue flojo: personajes siempre de frente, esquinas negras en
+  el remolino, pausas del pasado en color, la voz de Tito es la del narrador. 1267 tests OK.
 - v0.95.0 (2026-11-14, tarde) — **Por qué el 14/11 no salió nada y el feedback de los ejemplos.**
   (1) La madrugada corrió bien sin Rots (04:00 tecnología y Latinoamérica). Tecnología: la mejor,
   Netscape 6, 7,25 (< 7,5). Latinoamérica: La Pola (8,5) y Túpac Katari pasaron el puntaje pero el
@@ -2420,8 +2440,9 @@ no repiten lo que ya corrió.
   montaje del gancho repitió dos fotos casi iguales de la misma estatua.
 - **ElevenLabs:** cuando Santi ponga `ELEVENLABS_API_KEY`, `python -m clips_bot voces-elevenlabs` y
   `--muestra <id>`; con la voz elegida, `efemerides.elevenlabs_voz` / `elevenlabs_nombre`.
-- **Canal de marcas animadas** (nicho elegido por Santi: origen de marcas con humor y sarcasmo):
-  conectado y APAGADO; ejemplos Nerf y Monopoly mandados. Con su OK: `animacion.activo: true`. Cuando
+- **Así Nació** (canal de marcas animadas; nicho elegido por Santi: origen de marcas con humor y
+  sarcasmo; locutor: el Abuelo Tito): conectado y APAGADO; Nerf rehecho con las reglas de v0.96.0
+  mandado. Falta su OK, la foto de perfil y el banner con Tito. Con su OK: `animacion.activo: true`. Cuando
   cree el canal de YouTube: `youtube-auth animacion` y programar la subida (hoy no existe).
 - **Retención y alcance** (`docs/diseno-retencion-alcance.md`): esperando su OK. Instagram pide volver
   a autorizar el token de la página con el permiso de publicar en Instagram (avisar antes); TikTok

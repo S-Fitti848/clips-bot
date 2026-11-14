@@ -220,7 +220,48 @@ def fondo_escenario(semilla: int = 7) -> str:
     return "".join(p)
 
 
-FONDOS = {"cielo": fondo_cielo, "ciudad": fondo_ciudad, "oficina": fondo_oficina,
+def fondo_casa(semilla: int = 8) -> str:
+    """El living de una casa: pared con papel, ventana, cuadro, sillón y alfombra (sin lámpara: la
+    lámpara es un prop, así se puede romper)."""
+    p = [rect(0, 0, W, H, "#f7d9b5", borde=False)]
+    for x in range(0, W, 120):   # papel a rayas
+        p.append(rect(x, 0, 60, H * 0.72, "#f1cda4", borde=False))
+    p.append(rect(0, H * 0.72, W, H * 0.28, "#b98a5e", borde=False))
+    p.append(f'<path d="M0 {n(H * 0.72)} L{W} {n(H * 0.72)}" {trazo()}/>')
+    p.append(rect(0, H * 0.70, W, 30, P.BLANCO))                     # zócalo
+    p.append(elipse(W / 2, H * 0.86, 420, 90, "#d9534f", ancho=P.TRAZO_FINO))   # alfombra
+    p.append(elipse(W / 2, H * 0.86, 340, 62, "#f0ad4e", borde=False))
+    p.append(rect(120, 300, 300, 230, P.BLANCO, r=6))                # cuadro
+    p.append(camino("M150 500 L240 390 L300 450 L340 410 L390 500 Z", P.VERDE, ancho=P.TRAZO_FINO))
+    # sillón
+    p.append(rect(560, 1050, 460, 200, P.VIOLETA, r=40))
+    p.append(rect(530, 1150, 520, 160, P.VIOLETA, r=40))
+    p.append(rect(560, 1180, 460, 60, "#a78bfa", r=20, ancho=P.TRAZO_FINO))
+    p.append(rect(560, 1300, 30, 60, P.MADERA) + rect(990, 1300, 30, 60, P.MADERA))
+    return "".join(p)
+
+
+def fondo_taller(semilla: int = 9) -> str:
+    """Un taller de inventor: banco de trabajo, herramientas colgadas, planos en la pared."""
+    p = [rect(0, 0, W, H, "#cfd8dc", borde=False),
+         rect(0, H * 0.72, W, H * 0.28, "#8d6e63", borde=False),
+         f'<path d="M0 {n(H * 0.72)} L{W} {n(H * 0.72)}" {trazo()}/>']
+    p.append(rect(80, 220, 920, 460, "#a1887f", r=8))                # panel de herramientas
+    for x in range(120, 1000, 60):
+        for y in range(260, 660, 60):
+            p.append(circulo(x, y, 6, "#6d4c41", borde=False))
+    p.append(g(prop_martillo(), 260, 420, escala=0.7, rot=-30))
+    p.append(g(prop_engranaje(), 520, 400, escala=0.6))
+    p.append(rect(700, 300, 240, 300, "#bbdefb", r=6))                # plano
+    p.append(f'<path d="M730 360 L900 360 M730 420 L860 420 M730 480 L900 480" {trazo(ancho=6)}/>')
+    p.append(circulo(820, 540, 40, "none", ancho=6))
+    p.append(rect(60, H * 0.62, 960, 50, P.MADERA, r=8))              # banco
+    p.append(rect(100, H * 0.62 + 44, 50, 300, P.MADERA) + rect(930, H * 0.62 + 44, 50, 300, P.MADERA))
+    p.append(rect(200, H * 0.62 - 70, 140, 70, P.ROJO, r=8))          # caja de herramientas
+    return "".join(p)
+
+
+FONDOS = {"casa": fondo_casa, "taller": fondo_taller, "cielo": fondo_cielo, "ciudad": fondo_ciudad, "oficina": fondo_oficina,
           "globo": fondo_globo, "mapa": fondo_globo, "fabrica": fondo_fabrica,
           "tienda": fondo_tienda, "escenario": fondo_escenario}
 
@@ -436,7 +477,112 @@ def prop_bombilla_rota(**_) -> str:
             + f'<path d="M-30 -110 L-6 -70 L-30 -40 L4 -6" fill="none" {trazo(ancho=7)}/>')
 
 
-PROPS = {"cartel": prop_cartel, "flecha": prop_flecha, "pregunta": prop_pregunta,
+def prop_pelota(color: str = P.NARANJA, **_) -> str:
+    """Una pelota de espuma (sin costuras de ninguna marca)."""
+    return (circulo(0, 0, 70, color)
+            + "".join(circulo(x, y, 9, "#c96f1c", borde=False)
+                      for x, y in ((-30, -20), (10, -35), (25, 15), (-15, 25), (40, -5), (-40, 10)))
+            + elipse(-24, -30, 20, 12, "#ffffff", borde=False))
+
+
+def prop_lampara(color: str = P.AMARILLO, **_) -> str:
+    """Lámpara de mesa: pantalla, pie y base. El punto (0, 0) es el centro."""
+    return (rect(-12, -10, 24, 170, P.GRIS_OSCURO)
+            + elipse(0, 165, 80, 22, P.GRIS_OSCURO)
+            + camino("M-70 -10 L70 -10 L110 -150 L-110 -150 Z", color))
+
+
+def prop_ventana(rota: bool = False, **_) -> str:
+    """Una ventana con su marco; `rota` = el vidrio astillado (rajaduras desde un punto)."""
+    out = rect(-170, -200, 340, 400, "#9fe3ff", r=6) +         f'<path d="M0 -200 L0 200 M-170 0 L170 0" {trazo(ancho=14)}/>'
+    if rota:
+        cx, cy = 60, -70
+        rayos = "".join(f"M{cx} {cy} L{cx + int(150 * math.cos(math.radians(a)))} "
+                        f"{cy + int(150 * math.sin(math.radians(a)))} " for a in range(0, 360, 40))
+        out += (circulo(cx, cy, 36, "#e3f6ff", ancho=P.TRAZO_FINO)
+                + f'<path d="{rayos}" fill="none" {trazo(ancho=5)}/>')
+    else:
+        out += camino("M-140 -170 L-90 -170 L-140 -120 Z", "#ffffff", borde=False)
+    return out
+
+
+def prop_pedazo(color: str = "#9fe3ff", forma: int = 0, **_) -> str:
+    """Un pedazo de algo roto (vidrio, cerámica): un triángulo irregular, ~50 px."""
+    formas = ("M-30 -20 L30 -26 L6 30 Z", "M-24 -30 L26 -6 L-12 28 Z", "M-28 10 L0 -32 L30 20 Z",
+              "M-20 -24 L32 0 L-6 22 L-26 6 Z")
+    return camino(formas[int(forma) % len(formas)], color, ancho=P.TRAZO_FINO)
+
+
+def prop_martillo(**_) -> str:
+    return (rect(-12, -40, 24, 200, P.MADERA, r=8)
+            + rect(-70, -90, 140, 60, P.GRIS_OSCURO, r=10))
+
+
+def prop_jarron(color: str = P.TURQUESA, **_) -> str:
+    return camino("M-40 -120 L40 -120 L30 -90 Q100 -40 80 60 Q60 120 0 120 Q-60 120 -80 60 "
+                  "Q-100 -40 -30 -90 Z", color) +         f'<path d="M-60 0 Q0 30 60 0" fill="none" {trazo(ancho=8, color=P.BLANCO)}/>'
+
+
+def prop_microfono(**_) -> str:
+    return (rect(-10, 0, 20, 150, P.GRIS_OSCURO, r=6)
+            + rect(-44, -110, 88, 120, "#3d4250", r=44)
+            + "".join(f'<path d="M-36 {y} L36 {y}" stroke="#7d8597" stroke-width="5"/>'
+                      for y in (-80, -55, -30)))
+
+
+def prop_tele(rota: bool = False, **_) -> str:
+    """Un televisor de tubo genérico (sin marca), centrado; `rota` = la pantalla astillada."""
+    out = (rect(-150, -120, 300, 230, "#8d6e63", r=22)
+           + rect(-125, -98, 210, 180, "#5b6b7a" if not rota else "#3a4450", r=26, ancho=P.TRAZO_FINO)
+           + circulo(112, -50, 12, P.GRIS_OSCURO, ancho=4) + circulo(112, -10, 12, P.GRIS_OSCURO, ancho=4)
+           + rect(-90, 110, 24, 20, P.GRIS_OSCURO, borde=False) + rect(66, 110, 24, 20, P.GRIS_OSCURO, borde=False)
+           + f'<path d="M-40 -120 L-80 -190 M40 -120 L80 -190" {trazo(ancho=6)}/>')
+    if rota:
+        out += f'<path d="M-20 -20 L-110 -80 M-20 -20 L60 -90 M-20 -20 L-90 60 M-20 -20 L70 60 M-20 -20 L-60 -90" fill="none" {trazo(ancho=5, color="#e3f6ff")}/>'
+    else:
+        out += camino("M-110 -80 L-70 -80 L-110 -40 Z", "#8fa3b5", borde=False)
+    return out
+
+
+def prop_cuadro(color: str = P.VERDE, **_) -> str:
+    """Un cuadro colgado (paisaje genérico)."""
+    return (f'<path d="M-40 -110 L0 -150 L40 -110" fill="none" {trazo(ancho=5)}/>'
+            + rect(-130, -110, 260, 200, P.MADERA, r=6)
+            + rect(-108, -88, 216, 156, "#bfe3ff", ancho=P.TRAZO_FINO)
+            + camino("M-108 68 L-40 -10 L10 40 L50 0 L108 68 Z", color, ancho=P.TRAZO_FINO)
+            + circulo(60, -50, 18, P.AMARILLO, ancho=4))
+
+
+def prop_mesa(**_) -> str:
+    """Una mesita (el origen es el medio de la tapa: las cosas se apoyan arriba)."""
+    return (rect(-150, 0, 300, 30, P.MADERA, r=6)
+            + rect(-130, 26, 22, 200, P.MADERA) + rect(108, 26, 22, 200, P.MADERA))
+
+
+def prop_estante(**_) -> str:
+    """Un estante de pared (el origen es el medio de la tabla)."""
+    return (rect(-140, 0, 280, 24, P.MADERA, r=4)
+            + camino("M-110 24 L-110 70 L-70 24 Z", P.MADERA, ancho=P.TRAZO_FINO)
+            + camino("M110 24 L110 70 L70 24 Z", P.MADERA, ancho=P.TRAZO_FINO))
+
+
+def prop_reloj_bolsillo(**_) -> str:
+    from .tito import reloj
+
+    return reloj(40.0, 90)
+
+
+def icono_pausa() -> str:
+    """El "⏸" de la pausa del locutor (dos barras), centrado en (0, 0)."""
+    return (circulo(0, 0, 70, "#ffffff", ancho=P.TRAZO_FINO)
+            + rect(-30, -36, 20, 72, P.CONTORNO, r=4, borde=False)
+            + rect(10, -36, 20, 72, P.CONTORNO, r=4, borde=False))
+
+
+PROPS = {"tele": prop_tele, "cuadro": prop_cuadro, "mesa": prop_mesa, "estante": prop_estante,
+         "reloj_bolsillo": prop_reloj_bolsillo, "pelota": prop_pelota, "lampara": prop_lampara, "ventana": prop_ventana,
+         "pedazo": prop_pedazo, "martillo": prop_martillo, "jarron": prop_jarron,
+         "microfono": prop_microfono, "cartel": prop_cartel, "flecha": prop_flecha, "pregunta": prop_pregunta,
          "exclamacion": prop_exclamacion, "moneda": prop_moneda, "lamparita": prop_lamparita,
          "nube": prop_nube, "botella": prop_botella, "lata": prop_lata, "caja": prop_caja,
          "zapatilla": prop_zapatilla, "billete": prop_billete, "bolsa_plata": prop_bolsa_plata,

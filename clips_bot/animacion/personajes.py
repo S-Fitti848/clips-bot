@@ -44,6 +44,21 @@ GESTOS: dict[str, dict] = {
     "saludar": {"izq": (12, 10), "der": (140, 35)},
     "pensar": {"izq": (12, 10), "der": (10, 205), "cejas": "enojo"},
     "explicar": {"izq": (40, 70), "der": (40, 70)},
+    # Acciones del canal de marcas (2026-11-14): se alternan de a pares (caminar = paso_a/paso_b
+    # cada ~0,25 s) y la mezcla de 0,3 s entre gestos hace el balanceo. Ver animacion/acciones.py.
+    "paso_a": {"izq": (32, 22), "der": (-14, 14)},
+    "paso_b": {"izq": (-14, 14), "der": (32, 22)},
+    "correr_a": {"izq": (70, 80), "der": (-30, 70), "cejas": "arriba"},
+    "correr_b": {"izq": (-30, 70), "der": (70, 80), "cejas": "arriba"},
+    "retar_a": {"izq": (40, 115), "der": (138, 22), "cejas": "enojo"},
+    "retar_b": {"izq": (40, 115), "der": (118, 48), "cejas": "enojo"},
+    "martillo_arriba": {"izq": (40, 70), "der": (155, 25), "cejas": "enojo"},
+    "martillo_abajo": {"izq": (40, 70), "der": (75, 35), "cejas": "enojo"},
+    "lanzar_atras": {"izq": (40, 40), "der": (165, 40)},
+    "lanzar": {"izq": (30, 20), "der": (95, -25), "cejas": "arriba"},
+    "atrapar": {"izq": (100, -15), "der": (100, -15), "cejas": "arriba"},
+    "festejar": {"izq": (168, 8), "der": (168, 8), "cejas": "arriba"},
+    "cubrirse": {"izq": (150, 120), "der": (150, 120), "cejas": "triste"},
 }
 
 
@@ -248,6 +263,15 @@ ELENCO: dict[str, Personaje] = {
                         bigote=True, alto_cuerpo=0.9),
     "pibe": Personaje("pibe", piel=P.PIEL[2], pelo=P.PELO[3], peinado="corto", sombrero="gorra",
                       color_sombrero=P.ROJO, ropa=P.AMARILLO, alto_cuerpo=0.85),
+    # Canal de marcas (2026-11-14): un nene, una mamá y la MASCOTA del canal, el locutor que aparece
+    # al costado cuando la escena se congela (gorra amarilla, anteojos y saco naranja: siempre igual).
+    "nene": Personaje("nene", piel=P.PIEL[1], pelo=P.PELO[1], peinado="corto", ropa=P.VERDE,
+                      pantalon="#3a5a8c", alto_cuerpo=0.75),
+    "mama": Personaje("mama", piel=P.PIEL[0], pelo=P.PELO[2], peinado="largo", ropa=P.AZUL,
+                      pantalon="#4b3b6e", alto_cuerpo=0.95),
+    "locutor": Personaje("locutor", piel=P.PIEL[1], pelo=P.PELO[0], peinado="jopo", sombrero="gorra",
+                         color_sombrero=P.AMARILLO, ropa=P.NARANJA, pantalon="#2b2b33",
+                         anteojos=True),
 }
 
 

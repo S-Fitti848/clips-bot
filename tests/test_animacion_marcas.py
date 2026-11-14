@@ -7,7 +7,9 @@ from datetime import date, datetime, timedelta
 import pytest
 
 from clips_bot import db
+from clips_bot.animacion import acciones as ac
 from clips_bot.animacion import escenas as esc
+from clips_bot.animacion import sfx as sfx_mod
 from clips_bot.animacion import marcas as mk
 from clips_bot.animacion.timeline import Video
 from clips_bot.config import load_settings
@@ -136,33 +138,58 @@ def test_ninguno_llega_a_8_no_sale(conn):
 
 
 # ---- guion -----------------------------------------------------------------------------------
+# Reglas de Santi (2026-11-14, después de Nerf y Monopoly): mostrar no contar, la mascota-locutor,
+# toda empresa o persona presentada, problema → idea → qué pasó → final, y movimiento.
 
-FUENTE = ("Havanna es una empresa argentina de alfajores fundada en 1947 en Mar del Plata. El nombre "
-          "viene del Havanna Bar, un bar de los socios que después cerró. Los alfajores se volvieron "
-          "famosos en toda la costa y la gente los llevaba de regalo después de las vacaciones.")
+FUENTE = ("Havanna es una empresa argentina de alfajores fundada en 1947 en Mar del Plata, una ciudad de "
+          "playa. El nombre viene del Havanna Bar, un bar de los socios que después cerró. Los alfajores "
+          "se volvieron famosos en toda la costa y la gente los llevaba de regalo después de las vacaciones.")
 
-FRASES = [
-    "Esta marca de alfajores se llama como un bar que ya no existía.",
-    "Todo arranca en Mar del Plata, una ciudad de playa.",
-    "Ahí unos socios tenían un bar llamado Havanna Bar.",
-    "En 1947 fundaron la empresa y empezaron a vender alfajores.",
-    "¿Y el bar? Cerró, obvio, porque así es la vida.",
-    "Los alfajores, en cambio, se volvieron famosos en toda la costa.",
-    "La gente los llevaba de regalo después de las vacaciones.",
-    "Hoy la marca es más conocida que el bar que le dio el nombre.",
-    "O sea: un bar cerrado bautizó a un alfajor eterno.",
+
+def _a(rol, accion, desde="centro", hacia="ninguno", cara="normal"):
+    return {"rol": rol, "accion": accion, "desde": desde, "hacia": hacia, "cara": cara}
+
+
+def _o(prop, efecto, donde="centro", texto="", soporte=None):
+    return {"prop": prop, "efecto": efecto, "donde": donde, "texto": texto,
+            "soporte": soporte or ac.soporte_de(prop, None)}
+
+
+def _c(prop, soporte, donde):
+    return {"prop": prop, "soporte": soporte, "donde": donde}
+
+
+ESCENAS = [
+    ("¡Otra caja de alfajores voló por el aire!", "gancho", "casa",
+     [_a("joven", "tirar", "izquierda")], [_o("caja", "vuela"), _o("jarron", "se_rompe", "derecha")]),
+    ("Unos socios tenían un bar en Mar del Plata, una ciudad de playa.", "problema", "ciudad",
+     [_a("empresario", "caminar", "izquierda", "centro")], []),
+    ("El bar se llamaba Havanna Bar, pero vendía poco.", "problema", "tienda",
+     [_a("vendedor", "asustarse", "derecha")], [_o("grafico_baja", "aparece", "izquierda")]),
+    ("Entonces pensaron vender alfajores con el mismo nombre.", "idea", "oficina",
+     [_a("empresario", "pensar", "izquierda"), _a("fundador", "saltar", "derecha")], []),
+    ("En 1947 fundaron la empresa y empezaron a fabricar alfajores.", "que_paso", "fabrica",
+     [_a("fundador", "martillar", "izquierda")], [_o("caja", "quieto", "derecha", "1947")]),
+    ("Los alfajores se volvieron famosos en toda la costa.", "que_paso", "ciudad",
+     [_a("cliente", "correr", "izquierda", "derecha")], [_o("billete", "llueve")]),
+    ("La gente los llevaba de regalo después de las vacaciones.", "que_paso", "casa",
+     [_a("mama", "entrar", "izquierda", "centro"), _a("nene", "festejar", "derecha")], [_o("caja", "quieto", soporte="mano")]),
+    ("¿Y el bar? Cerró, y el alfajor se quedó con el nombre.", "final", "escenario",
+     [_a("fundador", "festejar", "centro")], [_o("corona", "crece", "derecha")]),
 ]
 
 
 def guion(**cambios):
-    escenas = [{"frase": f, "fondo": "tienda" if i % 2 else "ciudad", "personaje": "fundador" if i % 3 == 0
-                else "ninguno", "gesto": "explicar", "gesto_personaje": "sorpresa",
-                "prop": "caja" if i % 2 else "ninguno", "texto_prop": "HAVANNA" if i % 2 else "",
-                "texto_pantalla": "1947" if i == 3 else ("MAR DEL PLATA" if i == 1 else ""),
-                "transicion": "zoom"} for i, f in enumerate(FRASES)]
+    escenas = [{"frase": f, "parte": p, "fondo": fo, "actores": a, "objetos": o, "camara": "fija",
+                "texto_pantalla": "1947" if i == 4 else "", "transicion": "barrido",
+                "cadena": [_c("tele", "mesa", "izquierda"), _c("lampara", "piso", "centro")] if i == 0 else [],
+                "viaje_a_anio": 1947 if i == 1 else 0, "vuelve_al_presente": i == 7}
+               for i, (f, p, fo, a, o) in enumerate(ESCENAS)]
     d = {"titulo": "Havanna: el alfajor que se llama como un bar", "descripcion": "La historia del nombre.",
-         "tono": "curioso", "pregunta_gancho": "¿Por qué se llama así?", "gancho_pantalla": "Un bar que no existe",
-         "frase_giro": 5, "frase_pago": 9, "escenas": escenas}
+         "tono": "curioso", "pregunta_gancho": "¿Por qué se llama así?", "escenas": escenas,
+         "locutor": [{"despues_de_frase": 3, "texto": "Spoiler: el bar no la pasó nada bien."}],
+         "entidades": [{"nombre": "Mar del Plata", "presentacion": "una ciudad de playa", "frase": 2},
+                       {"nombre": "Havanna Bar", "presentacion": "el bar se llamaba", "frase": 3}]}
     d.update(cambios)
     return d
 
@@ -173,92 +200,376 @@ def test_un_guion_bueno_valida():
 
 def test_datos_que_no_estan_en_el_articulo():
     d = guion()
-    d["escenas"][3]["frase"] = "En 1952 Pedro fundó la empresa y empezaron a vender alfajores."
+    d["escenas"][4]["frase"] = "En 1952 Pedro fundó la empresa y empezaron a fabricar alfajores."
     err = " ".join(mk.validar_guion(d, marca(), FUENTE))
     assert "1952" in err and "Pedro" in err
 
 
-def test_el_texto_en_pantalla_tambien_se_valida():
+def test_el_texto_en_pantalla_y_el_locutor_tambien_se_validan():
     d = guion()
     d["escenas"][2]["texto_pantalla"] = "1999"
-    assert "1999" in " ".join(mk.validar_guion(d, marca(), FUENTE))
+    d["locutor"][0]["texto"] = "Spoiler: en 1980 el bar no la pasó nada bien."
+    err = " ".join(mk.validar_guion(d, marca(), FUENTE))
+    assert "1999" in err and "1980" in err
 
 
 def test_texto_de_pantalla_en_mayusculas_no_son_nombres():
-    """Visto en la Pi con Nerf: "NA, MENTIRA" y "TIRARON" daban "Mentira" y "Tiraron" como nombres
-    que no estaban en el artículo."""
+    """Visto en la Pi con Nerf: "NA, MENTIRA" daba "Mentira" como un nombre que no estaba."""
     d = guion()
-    d["escenas"][4]["texto_pantalla"] = "NA, MENTIRA"
-    d["escenas"][5]["texto_pantalla"] = "LOS TIRARON"
+    d["escenas"][5]["texto_pantalla"] = "NA, MENTIRA"
     assert mk.validar_guion(d, marca(), FUENTE) == []
     assert mk._sin_mayusculas("NA, MENTIRA") == "Na, mentira"
 
 
-def test_estructura_largo_y_gancho():
-    d = guion(frase_pago=5)
-    assert any("paga" in e for e in mk.validar_guion(d, marca(), FUENTE))
+def test_gancho_corto_y_de_accion():
     d = guion()
-    d["escenas"][0]["frase"] = "¿Sabías que en 1947 nació esta marca de alfajores tan famosa?"
+    d["escenas"][0]["frase"] = "¡Otra caja de alfajores voló por el aire de la casa!"
+    assert any("menos de 3 segundos" in e for e in mk.validar_guion(d, marca(), FUENTE))
+    d = guion()
+    d["escenas"][0]["actores"] = [_a("joven", "quieto")]
+    d["escenas"][0]["objetos"] = [_o("caja", "quieto")]
+    d["escenas"][0]["cadena"] = []
     err = " ".join(mk.validar_guion(d, marca(), FUENTE))
-    assert "año" in err and "fórmula" in err
-    d = guion(escenas=guion()["escenas"][:5])
-    assert any("palabras" in e for e in mk.validar_guion(d, marca(), FUENTE))
+    assert "ACCIÓN" in err and "estáticas" in err
+
+
+def test_escenas_con_sentido():
+    """Santi: la vasija cayendo del cielo no tiene sentido; la lámpara de pie al lado del sillón."""
+    d = guion()
+    d["escenas"][2]["objetos"] = [_o("jarron", "cae_y_se_rompe", soporte="aire")]
+    d["escenas"][3]["objetos"] = [_o("botella", "aparece")]
+    d["escenas"][5]["objetos"] = [_o("caja", "llueve")]
+    d["escenas"][6]["objetos"] = [_o("lampara", "quieto", soporte="estante")]
+    err = " ".join(mk.validar_guion(d, marca(), FUENTE))
+    assert "¿de dónde?" in err and "de la nada" in err and "solo llueven" in err and "lampara va en" in err
+
+
+def test_el_gancho_es_una_destruccion_en_cadena():
+    d = guion()
+    d["escenas"][0]["cadena"] = [_c("tele", "mesa", "izquierda")]
+    assert any("en cadena" in e for e in mk.validar_guion(d, marca(), FUENTE))
+    d["escenas"][0]["cadena"] = [_c("tele", "mesa", "izquierda")] * 2
+    assert any("mismo lugar" in e for e in mk.validar_guion(d, marca(), FUENTE))
+    d["escenas"][0]["cadena"] = [_c("cuadro", "mesa", "izquierda"), _c("tele", "mesa", "derecha")]
+    assert any("cuadro va en pared" in e for e in mk.validar_guion(d, marca(), FUENTE))
+
+
+def test_viaje_al_pasado_cuando_cambia_la_epoca():
+    d = guion()
+    d["escenas"][1]["viaje_a_anio"] = 0                  # 1947 en la frase 5 sin viaje
+    err = " ".join(mk.validar_guion(d, marca(), FUENTE))
+    assert "habla de 1947" in err and "sin haber viajado" in err
+    d = guion()
+    d["escenas"][0]["viaje_a_anio"] = 1947
+    assert any("gancho es en el presente" in e for e in mk.validar_guion(d, marca(), FUENTE))
+    d = guion()
+    d["escenas"][7]["vuelve_al_presente"] = False
+    d["escenas"][7]["frase"] = "Hoy el bar ya no existe, y el alfajor se quedó con el nombre."
+    assert any("habla de hoy" in e for e in mk.validar_guion(d, marca(), FUENTE))
+    d = guion()
+    d["escenas"][1]["viaje_a_anio"] = 1932                # el año del viaje también va contra el artículo
+    assert any("1932" in e for e in mk.validar_guion(d, marca(), FUENTE))
+
+
+def test_ninguna_escena_estatica():
+    """"Dos personajes hablando no engancha": una escena sin movimiento no pasa."""
+    d = guion()
+    d["escenas"][3]["actores"] = [_a("empresario", "senalar"), _a("fundador", "quieto")]
+    assert any("estáticas (solo personajes parados): 4" in e for e in mk.validar_guion(d, marca(), FUENTE))
+
+
+def test_problema_idea_que_paso_final_en_orden():
+    d = guion()
+    d["escenas"][3]["parte"] = "final"
+    assert any("orden" in e for e in mk.validar_guion(d, marca(), FUENTE))
+    d = guion()
+    for e in d["escenas"][1:-1]:
+        e["parte"] = "que_paso"
+    err = " ".join(mk.validar_guion(d, marca(), FUENTE))
+    assert "`problema`" in err and "`idea`" in err
+
+
+def test_el_locutor_interrumpe_de_1_a_3_veces():
+    assert any("interrumpe" in e for e in mk.validar_guion(guion(locutor=[]), marca(), FUENTE))
+    cuatro = [{"despues_de_frase": k, "texto": "Spoiler: el bar no la pasó nada bien."} for k in (2, 3, 4, 5)]
+    assert any("interrumpe" in e for e in mk.validar_guion(guion(locutor=cuatro), marca(), FUENTE))
+    ultima = [{"despues_de_frase": 8, "texto": "Spoiler: el bar no la pasó nada bien."}]
+    assert any("entre la 1 y la 7" in e for e in mk.validar_guion(guion(locutor=ultima), marca(), FUENTE))
+
+
+def test_toda_empresa_o_persona_se_presenta():
+    """Monopoly: Santi no sabía qué era Parker Brothers."""
+    err = " ".join(mk.validar_guion(guion(entidades=[]), marca(), FUENTE))
+    assert "entidades" in err and "Bar" in err and "Plata" not in err   # Mar del Plata es un lugar
+    mal = [{"nombre": "Mar del Plata", "presentacion": "la capital mundial del turismo", "frase": 2},
+           {"nombre": "Havanna Bar", "presentacion": "el bar se llamaba", "frase": 3}]
+    assert any("Mar del Plata: presentalo" in e for e in mk.validar_guion(guion(entidades=mal), marca(), FUENTE))
+
+
+def test_los_lugares_no_hace_falta_presentarlos_y_el_giro_puede_ir_en_el_medio():
+    """Visto en la Pi con el Nerf: "un inventor de Minnesota" y "en Estados Unidos" pedían presentación,
+    y gancho → … → que_paso → giro → que_paso → final no pasaba."""
+    assert mk.es_lugar("Un inventor de Minnesota armó la pelota.", "Minnesota")
+    assert mk.es_lugar("Se vendió en Estados Unidos.", "Unidos")
+    assert not mk.es_lugar("Parker Brothers compró la idea.", "Parker")
+    d = guion()
+    d["escenas"][3]["frase"] = "Entonces en Rosario pensaron vender alfajores con el mismo nombre."
+    assert not any("entidades" in e for e in mk.validar_guion(d, marca(), FUENTE + " Rosario"))
+    d = guion()
+    d["escenas"][5]["parte"] = "giro"
+    assert not any("orden" in e for e in mk.validar_guion(d, marca(), FUENTE))
 
 
 def test_nada_de_temas_sensibles():
     d = guion()
-    d["escenas"][4]["frase"] = "¿Y el bar? Cerró después de un accidente, obvio."
+    d["escenas"][7]["frase"] = "¿Y el bar? Cerró después de un accidente, obvio."
     assert any("sensibles" in e for e in mk.validar_guion(d, marca(), FUENTE))
 
 
 def test_props_y_fondos_tienen_que_existir():
     d = guion()
-    d["escenas"][1]["prop"] = "logo_de_la_marca"
+    d["escenas"][1]["objetos"] = [_o("logo_de_la_marca", "vuela")]
     d["escenas"][2]["fondo"] = "playa"
     err = " ".join(mk.validar_guion(d, marca(), FUENTE))
     assert "logo_de_la_marca" in err and "playa" in err
 
 
 def test_escribir_guion_reintenta_con_los_errores():
-    malo = guion(frase_pago=4)
+    malo = guion(locutor=[])
     cliente = ClienteFalso(malo, guion())
     e = mk.Elegido(marca(), "nombre", {c: 9 for c in mk.CRITERIOS})
-    assert mk.escribir_guion(cliente, e, FUENTE, avisar=lambda *_: None)["frase_pago"] == 9
-    assert "NO SIRVIÓ" in cliente.pedidos[1]
+    assert mk.escribir_guion(cliente, e, FUENTE, avisar=lambda *_: None)["locutor"]
+    assert "NO SIRVIÓ" in cliente.pedidos[1] and "SE VE" in cliente.pedidos[1]
     with pytest.raises(mk.GuionInvalido):
         mk.escribir_guion(ClienteFalso(malo, malo), e, FUENTE, reintentos=2, avisar=lambda *_: None)
 
 
-# ---- escenas → línea de tiempo ---------------------------------------------------------------
+def test_el_chequeo_de_haiku_tambien_hace_reintentar():
+    e = mk.Elegido(marca(), "nombre", {c: 9 for c in mk.CRITERIOS})
+    haiku = ClienteFalso({"sin_presentar": ["Havanna Bar: no se dice qué es"], "confuso": [], "no_muestra": [],
+                          "sin_sentido": []},
+                         {"sin_presentar": [], "confuso": [], "no_muestra": [], "sin_sentido": []})
+    cliente = ClienteFalso(guion(), guion())
+    mk.escribir_guion(cliente, e, FUENTE, avisar=lambda *_: None, revisor=haiku)
+    assert len(cliente.pedidos) == 2 and "presentá" in cliente.pedidos[1]
+    assert "SE VE" in haiku.pedidos[0]
+
+
+def test_si_haiku_no_responde_sigue():
+    class Roto:
+        def json(self, *a, **k):
+            raise RuntimeError("caído")
+
+    assert mk.chequear_calidad(Roto(), guion(), marca()) == []
+
+
+# ---- escenas de acción, pausa del locutor y SFX ---------------------------------------------
 
 def test_props_y_fondos_nuevos_se_dibujan():
     for nombre in mk.FONDOS:
         assert esc.fondo(nombre, 3).startswith("<")
-    for nombre in mk.PROPS:
-        if nombre != "ninguno":
-            assert "<" in esc.prop(nombre, texto="HAVANNA", color="#123456")
-    for nuevo in ("botella", "lata", "caja", "billete", "grafico_baja", "megafono", "control"):
+    for nombre in esc.PROPS:
+        assert "<" in esc.prop(nombre, texto="HAVANNA", color="#123456")
+    assert "<path" in esc.prop("ventana", rota=True) and esc.prop("ventana", rota=True) != esc.prop("ventana")
+    for nuevo in ("pelota", "lampara", "ventana", "pedazo", "martillo", "jarron", "microfono", "botella"):
         assert nuevo in esc.PROPS
+    assert {"casa", "taller"} <= set(esc.FONDOS)
 
 
-def test_linea_de_tiempo_arma_un_video_valido():
-    inicios = [i * 3.5 for i in range(len(FRASES))]
-    fin = inicios[-1] + 3.0
-    palabras = [Palabra(0.0, 0.4, "Esta"), Palabra(0.4, 0.8, "marca")]
-    datos = mk.linea_de_tiempo(guion(), inicios, fin, palabras, None)
+@pytest.mark.parametrize("accion", ac.ACCIONES)
+def test_cada_accion_arma_una_escena_valida(accion):
+    d, sfx = ac.escena_accion({"fondo": "casa", "actores": [_a("nene", accion, "izquierda", "derecha")],
+                               "objetos": [], "camara": "fija"}, 3.0, 0)
+    v = Video.desde_dict({"escenas": [d]})
+    v.cuadro(45)
+    assert all(s in ac.SFX for _, s in sfx)
+
+
+@pytest.mark.parametrize("efecto", ac.EFECTOS)
+def test_cada_efecto_arma_una_escena_valida(efecto):
+    d, _ = ac.escena_accion({"fondo": "taller", "actores": [], "objetos": [_o("pelota", efecto)],
+                             "camara": "paneo"}, 3.0, 2)
+    Video.desde_dict({"escenas": [d]}).cuadro(60)
+
+
+def test_lo_que_vuela_rompe_la_lampara_y_suena_en_el_impacto():
+    d, sfx = ac.escena_accion({"fondo": "casa", "actores": [_a("nene", "tirar", "izquierda")],
+                               "objetos": [_o("pelota", "vuela"), _o("lampara", "se_rompe")],
+                               "camara": "fija"}, 3.0, 0)
+    pelota = next(e for e in d["elementos"] if e.get("nombre") == "pelota")
+    pedazos = [e for e in d["elementos"] if e.get("nombre") == "pedazo"]
+    lampara = next(e for e in d["elementos"] if e.get("nombre") == "lampara")
+    impacto = pelota["keyframes"][-1]["t"]
+    # la lámpara recibe el golpe, se cae de costado y se rompe contra el piso
+    assert lampara["hasta"] == pytest.approx(impacto, abs=0.02)
+    rotura = pedazos[0]["desde"]
+    assert len(pedazos) == 8 and impacto < rotura < impacto + 0.5
+    assert any(s == "vidrio" and t == pytest.approx(rotura, abs=0.02) for t, s in sfx)
+    assert ("whoosh" in [s for _, s in sfx])
+    # el sacudón de cámara en el golpe
+    assert any(k.get("x") for k in d["camara"] if abs(k["t"] - impacto) < 0.45)
+
+
+def test_la_pelota_rebota_con_boing():
+    _, sfx = ac.escena_accion({"fondo": "casa", "actores": [], "objetos": [_o("pelota", "rebota")]}, 3.5, 0)
+    assert sum(s == "boing" for _, s in sfx) >= 2
+
+
+def test_la_cadena_rompe_cada_cosa_en_orden_con_su_sonido():
+    d, sfx = ac.escena_accion({"fondo": "casa", "actores": [_a("nene", "tirar", "izquierda")], "objetos": [],
+                               "cadena": [_c("tele", "mesa", "izquierda"), _c("lampara", "piso", "centro"),
+                                          _c("cuadro", "pared", "derecha")]}, 3.0, 0, primera=True)
+    pelota = next(e for e in d["elementos"] if e.get("nombre") == "pelota")
+    tele = [e for e in d["elementos"] if e.get("nombre") == "tele"]
+    assert len(tele) == 2 and tele[1].get("rota")                 # la tele queda con la pantalla rota
+    assert any(e.get("nombre") == "mesa" for e in d["elementos"])   # y está sobre una mesa
+    golpes = [t for t, s in sfx if s in ("vidrio", "golpe")]
+    assert len(golpes) >= 3 and golpes == sorted(golpes)
+    assert pelota["keyframes"][0]["t"] < tele[1]["desde"] < 3.0
+    lampara = [e for e in d["elementos"] if e.get("nombre") == "lampara"]
+    assert lampara[0]["x"] == 470                                  # la lámpara, al lado del sillón
+    Video.desde_dict({"escenas": [d]}).cuadro(50)
+
+
+def test_lo_que_cae_cae_de_su_lugar():
+    d, _ = ac.escena_accion({"fondo": "casa", "actores": [],
+                             "objetos": [_o("jarron", "cae_y_se_rompe", "derecha", soporte="estante")]}, 3.0, 0)
+    jarron = next(e for e in d["elementos"] if e.get("nombre") == "jarron")
+    assert jarron["keyframes"][0]["y"] == jarron["y"] < ac.Y_ESTANTE       # arranca en el estante
+    assert any(e.get("nombre") == "estante" for e in d["elementos"])
+
+
+def test_tito_es_el_locutor():
+    from clips_bot.animacion import tito
+
+    for pose in tito.POSES:
+        assert "<" in tito.tito_svg(pose, apertura=0.5, aguja=90)
+    assert "<" in tito.tito_cara_svg()
+    p, _ = ac.escena_locutor(2.0)
+    assert p["elementos"][0]["tipo"] == "tito"
+    v = Video.desde_dict({"escenas": [ac.escena_accion({"fondo": "casa", "actores": [_a("nene", "correr")]}, 1.0, 0)[0], p]})
+    assert ORO_EN(v.cuadro(45).a.fijo)                             # el reloj dorado de Tito, en la pausa
+
+
+def ORO_EN(svg: str) -> bool:
+    from clips_bot.animacion import tito
+
+    return tito.ORO in svg
+
+
+def test_viaje_en_el_tiempo_gira_cuenta_y_pasa_a_sepia():
+    a, _ = ac.escena_accion({"fondo": "casa", "actores": [_a("nene", "correr")]}, 1.0, 0)
+    v_, sfx = ac.escena_viaje(1.2, 2026, 1969)
+    v = Video.desde_dict({"escenas": [a, v_]})
+    medio = v.cuadro(30 + 18)
+    assert medio.tono > 0.2 and medio.a.camara[3] != 0             # gira y se va poniendo sepia
+    fin = v.cuadro(30 + 35)
+    assert fin.tono > 0.95 and ">1969<" in fin.a.fijo               # el contador llegó a 1969
+    assert sfx == [(0.0, "viaje")]
+    vuelta, _ = ac.escena_viaje(1.2, 1969, 2026)
+    assert vuelta["tono"] == [1.0, 0.0]
+
+
+def test_linea_de_tiempo_con_viaje_y_sepia():
+    d = guion()
+    segs = mk.segmentos(d)
+    inicios = [i * 3.0 for i in range(len(segs))]
+    datos, sfx = mk.linea_de_tiempo(d, inicios, inicios[-1] + 3.0, [], None, presente=2026)
+    tipos = [("viaje" if e.get("girar") else "pausa" if e.get("congela") else "accion", e.get("tono"))
+             for e in datos["escenas"]]
+    assert tipos[1][0] == "viaje" and tipos[1][1] == [0.0, 1.0]     # va a 1947 en la frase 2
+    assert tipos[2] == ("accion", 1.0)                              # la escena del pasado, en sepia
+    assert ("viaje", [1.0, 0.0]) in tipos                            # y vuelve al presente al final
+    assert tipos[-1] == ("accion", 0.0)
+    assert sum(1 for t, s in sfx if s == "viaje") == 2
     v = Video.desde_dict(datos)
-    assert len(v.escenas) == len(FRASES)
+    assert v.duracion == pytest.approx(inicios[-1] + 3.8, abs=0.01)
+
+
+def test_un_salto_chico_no_es_otro_viaje():
+    """Visto en la Pi con el Nerf: 1969 → 1970 hacía otro remolino de 1,25 s y pasaba por color."""
+    d = guion()
+    d["escenas"][4]["viaje_a_anio"] = 1950
+    segs = mk.segmentos(d)
+    inicios = [i * 3.0 for i in range(len(segs))]
+    datos, _ = mk.linea_de_tiempo(d, inicios, inicios[-1] + 3.0, [], None, presente=2026)
+    assert sum(1 for e in datos["escenas"] if e.get("girar")) == 2           # ida y vuelta, nada más
+    v, _ = ac.escena_viaje(1.2, 1947, 1890, presente=2026)
+    assert v["tono"] == [1.0, 1.0]                                           # de pasado a pasado: sepia
+
+
+def test_sepia():
+    import numpy as np
+
+    from clips_bot.animacion import render as rd
+
+    img = np.zeros((2, 2, 3), dtype=np.uint8)
+    img[..., 2] = 255                                              # azul puro
+    out = rd.sepia(img.copy(), 1.0)
+    assert out[0, 0, 0] > out[0, 0, 2]                              # pasa a marrón: más rojo que azul
+    assert (rd.sepia(img.copy(), 0.0) == img).all()
+    bgra = np.zeros((2, 2, 4), dtype=np.uint8)
+    bgra[..., 0] = 255                                             # azul puro en BGRA (cairo)
+    out = rd.sepia(bgra.copy(), 1.0, bgr=True)
+    assert out[0, 0, 2] > out[0, 0, 0]                              # R > B
+
+
+def test_pausa_del_locutor_congela_y_pone_gris():
+    a, _ = ac.escena_accion({"fondo": "casa", "actores": [_a("nene", "correr", "izquierda", "derecha")],
+                             "objetos": []}, 2.0, 0)
+    p, sfx = ac.escena_locutor(2.0)
+    v = Video.desde_dict({"escenas": [a, p]})
+    c = v.cuadro(90)                                    # 1 s adentro de la pausa
+    assert 'fill="#4a4f5c"' in c.a.fijo                 # la escena de atrás, en gris
+    assert c.a.frente == v._capa(v.escenas[0], 2.0 - 1e-3, 90, apertura=0.0).frente   # congelada
+    assert ("tac" in [s for _, s in sfx])
+    with pytest.raises(Exception):
+        Video.desde_dict({"escenas": [p]})              # una pausa necesita algo antes
+
+
+def test_linea_de_tiempo_con_locutor_y_sfx():
+    d = guion()
+    segs = mk.segmentos(d)
+    assert [t for t, _, _ in segs].count("locutor") == 1 and segs[3][0] == "locutor"
+    inicios = [i * 3.0 for i in range(len(segs))]
+    fin = inicios[-1] + 3.0
+    palabras = [Palabra(0.0, 0.4, "Otra"), Palabra(0.4, 0.8, "caja")]
+    datos, sfx = mk.linea_de_tiempo(d, inicios, fin, palabras, None)
+    v = Video.desde_dict(datos)
+    assert len(v.escenas) == len(segs) + 2                          # + ida y vuelta del viaje en el tiempo
+    assert sum(1 for e in v.escenas if e.congela and not e.girar) == 1   # la pausa de Tito
     assert v.duracion == pytest.approx(fin + 0.8, abs=0.01)
-    primera = datos["escenas"][0]["elementos"]
-    assert primera[0]["habla"] is True and any(e["tipo"] == "gancho" for e in primera)
-    assert all(e["elementos"][0]["nombre"] == "narrador" for e in datos["escenas"])
-    assert v.subtitulos and v.cuadro(5).encima   # el subtítulo de la base se dibuja
-    # el secundario "fundador" es el abuelo del elenco
-    assert any(e.get("nombre") == "abuelo" for e in datos["escenas"][0]["elementos"])
+    assert v.subtitulos and v.cuadro(5).encima
+    assert v.sub_y == mk.SUBTITULOS_Y and f"translate(540 {mk.SUBTITULOS_Y})" in v.cuadro(5).encima
+    assert 'opacity="0.42"' in v.cuadro(5).encima and v.sub_tam == mk.SUBTITULOS_TAM
+    # la banda de los subtítulos no pisa a los personajes: arranca debajo de donde pisan
+    assert mk.SUBTITULOS_Y - mk.SUBTITULOS_TAM * 1.45 / 2 > ac.PISO
+    assert sfx and all(0 <= t < v.duracion for t, _ in sfx) and sfx == sorted(sfx)
 
 
 def test_cortes_siguen_la_voz():
     assert mk.cortes([0.0, 2.0, 5.0], 8.0) == [1.88, 3.0, 3.92]
+
+
+def test_sfx_sintetizados_y_mezclados(tmp_path):
+    import wave
+
+    import numpy as np
+
+    for nombre in sfx_mod.SONIDOS:
+        x = sfx_mod.sonido(nombre)
+        assert 0.02 < len(x) / sfx_mod.SR < 1.5 and np.max(np.abs(x)) == pytest.approx(1.0)
+    base = tmp_path / "voz.wav"
+    with wave.open(str(base), "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(48000)
+        w.writeframes((np.ones(48000) * 30000).astype("<i2").tobytes())   # casi al tope: el limitador actúa
+    out = sfx_mod.mezclar(base, [(0.2, "vidrio"), (0.5, "golpe"), (5.0, "pop")], tmp_path / "f.wav", 2.0)
+    with wave.open(str(out)) as w:
+        assert w.getframerate() == 48000 and w.getnframes() == 96000
+        y = np.frombuffer(w.readframes(w.getnframes()), dtype="<i2")
+    assert np.max(np.abs(y)) <= 32767 * 0.96
 
 
 # ---- la escucha ------------------------------------------------------------------------------
@@ -358,7 +669,7 @@ def test_no_sube_a_ningun_lado():
 def test_mensaje_con_marca_angulo_y_puntaje():
     r = mk.Resultado(marca="Havanna", angulo="casi_quiebra", notas={c: 9 for c in mk.CRITERIOS},
                      promedio=9.0, titulo="T", descripcion="D", hashtags=mk.hashtags(marca()),
-                     frases=FRASES, video="x.mp4", duracion_s=38.2, motor_voz="gemini:Laomedeia",
+                     frases=mk.frases_de(guion()), video="x.mp4", duracion_s=38.2, motor_voz="gemini:Laomedeia",
                      render_s=150, costo_usd=0.08)
     t = mk.texto_mensaje(r, "🔧 Claude Code: ejemplo")
     assert "Havanna" in t and "casi quiebra" in t and "Puntaje 9" in t and "humor 9" in t

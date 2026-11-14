@@ -8,8 +8,8 @@ marca, como mucho, escrito en la fuente común del canal):
   2. candidatos que pasan la rotación (uno por marca) + un pedazo de su artículo de Wikipedia;
   3. Sonnet elige y puntúa (marca conocida, dato sorprendente, giro, humor: 1-10 cada uno); pasan
      los de promedio ≥ 8 que no tocan nada sensible. Si ninguno llega, ese día no sale y se avisa;
-  4. Sonnet escribe el guion (gancho → giro → final que paga el gancho, 30-45 s, con sarcasmo) y la
-     escena de cada frase; se valida como en Pequeña Historia (nombres, cifras y meses tienen que
+  4. Sonnet escribe el guion (gancho de acción → problema → idea → qué pasó → final sorpresa, con
+     sarcasmo), la ESCENA DE ACCIÓN de cada frase y 1-3 pausas de la mascota-locutor; se valida como en Pequeña Historia (nombres, cifras y meses tienen que
      estar en el artículo) y, si no pasa, se reintenta con los errores;
   5. voz (`efemerides.voz_efemeride`), Whisper para los tiempos reales, subtítulos de la base, la
      boca del narrador con la voz, música de `musica.py` baja, y el render de `render.py`;
@@ -31,9 +31,9 @@ from pathlib import Path
 
 import yaml
 
+from . import acciones as ac
 from . import escenas as esc
 from . import paleta as P
-from . import personajes as per
 
 log = logging.getLogger(__name__)
 
@@ -66,10 +66,10 @@ CRITERIOS = ("marca_conocida", "dato_sorprendente", "giro", "humor")
 PUNTAJE_MIN = 8.0
 DIAS_SIN_REPETIR_MARCA = 7
 
-PALABRAS_MIN, PALABRAS_MAX = 70, 108      # a ~2,3 palabras/s: 30-47 s (se piden 80-100)
+PALABRAS_MIN, PALABRAS_MAX = 75, 118     # frases + locutor, a ~2,5 palabras/s: 30-47 s
 FRASES_MIN, FRASES_MAX = 7, 12
-GANCHO_MAX_PALABRAS = 16
-MAX_S = 45.0
+GANCHO_MAX_PALABRAS = 8                   # el gancho dura menos de 3 s
+MAX_S = 48.0
 
 # Nunca humor sobre tragedias, muertes, accidentes ni temas sensibles (Santi). El modelo lo marca al
 # elegir y, además, el guion no puede nombrarlos.
@@ -82,27 +82,10 @@ _SENSIBLE = re.compile(
 _ARRANQUES_PROHIBIDOS = re.compile(r"^\s*(¿?\s*sab[ií]as|un d[ií]a como hoy|hoy te (cuento|voy)|"
                                    r"hola\b|bienvenid)", re.I)
 
-# Escenas: lo que puede pedir el guion (la base de animación + los props genéricos de marcas).
-FONDOS = ("cielo", "ciudad", "oficina", "globo", "fabrica", "tienda", "escenario")
-PROPS = tuple(sorted(esc.PROPS)) + ("ninguno",)
-GESTOS = tuple(per.GESTOS)
+# Escenas: lo que puede pedir el guion (la base de animación + lo del canal de marcas).
+FONDOS = ("casa", "taller", "fabrica", "tienda", "oficina", "ciudad", "escenario", "cielo", "globo")
+PROPS = tuple(sorted(n for n in esc.PROPS if n not in ("pedazo", "microfono")))
 TRANSICIONES = ("corte", "fundido", "zoom", "barrido")
-# Personajes secundarios por ROL, armados del elenco con cambios (nadie se parece a una persona
-# real ni a una mascota oficial: son siempre los mismos muñecos del canal).
-ROLES = {
-    "ninguno": None,
-    "fundador": ("abuelo", {}),
-    "inventor": ("abuelo", {"anteojos": True, "ropa": P.BLANCO, "sombrero": "ninguno",
-                            "peinado": "rulos"}),
-    "empresario": ("narrador", {"ropa": P.GRIS_OSCURO, "anteojos": False, "bigote": True,
-                                "sombrero": "galera", "color_sombrero": "#2b2b33"}),
-    "rival": ("narrador", {"ropa": P.ROJO, "peinado": "corto", "bigote": True, "anteojos": False,
-                           "pelo": P.PELO[3]}),
-    "cliente": ("vecina", {}),
-    "joven": ("pibe", {}),
-    "publicista": ("vecina", {"ropa": P.VIOLETA, "anteojos": True, "peinado": "largo"}),
-}
-COLORES_PROP = (P.ROJO, P.AZUL, P.VERDE, P.NARANJA, P.VIOLETA, P.TURQUESA, P.AMARILLO, P.ROSA)
 
 
 class SinCandidato(RuntimeError):
@@ -304,75 +287,144 @@ def elegir(cliente, cands: list[tuple[Marca, str, str]], minimo: float = PUNTAJE
 
 
 # ---- 5. guion ------------------------------------------------------------------------------------
+# Santi, 2026-11-14, viendo Nerf y Monopoly ("muy básicos y aburridos: dos personajes hablando no
+# engancha"). REGLAS para todos los videos del canal: (1) mostrar, no contar: cada frase es una escena
+# con acción; (2) la mascota-locutor aparece 1-3 veces, la escena se congela en gris y comenta; (3)
+# guion claro: toda empresa o persona se presenta en pocas palabras la primera vez, y en orden
+# problema → idea → qué pasó → final sorpresa; (4) movimiento: personajes que caminan, corren,
+# saltan; objetos que vuelan o se rompen; cámara y efectos de sonido.
 
 def _lista(xs) -> str:
     return ", ".join(xs)
 
 
-SISTEMA_GUION = f"""Escribís la voz en off de un video vertical ANIMADO de 30 a 45 segundos (80 a 100
-palabras en total) para un canal sobre el origen de las marcas. Castellano neutro latinoamericano con
-algo de rioplatense, informal, tuteo. TONO: sarcasmo y humor, como alguien que cuenta un chisme
-increíble. Un recurso que funciona: el engaño que se aclara enseguida ("La Starship estaba bajando y
-explotó… na, mentira: la atraparon con la torre. ¡Momento histórico!").
+PARTES = ("gancho", "problema", "idea", "que_paso", "giro", "final")
+# el orden que se exige: el giro va dentro de "qué pasó" (puede haber qué pasó después del giro)
+RANGO_PARTE = {"gancho": 0, "problema": 1, "idea": 2, "que_paso": 3, "giro": 3, "final": 4}
+# Lo que se puede romper en la cadena del gancho (cosas de una casa, una oficina o un negocio).
+ROMPIBLES = {"tele", "lampara", "cuadro", "jarron", "ventana", "botella", "lata", "caja", "trofeo", "celular"}
+CADENA_MIN, CADENA_MAX = 2, 4
+_PRESENTE = re.compile(r"\b(hoy|actualmente|en la actualidad|hoy en d[ií]a|ahora)\b", re.I)
+LOCUTOR_MIN, LOCUTOR_MAX = 1, 3
 
-ESTRUCTURA (obligatoria):
-1. La PRIMERA frase es el GANCHO: lo más sorprendente del ángulo, sin rodeos, máximo
-   {GANCHO_MAX_PALABRAS} palabras, sin año, sin "¿Sabías que…?", sin "Hoy te cuento", sin saludar.
-2. Después, la historia paso a paso, clara para un chico de 15 años.
-3. Un GIRO: la vuelta inesperada (`frase_giro`, el número de esa frase, desde 1).
-4. El FINAL que PAGA el gancho: responde la pregunta que abrió la primera frase, en la última o la
-   anteúltima frase (`frase_pago`). Puede cerrar con un remate sarcástico.
-`pregunta_gancho`: la pregunta que deja abierta el gancho.
+SISTEMA_GUION = f"""Escribís un video vertical ANIMADO de 35 a 45 segundos para un canal sobre el origen de las
+marcas. Castellano neutro latinoamericano con algo de rioplatense, informal, tuteo. TONO: sarcasmo y humor.
 
-REGLAS DE DATOS: todo nombre, cifra, año, mes y lugar tiene que estar en el TEXTO que te paso (de
-Wikipedia). Nada de tu memoria. Si un dato no está, no lo digas. Los chistes son comentarios, no
-datos inventados: nada de personajes, nombres o cifras de fantasía.
-NUNCA humor sobre muertes, accidentes, tragedias, guerras, enfermedades, violencia ni temas
-sensibles: si la historia pasa por ahí, contá otra parte. No te burles de nadie por su origen,
-cuerpo o país.
-NADA de logos: si el ángulo es el logo, se CUENTA su historia; en pantalla nunca se dibuja.
+El canal se llama "Así Nació". Su locutor y mascota es el ABUELO TITO: un inventor jubilado con
+antiparras de soldador, bigote blanco y un reloj de bolsillo dorado con el que viaja en el tiempo.
 
-ESCENAS: una por frase (cada frase es una escena). Para cada una:
+REGLA 1 — MOSTRAR, NO CONTAR. Cada frase de la voz en off es UNA escena donde PASA algo que muestra lo
+que dice la frase: personajes que caminan, corren, saltan, se caen, retan, martillan, tiran cosas;
+objetos que rebotan, vuelan, caen y se rompen. NADA de personajes parados hablando. La voz en off
+cuenta y la escena lo muestra.
+Ejemplo (Nerf): GANCHO = un nene tira una pelota adentro de su casa: rompe la tele, rebota, tira la
+lámpara y se cae un cuadro (efecto dominó) mientras la mamá lo reta. Después: el inventor pensando la
+solución (lamparita), martillando en su taller la pelota de espuma, y los chicos jugando adentro sin
+romper nada.
+
+REGLA 2 — TITO, EL LOCUTOR. Tito interrumpe 1 a 3 veces: la escena se congela en gris, él aparece al
+costado y comenta algo con humor o aclara un dato (`locutor`: después de qué frase y su texto, 5 a 20
+palabras). Es la misma voz que narra. No después de la última frase.
+
+REGLA 3 — GUION CLARO. No des nada por sabido: TODA empresa o persona se presenta en pocas palabras la
+PRIMERA vez que aparece ("Parker Brothers, la fábrica de juegos de mesa más grande de la época,…";
+"Reyn Guyer, un inventor de juegos de Minnesota,…"). Listalas en `entidades` con su presentación (las
+mismas palabras que dice la frase) y la frase donde aparecen por primera vez. Contá en orden, con causa
+y efecto: problema → idea → qué pasó → final sorpresa (cada frase dice su `parte`: {_lista(PARTES)}).
+
+REGLA 4 — ESCENAS CON SENTIDO. Cada objeto está donde estaría en la vida real (`soporte`): la lámpara
+de pie en el piso al lado del sillón, la tele sobre una mesa, el cuadro y la ventana en la pared, un
+jarrón en un estante, una botella sobre la mesa. NADA aparece de la nada ni cae del cielo: lo que cae,
+cae de su mesa o su estante; "aparece" y "crece" solo para íconos (pregunta, exclamación, lamparita de
+idea, gráfico, cartel, calendario); "llueve" solo billetes o monedas.
+
+REGLA 5 — DESTRUCCIÓN EN CADENA EN EL GANCHO. La escena 1 tiene una `cadena` de 2 a 4 cosas que se
+rompen o se caen una detrás de otra (tele → lámpara → cuadro), cada una en su lugar; exagerado y
+gracioso, pero que se entienda cada golpe. Un actor que "tira" la empieza.
+
+REGLA 6 — VIAJE EN EL TIEMPO. Cada vez que la historia va a otra época (ej. 1969), en ESA frase (o
+antes) marcá `viaje_a_anio` con el año: Tito levanta el reloj, la escena gira en remolino, el año
+cuenta hacia atrás y todo pasa a tono antiguo hasta que la historia vuelve al presente
+(`vuelve_al_presente` en la frase que habla de hoy). El gancho es en el presente (sin viaje). El año
+tiene que estar en el TEXTO.
+
+ESTRUCTURA:
+- La PRIMERA frase es el GANCHO: lo más sorprendente o divertido, máximo 8 palabras (dura menos de 3 s),
+  sin año, sin "¿Sabías que…?", sin saludar. Su escena es pura ACCIÓN.
+- El final paga el gancho (responde la pregunta que dejó abierta: `pregunta_gancho`).
+- 7 a 11 frases, 60 a 85 palabras en total en las frases; el locutor suma 15 a 35 más.
+
+DATOS: todo nombre, cifra, año, mes y lugar sale del TEXTO (Wikipedia). Nada de tu memoria. Los chistes
+son comentarios, no datos inventados. NUNCA humor sobre muertes, accidentes, tragedias, guerras,
+enfermedades ni temas sensibles. NADA de logos: el nombre de la marca puede aparecer como texto común.
+
+ESCENA de cada frase:
 - `fondo`: {_lista(FONDOS)}.
-- `personaje`: un secundario al lado del narrador ({_lista(ROLES)}). El narrador está siempre y es
-  el que habla.
-- `gesto` (del narrador) y `gesto_personaje`: {_lista(GESTOS)}.
-- `prop`: un objeto genérico dibujado ({_lista(PROPS)}). `texto_prop`: lo que dice su etiqueta o
-  cartel, máximo 12 letras (puede ser el nombre de la marca en letra común, un año, "$"); vacío si
-  no lleva.
-- `texto_pantalla`: 1 a 4 palabras GRANDES en pantalla que remarcan la frase (un año, una cifra, la
-  palabra clave, "NA, MENTIRA"); vacío si no hace falta (no en todas).
-- `transicion` para entrar a esa escena: {_lista(TRANSICIONES)} ("corte" para el remate).
-`gancho_pantalla`: el gancho escrito en la primera escena, máximo 7 palabras.
-`titulo`: para YouTube, menos de 70 caracteres, con gancho y el nombre de la marca.
-`descripcion`: 1 o 2 frases, sin hashtags ni links.
-`tono` de la música: alegre, epico, misterioso, curioso o emotivo."""
+- `actores` (1 a 3): `rol` ({_lista(ac.ROLES)}), `accion` ({_lista(ac.ACCIONES)}), `desde` y `hacia`
+  (izquierda, centro, derecha, afuera_izq, afuera_der; `hacia` "ninguno" si no se mueve de lugar) y
+  `cara` ({_lista(ac.CARAS)}).
+- `objetos` (0 a 3): `prop` ({_lista(PROPS)}), `efecto` ({_lista(ac.EFECTOS)}), `donde` (izquierda,
+  centro, derecha), `soporte` ({_lista(ac.SOPORTES)}) y `texto` (etiqueta, máx. 12 letras, o vacío).
+  Un "tirar" + un objeto que "vuela" o "rebota" sale de la mano; si además hay uno que "se_rompe",
+  lo que vuela le pega y lo rompe.
+- `cadena` (solo en el gancho, 2 a 4; vacía en las demás): las cosas que se rompen una tras otra, cada
+  una con `prop`, `soporte` y `donde`.
+- `viaje_a_anio` (0 si no) y `vuelve_al_presente` (true/false).
+- `camara`: {_lista(ac.CAMARAS)} (en los golpes la cámara se sacude sola).
+- `texto_pantalla`: 1 a 4 palabras grandes (un año, una cifra, "NA, MENTIRA") o vacío.
+- `transicion`: {_lista(TRANSICIONES)}.
+`titulo` (< 70 caracteres, con la marca), `descripcion` (1-2 frases, sin hashtags), `tono` de la música."""
 
+_ACTOR = {"type": "OBJECT", "properties": {
+    "rol": {"type": "STRING", "enum": list(ac.ROLES)},
+    "accion": {"type": "STRING", "enum": list(ac.ACCIONES)},
+    "desde": {"type": "STRING", "enum": list(ac.POS)},
+    "hacia": {"type": "STRING", "enum": list(ac.POS) + ["ninguno"]},
+    "cara": {"type": "STRING", "enum": list(ac.CARAS)}},
+    "required": ["rol", "accion", "desde", "hacia", "cara"]}
+_OBJETO = {"type": "OBJECT", "properties": {
+    "prop": {"type": "STRING", "enum": list(PROPS)},
+    "efecto": {"type": "STRING", "enum": list(ac.EFECTOS)},
+    "donde": {"type": "STRING", "enum": list(ac.LADOS)},
+    "soporte": {"type": "STRING", "enum": list(ac.SOPORTES)},
+    "texto": {"type": "STRING"}},
+    "required": ["prop", "efecto", "donde", "soporte", "texto"]}
+_CADENA = {"type": "OBJECT", "properties": {
+    "prop": {"type": "STRING", "enum": sorted(ROMPIBLES)},
+    "soporte": {"type": "STRING", "enum": list(ac.SOPORTES)},
+    "donde": {"type": "STRING", "enum": list(ac.LADOS)}},
+    "required": ["prop", "soporte", "donde"]}
 SCHEMA_GUION = {
     "type": "OBJECT",
     "properties": {
         "titulo": {"type": "STRING"}, "descripcion": {"type": "STRING"},
         "tono": {"type": "STRING", "enum": ["alegre", "epico", "misterioso", "curioso", "emotivo"]},
-        "pregunta_gancho": {"type": "STRING"}, "gancho_pantalla": {"type": "STRING"},
-        "frase_giro": {"type": "INTEGER"}, "frase_pago": {"type": "INTEGER"},
+        "pregunta_gancho": {"type": "STRING"},
         "escenas": {"type": "ARRAY", "items": {
             "type": "OBJECT",
             "properties": {
                 "frase": {"type": "STRING"},
+                "parte": {"type": "STRING", "enum": list(PARTES)},
                 "fondo": {"type": "STRING", "enum": list(FONDOS)},
-                "personaje": {"type": "STRING", "enum": list(ROLES)},
-                "gesto": {"type": "STRING", "enum": list(GESTOS)},
-                "gesto_personaje": {"type": "STRING", "enum": list(GESTOS)},
-                "prop": {"type": "STRING", "enum": list(PROPS)},
-                "texto_prop": {"type": "STRING"},
+                "actores": {"type": "ARRAY", "items": _ACTOR},
+                "objetos": {"type": "ARRAY", "items": _OBJETO},
+                "camara": {"type": "STRING", "enum": list(ac.CAMARAS)},
                 "texto_pantalla": {"type": "STRING"},
                 "transicion": {"type": "STRING", "enum": list(TRANSICIONES)},
+                "cadena": {"type": "ARRAY", "items": _CADENA},
+                "viaje_a_anio": {"type": "INTEGER"},
+                "vuelve_al_presente": {"type": "BOOLEAN"},
             },
-            "required": ["frase", "fondo", "personaje", "gesto", "gesto_personaje", "prop",
-                         "texto_prop", "texto_pantalla", "transicion"]}},
+            "required": ["frase", "parte", "fondo", "actores", "objetos", "camara", "texto_pantalla",
+                         "transicion", "cadena", "viaje_a_anio", "vuelve_al_presente"]}},
+        "locutor": {"type": "ARRAY", "items": {"type": "OBJECT", "properties": {
+            "despues_de_frase": {"type": "INTEGER"}, "texto": {"type": "STRING"}},
+            "required": ["despues_de_frase", "texto"]}},
+        "entidades": {"type": "ARRAY", "items": {"type": "OBJECT", "properties": {
+            "nombre": {"type": "STRING"}, "presentacion": {"type": "STRING"},
+            "frase": {"type": "INTEGER"}}, "required": ["nombre", "presentacion", "frase"]}},
     },
-    "required": ["titulo", "descripcion", "tono", "pregunta_gancho", "gancho_pantalla",
-                 "frase_giro", "frase_pago", "escenas"],
+    "required": ["titulo", "descripcion", "tono", "pregunta_gancho", "escenas", "locutor", "entidades"],
 }
 
 
@@ -380,10 +432,34 @@ def frases_de(d: dict) -> list[str]:
     return [str(e.get("frase") or "").strip() for e in d.get("escenas") or []]
 
 
+def locutor_de(d: dict) -> list[tuple[int, str]]:
+    """[(después de qué frase, desde 1; texto)], en orden."""
+    out = []
+    for x in d.get("locutor") or []:
+        try:
+            out.append((int(x.get("despues_de_frase")), str(x.get("texto") or "").strip()))
+        except (TypeError, ValueError):
+            continue
+    return sorted(out)
+
+
+def segmentos(d: dict) -> list[tuple[str, int, str]]:
+    """Lo que dice la voz, en orden: ("frase", índice, texto) y ("locutor", k, texto)."""
+    loc = locutor_de(d)
+    out = []
+    for i, f in enumerate(frases_de(d)):
+        out.append(("frase", i, f))
+        for k, (despues, texto) in enumerate(loc):
+            if despues == i + 1 and texto:
+                out.append(("locutor", k, texto))
+    return out
+
+
 def textos_en_pantalla(d: dict) -> list[str]:
-    out = [str(d.get("gancho_pantalla") or "")]
+    out = []
     for e in d.get("escenas") or []:
-        out += [str(e.get("texto_pantalla") or ""), str(e.get("texto_prop") or "")]
+        out.append(str(e.get("texto_pantalla") or ""))
+        out += [str(o.get("texto") or "") for o in e.get("objetos") or []]
     return [t for t in out if t.strip()]
 
 
@@ -396,8 +472,131 @@ def _sin_mayusculas(t: str) -> str:
     return t[:1].upper() + t[1:]
 
 
+def _norm(t: str) -> str:
+    import unicodedata
+
+    return "".join(c for c in unicodedata.normalize("NFKD", t.lower()) if not unicodedata.combining(c))
+
+
+def _palabras(t: str) -> list[str]:
+    return re.findall(r"[a-z0-9]+", _norm(t))
+
+
+_PREP_LUGAR = re.compile(r"\b(en|de|desde|hacia|del|a|por)\s+((?:[A-ZÁÉÍÓÚÑ][\w'’-]*\s*)+)$")
+
+
+def es_lugar(frase: str, nombre: str) -> bool:
+    """¿El nombre va después de "en", "de", "desde"…? ("un inventor de Minnesota", "en Estados Unidos"):
+    un lugar no hace falta presentarlo. Las empresas y las personas (que sí) suelen ser el sujeto."""
+    i = frase.find(nombre)
+    if i < 0:
+        return False
+    antes = frase[:i + len(nombre)]
+    return bool(_PREP_LUGAR.search(antes))
+
+
+def entidades_sin_presentar(d: dict, m: Marca) -> list[str]:
+    """Los nombres propios de las frases que no están en `entidades`, y las entidades cuya
+    presentación no se dice en la frase donde aparecen por primera vez (o en la siguiente)."""
+    from clips_bot.textos import nombres_propios
+
+    frases = frases_de(d)
+    ents = [x for x in d.get("entidades") or [] if str(x.get("nombre") or "").strip()]
+    errores = []
+    for x in ents:
+        nombre, pres = str(x["nombre"]), str(x.get("presentacion") or "")
+        i = next((k for k, f in enumerate(frases) if _norm(nombre) in _norm(f)), None)
+        if i is None:
+            continue
+        cerca = _norm(" ".join(frases[i:i + 2]))
+        clave = [w for w in _palabras(pres) if len(w) > 3 and w not in _palabras(nombre)]
+        if len(pres.split()) < 3 or not clave or sum(w in cerca for w in clave) < max(1, len(clave) // 2):
+            errores.append(f"{nombre}: presentalo en pocas palabras la primera vez que aparece (frase {i + 1})")
+    presentados = " ".join(_norm(str(x["nombre"])) for x in ents)
+    sueltos = []
+    for f in frases:
+        for n in nombres_propios(f):
+            if _norm(n) in presentados or _norm(n) in _norm(m.nombre) or n in sueltos or es_lugar(f, n):
+                continue
+            sueltos.append(n)
+    if sueltos:
+        errores.append("estos nombres no están en `entidades` (toda empresa o persona se presenta la "
+                       "primera vez): " + ", ".join(sueltos[:8]))
+    return errores
+
+
+def errores_escenas_con_sentido(escenas: list[dict]) -> list[str]:
+    """Reglas 4 y 5 de Santi: cada objeto en su lugar real, nada que aparezca o caiga de la nada, y la
+    destrucción en cadena del gancho (2 a 4 golpes)."""
+    errores = []
+    for i, e in enumerate(escenas, 1):
+        for o in e.get("objetos") or []:
+            prop, ef, sop = o.get("prop"), o.get("efecto"), o.get("soporte")
+            icono = prop in ac.ICONOS
+            if ef in ("aparece", "crece") and not icono:
+                errores.append(f"escena {i}: {prop} «{ef}» de la nada: solo los íconos aparecen; un objeto "
+                               "real ya está en su lugar (quieto en la mesa, en el estante…) o lo trae alguien")
+            if ef == "llueve" and prop not in ac.LLUEVEN:
+                errores.append(f"escena {i}: solo llueven billetes o monedas (no {prop})")
+            if ef == "cae_y_se_rompe" and sop not in ("mesa", "estante", "pared"):
+                errores.append(f"escena {i}: {prop} cae y se rompe, pero ¿de dónde? Ponelo sobre una mesa, un "
+                               "estante o colgado en la pared (`soporte`)")
+            if sop == "aire" and not icono and ef not in ("vuela", "llueve"):
+                errores.append(f"escena {i}: {prop} flotando en el aire: apoyalo (piso, mesa, estante, pared o mano)")
+            if prop in ac.SOPORTE_OBLIGADO and sop and sop not in ac.SOPORTE_OBLIGADO[prop]:
+                errores.append(f"escena {i}: {prop} va en {' o '.join(sorted(ac.SOPORTE_OBLIGADO[prop]))}, no en {sop}")
+        cadena = e.get("cadena") or []
+        if i == 1 and not CADENA_MIN <= len(cadena) <= CADENA_MAX:
+            errores.append(f"el gancho necesita una destrucción en cadena (`cadena`) de {CADENA_MIN} a "
+                           f"{CADENA_MAX} cosas que se rompen una tras otra (tiene {len(cadena)})")
+        if len(cadena) > CADENA_MAX:
+            errores.append(f"escena {i}: la cadena va de {CADENA_MAX} cosas como mucho (que se entienda cada golpe)")
+        for c in cadena:
+            if c.get("prop") not in ROMPIBLES:
+                errores.append(f"escena {i}: {c.get('prop')!r} no se puede romper en la cadena")
+            elif c.get("prop") in ac.SOPORTE_OBLIGADO and c.get("soporte") not in ac.SOPORTE_OBLIGADO[c["prop"]]:
+                errores.append(f"escena {i}: en la cadena, {c['prop']} va en "
+                               f"{' o '.join(sorted(ac.SOPORTE_OBLIGADO[c['prop']]))}")
+        if cadena and len({(c.get("soporte"), c.get("donde")) for c in cadena}) < len(cadena):
+            errores.append(f"escena {i}: dos cosas de la cadena en el mismo lugar: repartilas (izquierda, centro, derecha)")
+    return errores
+
+
+def errores_viajes(d: dict, presente: int | None = None) -> list[str]:
+    """Regla 6: cada vez que la historia cambia de época hay un viaje (Tito, el reloj, el año contando).
+    Una frase que nombra un año del pasado tiene que estar en el pasado (un viaje en ella o antes); una
+    que habla de hoy, en el presente (vuelve_al_presente en ella o antes)."""
+    from datetime import date as _date
+
+    presente = presente or _date.today().year
+    errores, pasado = [], False
+    for i, e in enumerate(d.get("escenas") or [], 1):
+        anio = e.get("viaje_a_anio") or 0
+        vuelve = bool(e.get("vuelve_al_presente"))
+        if anio and not (1500 <= int(anio) < presente):
+            errores.append(f"escena {i}: viaje_a_anio {anio} no es un año del pasado")
+            anio = 0
+        if i == 1 and anio:
+            errores.append("el gancho es en el presente: el viaje al pasado va después")
+        if vuelve and not pasado and not anio:
+            errores.append(f"escena {i}: vuelve_al_presente sin haber viajado al pasado")
+        if vuelve:
+            pasado = False
+        if anio:
+            pasado = True
+        frase = str(e.get("frase") or "")
+        anios = [int(x) for x in re.findall(r"\b(1[5-9]\d\d|20\d\d)\b", frase) if int(x) < presente - 1]
+        if anios and not pasado and i > 1:
+            errores.append(f"escena {i} habla de {anios[0]}: marcá el viaje al pasado (`viaje_a_anio`) en esa "
+                           "frase o antes")
+        if pasado and _PRESENTE.search(frase) and not anios:
+            errores.append(f"escena {i} habla de hoy: marcá `vuelve_al_presente` en esa frase")
+    return errores
+
+
 def validar_guion(d: dict, m: Marca, fuente: str) -> list[str]:
-    """Los errores del guion (vacío = sirve). Los datos, contra el artículo, como Pequeña Historia."""
+    """Los errores del guion (vacío = sirve): datos contra el artículo (como Pequeña Historia),
+    estructura, escenas con acción, locutor y presentación de cada empresa o persona."""
     from clips_bot.efemerides import no_respaldados
 
     errores = []
@@ -408,57 +607,91 @@ def validar_guion(d: dict, m: Marca, fuente: str) -> list[str]:
         errores.append(f"van {FRASES_MIN} a {FRASES_MAX} frases (escenas), hay {n}")
     if any(not f for f in frases):
         errores.append("hay una escena sin frase")
-    palabras = sum(len(f.split()) for f in frases)
-    if not PALABRAS_MIN <= palabras <= PALABRAS_MAX:
-        errores.append(f"el guion tiene {palabras} palabras: tienen que ser entre 80 y 100 "
-                       f"({'sobran' if palabras > PALABRAS_MAX else 'faltan'} "
-                       f"{abs(palabras - (PALABRAS_MAX if palabras > PALABRAS_MAX else PALABRAS_MIN))})")
+    loc = locutor_de(d)
+    p_frases = sum(len(f.split()) for f in frases)
+    p_loc = sum(len(t.split()) for _, t in loc)
+    if not PALABRAS_MIN <= p_frases + p_loc <= PALABRAS_MAX:
+        errores.append(f"entre frases ({p_frases}) y locutor ({p_loc}) son {p_frases + p_loc} palabras: "
+                       f"tienen que ser entre {PALABRAS_MIN} y {PALABRAS_MAX}")
     if frases:
         g = frases[0]
         if len(g.split()) > GANCHO_MAX_PALABRAS:
             errores.append(f"el gancho (primera frase) tiene {len(g.split())} palabras: máximo "
-                           f"{GANCHO_MAX_PALABRAS}")
+                           f"{GANCHO_MAX_PALABRAS} (tiene que durar menos de 3 segundos)")
         if re.search(r"\b1[5-9]\d\d\b|\b20\d\d\b", g):
             errores.append("el gancho no lleva año: el año va después")
         if _ARRANQUES_PROHIBIDOS.search(g):
             errores.append("el gancho arranca con una fórmula gastada (¿Sabías…?, Hoy te cuento…, hola): "
-                           "arrancá con el dato")
+                           "arrancá con la acción")
+    if escenas:
+        primera = escenas[0]
+        if not primera.get("cadena") and \
+                not any(a.get("accion") in ac.MOVIMIENTO for a in primera.get("actores") or []) and \
+                not any(o.get("efecto") in ac.DINAMICOS for o in primera.get("objetos") or []):
+            errores.append("el gancho (escena 1) tiene que ser ACCIÓN: alguien que corre, tira, se cae, "
+                           "o algo que vuela o se rompe; no alguien hablando")
+    # Mostrar, no contar: ninguna escena estática.
+    estaticas = [str(i) for i, e in enumerate(escenas, 1) if not ac.es_dinamica(e)]
+    if estaticas:
+        errores.append(f"escenas estáticas (solo personajes parados): {', '.join(estaticas)}. Cada frase "
+                       "tiene que MOSTRAR lo que dice con acción (moverse, tirar, romper, martillar…)")
+    # Orden: problema → idea → qué pasó → final.
+    partes = [e.get("parte") for e in escenas]
+    if partes:
+        if partes[0] != "gancho":
+            errores.append("la primera frase es la parte `gancho`")
+        orden = [RANGO_PARTE.get(p, -1) for p in partes]
+        if any(b < a for a, b in zip(orden, orden[1:])):
+            errores.append("las partes van en orden: gancho → problema → idea → que_paso (con el giro adentro) → final "
+                           f"(vino: {' → '.join(str(p) for p in partes)})")
+        for falta in ("problema", "idea", "que_paso", "final"):
+            if falta not in partes:
+                errores.append(f"falta la parte `{falta}` (problema → idea → qué pasó → final sorpresa)")
+        if partes[-1] != "final":
+            errores.append("la última frase es el final sorpresa que paga el gancho")
     if not str(d.get("pregunta_gancho") or "").strip():
         errores.append("falta `pregunta_gancho`")
-    giro, pago = d.get("frase_giro"), d.get("frase_pago")
-    if not isinstance(giro, int) or not isinstance(pago, int):
-        errores.append("faltan `frase_giro` y `frase_pago` (el número de cada frase, desde 1)")
-    elif n:
-        if not 2 <= giro < pago:
-            errores.append(f"el giro (frase {giro}) va después del gancho y antes del final que paga ({pago})")
-        if pago < n - 1 or pago > n:
-            errores.append(f"el final que paga el gancho va en la última o la anteúltima frase (está en la {pago})")
-    gp = str(d.get("gancho_pantalla") or "")
-    if not gp.strip() or len(gp.split()) > 7:
-        errores.append("`gancho_pantalla`: de 1 a 7 palabras")
+    errores += errores_escenas_con_sentido(escenas)
+    errores += errores_viajes(d)
+    # El locutor (Tito).
+    if not LOCUTOR_MIN <= len(loc) <= LOCUTOR_MAX:
+        errores.append(f"el locutor interrumpe {LOCUTOR_MIN} a {LOCUTOR_MAX} veces (hay {len(loc)})")
+    for despues, texto in loc:
+        if not 1 <= despues < n:
+            errores.append(f"locutor después de la frase {despues}: va entre la 1 y la {n - 1}")
+        if not 4 <= len(texto.split()) <= 22:
+            errores.append(f"el comentario del locutor «{texto[:40]}» va de 5 a 20 palabras")
+    if len({x for x, _ in loc}) != len(loc):
+        errores.append("dos comentarios del locutor en el mismo lugar")
     for i, e in enumerate(escenas, 1):
         if len(str(e.get("texto_pantalla") or "").split()) > 4:
             errores.append(f"escena {i}: `texto_pantalla` de 4 palabras como mucho")
-        if len(str(e.get("texto_prop") or "")) > 12:
-            errores.append(f"escena {i}: `texto_prop` de 12 letras como mucho")
         if e.get("fondo") not in FONDOS:
             errores.append(f"escena {i}: fondo {e.get('fondo')!r} no existe")
-        if e.get("prop") not in PROPS:
-            errores.append(f"escena {i}: prop {e.get('prop')!r} no existe")
-        if e.get("personaje") not in ROLES:
-            errores.append(f"escena {i}: personaje {e.get('personaje')!r} no existe")
-        for k in ("gesto", "gesto_personaje"):
-            if e.get(k) not in GESTOS:
-                errores.append(f"escena {i}: {k} {e.get(k)!r} no existe")
+        actores, objetos = e.get("actores") or [], e.get("objetos") or []
+        if len(actores) > 3 or len(objetos) > 3:
+            errores.append(f"escena {i}: 3 actores y 3 objetos como mucho")
+        for a in actores:
+            if a.get("rol") not in ac.ROLES or a.get("accion") not in ac.ACCIONES:
+                errores.append(f"escena {i}: actor {a.get('rol')!r}/{a.get('accion')!r} no existe")
+        for o in objetos:
+            if o.get("prop") not in PROPS or o.get("efecto") not in ac.EFECTOS:
+                errores.append(f"escena {i}: objeto {o.get('prop')!r}/{o.get('efecto')!r} no existe")
+            if len(str(o.get("texto") or "")) > 12:
+                errores.append(f"escena {i}: el texto de un objeto va de 12 letras como mucho")
     titulo = str(d.get("titulo") or "")
     if not titulo.strip() or len(titulo) > 70:
         errores.append("`titulo`: entre 1 y 70 caracteres")
-    todo = " ".join(frases + [titulo, str(d.get("descripcion") or "")] + textos_en_pantalla(d))
+    hablado = frases + [t for _, t in loc]
+    todo = " ".join(hablado + [titulo, str(d.get("descripcion") or "")] + textos_en_pantalla(d))
     sens = sorted({x.group(0).lower() for x in _SENSIBLE.finditer(todo)})
     if sens:
         errores.append(f"nada de temas sensibles (aparece: {', '.join(sens)}): contá otra parte de la historia")
+    errores += entidades_sin_presentar(d, m)
     base = f"{fuente}\n{m.nombre} {m.pais}"
-    texto = " ".join(frases + [titulo] + [_sin_mayusculas(t) + "." for t in textos_en_pantalla(d)])
+    anios = [str(e.get("viaje_a_anio")) for e in escenas if isinstance(e.get("viaje_a_anio"), int)
+             and e.get("viaje_a_anio") > 0]
+    texto = " ".join(hablado + [titulo] + [_sin_mayusculas(t) + "." for t in textos_en_pantalla(d)] + anios)
     faltan = no_respaldados(texto, base)
     if faltan:
         errores.append("esto no está en el artículo de Wikipedia (sacalo o usá lo que dice el texto): "
@@ -466,9 +699,78 @@ def validar_guion(d: dict, m: Marca, fuente: str) -> list[str]:
     return errores
 
 
-def escribir_guion(cliente, e: Elegido, fuente: str, reintentos: int = 3, avisar=log.info) -> dict:
-    """El guion validado (dict del schema). Si no valida, reintenta con los errores; si nunca valida,
-    GuionInvalido."""
+# Chequeo de calidad con Haiku (barato): lo que el código no puede ver.
+SISTEMA_CALIDAD = """Revisás el guion de un video animado corto para un público que NO sabe nada del tema.
+Te paso cada frase (voz en off) con lo que se VE en su escena, y los comentarios del locutor.
+Marcá SOLO problemas reales:
+- `sin_presentar`: empresas, personas o cosas (no la marca del video) que aparecen sin explicar qué o
+  quién son en pocas palabras la primera vez (ej. "Parker Brothers" a secas: no se sabe que es una
+  fábrica de juegos).
+- `confuso`: saltos que no se entienden (falta la causa o el efecto, un "eso" que no se sabe qué es,
+  algo que pasa sin que se haya contado el problema o la idea).
+- `no_muestra`: frases cuya escena no muestra lo que dice la frase (ej. la frase habla de una fábrica
+  y la escena es alguien saltando en la calle), o que son solo gente parada.
+- `sin_sentido`: objetos en lugares absurdos (una lámpara en el medio de la calle, una tele en el piso
+  de una fábrica) o cosas que aparecen o caen de la nada. OJO: los ÍCONOS de dibujo animado (la
+  lamparita de una idea arriba de la cabeza, un signo de pregunta, un gráfico, un cartel, un
+  calendario) van en el aire a propósito, y la "lluvia" de billetes o monedas es una metáfora de
+  "ganaron mucha plata": eso NO es un problema.
+Si está bien, listas vacías."""
+
+SCHEMA_CALIDAD = {"type": "OBJECT", "properties": {
+    "sin_presentar": {"type": "ARRAY", "items": {"type": "STRING"}},
+    "confuso": {"type": "ARRAY", "items": {"type": "STRING"}},
+    "no_muestra": {"type": "ARRAY", "items": {"type": "STRING"}},
+    "sin_sentido": {"type": "ARRAY", "items": {"type": "STRING"}}},
+    "required": ["sin_presentar", "confuso", "no_muestra", "sin_sentido"]}
+
+
+def describir(d: dict) -> str:
+    lineas = []
+    loc = dict(locutor_de(d))
+    for i, e in enumerate(d.get("escenas") or [], 1):
+        actores = "; ".join(f"{a.get('rol')} {a.get('accion')}" + (
+            f" hacia {a.get('hacia')}" if a.get("hacia") not in (None, "ninguno") else "")
+            for a in e.get("actores") or [])
+        objetos = "; ".join(f"{o.get('prop')} ({o.get('soporte') or '?'}) {o.get('efecto')}"
+                            for o in e.get("objetos") or [])
+        cadena = " → ".join(f"{c.get('prop')} ({c.get('soporte')})" for c in e.get("cadena") or [])
+        viaje = (f" [VIAJE a {e['viaje_a_anio']}]" if e.get("viaje_a_anio") else "") + \
+            (" [VUELVE AL PRESENTE]" if e.get("vuelve_al_presente") else "")
+        lineas.append(f"{i}. «{e.get('frase')}»{viaje} — SE VE: {e.get('fondo')}; {actores or 'nadie'}; "
+                      f"{objetos or 'sin objetos'}" + (f"; se rompen en cadena: {cadena}" if cadena else ""))
+        if i in loc:
+            lineas.append(f"   (PAUSA, Tito: «{loc[i]}»)")
+    return "\n".join(lineas)
+
+
+def chequear_calidad(cliente, d: dict, m: Marca) -> list[str]:
+    """Errores de claridad y de "mostrar, no contar" según Haiku (vacío = bien o no se pudo chequear)."""
+    if cliente is None:
+        return []
+    try:
+        r = json.loads(cliente.json(SISTEMA_CALIDAD, f"MARCA DEL VIDEO: {m.nombre}\n\n{describir(d)}",
+                                    SCHEMA_CALIDAD, 0.2))
+    except Exception as e:     # el chequeo es una ayuda: si Haiku no responde, sigue
+        log.warning("chequeo de calidad con Haiku: %s", e)
+        return []
+    errores = []
+    if r.get("sin_presentar"):
+        errores.append("presentá en pocas palabras, la primera vez que aparecen: " + "; ".join(r["sin_presentar"][:5]))
+    if r.get("confuso"):
+        errores.append("no se entiende (contalo con causa y efecto): " + "; ".join(r["confuso"][:4]))
+    if r.get("no_muestra"):
+        errores.append("la escena no muestra lo que dice la frase: " + "; ".join(r["no_muestra"][:4]))
+    if r.get("sin_sentido"):
+        errores.append("escena sin sentido (cada cosa en su lugar real, nada de la nada): "
+                       + "; ".join(r["sin_sentido"][:4]))
+    return errores
+
+
+def escribir_guion(cliente, e: Elegido, fuente: str, reintentos: int = 5, avisar=log.info,
+                   revisor=None) -> dict:
+    """El guion validado (dict del schema). Primero el chequeo del código; si pasa, el de Haiku
+    (`revisor`). Si no valida, reintenta con los errores; si nunca valida, GuionInvalido."""
     pedido = (f"MARCA: {e.marca.nombre} ({e.marca.pais})\nÁNGULO: {e.angulo} — {ANGULOS[e.angulo]}\n"
               f"Dato para el gancho (sugerido): {e.dato}\n\nTEXTO (Wikipedia; los datos salen SOLO de "
               f"acá):\n{fuente[:20000]}")
@@ -477,9 +779,11 @@ def escribir_guion(cliente, e: Elegido, fuente: str, reintentos: int = 3, avisar
         d = json.loads(cliente.json(SISTEMA_GUION, pedido + correccion, SCHEMA_GUION, 0.9))
         ultimo = validar_guion(d, e.marca, fuente)
         if not ultimo:
+            ultimo = chequear_calidad(revisor, d, e.marca)
+        if not ultimo:
             return d
-        avisar(f"guion de {e.marca.nombre} ({e.angulo}), intento {intento + 1}: {'; '.join(ultimo)[:300]}")
-        correccion = ("\n\nTU GUION ANTERIOR:\n" + "\n".join(frases_de(d)) +
+        avisar(f"guion de {e.marca.nombre} ({e.angulo}), intento {intento + 1}: {'; '.join(ultimo)[:400]}")
+        correccion = ("\n\nTU GUION ANTERIOR:\n" + describir(d) +
                       "\n\nNO SIRVIÓ POR ESTO (corregilo y devolvé el guion entero):\n- " + "\n- ".join(ultimo))
     raise GuionInvalido(f"{e.marca.nombre} ({e.angulo}): {'; '.join(ultimo)[:400]}")
 
@@ -492,69 +796,64 @@ def hashtags(m: Marca) -> list[str]:
 # ---- 6. escenas → línea de tiempo ------------------------------------------------------------
 
 def cortes(inicios: list[float], fin: float, cola_s: float = 0.8) -> list[float]:
-    """La duración de cada escena: de un poquito antes de su frase a un poquito antes de la
-    siguiente (la imagen cambia justo antes de que se diga), la última hasta `fin` + `cola_s`."""
+    """La duración de cada tramo: de un poquito antes de lo que se dice a un poquito antes de lo
+    siguiente (la imagen cambia justo antes de que se diga), el último hasta `fin` + `cola_s`."""
     arranques = [0.0] + [max(0.0, t - 0.12) for t in inicios[1:]]
     finales = arranques[1:] + [fin + cola_s]
     return [round(max(0.4, b - a), 3) for a, b in zip(arranques, finales)]
 
 
-def escena(e: dict, i: int, dur: float, primera: bool, gancho_pantalla: str) -> dict:
-    """Una escena del guion → el dict de `timeline.Escena`."""
-    rol = ROLES.get(e.get("personaje") or "ninguno")
-    prop = e.get("prop") if e.get("prop") in esc.PROPS else None
-    hay_lado = rol is not None or prop is not None
-    gesto = e.get("gesto") if e.get("gesto") in per.GESTOS else "explicar"
-    otro = "senalar" if gesto == "explicar" else "explicar"
-    narrador = {"tipo": "personaje", "nombre": "narrador", "x": 290 if hay_lado else 540,
-                "y": 1800, "escala": 0.95 if hay_lado else 1.1, "habla": True,
-                "gestos": [{"t": 0, "gesto": gesto}, {"t": round(dur * 0.6, 2), "gesto": otro}]}
-    if primera:
-        narrador["entrada"] = "abajo"
-    elementos = [narrador]
-    if rol is not None:
-        nombre, cambios = rol
-        elementos.append({"tipo": "personaje", "nombre": nombre, "cambios": cambios, "x": 820,
-                          "y": 1820, "escala": 0.85, "entrada": "derecha", "desde": 0.15,
-                          "keyframes": [{"t": 0, "mirada": -1}],
-                          "gestos": [{"t": 0.5, "gesto": e.get("gesto_personaje") or "reposo"}]})
-        narrador["keyframes"] = [{"t": 0, "mirada": 1}]
-    if prop is not None:
-        x, y, s = (760, 900, 1.0) if rol is not None else (770, 1040, 1.25)
-        el = {"tipo": "prop", "nombre": prop, "x": x, "y": y, "escala": s, "entrada": "rebote",
-              "desde": 0.3, "color": COLORES_PROP[i % len(COLORES_PROP)],
-              "keyframes": [{"t": 0.9, "rotacion": 0}, {"t": 0.9 + dur * 0.4, "rotacion": 5},
-                            {"t": 0.9 + dur * 0.8, "rotacion": -4}]}
-        if str(e.get("texto_prop") or "").strip():
-            el["texto"] = str(e["texto_prop"]).strip()[:12]
-        elementos.append(el)
-    texto = gancho_pantalla if primera else str(e.get("texto_pantalla") or "").strip()
-    if texto:
-        elementos.append({"tipo": "gancho", "texto": texto, "y": 380 if primera else 400,
-                          "modo": "palabras" if primera else "rebote", "tam": 96 if primera else 110,
-                          "desde": 0.0 if primera else 0.25})
-    tr = e.get("transicion") if e.get("transicion") in TRANSICIONES else "fundido"
-    z0, z1 = (1.0, 1.07) if i % 2 == 0 else (1.07, 1.0)
-    fondo = e.get("fondo") if e.get("fondo") in esc.FONDOS else "ciudad"
-    return {"duracion": dur, "fondo": {"tipo": fondo, "semilla": i + 1},
-            "transicion": {"tipo": "corte" if primera else tr, "duracion": 0.4},
-            "camara": [{"t": 0, "zoom": z0}, {"t": dur, "zoom": z1, "easing": "suave"}],
-            "elementos": elementos}
+def linea_de_tiempo(d: dict, inicios: list[float], fin: float, palabras: list,
+                    voz: Path | None, presente: int | None = None) -> tuple[dict, list[tuple[float, str]]]:
+    """El guion + los tiempos reales de la voz (un inicio por SEGMENTO: frases y comentarios de Tito,
+    en orden) → (dict de `timeline.Video`, SFX con su segundo global).
 
+    Los viajes en el tiempo se meten al principio de la frase que los marca (le sacan ~1,25 s a su
+    escena: la voz sigue hablando mientras el año cuenta); las escenas del pasado van en sepia."""
+    from datetime import date as _date
 
-def linea_de_tiempo(d: dict, inicios: list[float], fin: float, palabras: list, voz: Path | None) -> dict:
-    """El guion + los tiempos reales de la voz → el dict de `timeline.Video`."""
+    presente = presente or _date.today().year
+    segs = segmentos(d)
     escenas_d = d.get("escenas") or []
     durs = cortes(inicios, fin)
-    out = {"fps": P.FPS,
-           "escenas": [escena(e, i, dur, i == 0, str(d.get("gancho_pantalla") or ""))
-                       for i, (e, dur) in enumerate(zip(escenas_d, durs))]}
+    escenas, sfx, t = [], [], 0.0
+    anio_actual, pasado = presente, False
+    for (tipo, k, _), dur in zip(segs, durs):
+        if tipo == "locutor":
+            esc_d, fx = ac.escena_locutor(dur, k)
+            escenas.append(esc_d)
+            sfx += [(round(t + x, 3), s) for x, s in fx]
+            t += dur
+            continue
+        e = escenas_d[k]
+        viaje_a = int(e.get("viaje_a_anio") or 0)
+        destino = None
+        if viaje_a and k > 0 and viaje_a < presente and abs(viaje_a - anio_actual) >= SALTO_MIN:
+            destino = viaje_a
+        elif e.get("vuelve_al_presente") and pasado:
+            destino = presente
+        if destino is not None and escenas:
+            dv = min(ac.VIAJE_S, max(0.8, dur - 1.0))
+            esc_v, fx = ac.escena_viaje(dv, anio_actual, destino, presente)
+            escenas.append(esc_v)
+            sfx += [(round(t + x, 3), s) for x, s in fx]
+            t += dv
+            dur = round(dur - dv, 3)
+            anio_actual, pasado = destino, destino < presente
+        esc_d, fx = ac.escena_accion(e, dur, k, primera=(k == 0), tono=1.0 if pasado else 0.0)
+        if destino is not None:
+            esc_d["transicion"] = {"tipo": "zoom", "duracion": 0.25}
+        escenas.append(esc_d)
+        sfx += [(round(t + x, 3), s) for x, s in fx]
+        t += dur
+    out = {"fps": P.FPS, "escenas": escenas, "subtitulos_y": SUBTITULOS_Y, "subtitulos_tam": SUBTITULOS_TAM,
+           "subtitulos_banda": True}
     if voz is not None:
         out["audio"] = str(voz)
     if palabras:
         out["subtitulos"] = [{"palabras": [{"texto": p.texto, "inicio": round(p.inicio, 3),
                                             "fin": round(p.fin, 3)} for p in palabras]}]
-    return out
+    return out, sorted(sfx)
 
 
 # ---- 7. el video entero -----------------------------------------------------------------------
@@ -600,8 +899,16 @@ def ultima_fila_uso(conn) -> int:
 
 
 def proponer(conn, cliente, wiki, hoy: date, catalogo: list[Marca] | None = None, n: int = 8,
-             minimo: float = PUNTAJE_MIN, max_intentos: int = 3, avisar=log.info) -> tuple[Elegido, dict, str]:
-    """(elegido, guion validado, fuente). SinCandidato si ninguno llega al puntaje o ningún guion valida."""
+             minimo: float = PUNTAJE_MIN, max_intentos: int = 3, avisar=log.info,
+             revisor=None, forzar: Elegido | None = None) -> tuple[Elegido, dict, str]:
+    """(elegido, guion validado, fuente). SinCandidato si ninguno llega al puntaje o ningún guion valida.
+    `forzar`: una marca y ángulo elegidos a mano (para rehacer un ejemplo): sin rotación ni puntaje."""
+    if forzar is not None:
+        fuente = fuente_de(wiki, forzar.marca)
+        try:
+            return forzar, escribir_guion(cliente, forzar, fuente, avisar=avisar, revisor=revisor), fuente
+        except GuionInvalido as err:
+            raise SinCandidato(f"el guion no pasó la validación: {err}") from err
     catalogo = catalogo if catalogo is not None else cargar_catalogo()
     cands = candidatos(conn, catalogo, hoy, n)
     if not cands:
@@ -621,21 +928,31 @@ def proponer(conn, cliente, wiki, hoy: date, catalogo: list[Marca] | None = None
     for e in elegidos[:max_intentos]:
         fuente = fuente_de(wiki, e.marca)
         try:
-            return e, escribir_guion(cliente, e, fuente, avisar=avisar), fuente
+            return e, escribir_guion(cliente, e, fuente, avisar=avisar, revisor=revisor), fuente
         except GuionInvalido as err:
             errores.append(str(err))
     raise SinCandidato("ningún guion pasó la validación: " + " | ".join(errores)[:600])
 
 
+VOLUMEN_SFX = 0.32
+# Subtítulos (Santi, 2026-11-14: "tapan mucho la escena"): más chicos, en la franja de abajo, con una
+# banda semitransparente angosta; los personajes pisan en ac.PISO (1640), así que la banda no los tapa.
+SUBTITULOS_Y = 1782
+SALTO_MIN = 10       # un "viaje" de menos de 10 años (1969 → 1970) no es cambio de época: no se hace
+SUBTITULOS_TAM = 60
+
+
 def armar_video(conn, settings, carpeta: Path, cliente=None, wiki=None, hoy: date | None = None,
                 avisar=log.info, procesos: int = 2, catalogo: list[Marca] | None = None,
-                elegido: tuple | None = None) -> Resultado:
-    """De punta a punta: elegir → guion → voz → Whisper → animación → mp4. No sube nada a ningún lado."""
+                forzar: Elegido | None = None, revisor=None, guion: dict | None = None) -> Resultado:
+    """De punta a punta: elegir → guion (con el chequeo de Haiku) → voz → Whisper → escenas de acción +
+    pausas del locutor → SFX → mp4. No sube nada a ningún lado."""
     from clips_bot import claude, musica, narrar
     from clips_bot import efemerides as ef
     from clips_bot.config import ROOT
 
     from . import render as rd
+    from . import sfx as efectos
     from .timeline import Video
 
     hoy = hoy or date.today()
@@ -648,32 +965,42 @@ def armar_video(conn, settings, carpeta: Path, cliente=None, wiki=None, hoy: dat
     cliente = cliente or claude.cliente(cfg.modelo_texto)
     if cliente is None:
         raise SinCandidato("sin ANTHROPIC_API_KEY: el texto de este canal va con Claude")
+    revisor = revisor or claude.cliente(claude.HAIKU)
     wiki = wiki or ef.Wiki()
     t0 = time.time()
-    e, d, fuente = elegido or proponer(conn, cliente, wiki, hoy, catalogo, cfg.candidatos,
-                                       cfg.puntaje_min, cfg.max_intentos, avisar)
+    if guion is not None and forzar is not None:   # rearmar un guion ya validado (sin gastar Claude)
+        e, d = forzar, guion
+    else:
+        e, d, _ = proponer(conn, cliente, wiki, hoy, catalogo, cfg.candidatos, cfg.puntaje_min,
+                           cfg.max_intentos, avisar, revisor=revisor, forzar=forzar)
     tiempos["guion_s"] = round(time.time() - t0, 1)
     (carpeta / "guion.json").write_text(json.dumps({"marca": e.marca.nombre, "angulo": e.angulo,
                                                     "notas": e.notas, "guion": d}, ensure_ascii=False,
                                                    indent=1), encoding="utf-8")
-    frases = frases_de(d)
+    segs = segmentos(d)
+    hablado = [t for _, _, t in segs]
     # Voz: la misma cadena que Pequeña Historia (ElevenLabs si está, Gemini TTS, Piper de respaldo).
+    # El locutor es la misma voz: la mascota ES el que narra.
     t0 = time.time()
-    wav, duraciones, motor = ef.voz_efemeride(frases, settings, carpeta, avisar)
+    wav, duraciones, motor = ef.voz_efemeride(hablado, settings, carpeta, avisar)
     ef.ajustar_duracion(wav, duraciones, MAX_S, settings.efemerides.tts_acelerar_max, avisar)
+    narrar.a_48k(wav)
     narrar.sacar_silencio_inicial(wav)
     fin = narrar.duracion_wav(wav)
     tiempos["voz_s"] = round(time.time() - t0, 1)
     t0 = time.time()
     oidas = narrar.palabras_de_voz(wav, settings.subtitulos)
-    oidas, recortado = narrar.recortar_inicio(wav, oidas, frases)
+    oidas, recortado = narrar.recortar_inicio(wav, oidas, hablado)
     if recortado:
         fin = narrar.duracion_wav(wav)
-    palabras, inicios = narrar.alinear_a_guion(oidas, frases, fin)
+    palabras, inicios = narrar.alinear_a_guion(oidas, hablado, fin)
     tiempos["whisper_s"] = round(time.time() - t0, 1)
     avisar(f"voz ({motor}): {fin:.1f} s")
-    # Música baja, con ducking (musica.mezclar). La boca sigue la voz SOLA (la envolvente sale de
-    # la voz; el audio del mp4 es la mezcla).
+    datos, eventos = linea_de_tiempo(d, inicios, fin, palabras, wav)
+    (carpeta / "linea_de_tiempo.json").write_text(json.dumps({"video": datos, "sfx": eventos},
+                                                             ensure_ascii=False, indent=1), encoding="utf-8")
+    video = Video.desde_dict(datos)
+    # Música baja, con ducking, y encima los SFX en su segundo. La boca sigue la voz SOLA.
     tema = None
     if cfg.musica:
         carpeta_musica = ROOT / settings.efemerides.carpeta_musica
@@ -682,11 +1009,8 @@ def armar_video(conn, settings, carpeta: Path, cliente=None, wiki=None, hoy: dat
     audio = (musica.mezclar(wav, ROOT / settings.efemerides.carpeta_musica / tema.ruta,
                             carpeta / "voz_musica.wav", cfg.musica_volumen) if tema else wav)
     if tema:
-        musica.anotar_uso(conn, tema.ruta)   # así no sale siempre el mismo tema (en los 2 ejemplos se repitió)
-    datos = linea_de_tiempo(d, inicios, fin, palabras, wav)
-    (carpeta / "linea_de_tiempo.json").write_text(json.dumps(datos, ensure_ascii=False, indent=1),
-                                                  encoding="utf-8")
-    video = Video.desde_dict(datos)
+        musica.anotar_uso(conn, tema.ruta)   # así no sale siempre el mismo tema
+    audio = efectos.mezclar(audio, eventos, carpeta / "audio_final.wav", video.duracion, VOLUMEN_SFX)
     video.audio = str(audio)
     salida = carpeta / f"marca_{re.sub(r'[^a-z0-9]+', '_', e.marca.nombre.lower())}_{e.angulo}.mp4"
     t0 = time.time()
@@ -697,7 +1021,7 @@ def armar_video(conn, settings, carpeta: Path, cliente=None, wiki=None, hoy: dat
     return Resultado(
         marca=e.marca.nombre, angulo=e.angulo, notas=e.notas, promedio=e.promedio,
         titulo=str(d.get("titulo") or ""), descripcion=str(d.get("descripcion") or ""),
-        hashtags=hashtags(e.marca), frases=frases, video=str(salida), duracion_s=round(video.duracion, 1),
+        hashtags=hashtags(e.marca), frases=hablado, video=str(salida), duracion_s=round(video.duracion, 1),
         motor_voz=motor, musica=tema.ruta if tema else "", credito_musica=tema.credito() if tema else "",
         articulo=f"https://es.wikipedia.org/wiki/{e.marca.wiki_es.replace(' ', '_')}",
         render_s=tiempos["render_s"], total_s=round(time.time() - t_total, 1),
