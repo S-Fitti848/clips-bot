@@ -67,23 +67,39 @@ def lugar_en_pantalla(lugar: str, inicio: float, hasta: float) -> list[str]:
             f"{{\\fad(150,250)}}{texto}"]
 
 
+GANCHO_CHARS = 18    # el gancho (96 px, negrita) entra en el ancho con ~18 letras por línea
+
+
+def lineas_gancho(texto: str, ancho: int = GANCHO_CHARS) -> list[list[str]]:
+    """Las palabras del gancho en líneas parejas. El .ass va con WrapStyle 2 (sin salto automático):
+    sin esto el gancho quedaba en UNA línea más ancha que la pantalla, cortado a los costados
+    (2026-11-14, visto en los videos desde el 12/11)."""
+    import textwrap
+
+    return [l.split() for l in textwrap.wrap(texto, ancho, break_long_words=False)]
+
+
 def gancho_en_pantalla(frase: str, hasta_s: float) -> list[str]:
     """La primera frase (el gancho) escrita en grande arriba desde el cuadro 1 hasta que termina:
     sin fundido de entrada, así el primer cuadro (y la portada) ya la muestran."""
     texto = re.sub(r"[{}\\]", "", frase or "").strip()
     if not texto:
         return []
+    texto = r"\N".join(" ".join(l) for l in lineas_gancho(texto))
     return [f"Dialogue: 3,{_t(0)},{_t(max(hasta_s, 0.5))},Gancho,,0,0,0,,{{\\fad(0,200)}}{texto}"]
 
 
-def gancho_animado(frase: str, hasta_s: float, entrada_s: float = 0.6) -> list[str]:
+def gancho_animado(frase: str, hasta_s: float, entrada_s: float = 0.5) -> list[str]:
     """Estilo nuevo (Santi, 2026-11-14): el gancho entra palabra por palabra con un rebote, todo en
     UN evento (cada palabra con su `\\t` corrido en el tiempo), así el texto no se reacomoda mientras
     entra: las que faltan son transparentes pero ocupan su lugar. La primera ya está en el cuadro 0
     y todo está escrito antes de `entrada_s` + 0,25 s (la portada, a los 0,8 s, lo muestra entero)."""
-    palabras = re.sub(r"[{}\\]", "", frase or "").split()
+    lineas = lineas_gancho(re.sub(r"[{}\\]", "", frase or "").strip())
+    palabras = [w for l in lineas for w in l]
     if not palabras:
         return []
+    # Después de la última palabra de cada línea (menos la última), el salto de línea.
+    saltos = {sum(len(l) for l in lineas[:k + 1]) - 1 for k in range(len(lineas) - 1)}
     paso = min(0.09, entrada_s / max(len(palabras) - 1, 1))
     partes = []
     for k, w in enumerate(palabras):
@@ -93,7 +109,8 @@ def gancho_animado(frase: str, hasta_s: float, entrada_s: float = 0.6) -> list[s
             continue
         partes.append(rf"{{\alpha&HFF&\fscy40\t({a},{a + 110},\alpha&H00&\fscy125)"
                       rf"\t({a + 110},{a + 230},\fscy100)}}{w}")
-    return [f"Dialogue: 3,{_t(0)},{_t(max(hasta_s, 0.5))},Gancho,,0,0,0,,{{\\fad(0,200)}}" + " ".join(partes)]
+    texto = "".join(x + (r"\N" if k in saltos else " ") for k, x in enumerate(partes)).strip()
+    return [f"Dialogue: 3,{_t(0)},{_t(max(hasta_s, 0.5))},Gancho,,0,0,0,,{{\\fad(0,200)}}" + texto]
 
 
 def mapa_zoom(base: Path, lat: float, lon: float, salida: Path, segundos: float = 2.0,

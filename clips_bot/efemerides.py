@@ -3277,7 +3277,11 @@ def hacer_video(p: Propuesta, settings, carpeta: Path, avisar=log.info, conn=Non
             from . import graficos as gr
 
             wiki = Wiki()
+            # El artículo del hecho; si es de una persona (La Pola: sin coordenadas), el del lugar.
             coords = wiki.coordenadas(e.lang, e.paginas[0])
+            lugar = str((p.local or {}).get("lugar") or "")
+            if not coords and lugar:
+                coords = wiki.coordenadas("es", lugar)
             k = next((k for k, (i, f, _) in enumerate(plan) if i == 1 and f != VIDEO), None)
             if coords and gr.distancia_ok(*coords) and k is not None:
                 i, f, s = plan[k]
