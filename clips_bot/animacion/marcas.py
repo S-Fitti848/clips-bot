@@ -66,12 +66,12 @@ CRITERIOS = ("marca_conocida", "dato_sorprendente", "giro", "humor")
 PUNTAJE_MIN = 8.0
 DIAS_SIN_REPETIR_MARCA = 7
 
-PALABRAS_MIN, PALABRAS_MAX = 68, 98      # frases + locutor: con la voz ×1,13 y pausas cortas, 30-40 s
+PALABRAS_MIN, PALABRAS_MAX = 68, 98      # frases + locutor: con la voz ×1,065 y pausas cortas, 32-38 s
 FRASES_MIN, FRASES_MAX = 7, 12
 GANCHO_MAX_PALABRAS = 8                   # el gancho dura menos de 3 s
-MAX_S = 40.0            # Santi (2026-11-14): 30-40 s; si la voz se pasa, se ACORTA el guion
-MIN_S = 30.0
-VELOCIDAD_VOZ = 1.13    # atempo (sin cambiar el tono): "medio lento"
+MAX_S = 38.0            # Santi (2026-11-14): 32-38 s; fuera de eso se REESCRIBE el guion (nunca más aceleración)
+MIN_S = 32.0
+VELOCIDAD_VOZ = 1.065   # atempo (sin cambiar el tono): ×1,13 quedó "un pelín rápido" (Santi, 2026-11-14)
 PAUSA_MAX_S = 0.22      # el silencio entre frases, como mucho
 
 # Nunca humor sobre tragedias, muertes, accidentes ni temas sensibles (Santi). El modelo lo marca al
@@ -317,7 +317,7 @@ CADENA_MIN, CADENA_MAX = 2, 4
 _PRESENTE = re.compile(r"\b(hoy|actualmente|en la actualidad|hoy en d[ií]a|ahora)\b", re.I)
 LOCUTOR_MIN, LOCUTOR_MAX = 1, 3
 
-SISTEMA_GUION = f"""Escribís un video vertical ANIMADO de 30 a 40 segundos (ritmo ágil) para un canal sobre el origen de las
+SISTEMA_GUION = f"""Escribís un video vertical ANIMADO de 32 a 38 segundos (ritmo ágil) para un canal sobre el origen de las
 marcas. Castellano neutro latinoamericano con algo de rioplatense, informal, tuteo. TONO: sarcasmo y humor.
 
 El canal se llama "Así Nació". Su locutor y mascota es el ABUELO TITO: un inventor jubilado con
@@ -374,7 +374,7 @@ ESTRUCTURA:
   sin año, sin "¿Sabías que…?", sin saludar. Su escena es pura ACCIÓN.
 - El final paga el gancho (responde la pregunta que dejó abierta: `pregunta_gancho`).
 - 7 a 11 frases cortas, 55 a 75 palabras en total en las frases; Tito suma 12 a 25 más (todo junto,
-  70 a 95). Frases cortas y con ritmo: el video dura 30 a 40 segundos.
+  70 a 95). Frases cortas y con ritmo: el video dura 32 a 38 segundos.
 
 DATOS: todo nombre, cifra, año, mes y lugar sale del TEXTO (Wikipedia). Nada de tu memoria. Los chistes
 son comentarios, no datos inventados. NUNCA humor sobre muertes, accidentes, tragedias, guerras,
@@ -826,7 +826,7 @@ def chequear_calidad(cliente, d: dict, m: Marca) -> list[str]:
     return errores
 
 
-def escribir_guion(cliente, e: Elegido, fuente: str, reintentos: int = 5, avisar=log.info,
+def escribir_guion(cliente, e: Elegido, fuente: str, reintentos: int = 6, avisar=log.info,
                    revisor=None, extra: str = "") -> dict:
     """El guion validado (dict del schema). Primero el chequeo del código; si pasa, el de Haiku
     (`revisor`). Si no valida, reintenta con los errores; si nunca valida, GuionInvalido."""
@@ -1201,7 +1201,8 @@ SUBTITULOS_TAM = 52
 
 def armar_video(conn, settings, carpeta: Path, cliente=None, wiki=None, hoy: date | None = None,
                 avisar=log.info, procesos: int = 2, catalogo: list[Marca] | None = None,
-                forzar: Elegido | None = None, revisor=None, guion: dict | None = None) -> Resultado:
+                forzar: Elegido | None = None, revisor=None, guion: dict | None = None,
+                reescribir: bool = True) -> Resultado:
     """De punta a punta: elegir → guion (con el chequeo de Haiku) → voz → Whisper → escenas de acción +
     pausas del locutor → SFX → mp4. No sube nada a ningún lado."""
     from clips_bot import claude, musica, narrar
@@ -1236,8 +1237,8 @@ def armar_video(conn, settings, carpeta: Path, cliente=None, wiki=None, hoy: dat
                                                     "notas": e.notas, "guion": d}, ensure_ascii=False,
                                                    indent=1), encoding="utf-8")
     # Voz: la misma cadena que Pequeña Historia (ElevenLabs si está, Gemini TTS, Piper de respaldo).
-    # Tito es la misma voz: la mascota ES el que narra. Ritmo (Santi, 2026-11-14: "medio lento"): ×1,13
-    # sin cambiar el tono y los silencios entre frases a 0,22 s; si igual pasa de 40 s, se ACORTA el
+    # Tito es la misma voz: la mascota ES el que narra. Ritmo (Santi, 2026-11-14): ×1,065
+    # sin cambiar el tono y los silencios entre frases a 0,22 s; si queda fuera de 32-38 s, se REESCRIBE el
     # guion (no se acelera más).
     t0 = time.time()
     for intento in range(3):
@@ -1250,9 +1251,9 @@ def armar_video(conn, settings, carpeta: Path, cliente=None, wiki=None, hoy: dat
         narrar.sacar_silencio_inicial(wav)
         fin = narrar.duracion_wav(wav)
         avisar(f"voz: {fin:.1f} s (×{VELOCIDAD_VOZ}, {sacado:.1f} s de pausas menos)")
-        if MIN_S - 1 <= fin <= MAX_S or intento == 2:
+        if MIN_S <= fin <= MAX_S or intento == 2 or not reescribir:
             break
-        # fuera de 30-40 s: se reescribe el guion (más corto o más largo), nunca se acelera más
+        # fuera de 32-38 s: se reescribe el guion (más corto o más largo), nunca se acelera más
         palabras_hoy = sum(len(x.split()) for x in hablado)
         largo = fin > MAX_S
         objetivo = int(palabras_hoy * ((MAX_S - 2) if largo else (MIN_S + 3)) / fin)

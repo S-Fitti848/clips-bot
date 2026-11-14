@@ -973,7 +973,10 @@ Problemas abiertos:
   `musica.py` con ducking y SFX sintetizados, con los niveles medidos en el mensaje (voz −15,8 dB,
   música −27,6, SFX −27,3, mezcla −14,0). Nerf: 28,8 s (corto: el alargue de guiones cortos se sumó
   después y no está probado), render 221 s, Claude US$ 0,20. Imágenes de Tito con fondo plano o
-  patrón de productos (sin rayos). Así Nació sigue APAGADO. 1390 tests OK.
+  patrón de productos (sin rayos). Así Nació sigue APAGADO. 1390 tests OK. Después (Santi: "un pelín
+  rápido"): voz ×1,065 (no ×1,13), la duración real de la voz tiene que caer en 32-38 s (si no, se
+  reescribe el guion; nunca más aceleración) y 6 intentos de guion; Nerf: 33,7 s, render 262 s.
+  Tito en 5 fondos lisos (mostaza, naranja, turquesa, rojo ladrillo, celeste) mandado para elegir.
 - v0.97.0 (2026-11-14, noche) — **Así Nació: movimiento, sin superposiciones, escenarios de época y
   objetos con detalle** (Santi: "muchísimo mejor"; REGLAS PERMANENTES, en el guion y en el chequeo
   código + Haiku con reintento): (a) movimiento con peso: caminar y correr con ciclo (cadera, rodilla y

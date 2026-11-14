@@ -650,9 +650,10 @@ def test_niveles_de_audio(tmp_path):
     assert -14 < n["medio"] < -8 and n["pico"] < 0
 
 
-def test_ritmo_30_a_40_s():
-    assert (mk.MIN_S, mk.MAX_S) == (30.0, 40.0) and 1.12 <= mk.VELOCIDAD_VOZ <= 1.15
-    assert "30 a 40 segundos" in mk.SISTEMA_GUION
+def test_ritmo_32_a_38_s():
+    """Santi (2026-11-14): ×1,13 quedó un pelín rápido → ×1,065, y el video entre 32 y 38 s."""
+    assert (mk.MIN_S, mk.MAX_S) == (32.0, 38.0) and mk.VELOCIDAD_VOZ == 1.065
+    assert "32 a 38 segundos" in mk.SISTEMA_GUION
 
 
 def _dos_cerca(gesto_a="senalar"):
