@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-11-14 | **Versión:** v0.98.0 (desplegado) | **Modo:** Fase 2: corriendo solo en la Pi. **Rots APAGADO** (`publicacion.rots: false`). Madrugada desde la escucha: tecnología desde las 04:00 → 2 de Latinoamérica, todo antes de las 05:30; timers 05:00 (no hace nada con Rots apagado) y 06:00 de respaldo
+**Snapshot:** 2026-11-14 | **Versión:** v0.99.0 (desplegado) | **Modo:** Fase 2: corriendo solo en la Pi. **Rots APAGADO** (`publicacion.rots: false`). Madrugada desde la escucha: tecnología desde las 04:00 → 2 de Latinoamérica, todo antes de las 05:30; timers 05:00 (no hace nada con Rots apagado) y 06:00 de respaldo
 
 > **SI ESTÁS EMPEZANDO UNA SESIÓN NUEVA, LEÉ §10.** Ahí está qué está hecho, qué quedó a medias,
 > qué falta, y las trampas que ya nos mordieron.
@@ -959,6 +959,20 @@ Problemas abiertos:
 
 ## 9. CHANGELOG
 
+- v0.99.0 (2026-11-14, noche) — **Así Nació PRENDIDO y conectado** (Santi aprobó el Nerf). Canal de
+  YouTube @asinacio.oficial («Asinacio.oficial», `UCPUKDAf5NJbdINUC2Rka69A`) conectado con
+  `youtube-auth animacion` desde la compu (token en `config/youtube_token_animacion.json` de la compu y
+  de la Pi, chmod 600, fuera de git; verificado desde la Pi). `animacion.activo/subir: true`: la escucha
+  arma 1 video por día desde las 07:00, lo programa en YouTube para las 19:00 AR
+  (`_animacion_subir` → `_programar_subida(canal="animacion")`, categoría 24, crédito de la música en
+  la descripción) y lo manda al privado con "🤖 Se publica sola" y un botón ❌ Cancelar
+  (`sub:x:asinacio_AAAAMMDD`; el meta queda al lado del video, no en ready/). El Reel en la página de
+  Facebook de Así Nació está preparado (`animacion.facebook`, apagado hasta tener
+  `ASINACIO_FACEBOOK_PAGE_ID` y `ASINACIO_FACEBOOK_PAGE_TOKEN` en el .env; canal `facebook_asinacio`
+  en `subidas`). El 14/11 se marcó como hecho (`animacion_dia`): el primero se arma el 15/11 y sale a
+  las 19:00. Perfil: Tito con fondo celeste (#7cc6ee). Banners de YouTube rehechos con todo dentro de
+  1300x350; el de Así Nació, como escena del taller de Tito (2 opciones + portadas de Facebook).
+  1394 tests OK.
 - v0.98.0 (2026-11-14, noche) — **Así Nació: ritmo, subtítulos arriba, composición, revisión visual,
   perfil al caminar, época en todos los lugares y audio** (REGLAS PERMANENTES, guion + escenas +
   chequeo): (a) 30-40 s con ritmo: voz ×1,13 sin cambiar el tono, pausas ≤ 0,22 s, cambio de plano en
@@ -2472,9 +2486,9 @@ no repiten lo que ya corrió.
   montaje del gancho repitió dos fotos casi iguales de la misma estatua.
 - **ElevenLabs:** cuando Santi ponga `ELEVENLABS_API_KEY`, `python -m clips_bot voces-elevenlabs` y
   `--muestra <id>`; con la voz elegida, `efemerides.elevenlabs_voz` / `elevenlabs_nombre`.
-- **Así Nació** (canal de marcas animadas; nicho elegido por Santi: origen de marcas con humor y
-  sarcasmo; locutor: el Abuelo Tito): conectado y APAGADO; Nerf rehecho con las reglas de v0.96.0
-  mandado. Falta su OK, la foto de perfil y el banner con Tito. Con su OK: `animacion.activo: true`. Cuando
+- **Así Nació** PRENDIDO desde el 15/11 (1 por día, YouTube 19:00 con ❌ Cancelar). Falta: que Santi
+  elija el banner (2 opciones del taller) y conecte la página de Facebook (ASINACIO_FACEBOOK_* en el
+  .env y `animacion.facebook: true`). Con su OK: `animacion.activo: true`. Cuando
   cree el canal de YouTube: `youtube-auth animacion` y programar la subida (hoy no existe).
 - **Retención y alcance** (`docs/diseno-retencion-alcance.md`): esperando su OK. Instagram pide volver
   a autorizar el token de la página con el permiso de publicar en Instagram (avisar antes); TikTok
