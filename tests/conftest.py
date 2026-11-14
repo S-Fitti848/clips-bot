@@ -84,3 +84,19 @@ def _sin_claude(monkeypatch):
     from clips_bot import claude
 
     monkeypatch.setattr(claude, "cliente", lambda *a, **k: None)
+
+
+@pytest.fixture
+def rots_prendido(monkeypatch):
+    """Rots está apagado en settings.yaml desde el 2026-11-14; los tests de su código lo prenden."""
+    from clips_bot import config
+
+    original = config._read_yaml
+
+    def leer(path):
+        raw = original(path)
+        if isinstance(raw, dict) and "publicacion" in raw:
+            raw = {**raw, "publicacion": {**(raw.get("publicacion") or {}), "rots": True}}
+        return raw
+
+    monkeypatch.setattr(config, "_read_yaml", leer)

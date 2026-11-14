@@ -801,6 +801,9 @@ def cmd_diario(args: argparse.Namespace) -> int:
         if motivo:
             print(f"Nada que hacer: {motivo} (la lanza la escucha a las {settings.publicacion.hora_rots}).")
             return 0
+        if not settings.publicacion.rots:
+            print("Rots está apagado (publicacion.rots: false): no busco, no armo ni subo clips.")
+            return 0
 
     # Turno pesado: si hay un /buscar andando (modo escucha), se espera a que termine en vez de
     # pelearle la CPU a la Pi. Después de ESPERA_DIARIO_S arranca igual: la corrida del día no se
@@ -943,7 +946,8 @@ def _pego_tick(conn, settings: Settings, ahora=None) -> None:
     cfg = settings.pego
     ahora = ahora or datetime.now(AR)
     hoy = ahora.date().isoformat()
-    if not cfg.activo or ahora.strftime("%H:%M") < cfg.hora or db.get_valor(conn, PEGO_DIA) == hoy:
+    if not cfg.activo or not settings.publicacion.rots or ahora.strftime("%H:%M") < cfg.hora \
+            or db.get_valor(conn, PEGO_DIA) == hoy:
         return
     turno = "pego:diario"
     if not db.tomar_turno(conn, db.RECURSO_PESADO, turno, maximo=1, vencimiento_s=VENCIMIENTO_PESADO_S):
@@ -1742,6 +1746,8 @@ def _ya(conn, tg: TelegramClient, chat_id: str, settings: Settings, args: list |
     """
     from .telegram import sacar_cantidad
 
+    if not settings.publicacion.rots:
+        return "Rots está apagado (publicacion.rots: false). Para clips puntuales, /buscar sigue andando."
     try:
         _, cantidad = sacar_cantidad(list(args or []), CANTIDAD_MAX_PEDIDO)
     except ValueError as e:
@@ -3171,7 +3177,7 @@ def _drenar_cola(conn, tg: TelegramClient, cola: list[dict], settings: Settings)
 def _envivo_tick(conn, tg: TelegramClient, settings: Settings, reloj: dict,
                  ahora=time.time) -> None:
     chat = db.envivo_chat(conn)
-    if not chat:
+    if not chat or not settings.publicacion.rots:
         return
     cfg = settings.envivo
     t = ahora()
@@ -3688,7 +3694,9 @@ def _medicion_ph_tick(conn, tg: TelegramClient, settings: Settings, ahora=None, 
 LISTO_DESDE = "05:30"   # si Rots no terminó para esta hora, Pequeña Historia no lo espera más
 
 
-def _rots_listo(conn, ahora: datetime) -> bool:
+def _rots_listo(conn, ahora: datetime, settings: Settings | None = None) -> bool:
+    if settings is not None and not settings.publicacion.rots:
+        return True     # Rots apagado (2026-11-14): nada que esperar
     return db.get_valor(conn, DIARIO_FIN) == ahora.date().isoformat() or ahora.strftime("%H:%M") >= LISTO_DESDE
 
 
@@ -3705,7 +3713,8 @@ def _madrugada_tick(conn, tg: TelegramClient, settings: Settings, ahora=None, la
     ahora = ahora or datetime.now(AR)
     hoy, hm = ahora.date().isoformat(), ahora.strftime("%H:%M")
     pesado = db.hay_trabajo_pesado(conn, VENCIMIENTO_PESADO_S)
-    if settings.publicacion.hora_rots <= hm < "05:00" and db.get_valor(conn, ROTS_LANZADA) != hoy \
+    if settings.publicacion.rots and settings.publicacion.hora_rots <= hm < "05:00" \
+            and db.get_valor(conn, ROTS_LANZADA) != hoy \
             and db.get_valor(conn, DIARIO_FIN) != hoy and not pesado:
         db.set_valor(conn, ROTS_LANZADA, hoy)
         log.info("madrugada: lanzo la corrida de Rots")
@@ -3714,7 +3723,7 @@ def _madrugada_tick(conn, tg: TelegramClient, settings: Settings, ahora=None, la
     cfg = settings.efemerides
     if not cfg.diaria or not cfg.hora_propuesta <= hm < "21:00" or db.get_valor(conn, EFE_DIA) == hoy:
         return
-    if pesado or not _rots_listo(conn, ahora):
+    if pesado or not _rots_listo(conn, ahora, settings):
         return
     turno = "efemeride:madrugada"
     if not db.tomar_turno(conn, db.RECURSO_PESADO, turno, maximo=1, vencimiento_s=VENCIMIENTO_PESADO_S):
@@ -3771,7 +3780,7 @@ def _fb_tick(conn, tg: TelegramClient, settings: Settings, ahora=None, proponer=
     if db.hay_trabajo_pesado(conn, VENCIMIENTO_PESADO_S):
         return
     # De madrugada, en orden (2026-11-12): primero Rots y la de tecnología, después estas.
-    if not _rots_listo(conn, ahora) or (settings.efemerides.diaria and db.get_valor(conn, EFE_DIA) != hoy
+    if not _rots_listo(conn, ahora, settings) or (settings.efemerides.diaria and db.get_valor(conn, EFE_DIA) != hoy
                                         and ahora.strftime("%H:%M") < LISTO_DESDE):
         return
     turno = "historia_fb:diaria"
@@ -3844,7 +3853,7 @@ def _clips_reintento_tick(conn, settings: Settings, ahora=None, seleccion=None) 
     caído y ya es la hora, vuelve a elegir y entregar SOLO los que faltan, con el turno pesado. Si
     Gemini sigue caído, la misma selección agenda el próximo intento (o, pasado el tope, avisa)."""
     raw = db.get_valor(conn, CLIPS_REINTENTO)
-    if not raw:
+    if not raw or not settings.publicacion.rots:
         return
     d = json.loads(raw)
     ahora = ahora or datetime.now(AR)

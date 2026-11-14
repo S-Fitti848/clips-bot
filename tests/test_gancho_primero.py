@@ -211,7 +211,7 @@ def test_aviso_de_voces_con_lo_encontre(conn, tmp_path):
     assert voces.avisos(conn, uso, tope=10, aviso=8) == []        # una vez por día
 
 
-def test_madrugada_en_orden(conn):
+def test_madrugada_en_orden(conn, rots_prendido):
     import clips_bot.__main__ as m
 
     s = load_settings()

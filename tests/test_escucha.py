@@ -9,6 +9,8 @@ import clips_bot.__main__ as m
 from clips_bot import db
 from clips_bot.config import load_settings
 
+pytestmark = pytest.mark.usefixtures("rots_prendido")   # Rots apagado en settings desde 2026-11-14
+
 
 class FakeTG:
     def __init__(self):

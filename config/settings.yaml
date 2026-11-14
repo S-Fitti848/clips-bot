@@ -481,6 +481,10 @@ publicacion:
   # Madrugada (Santi, 2026-11-12: "todo en Telegram antes de las 5:30"): la escucha lanza la corrida
   # de Rots a esta hora; el timer de las 05:00 queda de respaldo (si ya corrió, no hace nada).
   hora_rots: "03:30"
+  # Rots APAGADO (Santi, 2026-11-14: "que deje de buscar, armar y subir clips"; no se borra el código ni
+  # el canal): sin corrida diaria (ni la de las 03:30 ni el timer de las 05:00), sin "pegó", sin modo
+  # en vivo ni /ya. Pequeña Historia ya no lo espera. /buscar a mano sigue andando.
+  rots: false
   # Prueba manual vs API (prueba_manual.py): CANCELADA por Santi el 2026-11-10 antes de arrancar
   # ("no voy a subir nada a mano"). Para volver a hacerla, poné la fecha de inicio.
   prueba_manual_desde: ""

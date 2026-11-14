@@ -9,6 +9,8 @@ import requests
 import clips_bot.__main__ as m
 from clips_bot import db, efemerides as ef, fuentes_fotos as ff
 
+pytestmark = pytest.mark.usefixtures("rots_prendido")   # Rots apagado en settings desde 2026-11-14
+
 
 @pytest.fixture(autouse=True)
 def _corrida_nueva():

@@ -5,6 +5,9 @@ from datetime import datetime, timedelta, timezone
 import clips_bot.__main__ as m
 from clips_bot import db, pego
 from clips_bot.config import Pego, Streamer, load_settings
+import pytest
+
+pytestmark = pytest.mark.usefixtures("rots_prendido")   # Rots apagado en settings desde 2026-11-14
 
 AHORA = datetime(2026, 9, 29, 12, tzinfo=timezone.utc)
 

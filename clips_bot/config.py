@@ -484,6 +484,9 @@ class Publicacion:
     # Madrugada (Santi, 2026-11-12): la escucha lanza la corrida de Rots a esta hora (AR) para que todo
     # esté en Telegram antes de las 05:30; el timer de las 05:00 queda de respaldo.
     hora_rots: str = "03:30"
+    # Rots APAGADO (Santi, 2026-11-14): sin corrida diaria, sin "pegó", sin modo en vivo ni /ya; el
+    # código y el canal quedan. Los comandos manuales (/buscar, /editar…) siguen andando.
+    rots: bool = True
 
 
 @dataclass(frozen=True)

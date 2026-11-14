@@ -14,6 +14,8 @@ from clips_bot import db, envivo
 from clips_bot.candidates import Clip
 from clips_bot.config import EnVivo, Filtros, Streamer, load_settings
 
+pytestmark = pytest.mark.usefixtures("rots_prendido")   # Rots apagado en settings desde 2026-11-14
+
 T0 = datetime(2026, 9, 27, 20, 0, tzinfo=timezone.utc)
 # Umbral fijo de 3 para probar la mecánica de agrupar sin el umbral relativo (ese tiene sus tests).
 CFG = EnVivo(min_creadores=3, factor_base=0.0)

@@ -15,6 +15,8 @@ from clips_bot.config import load_settings
 from clips_bot.gemini import GeminiClient, GeminiError
 from clips_bot.seleccion import Opcion
 
+pytestmark = pytest.mark.usefixtures("rots_prendido")   # Rots apagado en settings desde 2026-11-14
+
 OK = {"candidates": [{"content": {"parts": [{"text": "{}"}]}}]}
 
 
