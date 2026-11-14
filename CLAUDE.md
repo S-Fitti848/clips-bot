@@ -984,8 +984,10 @@ Problemas abiertos:
   ffmpeg; en la Pi 45 s de video en ~170 s (0,12 s por cuadro, 1 proceso; el cuello es x264), pico
   84 °C. (7) **Nicho** (`docs/nicho-animacion/informe.md`, 5.692 unidades de la API): top 5 =
   origen de las palabras, origen de marcas, economía con historias, cuerpo humano, mitología.
-  **Ejemplo de La Pola** con el estilo nuevo (en la Pi): propuesta 562 s, video 390 s, Claude US$ 0,36.
-  1041 tests OK.
+  **Ejemplo de La Pola** con el estilo nuevo (en la Pi): propuesta 562 s, video 390-503 s, Claude
+  US$ 0,36. Encontrado armándolo: la misma foto de Commons entraba dos veces al pool ("Archivo:" y
+  "File:"; `clave_archivo`), y el montaje toma la mejor foto de las frases siguientes si la del
+  gancho tiene pocas. 1043 tests OK.
 - v0.93.0 (2026-11-13) — **Final que paga, puntaje de tecnología y costo real de Claude** (Santi,
   después de ver los guiones del 14/11). (1) **Segunda revisión del final** (`ef.final_que_paga`,
   `SISTEMA_PAGO`, dentro de `escribir_guion`, `revisar_final=True`, en los 3 videos): el mismo
