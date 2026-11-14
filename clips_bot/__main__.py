@@ -3494,7 +3494,8 @@ def _efe_proponer(conn, tg: TelegramClient, chats: list[str], dia, settings: Set
                         elector=_elector_fotos(settings),
                         elector_reintento=_elector_fotos(settings, reintento=True),
                         tema="" if hecho else settings.efemerides.tema,
-                        corto=settings.efemerides.corto, texto=_texto_efemeride(settings, gemini))
+                        corto=settings.efemerides.corto, texto=_texto_efemeride(settings, gemini),
+                        mas_video=settings.efemerides.estilo_nuevo)
     except (NarrarError, ef.WikiError, GeminiError) as e:
         error = f"No salió la efeméride: {html.escape(str(e)[:400])}"
         if isinstance(e, (ef.SinFotosReales, ef.SinTema)):
@@ -3591,7 +3592,8 @@ def _fb_proponer(conn, tg: TelegramClient, chats: list[str], dia, settings: Sett
                              elector_reintento=_elector_fotos(settings, reintento=True),
                              excluir={v for x in _latam_del_dia(conn, dia)
                                       for v in (x.get("texto"), x.get("articulo")) if v},
-                             evitar_paises={x["pais"] for x in _latam_del_dia(conn, dia) if x.get("pais")})
+                             evitar_paises={x["pais"] for x in _latam_del_dia(conn, dia) if x.get("pais")},
+                             mas_video=settings.efemerides.estilo_nuevo)
     except (NarrarError, ef.WikiError, GeminiError) as e:
         return f"No salió la historia de Latinoamérica: {html.escape(str(e)[:400])}"
     ya = _latam_del_dia(conn, dia)
@@ -4274,6 +4276,28 @@ def cmd_costo_claude(args: argparse.Namespace) -> int:
         print(html.unescape(re.sub(r"<[^>]+>", "", claude.texto_costo(conn, dia))))
     finally:
         conn.close()
+    return 0
+
+
+def cmd_voces_elevenlabs(args: argparse.Namespace) -> int:
+    """Las voces de la cuenta de ElevenLabs y, con --muestra <id>, una muestra en output/voces_elevenlabs/."""
+    from . import efemerides as ef
+    from . import elevenlabs, narrar
+    from .config import OUTPUT_DIR
+
+    try:
+        if args.muestra:
+            cfg = load_settings().efemerides
+            pcm, sr = elevenlabs.hablar(args.texto, args.muestra, cfg.elevenlabs_modelo)
+            carpeta = OUTPUT_DIR / "voces_elevenlabs"
+            carpeta.mkdir(parents=True, exist_ok=True)
+            print(narrar.a_48k(ef._escribir_wav(pcm, sr, carpeta / f"{args.muestra}.wav")))
+            return 0
+        for v in elevenlabs.voces():
+            print(f"{v['id']}  {v['nombre']:<24} {v['idioma']:<14} {v['descripcion']}")
+    except elevenlabs.ElevenLabsError as e:
+        print(e, file=sys.stderr)
+        return 2
     return 0
 
 
@@ -6146,6 +6170,12 @@ def main(argv: list[str] | None = None) -> int:
     pk = sub.add_parser("costo-claude", help="lo que gastó Claude en un día, por tarea")
     pk.add_argument("--dia", help="AAAA-MM-DD (AR); default hoy")
     pk.set_defaults(func=cmd_costo_claude)
+
+    pe = sub.add_parser("voces-elevenlabs", help="lista las voces de ElevenLabs de la cuenta (necesita "
+                                                 "ELEVENLABS_API_KEY) y, con --muestra, sintetiza un texto")
+    pe.add_argument("--muestra", help="id de la voz para la muestra")
+    pe.add_argument("--texto", default="Una mujer desafió a todo un ejército con una sola frase.")
+    pe.set_defaults(func=cmd_voces_elevenlabs)
 
     ph2 = sub.add_parser("hashtags-rots", help="pone los hashtags (y la categoría 22, sin tags) a los "
                                                "Shorts de Rots subidos por la API que no los tienen")

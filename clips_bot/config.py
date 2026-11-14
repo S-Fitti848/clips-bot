@@ -343,6 +343,13 @@ class EfemeridesCfg:
     # Sin aprobar (Santi, 2026-11-14): las 3 diarias se arman y se programan solas; el video llega a
     # Telegram horas antes de publicarse con ❌ Cancelar. Los controles de calidad siguen igual.
     sin_aprobar: bool = False
+    # Estilo nuevo (Santi, 2026-11-14): arranque que se mueve (clip real, mapa con zoom en
+    # Latinoamérica o montaje de 3 imágenes con golpe de zoom), gancho y subtítulos animados, más video.
+    estilo_nuevo: bool = False
+    # ElevenLabs (2026-11-14): se usa solo con ELEVENLABS_API_KEY en el .env y la voz elegida acá.
+    elevenlabs_voz: str = ""            # voice_id (python -m clips_bot voces-elevenlabs las lista)
+    elevenlabs_nombre: str = ""         # cómo se llama, para el mensaje ("Voz: …")
+    elevenlabs_modelo: str = "eleven_multilingual_v2"
     # Los 3 videos del día en YouTube (2 de Latinoamérica + 1 de tecnología): estos horarios (AR),
     # siempre a separacion_youtube_h o más entre sí.
     horas_youtube: tuple = ("11:00", "15:30", "20:00")

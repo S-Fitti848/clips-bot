@@ -342,6 +342,18 @@ efemerides:
   # publicarse con ❌ Cancelar, y si no se toca nada sale a su hora. /efemeride e /historia a mano
   # siguen con ✅. Los controles de calidad automáticos no cambian.
   sin_aprobar: false
+  # Estilo nuevo (Santi, 2026-11-14; APAGADO hasta que apruebe el ejemplo): el gancho como montaje de
+  # 3 imágenes con golpe de zoom y whoosh (o un clip real si lo hay), el mapa a pantalla completa
+  # acercándose al lugar en la de Latinoamérica, el gancho escrito entrando palabra por palabra con
+  # rebote, subtítulos más grandes de 2-3 palabras con la activa dando un saltito, y hasta 6 frases
+  # con video (archivo libre para lo central; Pexels para lo que se nombra al pasar).
+  estilo_nuevo: false
+  # Voz con ElevenLabs (2026-11-14): PREPARADA, sin usar. Va solo si ELEVENLABS_API_KEY está en el .env
+  # Y acá hay una voz (el id; `python -m clips_bot voces-elevenlabs` lista las de la cuenta). Si falta
+  # algo o falla, sigue la de siempre (Gemini, Piper de respaldo).
+  elevenlabs_voz: ""
+  elevenlabs_nombre: ""
+  elevenlabs_modelo: eleven_multilingual_v2
   horas_youtube: ["11:00", "15:30", "20:00"]
   separacion_youtube_h: 4
   # Voces de Gemini por día (plan gratis, por proyecto; la clave principal la comparte Lo Encontré):

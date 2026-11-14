@@ -286,11 +286,18 @@ def grupos_karaoke(palabras: list[Palabra], max_palabras: int = KARAOKE_MAX_PALA
     return grupos
 
 
+# Estilo nuevo de Pequeña Historia (Santi, 2026-11-14): la palabra activa da un saltito (crece rápido
+# y baja un poco) en lugar de quedar quieta un poco más grande.
+REBOTE = r"\fscx100\fscy100\t(0,90,\fscx130\fscy130)\t(90,200,\fscx116\fscy116)"
+
+
 def eventos_karaoke(palabras: list[Palabra], color_activo: str, mayusculas: bool = True,
-                    estilo: str = "Karaoke", x: int = 540, y: int = 1536) -> list[str]:
+                    estilo: str = "Karaoke", x: int = 540, y: int = 1536,
+                    rebote: bool = False, max_chars: int = KARAOKE_MAX_CHARS) -> list[str]:
     """Un evento por palabra: el grupo entero, con la palabra que suena en `color_activo` y un poco
-    más grande. El grupo se queda hasta que arranca el siguiente si el hueco es chico."""
-    grupos = grupos_karaoke(palabras)
+    más grande (con `rebote`, con un saltito). El grupo se queda hasta que arranca el siguiente si
+    el hueco es chico."""
+    grupos = grupos_karaoke(palabras, max_chars=max_chars)
     eventos = []
     for gi, g in enumerate(grupos):
         fin_grupo = g[-1].fin + 0.15
@@ -305,7 +312,8 @@ def eventos_karaoke(palabras: list[Palabra], color_activo: str, mayusculas: bool
             partes = []
             for j, t in enumerate(textos):
                 t = _escapar_ass(t)
-                partes.append(f"{{\\c{color_activo}&\\fscx112\\fscy112}}{t}{{\\r}}" if j == k else t)
+                activa = REBOTE if rebote else r"\fscx112\fscy112"
+                partes.append(f"{{\\c{color_activo}&{activa}}}{t}{{\\r}}" if j == k else t)
             eventos.append(f"Dialogue: 0,{_t_ass(a)},{_t_ass(b)},{estilo},,0,0,0,,"
                            f"{{\\an5\\pos({x},{y})}}" + " ".join(partes))
     return eventos
@@ -313,7 +321,8 @@ def eventos_karaoke(palabras: list[Palabra], color_activo: str, mayusculas: bool
 
 def escribir_ass_karaoke(palabras: list[Palabra], path: Path, cfg: Subtitulos, render: Render,
                          color_activo: str = KARAOKE_ROTS, tamano: int = 82, mayusculas: bool = True,
-                         posicion_y: float | None = None) -> None:
+                         posicion_y: float | None = None, rebote: bool = False, borde: int = 7,
+                         max_chars: int = KARAOKE_MAX_CHARS) -> None:
     """El .ass de los subtítulos karaoke (reemplaza a `escribir_ass` en la edición nueva)."""
     y = round(render.alto * (cfg.posicion_y if posicion_y is None else posicion_y))
     cabecera = f"""[Script Info]
@@ -325,12 +334,13 @@ ScaledBorderAndShadow: yes
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Karaoke,{cfg.fuente},{tamano},&H00FFFFFF,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,1,0,1,7,3,5,40,40,0,1
+Style: Karaoke,{cfg.fuente},{tamano},&H00FFFFFF,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,1,0,1,{borde},3,5,40,40,0,1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 """
-    eventos = eventos_karaoke(palabras, color_activo, mayusculas, x=render.ancho // 2, y=y)
+    eventos = eventos_karaoke(palabras, color_activo, mayusculas, x=render.ancho // 2, y=y, rebote=rebote,
+                              max_chars=max_chars)
     path.write_text(cabecera + "\n".join(eventos) + "\n", encoding="utf-8")
 
 

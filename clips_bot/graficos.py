@@ -76,6 +76,72 @@ def gancho_en_pantalla(frase: str, hasta_s: float) -> list[str]:
     return [f"Dialogue: 3,{_t(0)},{_t(max(hasta_s, 0.5))},Gancho,,0,0,0,,{{\\fad(0,200)}}{texto}"]
 
 
+def gancho_animado(frase: str, hasta_s: float, entrada_s: float = 0.6) -> list[str]:
+    """Estilo nuevo (Santi, 2026-11-14): el gancho entra palabra por palabra con un rebote, todo en
+    UN evento (cada palabra con su `\\t` corrido en el tiempo), así el texto no se reacomoda mientras
+    entra: las que faltan son transparentes pero ocupan su lugar. La primera ya está en el cuadro 0
+    y todo está escrito antes de `entrada_s` + 0,25 s (la portada, a los 0,8 s, lo muestra entero)."""
+    palabras = re.sub(r"[{}\\]", "", frase or "").split()
+    if not palabras:
+        return []
+    paso = min(0.09, entrada_s / max(len(palabras) - 1, 1))
+    partes = []
+    for k, w in enumerate(palabras):
+        a = round(k * paso * 1000)
+        if k == 0:
+            partes.append(r"{\alpha&H00&\fscy100}" + w)
+            continue
+        partes.append(rf"{{\alpha&HFF&\fscy40\t({a},{a + 110},\alpha&H00&\fscy125)"
+                      rf"\t({a + 110},{a + 230},\fscy100)}}{w}")
+    return [f"Dialogue: 3,{_t(0)},{_t(max(hasta_s, 0.5))},Gancho,,0,0,0,,{{\\fad(0,200)}}" + " ".join(partes)]
+
+
+def mapa_zoom(base: Path, lat: float, lon: float, salida: Path, segundos: float = 2.0,
+              W: int = 1080, H: int = 1920, fps: int = 30, span_desde: float = 75.0,
+              span_hasta: float = 9.0) -> Path:
+    """Estilo nuevo: el mapa a pantalla completa acercándose hasta el lugar (Latinoamérica), con el
+    punto que aparece con un golpe al final. Cuadro por cuadro con PIL (el recorte del Blue Marble
+    se achica en escala logarítmica, así el acercamiento se siente parejo) y a ffmpeg por un caño."""
+    import math
+
+    from PIL import Image, ImageDraw
+
+    im = Image.open(base).convert("RGB")
+    BW, BH = im.size
+    px, py = (lon + 180) / 360 * BW, (90 - lat) / 180 * BH
+    n = max(2, int(round(segundos * fps)))
+    salida.parent.mkdir(parents=True, exist_ok=True)
+    ff = subprocess.Popen([find_bin("ffmpeg"), "-hide_banner", "-loglevel", "error", "-y",
+                           "-f", "rawvideo", "-pix_fmt", "rgb24", "-s", f"{W}x{H}", "-r", str(fps),
+                           "-i", "-", "-c:v", "libx264", "-preset", "veryfast", "-crf", "18",
+                           "-pix_fmt", "yuv420p", str(salida)], stdin=subprocess.PIPE)
+    try:
+        for k in range(n):
+            t = k / (n - 1)
+            suave = 1 - (1 - t) ** 3            # frena al llegar
+            span = math.exp(math.log(span_desde) + (math.log(span_hasta) - math.log(span_desde)) * suave)
+            cw = span / 360 * BW
+            ch = min(cw * H / W, BH)
+            cw = ch * W / H
+            x0 = min(max(px - cw / 2, 0), BW - cw)
+            y0 = min(max(py - ch / 2, 0), BH - ch)
+            cuadro = im.crop((int(x0), int(y0), int(x0 + cw), int(y0 + ch))).resize((W, H), Image.BILINEAR)
+            if t > 0.55:      # el punto: aparece con un golpe (grande → normal) y queda latiendo
+                d = ImageDraw.Draw(cuadro)
+                cx, cy = (px - x0) / cw * W, (py - y0) / ch * H
+                u = min(1.0, (t - 0.55) / 0.2)
+                r = 30 * (1 + 0.6 * (1 - u)) * (1 + 0.08 * math.sin(k / 3))
+                d.ellipse((cx - r - 10, cy - r - 10, cx + r + 10, cy + r + 10), outline=(255, 255, 255), width=8)
+                d.ellipse((cx - r, cy - r, cx + r, cy + r), fill=(230, 30, 30))
+            ff.stdin.write(cuadro.tobytes())
+    finally:
+        ff.stdin.close()
+        ff.wait(timeout=300)
+    if ff.returncode != 0:
+        raise RuntimeError(f"el mapa con zoom no salió (ffmpeg {ff.returncode})")
+    return salida
+
+
 def anio_contando(anio: int, desde: int | None = None, pasos: int = 18, inicio: float = 0.0,
                   hasta: float | None = None) -> list[str]:
     """El año corriendo de `desde` (unas décadas antes) hasta `anio` en CONTAR_S, frenando al final,

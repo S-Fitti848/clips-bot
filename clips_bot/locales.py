@@ -624,7 +624,7 @@ def proponer(wiki: ef.Wiki, sonnet, haiku, gemini, dia: date, carpeta: Path, avi
              videos: bool = False, tope_fotos_s: float | None = None, hecho: str = "",
              imagen_frase: bool = False, corto: bool = False, elector=None,
              elector_reintento=None, excluir: set | None = None,
-             evitar_paises: set | None = None) -> ef.Propuesta:
+             evitar_paises: set | None = None, mas_video: bool = False) -> ef.Propuesta:
     """`excluir`: hechos (su texto) que ya salieron hoy; `evitar_paises`: los países de esos (Santi,
     2026-11-12: 2 historias por día, sin repetir país si se puede: van al final, no afuera).
 
@@ -712,6 +712,7 @@ def proponer(wiki: ef.Wiki, sonnet, haiku, gemini, dia: date, carpeta: Path, avi
                                   corto=corto, rango=ef.LATAM_PALABRAS if corto else None,
                                   max_s=ef.LATAM_MAX_S if corto else 0.0)
             g.imagen_frase = imagen_frase or corto
+            g.mas_video = mas_video
             pool, g = ef.fotos_con_control(wiki, gemini, e, g, fotos, carpeta, avisar, videos=videos,
                                            tope_s=tope_fotos_s, elector=elector,
                                            elector_reintento=elector_reintento)
@@ -753,6 +754,7 @@ def rehacer(p: ef.Propuesta, wiki: ef.Wiki, sonnet, gemini, carpeta: Path, corre
                           validar_extra=validar_lugar(lugar, corto), contexto=contexto_de(c), corto=corto,
                           rango=ef.LATAM_PALABRAS if corto else None, max_s=ef.LATAM_MAX_S if corto else 0.0)
     g.imagen_frase = anterior.imagen_frase
+    g.mas_video = anterior.mas_video
     fotos, _ = ef.fotos_del_evento(wiki, e)
     try:
         pool, g = ef.fotos_con_control(wiki, gemini, e, g, fotos, carpeta, avisar,

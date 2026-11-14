@@ -975,6 +975,8 @@ class Guion:
     segunda_busqueda: bool = False
     # Las tarjetas que ya están en el pool (índices): el corto las usa antes de repetir una foto.
     tarjetas_fotos: list[int] = field(default_factory=list)
+    # Estilo nuevo (Santi, 2026-11-14): más video y menos fotos quietas (frases_video).
+    mas_video: bool = False
 
     @property
     def texto(self) -> str:
@@ -1102,6 +1104,18 @@ def validar_guion(d: dict, anio: int, fuente: str, corto: bool = False,
 
 
 MAX_VIDEOS = 3
+MAX_VIDEOS_NUEVO = 6     # estilo nuevo: hasta 6 frases buscan video (archivo libre o stock)
+
+
+def frases_video(g: "Guion") -> list[int]:
+    """Qué frases buscan video. Como siempre, las de acción (hasta 3). Con el estilo nuevo
+    (`mas_video`), también el gancho (un clip real arranca moviéndose desde el cuadro 1) y las que
+    nombran algo al pasar (stock de Pexels, como sus fotos); las centrales siguen con lo real del
+    hecho (archivo libre de su época o foto)."""
+    if not g.mas_video:
+        return list(g.accion)
+    al_pasar = [i for i in range(len(g.frases)) if not es_central(g, i)]
+    return sorted(dict.fromkeys([0] + list(g.accion) + al_pasar))[:MAX_VIDEOS_NUEVO]
 
 
 def claves_del_guion(claves, frases: list[str]) -> list[str]:
@@ -1641,7 +1655,7 @@ def buscar_videos(g: Guion, anio: int, carpeta: Path, buscador=None, avisar=log.
 
     buscador = buscador or vl.Buscador()
     out = {}
-    for i in (g.accion if frases is None else frases):
+    for i in (frases_video(g) if frases is None else frases):
         if i >= len(g.mostrar):
             continue
         hoy = i < len(g.presente) and g.presente[i]
@@ -1894,7 +1908,8 @@ def fraccion_real(pool: list, plan: list[tuple[int, int, float]]) -> float:
     total = sum(s for *_, s in plan)
     if total <= 0:
         return 0.0
-    reales = sum(s for _, f, s in plan if f == VIDEO or (0 <= f < len(pool) and not es_tarjeta(pool[f])))
+    reales = sum(s for _, f, s in plan
+                 if f in (VIDEO, MAPA) or (0 <= f < len(pool) and not es_tarjeta(pool[f])))
     return reales / total
 
 
@@ -2381,7 +2396,7 @@ def proponer(wiki: Wiki, cliente, dia: date, carpeta: Path, avisar=log.info,
              correccion: str = "", saltear: int = 0, hecho: str = "", videos: bool = False,
              tope_fotos_s: float | None = None, hablado: bool = False,
              imagen_frase: bool = False, elector=None, elector_reintento=None,
-             tema: str = "", corto: bool = False, texto=None) -> Propuesta:
+             tema: str = "", corto: bool = False, texto=None, mas_video: bool = False) -> Propuesta:
     """`tema` (2026-11-12, efemerides.tema): solo hechos de ese tema (TEMAS); si no hay ninguno,
     SinTema (no sale video). `corto`: el formato corto (SISTEMA_GUION_CORTO, 20-30 s).
 
@@ -2450,6 +2465,7 @@ def proponer(wiki: Wiki, cliente, dia: date, carpeta: Path, avisar=log.info,
             g = escribir_guion(escritor, e, fuente, correccion, hablado=hablado and not corto,
                                sistema=SISTEMA_GUION_CORTO if corto else None, corto=corto)
             g.imagen_frase = imagen_frase or corto      # efemerides.imagen_frase (2026-11-10)
+            g.mas_video = mas_video                     # efemerides.estilo_nuevo (2026-11-14)
             pool, g = fotos_con_control(wiki, cliente, e, g, fotos, carpeta, avisar, videos=videos,
                                         elector=elector, elector_reintento=elector_reintento,
                                         tope_s=tope_fotos_s)
@@ -2507,6 +2523,7 @@ def rehacer_guion(p: Propuesta, wiki: Wiki, cliente, carpeta: Path, correccion: 
                        hablado=hablado and not anterior.corto,
                        sistema=SISTEMA_GUION_CORTO if anterior.corto else None, corto=anterior.corto)
     g.imagen_frase = anterior.imagen_frase
+    g.mas_video = anterior.mas_video
     fotos, _ = fotos_del_evento(wiki, e)
     try:
         pool, g = fotos_con_control(wiki, cliente, e, g, fotos, carpeta, avisar,
@@ -2528,6 +2545,7 @@ def rehacer_guion(p: Propuesta, wiki: Wiki, cliente, carpeta: Path, correccion: 
 
 
 VIDEO = -1   # en un plan, (frase, VIDEO, segundos) = esa frase entera va con su video
+MAPA = -2    # estilo nuevo: (frase, MAPA, segundos) = el mapa acercándose hasta el lugar
 
 
 def con_videos(plan: list[tuple[int, int, float]], g: Guion) -> list[tuple[int, int, float]]:
@@ -2550,11 +2568,13 @@ CORTE_MAX_S, CORTE_MIN_S = 4.0, 2.5     # formato corto: un cambio de imagen cad
 FOTO_MAX_S = 4.0       # ninguna foto más que esto seguida (Santi, 2026-11-11)
 GANCHO_MAX_S = 2.5     # la primera, la del gancho
 MOVIMIENTOS = ("in", "der", "out", "izq")
+MONTAJE_CORTES, MONTAJE_MIN_S = 3, 0.6   # estilo nuevo: el gancho en 3 imágenes con golpe de zoom
 
 
 def plan_rapido(plan: list[tuple[int, int, float]], g: Guion,
                 max_apariciones: int = ilustrar.MAX_APARICIONES, nueva_tarjeta=None,
-                faltas: list | None = None) -> tuple[list[tuple[int, int, float]], list[str]]:
+                faltas: list | None = None,
+                montaje: bool = False) -> tuple[list[tuple[int, int, float]], list[str]]:
     """Formato corto: cada tramo se parte en cortes de 2,5 a 4 s. Los cortes de una frase alternan
     entre SUS fotos (las que el modelo puso para esa frase: la imagen sigue siendo lo que se dice).
 
@@ -2593,6 +2613,21 @@ def plan_rapido(plan: list[tuple[int, int, float]], g: Guion,
             out.append((i, f, s))
             movs.append("")
             seguido = 0.0
+            continue
+        if montaje and not out and i == 0:
+            # Estilo nuevo (Santi, 2026-11-14): el gancho como montaje rápido de 3 imágenes con golpe
+            # de zoom: la más impactante primero (es la primera del ranking), después otras de la
+            # frase o del tema general. Cada una cuenta como aparición (ninguna en más de 2 cortes).
+            n = max(1, min(MONTAJE_CORTES, int(s // MONTAJE_MIN_S)))
+            cand = list(dict.fromkeys([f] + [x for x in (rk[i] if i < len(rk) else []) if x != VIDEO]
+                                      + gen))
+            cand = [x for x in cand if x is not None and x >= 0][:n] or [f]
+            trozos = [round(s / len(cand), 3)] * len(cand)
+            for x, t in zip(cand, trozos):
+                veces[x] = veces.get(x, 0) + 1
+                out.append((i, x, t))
+                movs.append("golpe")
+            seguido = trozos[-1]
             continue
         if not out and s > GANCHO_MAX_S + 1e-9:
             trozos = [GANCHO_MAX_S] + partes(round(s - GANCHO_MAX_S, 3))
@@ -2650,7 +2685,9 @@ def filtro_movimiento(frames: int, fx: float, fy: float, mov: str, W: int, H: in
     la cara (in), alejarse (out) o un paneo con el zoom puesto (der/izq)."""
     t = f"on/{max(frames - 1, 1)}"
     dz = f"{zoom - 1:.3f}"
-    z = {"in": f"1+{dz}*{t}", "out": f"{zoom:.3f}-{dz}*{t}"}.get(mov, f"{zoom:.3f}")
+    z = {"in": f"1+{dz}*{t}", "out": f"{zoom:.3f}-{dz}*{t}",
+         # Golpe de zoom (estilo nuevo): entra de 1,25 a 1,12 en 6 cuadros y sigue acercándose lento.
+         "golpe": f"if(lt(on,6),1.25-0.13*on/6,1.12+0.06*{t})"}.get(mov, f"{zoom:.3f}")
     cx = f"clip(iw*{fx:.3f}-iw/zoom/2,0,iw-iw/zoom)"
     cy = f"clip(ih*{fy:.3f}-ih/zoom/2,0,ih-ih/zoom)"
     x = {"der": f"(iw-iw/zoom)*{t}", "izq": f"(iw-iw/zoom)*(1-{t})"}.get(mov, cx)
@@ -2743,7 +2780,7 @@ def alternar_video(p: Propuesta, n: int, carpeta: Path, buscador=None, avisar=lo
 
 def usadas_en_orden(p: Propuesta, plan: list[tuple[int, int, float]] | None = None) -> list[Foto]:
     """Las fotos que aparecen en el video, en el orden en que aparecen (para los créditos)."""
-    orden = list(dict.fromkeys(f for _, f, _ in (plan or plan_de(p)) if f != VIDEO))
+    orden = list(dict.fromkeys(f for _, f, _ in (plan or plan_de(p)) if f >= 0))
     return [Foto.de_dict(p.fotos[i]) for i in orden]
 
 
@@ -2924,6 +2961,16 @@ def voz_efemeride(frases: list[str], settings, carpeta: Path, avisar=log.info,
 
     cfg = settings.efemerides
     motivo = ""
+    from . import elevenlabs
+
+    if elevenlabs.lista(cfg):
+        # ElevenLabs (2026-11-14): solo con la clave en el .env y la voz elegida; si falla, la de siempre.
+        try:
+            pcm, sr = elevenlabs.hablar(" ".join(frases), cfg.elevenlabs_voz, cfg.elevenlabs_modelo)
+            wav = narrar.a_48k(_escribir_wav(pcm, sr, carpeta / "voz.wav"))
+            return wav, None, f"elevenlabs:{cfg.elevenlabs_nombre or cfg.elevenlabs_voz}"
+        except elevenlabs.ElevenLabsError as e:
+            avisar(f"ElevenLabs no anduvo ({str(e)[:120]}): sigo con la voz de siempre")
     if cfg.voz_motor == "gemini":
         try:
             claves = claves_activas() if env("GEMINI_API_KEY", requerido=False) else []
@@ -2967,8 +3014,9 @@ def voz_efemeride(frases: list[str], settings, carpeta: Path, avisar=log.info,
 
 def texto_voz(motor: str) -> str:
     """Lo que dice el mensaje del video: "Voz: Laomedeia" o "Voz: Piper (respaldo, sin cuota)"."""
-    if motor.startswith("gemini:"):
-        return f"Voz: {motor.split(':', 1)[1]}"
+    if motor.startswith(("gemini:", "elevenlabs:")):
+        nombre = motor.split(":", 1)[1]
+        return f"Voz: {nombre}" + (" (ElevenLabs)" if motor.startswith("elevenlabs:") else "")
     motivo = motor.partition("|")[2]
     return "Voz: Piper (respaldo" + (f", {motivo}" if motivo else "") + ")"
 
@@ -3063,6 +3111,9 @@ def hacer_video(p: Propuesta, settings, carpeta: Path, avisar=log.info, conn=Non
     t0 = time.time()
     cfg_v = settings.efemerides
     fb = p.destino == "facebook"
+    # Estilo nuevo (Santi, 2026-11-14): arranque con montaje y golpe de zoom (o un clip real), el
+    # mapa acercándose al lugar en la de Latinoamérica, gancho y subtítulos animados.
+    nuevo = bool(getattr(cfg_v, "estilo_nuevo", False))
     wav, duraciones, motor = voz_efemeride(g.frases, settings, carpeta, avisar, segunda_primero=fb)
     # Duración (2026-10-04): atempo hasta ×1,1 y nada más. Si no entra ni así, se acorta el GUION
     # (`cliente`: Gemini) y se vuelve a sintetizar; la voz nunca se acelera más ni cambia de tono.
@@ -3113,8 +3164,10 @@ def hacer_video(p: Propuesta, settings, carpeta: Path, avisar=log.info, conn=Non
         # contando recién con la segunda frase ("En <año>,"); las palabras clave después.
         from . import graficos as gr
 
+        # Estilo nuevo (2026-11-14): más grandes, 2-3 palabras, la activa con un saltito.
+        estilo = dict(tamano=100, rebote=True, borde=9, max_chars=14) if nuevo else dict(tamano=78)
         sub.escribir_ass_karaoke(palabras, carpeta / "subs.ass", settings.subtitulos, settings.render,
-                                 color_activo=sub.KARAOKE_PH, tamano=78)
+                                 color_activo=sub.KARAOKE_PH, **estilo)
         fin_gancho = inicios[1] if len(inicios) > 1 else min(fin, 3.0)
         # El año (y el lugar, en la de Latinoamérica) escritos desde la segunda frase, mientras la
         # voz suma intriga; la voz los dice en la 3.ª o 4.ª (Santi, 2026-11-12).
@@ -3122,7 +3175,7 @@ def hacer_video(p: Propuesta, settings, carpeta: Path, avisar=log.info, conn=Non
         lugar = str(((p.local or {}) if p.destino == "facebook" else {}).get("lugar") or "")
         gr.agregar_al_ass(carpeta / "subs.ass",
                           gr.estilos(settings.render.ancho, settings.render.alto, settings.subtitulos.fuente),
-                          gr.gancho_en_pantalla(g.frases[0], fin_gancho)
+                          (gr.gancho_animado if nuevo else gr.gancho_en_pantalla)(g.frases[0], fin_gancho)
                           + gr.anio_contando(e.anio, inicio=fin_gancho, hasta=fin_intriga)
                           + gr.lugar_en_pantalla(lugar, fin_gancho, fin_intriga)
                           + gr.claves_en_tiempo(palabras, g.claves,
@@ -3181,7 +3234,7 @@ def hacer_video(p: Propuesta, settings, carpeta: Path, avisar=log.info, conn=Non
         nueva = fabrica_tarjetas(g, e.anio, carpeta, lambda k: Foto.de_dict(p.fotos[k]),
                                  lambda f: (p.fotos.append(f.a_dict()), len(p.fotos) - 1)[1])
         faltas: list = []
-        plan, movimientos = plan_rapido(plan, g, nueva_tarjeta=nueva, faltas=faltas)
+        plan, movimientos = plan_rapido(plan, g, nueva_tarjeta=nueva, faltas=faltas, montaje=nuevo)
         p.guion = g.a_dict()
         if faltas:
             avisar(f"⚠️ fotos: en {len(faltas)} cortes no quedaba otra foto ni tarjeta: se repite")
@@ -3191,24 +3244,51 @@ def hacer_video(p: Propuesta, settings, carpeta: Path, avisar=log.info, conn=Non
                                  f"{UMBRAL_FOTOS_REALES * 100:.0f} %): no armo el video")
         avisar(f"formato corto: {len(plan)} cortes de {min(s for *_, s in plan):.1f} a "
                f"{max(s for *_, s in plan):.1f} s")
-    tramos = [(rutas_video[i] if f == VIDEO else Path(p.fotos[f]["ruta"]), s) for i, f, s in plan]
     mapa = None
+    ruta_mapa = None
+    if nuevo and fb and cfg_ef.graficos and len(plan) > 1:
+        # El mapa a pantalla completa acercándose al lugar, al empezar la segunda frase (la intriga,
+        # con el lugar escrito): reemplaza al recuadro quieto. Sin coordenadas, no va.
+        try:
+            from . import graficos as gr
+
+            wiki = Wiki()
+            coords = wiki.coordenadas(e.lang, e.paginas[0])
+            k = next((k for k, (i, f, _) in enumerate(plan) if i == 1 and f != VIDEO), None)
+            if coords and gr.distancia_ok(*coords) and k is not None:
+                i, f, s = plan[k]
+                dur = round(min(2.0, s), 3)
+                ruta_mapa = gr.mapa_zoom(wiki.mapa_base(carpeta), *coords, carpeta / "mapa_zoom.mp4",
+                                         segundos=dur, W=settings.render.ancho, H=settings.render.alto)
+                encuadres[str(ruta_mapa)] = (0.5, True)     # ya es 9:16: a pantalla completa
+                resto = [(i, f, round(s - dur, 3))] if s - dur >= 0.6 else []
+                plan[k:k + 1] = [(i, MAPA, dur)] + resto
+                if movimientos is not None:
+                    movimientos[k:k + 1] = ["mapa"] + [movimientos[k]] * len(resto)
+                avisar(f"mapa con zoom: {coords[0]:.2f}, {coords[1]:.2f}, {dur:.1f} s")
+        except (WikiError, OSError, KeyError, ValueError, RuntimeError, subprocess.SubprocessError) as err:
+            avisar(f"mapa con zoom: no salió ({str(err)[:100]})")
+    tramos = [(rutas_video[i] if f == VIDEO else ruta_mapa if f == MAPA else Path(p.fotos[f]["ruta"]), s)
+              for i, f, s in plan]
     if cfg_ef.graficos:
         from . import graficos as gr
 
         # Un whoosh suave en cada cambio de foto o video (en la voz+música, antes de las reglas de
         # audio que aplica armar_video).
         cortes, t = [], 0.0
-        for k, (i, _, s) in enumerate(plan[:-1]):
+        for k, (i, f, s) in enumerate(plan[:-1]):
             t += round(s * 30) / 30
-            if not g.corto or plan[k + 1][0] != i:   # en el corto, solo al cambiar de frase
+            # En el corto, solo al cambiar de frase; con el estilo nuevo también en el montaje del
+            # gancho y al entrar y salir del mapa.
+            if (not g.corto or plan[k + 1][0] != i
+                    or (nuevo and (i == 0 or MAPA in (f, plan[k + 1][1])))):
                 cortes.append(t)
         audio = gr.mezclar_whoosh(audio, cortes, gr.whoosh(carpeta / "whoosh.wav"),
                                   carpeta / "voz_musica_whoosh.wav")
         # El mapa con el punto, durante la segunda frase (si el artículo tiene coordenadas).
         try:
             wiki = Wiki()
-            coords = wiki.coordenadas(e.lang, e.paginas[0])
+            coords = None if ruta_mapa is not None else wiki.coordenadas(e.lang, e.paginas[0])
             if coords and gr.distancia_ok(*coords) and len(inicios) > 1:
                 desde = inicios[1]
                 hasta = min(desde + 3.5, inicios[2] if len(inicios) > 2 else fin)
