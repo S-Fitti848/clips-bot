@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-11-14 | **Versión:** v1.00.0 (desplegado) | **Modo:** Fase 2: corriendo solo en la Pi. **Rots APAGADO** (`publicacion.rots: false`). Madrugada desde la escucha: tecnología desde las 04:00 → 2 de Latinoamérica, todo antes de las 05:30; timers 05:00 (no hace nada con Rots apagado) y 06:00 de respaldo
+**Snapshot:** 2026-11-14 | **Versión:** v1.01.0 (la Pi en v1.00.0 `17ac748`: los subtítulos virales `8a7e7b1` esperan el OK de Santi) | **Modo:** Fase 2: corriendo solo en la Pi. **Rots APAGADO.** Pequeña Historia (3 por día, madrugada desde las 04:00) y **Así Nació** (1 por día, arma 07:00, publica 19:00 en YouTube y Facebook con ❌ Cancelar), todo al privado de Santi
 
 > **SI ESTÁS EMPEZANDO UNA SESIÓN NUEVA, LEÉ §10.** Ahí está qué está hecho, qué quedó a medias,
 > qué falta, y las trampas que ya nos mordieron.
@@ -757,8 +757,12 @@ clips_bot/claude.py      texto con Claude (SDK oficial `anthropic`, ANTHROPIC_AP
                          que GeminiClient.json; schema de Gemini → JSON Schema; uso en gemini_uso
                          con clave "claude"; Sonnet con fallbacks "default"
 clips_bot/elevenlabs.py  voz de ElevenLabs (preparada; solo con ELEVENLABS_API_KEY y efemerides.elevenlabs_voz)
-clips_bot/animacion/     canal de animación (2026-11-14, sin conectar): personajes/escenas SVG, línea de
-                         tiempo en JSON, render cairosvg → ffmpeg; demo: python -m clips_bot.animacion.demo
+clips_bot/animacion/     canal Así Nació (prendido): personajes/escenas SVG, línea de tiempo en JSON, render
+                         cairosvg → ffmpeg; marcas.py (catálogo, rotación, guion, revisión visual, video),
+                         tito.py (locutor), acciones.py, sfx.py, subtitulos_virales.py + letra.py
+                         (Montserrat Black como trazos), mascotas.py (las 4 opciones originales)
+clips_bot/animacion_remotion/ + remotion/  prototipo de Así Nació con Remotion (no en producción)
+assets/fuentes/          Montserrat Black + OFL.txt
 clips_bot/locales.py     §3d: historias de Facebook (Wikipedia en español por día, Haiku, Sonnet)
 clips_bot/calendario.py  §3d: calendario de 90 días de fechas de Latinoamérica + la lista de los lunes
 clips_bot/medicion_ph.py §1: seguimiento por video (segundo en que se va la mayoría en FB, % que se queda en YT calibrado con Studio, empujones)
@@ -766,7 +770,7 @@ clips_bot/voces.py       voces de Gemini de hoy por clave (con Lo Encontré) y e
 clips_bot/prueba_manual.py prueba manual vs API (§1): el clip del día a mano, registro e informe del feed
 clips_bot/envivo.py      modo en vivo (§3b): quién está al aire, momentos por creadores distintos,
                          alertas en la DB (no repetir, tope, vencer) y el resumen de tiempos
-tests/                   949 tests sin red ni video (conftest.py: nada sale a YouTube) (test_reglas_fijas.py: las 3 reglas de §1)
+tests/                   1411 tests sin red ni video (conftest.py: nada sale a YouTube) (test_reglas_fijas.py: las 3 reglas de §1)
 ```
 
 Comandos:
@@ -959,6 +963,18 @@ Problemas abiertos:
 
 ## 9. CHANGELOG
 
+- v1.01.0 (2026-11-14, noche) — **Subtítulos estilo Shorts virales en Así Nació** (commit `8a7e7b1`,
+  en los dos motores, **NO desplegado en la Pi** hasta el OK de Santi): grupos de 1-3 palabras,
+  Montserrat Black (SIL OFL 1.1, `assets/fuentes/` con su OFL.txt) dibujada como trazos (`letra.py`,
+  `montserrat_black.json`: sale igual en cairosvg, resvg y Chrome), contorno negro grueso y sombra
+  suave, "pop" a 112 % en 0,16 s desde el inicio de cada palabra según Whisper, claves (las marca el
+  guion con `claves`/`emoji`, regla 9 del prompt; Haiku las agrega si faltan; ≤ 2 por frase; los
+  números cuentan) más grandes y amarillas, rojas y temblando 0,45 s cerca de un golpe o en el remate,
+  emojis dibujados por código (💥💰😱🤣, sin fuente de emojis ni atribución) ≤ 1 cada 4,5 s al lado de
+  una clave, franja de arriba (y 168-294, ancho 93-996; si no entra, se achica la clave y después el
+  grupo). Nerf: 4,8 min (actual) y 8,4 min (Remotion). 1411 tests OK. También: Facebook de Así Nació
+  conectado (página «Asinacio.oficial»; el token de usuario había quedado pegado sobre el de Pequeña
+  Historia en el .env de la compu: se restauró desde la Pi) y §10 reescrito.
 - v1.00.0 (2026-11-14, noche) — **Prototipo de Así Nació con Remotion (NO en producción)** y análisis de
   Pequeña Historia. (1) Licencia de Remotion: gratis para una persona sola, también con fines
   comerciales (remotion.dev/docs/license/faq). (2) En la Pi (Node 24 del sistema + el navegador headless
@@ -2425,24 +2441,27 @@ Problemas abiertos:
 
 ## 10. DÓNDE ESTAMOS (leer primero en una sesión nueva)
 
-**Snapshot del 2026-11-14 (01:50 AR).** El bot corre solo en la Raspberry. La escucha de Telegram
-(24/7) arma toda la madrugada; los timers de 05:00 (clips) y 06:00 (efeméride) quedan de respaldo y
-no repiten lo que ya corrió.
+**Snapshot del 2026-11-14 (noche).** El bot corre solo en la Raspberry con DOS canales activos:
+**Pequeña Historia** (3 videos por día: 1 de tecnología solo en YouTube + 2 de Latinoamérica en YouTube y
+Facebook) y **Así Nació** (canal de marcas animadas, 1 por día, prendido desde el 15/11). **Rots está
+APAGADO.** La escucha de Telegram (24/7) arma todo; los timers de 05:00 y 06:00 quedan de respaldo.
+Todo lo de Pequeña Historia y Así Nació va al **privado de Santi** (`8668060171`); el grupo "Rots
+clips" queda sin uso mientras Rots siga apagado.
 
 ### Horarios (hora AR)
 
 | hora | qué | dónde |
 |---|---|---|
-| 01:30 | "pegó" — APAGADO con Rots (2026-11-14) | escucha, `_pego_tick` |
-| 03:30 | corrida de Rots — APAGADA (`publicacion.rots: false`, 2026-11-14) | `_madrugada_tick` |
+| ~~01:30~~ / ~~03:30~~ | "pegó" y la corrida de Rots — APAGADOS (`publicacion.rots: false`) | `_pego_tick`, `_madrugada_tick` |
 | 04:00 | propuesta de tecnología (puntaje ≥ 7,5) | `_madrugada_tick` → `efemeride_del_dia` |
 | después (desde 04:00) | 2 propuestas de Latinoamérica (puntaje ≥ 8, sin repetir país ni artículo) | `_fb_tick` |
 | 05:30 | tope de "todo en Telegram" (`LISTO_DESDE`) | |
-| 05:00 / 06:00 | timers de respaldo (no corren si ya se hizo: `DIARIO_FIN`, `EFE_DIA`) | systemd |
-| ~~13:00 / 18:00 / 21:30~~ | (los clips de Rots, apagados) | |
+| 05:00 / 06:00 | timers de respaldo (no hacen nada si ya se hizo) | systemd |
+| **07:00** | **Así Nació: arma el video del día** (nunca 03:45-06:00), lo programa y lo manda al privado con ❌ Cancelar | `_animacion_tick` |
+| 08:30 del país (11:00 AR sin país) | Latinoamérica en Facebook (≥ 4 h entre las dos) | `hora_historia_fb` |
+| desde 09:00 | medición de Pequeña Historia + análisis pedido de un Short + propuesta de mezcla | `_medicion_ph_tick` → `_analisis_y_mezcla` |
 | 11:00 / 15:30 / 20:00 | Pequeña Historia en YouTube (primer horario libre, ≥ 4 h entre videos) | `efemerides.horas_youtube` |
-| 08:30 del país de la historia (11:00 AR sin país) | Latinoamérica en Facebook (≥ 4 h entre las dos) | `hora_historia_fb` |
-| desde 09:00 | medición por video de Pequeña Historia (una vez por día) | `_medicion_ph_tick` |
+| **19:00** | **Así Nació se publica** en YouTube (@asinacio.oficial) y en su página de Facebook | `animacion.hora_publicacion` |
 | lunes 08:00 | lista de fechas de la semana a Santi | `_calendario_tick` |
 | al terminar el día pedido | costo real de Claude a Santi | `_costo_claude_tick` |
 
@@ -2450,39 +2469,51 @@ no repiten lo que ya corrió.
 
 | | |
 |---|---|
-| Rots | **APAGADO desde 2026-11-14** (`publicacion.rots: false`; código y canal intactos). Al prenderlo vuelve con: `render.edicion_rots: true`, `publicacion.subir_solo: true`, `textos.motor: claude` (Sonnet textos y chequeo visual, Haiku desempate, Gemini de respaldo), `textos.puntaje_min` 7, `seleccion.peso_momento` 1,0, `peso_chat` 0,5, `ejemplos_gusto` 3, `pego.activo`, `render.zoom_picos` |
-| Pequeña Historia | 3 por día: `efemerides.tema: tecnologia` + `corto: true` (20-30 s, solo YouTube: `facebook.efemeride: false`) y `historias_fb.por_dia: 2` (30-40 s, YouTube + Facebook: `historias_fb.youtube: true`); `efemerides.imagen_frase: true`, `historias_fb.formato_corto: true`, `efemerides.videos: true`, `efecto_fotos: fija`; gancho primero, intriga en la 2.ª, año/lugar en la 3.ª-4.ª, revisión del final con Claude |
-| Claude | Sonnet elige, puntúa, escribe guiones, revisa el final y elige fotos; Haiku clasifica; Gemini SOLO voces y audio (y de respaldo) |
-| subidas | YouTube PRENDIDA (Rots y Pequeña Historia conectados); Facebook `facebook.activo: true` (la app de Meta en modo desarrollo al 20/10: pasarla a Live es de Santi) |
-| apagado | Rots (2026-11-14), `efemerides.sin_aprobar` y `efemerides.estilo_nuevo` (esperan el OK de Santi), ElevenLabs (sin clave ni voz), multi-POV (desde 2026-09-28), prueba manual vs API (cancelada 2026-11-10), portadas con IA (en pausa) |
+| Rots | **APAGADO desde 2026-11-14** (`publicacion.rots: false`; código y canal intactos; /buscar a mano sigue). Al prenderlo vuelve con `render.edicion_rots`, `publicacion.subir_solo`, `textos.motor: claude`, etc. |
+| Pequeña Historia | 3 por día: `efemerides.tema: tecnologia` + `corto` (20-30 s, solo YouTube) y `historias_fb.por_dia: 2` (30-40 s, YouTube + Facebook); `imagen_frase`, `formato_corto`, `videos`; gancho primero, intriga en la 2.ª, año/lugar en la 3.ª-4.ª, revisión del final; **escenas ilustrativas también en las frases centrales** (`ESCENAS_EN_CENTRALES`); humor suave cuando se puede; mapa sincronizado con la voz (solo con `estilo_nuevo`); `efemerides.chat` / `historias_fb.chat` = privado de Santi |
+| Así Nació | `animacion.activo / subir / facebook: true`, `hora: 07:00`, `hora_publicacion: 19:00`, motor actual (SVG → cairosvg); reglas permanentes de v0.96.0 a v0.98.0 (acción, gancho en cadena, Tito con pausa en gris, viaje en el tiempo en sepia, composición verificada, revisión visual, ritmo 32-38 s con voz ×1,065, subtítulos arriba) |
+| Claude | Sonnet elige, puntúa, escribe guiones, revisa el final, elige fotos y revisa los cuadros de Así Nació; Haiku clasifica y chequea; Gemini SOLO voces y audio (y de respaldo) |
+| subidas | YouTube: Pequeña Historia, Así Nació (y Rots, apagado); Facebook: página de Pequeña Historia y página de Así Nació. La app de Meta (clips-bot) estaba en modo desarrollo en octubre: si sigue así, el público no ve los Reels (pasarla a Live es de Santi) |
+| apagado | Rots; `efemerides.sin_aprobar` y `efemerides.estilo_nuevo` (esperan el OK de Santi); ElevenLabs (sin clave ni voz); multi-POV; prueba manual vs API; portadas con IA |
 
-### Estado real de la Pi (verificado el 2026-11-14 01:51)
+### Estado real de la Pi (verificado el 2026-11-14 noche)
 
 | | |
 |---|---|
-| commit | v0.93.0 + arreglo de la revisión del final (`18eb5ee`), escucha reiniciada; 949 tests OK |
-| timers y escucha | `clips-bot.timer`, `clips-bot-efemeride.timer` y `clips-bot-telegram` activos; 75 °C mientras corría "pegó" |
-| última madrugada completa | la del 13/11 (`diario_fin` y `efemeride_dia` = 2026-11-13); la del 14/11 arranca a las 03:30 |
-| pedido de costo | `bot_estado.costo_claude_pedido` = 2026-11-14: el informe le llega a Santi apenas termina ese día |
-| claves | `ANTHROPIC_API_KEY` en el .env de clips de la Pi (no en la compu); FACEBOOK_PAGE_TOKEN de página con `read_insights`, no vence (huella ab2e94551f81); `GEMINI_API_KEY_2` para las voces de Latinoamérica |
-| destinos de la entrega diaria y de la efeméride | el grupo **Rots clips** (`-5453399767`) |
-| chats conocidos | Rots clips (grupo), Santi (`8668060171`, `DUENO`), Tommy Bildo y Micheal Lanlin (`8988378175`) |
-| música de Pequeña Historia | `musica/` fuera de git |
+| commit | **`17ac748`** (v1.00.0). **OJO: GitHub tiene uno más nuevo, `8a7e7b1` (subtítulos virales de Así Nació), que la Pi NO tiene a propósito**: espera el OK de Santi. Cuando lo dé: `git pull` en la Pi y reiniciar la escucha (sin trabajo pesado andando). Cualquier otro deploy antes de eso también lo traería: si hay que desplegar otra cosa, avisar o esperar el OK. |
+| timers y escucha | `clips-bot.timer`, `clips-bot-efemeride.timer`, `clips-bot-telegram` activos |
+| Así Nació | `animacion_dia` = 2026-11-14 (marcado a mano): el primer video real sale el **15/11** (arma 07:00, publica 19:00) |
+| pedidos pendientes en `bot_estado` | `analisis_video_pedido` = `UH4XoZ0rMuE` (el Short de Intel: el análisis le llega a Santi apenas Analytics tenga sus datos); `mezcla_propuesta` sin setear (se manda una vez cuando tecnología ≥ 1,3× Latinoamérica con ≥ 4 y ≥ 6 videos de 3 días) |
+| claves (.env de compu y Pi) | `ANTHROPIC_API_KEY` (solo Pi); `FACEBOOK_PAGE_TOKEN` (Pequeña Historia, huella ab2e94551f81); `ASINACIO_FACEBOOK_PAGE_ID` / `_TOKEN` (página «Asinacio.oficial» `1533484406504022`, huella 16d7443e4bb0, no vence); `GEMINI_API_KEY_2`; `FB_APP_ID` / `FB_APP_SECRET` |
+| tokens de YouTube | `config/youtube_token_{rots,pequena_historia,animacion}.json` (compu y Pi, fuera de git). Así Nació = canal «Asinacio.oficial» `UCPUKDAf5NJbdINUC2Rka69A` |
+| Remotion | Node 24 del sistema en la Pi; el prototipo se probó en `~/remotion_prueba` (fuera de `~/clips`); en el repo, `remotion/` (sin `node_modules`) y `clips_bot/animacion_remotion/` |
+| chats | Santi (`8668060171`, `DUENO`): todo; grupo "Rots clips" (`-5453399767`): sin uso con Rots apagado |
+| música | `musica/` fuera de git |
 
-### Lo que se hizo en la última sesión (2026-11-11 → 2026-11-13, v0.86.0 a v0.93.0)
+### Lo que se hizo en la última sesión (2026-11-14, v0.94.0 a v1.00.0 + subtítulos virales)
 
-- Calendario de fechas de Latinoamérica, control del 70 % de fotos reales, ficción solo desde la vida
-  real, karaoke, topes por foto y tarjetas, ruido del final de la voz, horarios de Facebook por país.
-- Gancho primero en todo Pequeña Historia y medición por video (`medicion_ph`, calibrada con Studio).
-- Nicho: 3 videos por día (2 Latinoamérica + 1 tecnología), YouTube a 4 h, aviso de voces.
-- Madrugada: todo en Telegram antes de las 05:30.
-- Guiones que retienen (intriga en la 2.ª frase, estructura gancho → tensión → giro → pago),
-  Latinoamérica de 30-40 s con puntaje ≥ 8, textos de Rots y de tecnología con Claude.
-- v0.93.0: revisión del final que paga el gancho (con el artículo entero: en La Pola el billete
-  estaba después de los 8.000 caracteres), puntaje propio de tecnología (≥ 7,5, ejemplo de 10:
-  Netscape) y el costo real de Claude por día. **Ojo para el 14/11:** el Netscape de ese día es el
-  lanzamiento de Netscape 6 (2000), no la guerra de los navegadores: puede que no pase el 7,5 y ese
-  día no salga el de tecnología (sale el aviso). Si pasa seguido, bajar el corte o sumar fuentes.
+- **Rots apagado** y Pequeña Historia al privado; **por qué el 14/11 no salió nada a la madrugada**
+  (tecnología 7,25 < 7,5; La Pola y Túpac Katari frenadas por el control del 70 %) → escenas
+  ilustrativas en las frases centrales; los de ese día se armaron a mano.
+- **Pequeña Historia:** gancho escrito con salto de línea (desde el 12/11 salía cortado, ya arreglado
+  en producción), pool sin fotos duplicadas (Archivo:/File:), montaje del gancho, mapa con zoom que llega
+  cuando se dice el lugar, gancho y subtítulos animados (todo eso con `estilo_nuevo`, APAGADO),
+  publicación sin aprobar (`sin_aprobar`, APAGADA), ElevenLabs preparado, humor suave.
+- **Investigación de nicho** (`docs/nicho-animacion/informe.md`) → Santi eligió **origen de marcas** →
+  canal **Así Nació** con el **Abuelo Tito** de locutor: catálogo de 457 marcas, rotación, guion con
+  Claude, reglas permanentes, revisión visual, conectado a YouTube y a Facebook, **prendido**.
+- **Remotion:** skill oficial instalada (`.claude/skills/remotion-best-practices`, fuera de git),
+  licencia gratis para una persona, prototipo con dibujos con volumen y perspectiva (Nerf: 8-10 min de
+  render en la Pi contra 5 del motor actual). **NO en producción.**
+- **Subtítulos virales de Así Nació** (commit `8a7e7b1`, NO desplegado): 1-3 palabras, Montserrat
+  Black (OFL, `assets/fuentes/`) dibujada como trazos, pop sincronizado, claves en amarillo/rojo con
+  temblor, emojis dibujados (💥💰😱🤣) cada 4,5 s como mínimo; en los dos motores.
+- **Imágenes de los canales:** perfil de Tito con fondo celeste (elegido); banners de YouTube rehechos
+  con todo dentro de 1300x350 (Pequeña Historia, 2 opciones; Así Nació como escena del taller, 2
+  opciones + portadas de Facebook, sin el portal: `output/canales/`).
+- **Intel:** el Short "El procesador barato de Intel que salió mal" (13/11) hizo 3.220 vistas (los
+  demás ~1.200). Analytics todavía no tenía sus datos (llega solo). Lo que se ve: marca conocida +
+  "salió mal" (único con ese ángulo), primera imagen un primer plano del producto, 29 s.
 
 ### Decisiones de Santi vigentes (además de §1)
 
@@ -2491,61 +2522,43 @@ no repiten lo que ya corrió.
 - Antes de programar algo de algoritmo o formato: **diseño corto primero y esperar su OK**; si hace
   falta volver a autorizar YouTube/Meta (permisos nuevos), avisar ANTES.
 - No tocar el turno de render compartido salvo que lo pida.
-- Mensajes míos por Telegram empiezan con "🔧 Claude Code:".
+- Mensajes míos por Telegram empiezan con "🔧 Claude Code:". Todo a su privado.
+- Así Nació: dibujos propios, sin logos reales; Tito es el locutor fijo y la cara del canal.
 
 ### Esperando respuesta de Santi (NO programar sin su OK)
 
-- **(2026-11-14) Diseño y ejemplo mandados:** prender `efemerides.sin_aprobar` (publicar solo con
-  ❌ Cancelar) y `efemerides.estilo_nuevo` (ejemplo de La Pola en su Telegram). Visto en el ejemplo:
-  en historias de 1800 casi no hay video libre de la época (salió 1 de Pexels: la copa de vino), y el
-  montaje del gancho repitió dos fotos casi iguales de la misma estatua.
-- **ElevenLabs:** cuando Santi ponga `ELEVENLABS_API_KEY`, `python -m clips_bot voces-elevenlabs` y
-  `--muestra <id>`; con la voz elegida, `efemerides.elevenlabs_voz` / `elevenlabs_nombre`.
-- **Así Nació** PRENDIDO desde el 15/11 (1 por día, YouTube y Reel en su página de Facebook a las 19:00,
-  con ❌ Cancelar). Página «Asinacio.oficial» (`1533484406504022`) conectada el 14/11: token de página
-  que no vence en `ASINACIO_FACEBOOK_PAGE_TOKEN` (huella 16d7443e4bb0, compu y Pi). Falta que Santi
-  elija el banner. OJO: la app de Meta (clips-bot) seguía en modo desarrollo en octubre: si sigue así,
-  el público no ve los Reels (pasarla a Live es de Santi, docs/facebook-asi-nacio.md). Con su OK: `animacion.activo: true`. Cuando
-  cree el canal de YouTube: `youtube-auth animacion` y programar la subida (hoy no existe).
-- **Retención y alcance** (`docs/diseno-retencion-alcance.md`): esperando su OK. Instagram pide volver
-  a autorizar el token de la página con el permiso de publicar en Instagram (avisar antes); TikTok
-  pide app + auditoría (sin auditar, todo queda privado).
-
-0. **Voz de Pequeña Historia** (v0.88.0): muestras de Fenrir más calmo, Achird, Sadaltager y Charon
-   con energía media mandadas; falta que elija. Al elegir: `efemerides.tts_modelo:
-   gemini-2.5-flash-preview-tts`, `tts_instruccion` (la de energía media/calma, terminada en ":"),
-   `tts_voz`. Con ese modelo la instrucción NO se lee en voz alta (probado con Whisper).
-- **Descripciones de los canales** (propuestas el 2026-11-12, no aplicadas): las cambia Santi.
-- **Fechas con datos que llegan solos:** 15/11 el costo real de Claude del 14/11; **24/11** la
-   comparación de Facebook (historias vs Reels anteriores); **26/11** `medicion_ph` (los videos
-   nuevos contra los 10 Shorts anteriores, tecnología contra Latinoamérica). Con esos datos, revisar
-   los horarios de Facebook por hora y los cortes de puntaje (8 Latinoamérica, 7,5 tecnología).
-   El script de ejemplos de la edición: `~/clips/ejemplos_edicion.py fb|efe|rots <clip_id>` (fuera de git).
-
-1. **Diseño del algoritmo de ROTS y Pequeña Historia** (mandado el 2026-11-05): `/analisis`;
-   ponderación del rendimiento 40/40/20 (vistas / % que llega al final / comentarios cada 1.000
-   vistas); recortar el relleno del arranque (máx. 3 s, nunca debajo de 15 s); títulos con postura o
-   pregunta; en Pequeña Historia primera frase = el dato más sorprendente (ejemplos: Roundhay 14/10
-   y Cardiff 16/10), formato y tono fijos, cierre con una pregunta de ≤ 12 palabras; `/stats_fb`
-   (puede pedir el permiso `read_insights` del token de la página: avisar antes).
-2. **Foto del HTC Dream en el video de Android**: en la pantalla se leen palabras chicas en alemán
-   (regla (g) de §1). Se le ofreció cambiarla por una de Andy Rubin de 2008 (Commons, CC BY 2.0).
-   También la frase 3 ("creado para cámaras digitales") muestra un joystick de OUYA: no se tocó.
-3. **Prueba de Facebook de 2 semanas: PROGRAMADA y andando (v0.79.x, §3d).** El **2026-11-24**:
-   comparar reacciones, comentarios, compartidos y reproducciones (`video_insights`) de las
-   historias (`bot_estado.historias_fb_registro`, con su tipo) contra los Reels de las 2 semanas
-   anteriores. **Más fuentes (propuesta, NO programada):** en un mes hay 2 días sin ninguna
-   historia buena (21/11, 29/11) y 10 sin ninguna fuerte; además las celebraciones de una ciudad
-   sin línea en Acontecimientos (Independencia de Ambato, 12/11/1820) hoy no son candidatas. Ideas:
-   tomar como candidato la celebración que trae año y ciudad; los anexos "Efemérides de <país>" y
-   las fundaciones de ciudades de Wikipedia en español; la historia del artículo de cada ciudad.
-   Detalles vistos en la prueba de Epecuén: los créditos repiten la foto base de las tarjetas (4
-   veces la misma línea) y la miniatura de la tarjeta en la hoja corta el texto del medio.
-4. **Pruebas de voz viejas** (v0.72.0, A / B / B+): reemplazadas por las de v0.88.0 (punto 0). La C
-   (ElevenLabs) necesita una clave que no está.
-5. **Cuota de voces:** Lo Encontré comparte la GEMINI_API_KEY principal (tope ~10 por día, aviso a
-   Santi en 8). Pequeña Historia usa 3 por día (las 2 de Latinoamérica por la segunda clave). El repo
-   bot-videos no se toca.
+- **Subtítulos virales de Así Nació:** mandados los dos Nerf (motor actual y Remotion). Con su OK:
+  `git pull` en la Pi + reiniciar la escucha, y sumar las reglas al §1 ("1-3 palabras, Montserrat Black
+  como trazos, pop con Whisper, arriba y=168-294; claves del guion (`claves`/`emoji`, Haiku si faltan)
+  ≤ 2 por frase, amarillas y rojas con temblor en impactos/remate; emojis dibujados ≤ 1 cada 4,5 s al
+  lado de una clave; si no entra, se achica la clave y después el grupo").
+- **Remotion sí o no** para Así Nació. Si sí: conectar `marcas.armar_video` a Remotion detrás de un
+  interruptor (motor actual de respaldo), revisión visual sobre sus cuadros, `npm ci` en
+  `~/clips/remotion`, render de 10-12 min (cabe desde las 07:00), redibujar `juego_mesa`,
+  `hamburguesa`, `auto`, `consola` y el fondo del globo en el estilo nuevo.
+- **Banner de Así Nació:** opción 1 o 2 del taller sin portal (`output/canales/banners_taller/asinacio_v3_*`).
+  **Banner y perfil de Pequeña Historia:** opción 1 o 2 (`output/canales/banners_yt/`, `output/canales/ph/`).
+- **Pequeña Historia:** prender `efemerides.estilo_nuevo` (Santi dio feedback y pidió combinarlo en
+  "el estilo final", pero no dijo "prendelo") y `efemerides.sin_aprobar`.
+- **Mezcla 2 tecnología + 1 Latinoamérica en YouTube:** la propuesta llega sola si los datos lo
+  justifican; cambiarla recién con su OK.
+- **Retención y alcance** (`docs/diseno-retencion-alcance.md`): Instagram (volver a autorizar con el
+  permiso de Instagram: avisar antes), TikTok (app + auditoría), final en loop (cambia la regla fija 3
+  de audio), música con tensión y efectos, links de búsqueda de grupos de Facebook.
+- **App de Meta en modo Live** (lo hace Santi, docs/facebook-asi-nacio.md): sin eso el público puede no
+  ver los Reels de las dos páginas.
+- **ElevenLabs:** cuando ponga `ELEVENLABS_API_KEY`, `voces-elevenlabs` y `--muestra <id>`.
+- **Voz de Pequeña Historia** (v0.88.0): muestras de Fenrir más calmo, Achird, Sadaltager y Charon;
+  falta que elija (`efemerides.tts_modelo: gemini-2.5-flash-preview-tts`, `tts_instruccion`, `tts_voz`).
+- **Descripciones de los canales** (propuestas el 2026-11-12): las cambia Santi.
+- **Fechas con datos que llegan solos:** el análisis de Intel (apenas Analytics lo tenga); **24/11** la
+  comparación de Facebook; **26/11** `medicion_ph` (los nuevos contra los 10 anteriores, tecnología
+  contra Latinoamérica). Con esos datos: horarios de Facebook y cortes de puntaje (8 y 7,5).
+- **Diseño del algoritmo** (2026-11-05: `/analisis`, ponderación 40/40/20, `/stats_fb`), **foto del
+  HTC Dream** en el video de Android, **más fuentes de historias** de Latinoamérica (días sin historia
+  buena): siguen sin respuesta.
+- **Cuota de voces:** Lo Encontré comparte la GEMINI_API_KEY principal (tope ~10 por día, aviso en 8);
+  Pequeña Historia usa 3 por día y Así Nació 1 más. El repo bot-videos no se toca.
 
 ### Problemas vistos y no arreglados
 
