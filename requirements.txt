@@ -16,5 +16,10 @@ opencv-python-headless>=4.8,<5; platform_machine == "aarch64"
 pytesseract>=0.3.10
 # Texto del video de Pequeña Historia para Facebook (claude.py), con ANTHROPIC_API_KEY en el .env.
 anthropic>=2.7
+# Animación vectorial (clips_bot/animacion): SVG → píxeles. cairosvg es el que se usa en la Pi
+# (usa libcairo del sistema, que ya está; medido 2026-11-14: 0,09 s/cuadro contra 0,93 de
+# resvg-py). resvg-py queda de respaldo donde no hay libcairo (Windows) y para los tests.
+cairosvg>=2.7
+resvg-py>=0.5
 pytest>=8.0
 # Además: ffmpeg con libass en el PATH (Windows: winget install Gyan.FFmpeg · Pi: apt install ffmpeg)
