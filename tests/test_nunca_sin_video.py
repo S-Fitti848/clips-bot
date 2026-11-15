@@ -280,3 +280,35 @@ def test_latam_sin_candidatas_usa_el_banco(monkeypatch, tmp_path, tec_sin_red):
     assert ef.NO_ES_DE_HOY in tec_sin_red[-1][1]
     with pytest.raises(ef.NarrarError):
         locales.proponer(None, None, None, None, HOY, tmp_path, banco=[], piso_alternativo=6.0)
+
+
+# ---- voz falsa en las pruebas (Santi, 2026-11-15) ---------------------------------------------
+
+def test_en_una_prueba_la_voz_es_falsa_y_en_produccion_real(monkeypatch):
+    from clips_bot import gemini as gm
+
+    monkeypatch.delenv("CLIPS_VOZ_REAL", raising=False)
+    assert gm.ORIGEN == gm.PRUEBA and ef.voz_falsa()
+    with gm.origen(gm.PRODUCCION):
+        assert not ef.voz_falsa()
+    with gm.origen(gm.A_MANO):          # ✅ en Telegram arma el video que se publica
+        assert not ef.voz_falsa()
+    monkeypatch.setenv("CLIPS_VOZ_REAL", "1")
+    assert not ef.voz_falsa()
+
+
+def test_la_voz_de_prueba_no_llama_a_gemini(monkeypatch, tmp_path):
+    import wave
+    from dataclasses import replace
+
+    monkeypatch.delenv("CLIPS_VOZ_REAL", raising=False)
+    s = load_settings()
+    s = replace(s, voz=replace(s.voz, modelo=str(tmp_path / "no_existe.onnx")))
+
+    def tts(*a, **k):
+        raise AssertionError("una prueba no puede gastar una voz de Gemini")
+
+    wav, dur, motor = ef.voz_efemeride(["Una frase de cinco palabras.", "Otra más."], s, tmp_path, tts=tts)
+    assert motor == "falsa:silencio" and len(dur) == 2 and "PRUEBA" in ef.texto_voz(motor)
+    with wave.open(str(wav)) as w:
+        assert abs(w.getnframes() / w.getframerate() - sum(dur)) < 0.01

@@ -3433,6 +3433,54 @@ def ecualizar_locutor(wav: Path) -> Path:
     return wav
 
 
+def voz_falsa() -> bool:
+    """¿Esta voz es de una PRUEBA? (Santi, 2026-11-15: la voz real de Gemini, solo para el video que se publica).
+    Sí cuando corre un script o el CLI a mano (origen "prueba" en gemini.py); no en producción (los ticks, `diario`,
+    `efemeride-diaria`) ni en los comandos y botones de Telegram (✅ arma el video que se publica).
+    `CLIPS_VOZ_REAL=1` la fuerza real (un script que arma un video para publicar, como el Intel del 15/11) y
+    `CLIPS_VOZ_FALSA=1` la fuerza falsa."""
+    import os
+
+    from . import gemini as gm
+
+    if os.getenv("CLIPS_VOZ_REAL") == "1":
+        return False
+    if os.getenv("CLIPS_VOZ_FALSA") == "1":
+        return True
+    return gm.ORIGEN == gm.PRUEBA
+
+
+def voz_de_prueba(frases: list[str], settings, carpeta: Path,
+                  avisar=log.info) -> tuple[Path, list[float] | None, str]:
+    """La voz de una prueba: Piper si está (frase por frase, con su duración exacta) o, si no, silencio con la
+    duración estimada (PALABRAS_POR_S_VOZ, como Gemini). No gasta ninguna voz de Gemini."""
+    import wave
+
+    from dataclasses import replace
+
+    from . import narrar
+
+    cfg = settings.efemerides
+    modelo = Path(settings.voz.modelo)
+    if modelo.exists():
+        ajustes = replace(settings.voz, length_scale=cfg.piper_length_scale,
+                          noise_scale=cfg.piper_noise_scale, noise_w_scale=cfg.piper_noise_w_scale)
+        wav, duraciones = narrar.sintetizar_frases(frases, modelo, carpeta / "voz.wav", ajustes=ajustes)
+        avisar("voz de PRUEBA con Piper (no gasta voces de Gemini)")
+        return wav, duraciones, f"falsa:piper:{modelo.stem}"
+    duraciones = [round(max(0.8, len(f.split()) / PALABRAS_POR_S_VOZ + 0.25), 2) for f in frases]
+    carpeta.mkdir(parents=True, exist_ok=True)
+    salida = carpeta / "voz.wav"
+    sr = 48000
+    with wave.open(str(salida), "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(sr)
+        w.writeframes(b"\x00\x00" * int(sr * sum(duraciones)))
+    avisar(f"voz de PRUEBA: silencio de {sum(duraciones):.1f} s (sin Piper; no gasta voces de Gemini)")
+    return salida, duraciones, "falsa:silencio"
+
+
 def voz_efemeride(frases: list[str], settings, carpeta: Path, avisar=log.info,
                   tts=None, segunda_primero: bool = False) -> tuple[Path, list[float] | None, str]:
     """La voz del guion: (wav, duración de cada frase o None, motor que se usó).
@@ -3450,6 +3498,9 @@ def voz_efemeride(frases: list[str], settings, carpeta: Path, avisar=log.info,
     motivo = ""
     from . import elevenlabs
 
+    if voz_falsa():
+        # Una prueba (Santi, 2026-11-15: "las voces de Gemini no alcanzan"): nada de Gemini ni ElevenLabs.
+        return voz_de_prueba(frases, settings, carpeta, avisar)
     if elevenlabs.lista(cfg):
         # ElevenLabs (2026-11-14): solo con la clave en el .env y la voz elegida; si falla, la de siempre.
         try:
@@ -3504,6 +3555,8 @@ def texto_voz(motor: str) -> str:
     if motor.startswith(("gemini:", "elevenlabs:")):
         nombre = motor.split(":", 1)[1]
         return f"Voz: {nombre}" + (" (ElevenLabs)" if motor.startswith("elevenlabs:") else "")
+    if motor.startswith("falsa:"):
+        return "Voz: de PRUEBA (" + ("Piper" if "piper" in motor else "silencio") + ", no gasta voces de Gemini)"
     motivo = motor.partition("|")[2]
     return "Voz: Piper (respaldo" + (f", {motivo}" if motivo else "") + ")"
 

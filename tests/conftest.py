@@ -120,3 +120,10 @@ def chat_a_destinos(monkeypatch):
         return raw
 
     monkeypatch.setattr(config, "_read_yaml", leer)
+
+
+@pytest.fixture(autouse=True)
+def _voz_real_en_los_tests(monkeypatch):
+    """Los tests corren con origen "prueba", que en el bot significa voz FALSA (Santi, 2026-11-15). Los que
+    prueban el camino de la voz real pasan su `tts` falso; los de la voz falsa sacan esta variable."""
+    monkeypatch.setenv("CLIPS_VOZ_REAL", "1")
