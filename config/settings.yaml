@@ -341,7 +341,7 @@ efemerides:
   # las 2 de Latinoamérica) se arman y se programan solas; el video llega a Telegram horas antes de
   # publicarse con ❌ Cancelar, y si no se toca nada sale a su hora. /efemeride e /historia a mano
   # siguen con ✅. Los controles de calidad automáticos no cambian.
-  sin_aprobar: false
+  sin_aprobar: true          # PRENDIDO por Santi el 2026-11-15
   # Estilo nuevo (Santi, 2026-11-14; PRENDIDO por Santi el 2026-11-15, con el feedback de La Pola): el gancho como montaje de
   # 3 imágenes con golpe de zoom y whoosh (o un clip real si lo hay), el mapa a pantalla completa
   # acercándose al lugar en la de Latinoamérica, el gancho escrito entrando palabra por palabra con
@@ -612,19 +612,26 @@ pego:
 # salen los candidatos con promedio >= puntaje_min (marca conocida, dato sorprendente, giro, humor);
 # si ninguno llega, ese día no sale y se avisa. Nunca entre las 03:45 y las 06:00 (Pequeña Historia).
 animacion:
-  # Así Nació PRENDIDO (Santi aprobó el Nerf el 2026-11-14): 1 video por día al privado, ya programado
-  # en YouTube (@asinacio.oficial) a las 19:00 AR, con ❌ Cancelar; si no se toca nada, sale solo.
+  # Así Nació PRENDIDO (Santi aprobó el Nerf el 2026-11-14): 2 videos por día al privado (desde el 15/11), ya
+  # programados en YouTube (@asinacio.oficial) a las 13:00 y 20:00 AR, con ❌ Cancelar; si no se toca nada, salen solos.
   activo: true
   subir: true
   hora_publicacion: "19:00"
+  # 2 videos por día (Santi, 2026-11-15), de marcas distintas: el primero se arma desde las 07:00 y el
+  # segundo apenas termina el primero; cada uno se programa en su horario.
+  horas_publicacion: ["13:00", "20:00"]
+  max_tokens: 32000          # el guion entero (escenas, cámara, efectos); si se corta, reintenta con 64.000
+  reintentos_guion: 8
+  reintento_min: 60          # si un video falla, otro intento en 1 h (hasta las 22:00), no se pierde el día
+  reintento_hasta: "22:00"
   facebook: true             # el Reel en la página de Facebook de Así Nació (conectada el 2026-11-14)
   subtitulos_virales: true   # subtítulos estilo Shorts virales (aprobados por Santi el 2026-11-14)
   hora: "07:00"              # AR: desde cuándo la escucha arma el del día
   chat: ""                   # vacío = el privado de Santi
   modelo_texto: "claude-sonnet-5-5"
-  candidatos: 8
+  candidatos: 14             # marcas que puntúa Sonnet por video (8 → 14 el 2026-11-15: presupuesto)
   puntaje_min: 8.0
-  max_intentos: 3
+  max_intentos: 4
   musica: true
   musica_volumen: 0.10
   procesos: 1

@@ -421,8 +421,8 @@ SCHEMA_ELEGIR = {
 }
 
 
-ELEGIDOS = 8        # el ranking que devuelve Gemini: los 3 primeros son "los 3 más interesantes"
-MAX_GUIONES = 3     # hechos que se intentan por día (2 → 3 el 2026-09-29: con la regla de 4 fotos
+ELEGIDOS = 14       # (8 → 14 el 2026-11-15: presupuesto de Claude para puntuar más) el ranking que devuelve Gemini: los 3 primeros son "los 3 más interesantes"
+MAX_GUIONES = 4     # (3 → 4 el 2026-11-15, presupuesto de Claude) hechos que se intentan por día (2 → 3 el 2026-09-29: con la regla de 4 fotos
                     # de época se pasa más seguido al siguiente). Cada uno son 2 llamadas (guion +
                     # fotos) más los reintentos del guion: caso normal 1 + 3 × 2 = 7
 
@@ -1195,7 +1195,7 @@ def final_que_paga(cliente, d: dict, e: Evento, fuente: str, corto: bool = False
 
 
 def escribir_guion(cliente, e: Evento, fuente: str, correccion: str = "", anterior: str = "",
-                   reintentos: int = 2, hablado: bool = False, sistema: str | None = None,
+                   reintentos: int = 3, hablado: bool = False, sistema: str | None = None,
                    validar_extra=None, contexto: str = "", corto: bool = False,
                    rango: tuple[int, int] | None = None, max_s: float = 0.0,
                    revisar_final: bool = True) -> Guion:
@@ -1481,8 +1481,8 @@ def rankings_de(d: dict, candidatas: list[list[int]],
 # de salida: lo caro). Ahora Haiku describe cada foto UNA vez (guardado por foto: la misma foto no se
 # vuelve a pagar) y, solo con texto, ordena las candidatas de cada frase; Sonnet mira las mejores
 # PREFILTRO_POR_FRASE de cada una (la frase 1, una más: la del gancho) y decide como siempre.
-PREFILTRO_POR_FRASE = 3
-VIDEOS_POR_FRASE = 2          # con el estilo nuevo eran hasta 4 videos × 3 cuadros por frase: lo más caro
+PREFILTRO_POR_FRASE = 5      # 2026-11-15: con US$ 80/mes de tope, Sonnet mira más (eran 3)
+VIDEOS_POR_FRASE = 3          # (2026-11-15: 3) con el estilo nuevo eran hasta 4 videos × 3 cuadros por frase: lo más caro
 PREFILTRO_MIN = 14            # con menos fotos que esto, Sonnet las mira todas (no hay nada que ahorrar)
 CACHE_DESCRIPCIONES = DATA_DIR / "cache_claude" / "fotos"
 

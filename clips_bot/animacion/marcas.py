@@ -846,9 +846,21 @@ def escribir_guion(cliente, e: Elegido, fuente: str, reintentos: int = 6, avisar
     pedido = (f"MARCA: {e.marca.nombre} ({e.marca.pais})\nÁNGULO: {e.angulo} — {ANGULOS[e.angulo]}\n"
               f"Dato para el gancho (sugerido): {e.dato}\n\nTEXTO (Wikipedia; los datos salen SOLO de "
               f"acá):\n{fuente[:20000]}" + (f"\n\n{extra}" if extra else ""))
+    from clips_bot.gemini import GeminiError
+
     correccion, ultimo = "", []
     for intento in range(reintentos):
-        d = json.loads(cliente.json(SISTEMA_GUION, pedido + correccion, SCHEMA_GUION, 0.9))
+        try:
+            d = json.loads(cliente.json(SISTEMA_GUION, pedido + correccion, SCHEMA_GUION, 0.9))
+        except GeminiError as err:   # ClaudeError hereda: una respuesta cortada cuenta como un intento
+            if getattr(err, "pasajero", False):
+                raise
+            ultimo = [str(err)[:200]]
+            avisar(f"guion de {e.marca.nombre} ({e.angulo}), intento {intento + 1}: {ultimo[0]}")
+            continue
+        except ValueError as err:     # JSON roto: otro intento
+            ultimo = [f"respuesta que no es JSON: {str(err)[:120]}"]
+            continue
         ultimo = validar_guion(d, e.marca, fuente)
         if not ultimo:
             ultimo = chequear_calidad(revisor, d, e.marca)
@@ -1234,13 +1246,15 @@ def ultima_fila_uso(conn) -> int:
 
 def proponer(conn, cliente, wiki, hoy: date, catalogo: list[Marca] | None = None, n: int = 8,
              minimo: float = PUNTAJE_MIN, max_intentos: int = 3, avisar=log.info,
-             revisor=None, forzar: Elegido | None = None) -> tuple[Elegido, dict, str]:
+             revisor=None, forzar: Elegido | None = None,
+             reintentos_guion: int = 6) -> tuple[Elegido, dict, str]:
     """(elegido, guion validado, fuente). SinCandidato si ninguno llega al puntaje o ningún guion valida.
     `forzar`: una marca y ángulo elegidos a mano (para rehacer un ejemplo): sin rotación ni puntaje."""
     if forzar is not None:
         fuente = fuente_de(wiki, forzar.marca)
         try:
-            return forzar, escribir_guion(cliente, forzar, fuente, avisar=avisar, revisor=revisor), fuente
+            return forzar, escribir_guion(cliente, forzar, fuente, reintentos_guion, avisar=avisar,
+                                          revisor=revisor), fuente
         except GuionInvalido as err:
             raise SinCandidato(f"el guion no pasó la validación: {err}") from err
     catalogo = catalogo if catalogo is not None else cargar_catalogo()
@@ -1262,7 +1276,7 @@ def proponer(conn, cliente, wiki, hoy: date, catalogo: list[Marca] | None = None
     for e in elegidos[:max_intentos]:
         fuente = fuente_de(wiki, e.marca)
         try:
-            return e, escribir_guion(cliente, e, fuente, avisar=avisar, revisor=revisor), fuente
+            return e, escribir_guion(cliente, e, fuente, reintentos_guion, avisar=avisar, revisor=revisor), fuente
         except GuionInvalido as err:
             errores.append(str(err))
     raise SinCandidato("ningún guion pasó la validación: " + " | ".join(errores)[:600])
@@ -1298,7 +1312,7 @@ def armar_video(conn, settings, carpeta: Path, cliente=None, wiki=None, hoy: dat
     t_total = time.time()
     tiempos = {}
     fila0 = ultima_fila_uso(conn)
-    cliente = cliente or claude.cliente(cfg.modelo_texto)
+    cliente = cliente or claude.cliente(cfg.modelo_texto, max_tokens=cfg.max_tokens)
     if cliente is None:
         raise SinCandidato("sin ANTHROPIC_API_KEY: el texto de este canal va con Claude")
     revisor = revisor or claude.cliente(claude.HAIKU)
@@ -1309,7 +1323,8 @@ def armar_video(conn, settings, carpeta: Path, cliente=None, wiki=None, hoy: dat
         e, d = forzar, guion
     else:
         e, d, fuente = proponer(conn, cliente, wiki, hoy, catalogo, cfg.candidatos, cfg.puntaje_min,
-                                cfg.max_intentos, avisar, revisor=revisor, forzar=forzar)
+                                cfg.max_intentos, avisar, revisor=revisor, forzar=forzar,
+                                reintentos_guion=cfg.reintentos_guion)
     tiempos["guion_s"] = round(time.time() - t0, 1)
     if not tiene_claves(d) and revisor is not None:     # REGLA 9 con un guion que no la trae
         try:

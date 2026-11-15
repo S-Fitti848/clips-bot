@@ -462,6 +462,13 @@ class Animacion:
     # @asinacio.oficial) para hora_publicacion, con ❌ Cancelar; si no se toca nada, se publica solo.
     subir: bool = False
     hora_publicacion: str = "19:00"
+    # 2 por día (Santi, 2026-11-15): uno por horario, de marcas distintas. Vacío = solo hora_publicacion.
+    horas_publicacion: tuple = ()
+    # El guion de animación es largo (escenas, cámara, efectos): el 15/11 no entró en 16.000 tokens.
+    max_tokens: int = 32000
+    reintentos_guion: int = 8          # vueltas de corrección del guion antes de pasar a otra marca
+    reintento_min: int = 60            # si falla (no por falta de candidatos), otro intento en 1 h
+    reintento_hasta: str = "22:00"     # y ninguno después de esta hora
     # El Reel en la página de Facebook de Así Nació, cuando esté conectada (ASINACIO_FACEBOOK_PAGE_ID y
     # ASINACIO_FACEBOOK_PAGE_TOKEN en el .env; otra página que la de Pequeña Historia).
     facebook: bool = False
@@ -584,6 +591,7 @@ def load_settings(path: Path = CONFIG_DIR / "settings.yaml") -> Settings:
         ("candidatos", "palabras_deportes"),
         ("candidatos", "categorias_costream"),
         ("publicacion", "horarios"),
+        ("animacion", "horas_publicacion"),
     ]:
         if clave in (raw.get(seccion) or {}):
             raw[seccion][clave] = tuple(str(x) for x in raw[seccion][clave] or ())

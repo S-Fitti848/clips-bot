@@ -20,6 +20,25 @@ pytestmark = pytest.mark.usefixtures("rots_prendido")   # Rots apagado en settin
 OK = {"candidates": [{"content": {"parts": [{"text": "{}"}]}}]}
 
 
+
+@pytest.fixture(autouse=True)
+def _con_aprobacion(monkeypatch):
+    """Estos tests son del flujo CON aprobación (✅): desde el 2026-11-15 `sin_aprobar` está prendido."""
+    from dataclasses import replace
+
+    import clips_bot.config as cfg_mod
+
+    original = cfg_mod.load_settings
+
+    def cargar(*a, **k):
+        s = original(*a, **k)
+        return replace(s, efemerides=replace(s.efemerides, sin_aprobar=False))
+
+    monkeypatch.setattr(cfg_mod, "load_settings", cargar)
+    monkeypatch.setattr(m, "load_settings", cargar)
+    if "load_settings" in globals():
+        monkeypatch.setitem(globals(), "load_settings", cargar)
+
 class Resp:
     def __init__(self, status, payload=None):
         self.status_code, self._p = status, payload or {}

@@ -176,8 +176,25 @@ PAISES_PLANTILLA = {
     "DOM": "República Dominicana"}
 
 # Medido el 2026-11-10: de los anexos "Efemérides de/en <país>" de es.wikipedia, el único de un país
-# de Latinoamérica es el de Venezuela (más el del estado Nueva Esparta).
+# de Latinoamérica es el de Venezuela (más el del estado Nueva Esparta). 2026-11-15 (Santi: "sumá más
+# fuentes"): también los de días festivos, feriados y conmemoraciones por país y las fiestas de
+# provincias (medido con la búsqueda por prefijo de es.wikipedia: estos existen).
 ANEXOS_EFEMERIDES = ("Anexo:Efemérides en Venezuela", "Anexo:Efemérides del Estado Nueva Esparta")
+ANEXOS_PAIS = {
+    "Anexo:Conmemoraciones en México": "México", "Anexo:Días festivos en México": "México",
+    "Anexo:Días festivos en Colombia": "Colombia", "Anexo:Días festivos en Argentina": "Argentina",
+    "Feriados de Argentina": "Argentina", "Feriados en Chile": "Chile", "Anexo:Días festivos en Perú": "Perú",
+    "Anexo:Días festivos en Paraguay": "Paraguay", "Anexo:Días festivos en Bolivia": "Bolivia",
+    "Anexo:Días festivos en Guatemala": "Guatemala", "Anexo:Días festivos en Honduras": "Honduras",
+    "Anexo:Días festivos en Panamá": "Panamá", "Anexo:Feriados eventuales en Uruguay": "Uruguay",
+    "Anexo:Fiestas Patronales en Puerto Rico": "Puerto Rico",
+    "Anexo:Fiestas y celebraciones en Buenos Aires": "Argentina",
+    "Anexo:Fiestas y celebraciones en la provincia de Córdoba (Argentina)": "Argentina",
+    "Anexo:Fiestas y celebraciones en Santa Fe": "Argentina", "Anexo:Fiestas y celebraciones en Mendoza": "Argentina",
+    "Anexo:Fiestas y celebraciones en la provincia de Entre Ríos": "Argentina",
+    "Anexo:Fiestas y celebraciones en la provincia de San Juan": "Argentina",
+    "Anexo:Fiestas y celebraciones en San Luis": "Argentina", "Anexo:Fiestas de La Guajira": "Colombia",
+}
 
 # Lo que dice qué ES el artículo (las primeras líneas): un lugar sí; un club, una empresa, no.
 _ES_LUGAR = re.compile(r"\b(ciudad|localidad|pueblo|municipio|barrio|villa|comuna|distrito|parroquia|"
@@ -225,6 +242,27 @@ def leer_anexos(wiki: ef.Wiki, dia: date) -> tuple[list[str], set[str]]:
             if m:
                 conm.append(f"{pais}: {_limpiar(m.group(1))[:200]}")
                 homen.update(_enlaces(m.group(1)))
+    return conm, homen
+
+
+def leer_anexos_pais(wiki: ef.Wiki, dia: date) -> tuple[list[str], set[str]]:
+    """Fuente 2b (2026-11-15): las filas de hoy de los anexos de días festivos, feriados, conmemoraciones
+    y fiestas por país (tablas o listas: cualquier fila que tenga "20 de noviembre")."""
+    conm, homen = [], set()
+    fecha = re.compile(rf"(?<!\d){dia.day}\s+de\s+{ef.MESES[dia.month - 1]}\b", re.I)
+    for titulo, pais in ANEXOS_PAIS.items():
+        d = wiki._get(ef.API.format(lang="es"), {"action": "parse", "page": titulo, "prop": "wikitext",
+                                                  "format": "json", "formatversion": 2, "redirects": 1})
+        texto = (d.get("parse") or {}).get("wikitext") or ""
+        if isinstance(texto, dict):
+            texto = texto.get("*", "")
+        for fila in re.split(r"\n\|-|\n(?=\*)", texto):
+            if not fecha.search(fila):
+                continue
+            limpio = _limpiar(re.sub(r"\s*\|\|?\s*", " · ", fila)).strip(" ·")
+            if 8 <= len(limpio) <= 400 and f"{pais}: {limpio[:220]}" not in conm:
+                conm.append(f"{pais}: {limpio[:220]}")
+                homen.update(_enlaces(fila))
     return conm, homen
 
 
@@ -278,10 +316,12 @@ def buscar_fundaciones(wiki: ef.Wiki, dia: date) -> list[Candidato]:
     return out
 
 
-FRASES_HISTORIA = ('"el {d} de" vecinos', '"el {d} de" pobladores')
+FRASES_HISTORIA = ('"el {d} de" vecinos', '"el {d} de" pobladores', '"el {d} de" habitantes',
+                   '"el {d} de" pueblo', '"el {d} de" inundación', '"el {d} de" incendio')
+TOPE_CIUDADES = 25      # artículos de ciudades que se leen por día (eran 12)
 
 
-def historia_de_ciudades(wiki: ef.Wiki, dia: date, lugares: list[str], tope: int = 12) -> list[Candidato]:
+def historia_de_ciudades(wiki: ef.Wiki, dia: date, lugares: list[str], tope: int = TOPE_CIUDADES) -> list[Candidato]:
     """Fuente 4: la historia de cada ciudad. En el artículo de los lugares que ya son candidatos de
     hoy (fundaciones, conmemoraciones) y de los que el buscador encuentra con "el 21 de noviembre de"
     y "vecinos" o "pobladores", las oraciones que cuentan algo que pasó un día como hoy."""
@@ -304,6 +344,34 @@ def historia_de_ciudades(wiki: ef.Wiki, dia: date, lugares: list[str], tope: int
     return out
 
 
+# Fuente 5 (2026-11-15): personajes populares y hazañas. El buscador de es.wikipedia con la fecha y una
+# palabra de historia humana; solo artículos de Latinoamérica, y de cada uno la oración con la fecha.
+FRASES_PERSONAJES = ('"el {d} de" héroe', '"el {d} de" heroína', '"el {d} de" hazaña', '"el {d} de" salvó',
+                     '"el {d} de" rescate', '"el {d} de" leyenda', '"el {d} de" popular', '"el {d} de" ídolo')
+TOPE_PERSONAJES = 25
+
+
+def buscar_personajes(wiki: ef.Wiki, dia: date, tope: int = TOPE_PERSONAJES) -> list[Candidato]:
+    fecha = f"{dia.day} de {ef.MESES[dia.month - 1]}"
+    fre = _fecha_re(dia)
+    hits: list[str] = []
+    for f in FRASES_PERSONAJES:
+        hits += [t for t, sn in _buscar(wiki, f.format(d=fecha), 30) if fre.search(sn) and t not in hits]
+    intros = _intros(wiki, hits)
+    latinos = [t for t in hits if LUGAR_RE.search(intros.get(t, "")) and not _NO_LUGAR.search(
+        re.split(r"(?<=[.;])\s", intros.get(t, "").strip(), maxsplit=1)[0][:300])]
+    out = []
+    for titulo in latinos[:tope]:
+        texto = wiki.texto("es", titulo)
+        for oracion in re.split(r"(?<=[.!?])\s+|\n+", texto):
+            m = fre.search(oracion)
+            if m and 40 <= len(oracion) <= 600:
+                out.append(Candidato("personaje", int(m.group(1)),
+                                     f"{titulo}: {oracion.strip()[:400]} ({intros.get(titulo, '')[:150]})", [titulo]))
+                break
+    return out
+
+
 def leer_todo(wiki: ef.Wiki, dia: date, avisar=log.info) -> tuple[list[Candidato], list[str], set[str]]:
     """La página del día más las fuentes extra. Sin repetir el mismo hecho (mismo año y mismo primer
     artículo)."""
@@ -317,6 +385,13 @@ def leer_todo(wiki: ef.Wiki, dia: date, avisar=log.info) -> tuple[list[Candidato
     except Exception as err:  # noqa: BLE001 — una fuente extra caída no frena la propuesta
         avisar(f"anexos de efemérides: no salió ({err})")
     try:
+        c3, h3 = leer_anexos_pais(wiki, dia)
+        conm += c3
+        homen |= h3
+        cuenta["anexos por país"] = len(c3)
+    except Exception as err:  # noqa: BLE001
+        avisar(f"anexos por país: no salió ({err})")
+    try:
         fund = buscar_fundaciones(wiki, dia)
         cuenta["fundaciones"] = len(fund)
     except Exception as err:  # noqa: BLE001
@@ -329,9 +404,20 @@ def leer_todo(wiki: ef.Wiki, dia: date, avisar=log.info) -> tuple[list[Candidato
     except Exception as err:  # noqa: BLE001
         hist = []
         avisar(f"historia de ciudades: no salió ({err})")
+    try:
+        pers = buscar_personajes(wiki, dia)
+        cuenta["personajes"] = len(pers)
+    except Exception as err:  # noqa: BLE001
+        pers = []
+        avisar(f"personajes: no salió ({err})")
+    # Nacimientos y muertes de gente de Latinoamérica (personajes populares de cada país): antes solo
+    # entraban si una conmemoración del día los homenajeaba.
+    for c in todos:
+        if c.seccion in ("nacimientos", "fallecimientos") and LUGAR_RE.search(c.texto):
+            c.seccion = "personaje_" + c.seccion
     cuenta["conmemoraciones con año"] = sum(1 for c in todos if c.seccion == "celebracion")
     vistos = {(c.anio, ef._norm(c.paginas[0])) for c in todos if c.paginas}
-    for c in fund + hist:
+    for c in fund + hist + pers:
         clave = (c.anio, ef._norm(c.paginas[0]))
         if clave not in vistos:
             vistos.add(clave)
@@ -481,7 +567,7 @@ con una historia HUMANA y REAL de un lugar concreto de Latinoamérica. El modelo
 maquinista Jesús García, que en 1907 alejó un tren con dinamita encendida y salvó a Nacozari: la
 gente de ese lugar se siente identificada, la comparte y cuenta sus recuerdos.
 
-Ordená del mejor al peor (hasta 8) los que más se parecen a eso:
+Ordená del mejor al peor (hasta {cuantos}) los que más se parecen a eso, y puntuá TODOS los que pongas:
 - gente concreta que hizo algo notable (héroes de pueblo, gente común, anécdotas, momentos
   emotivos), en un pueblo o ciudad que se pueda nombrar;
 - los marcados ★ CALENDARIO se recuerdan HOY (aniversario, fundación, día nacional, fiesta del
@@ -524,9 +610,11 @@ SCHEMA_ELEGIR = {
 
 CRITERIOS = ("persona", "peligro", "giro", "emocion")
 PUNTAJE_MIN = 8.0    # Santi, 2026-11-13: solo pasan las de 8 o más de promedio
+PISO_UNA_POR_DIA = 7.0   # Santi, 2026-11-15: sin ninguna de 8, la mejor del día si tiene 7 (una por día)
+A_PUNTUAR = 30       # cuántas puntúa Sonnet por propuesta (eran 8 de 20; presupuesto de 2026-11-15)
 
 
-def elegir(sonnet, cands: list[Candidato], cuantos: int = 8) -> list[tuple[Candidato, str, str]]:
+def elegir(sonnet, cands: list[Candidato], cuantos: int = A_PUNTUAR) -> list[tuple[Candidato, str, str]]:
     """[(candidato, artículo del hecho, artículo del lugar)], del mejor al peor."""
     lineas = []
     for i, c in enumerate(cands):
@@ -535,7 +623,8 @@ def elegir(sonnet, cands: list[Candidato], cuantos: int = 8) -> list[tuple[Candi
         lineas.append(f"{i + 1}. {marca}({c.anio}) {c.texto[:300]}\n   lugar: {k.get('lugar')}, {k.get('region')}, "
                       f"{k.get('pais')} · tipo: {k.get('tipo')} · conmemora hoy: {k.get('conmemora') or 'no'}"
                       f"\n   artículos: {' | '.join(c.paginas[:8])}")
-    d = json.loads(sonnet.json(SISTEMA_ELEGIR, "\n".join(lineas), SCHEMA_ELEGIR, temperatura=0.2))
+    d = json.loads(sonnet.json(SISTEMA_ELEGIR.replace("{cuantos}", str(cuantos)), "\n".join(lineas),
+                               SCHEMA_ELEGIR, temperatura=0.2))
     out, vistos = [], set()
     for x in d.get("elegidos") or []:
         n = x.get("n")
@@ -624,7 +713,8 @@ def proponer(wiki: ef.Wiki, sonnet, haiku, gemini, dia: date, carpeta: Path, avi
              videos: bool = False, tope_fotos_s: float | None = None, hecho: str = "",
              imagen_frase: bool = False, corto: bool = False, elector=None,
              elector_reintento=None, excluir: set | None = None,
-             evitar_paises: set | None = None, mas_video: bool = False) -> ef.Propuesta:
+             evitar_paises: set | None = None, mas_video: bool = False,
+             piso_alternativo: float | None = None) -> ef.Propuesta:
     """`excluir`: hechos (su texto) que ya salieron hoy; `evitar_paises`: los países de esos (Santi,
     2026-11-12: 2 historias por día, sin repetir país si se puede: van al final, no afuera).
 
@@ -665,7 +755,7 @@ def proponer(wiki: ef.Wiki, sonnet, haiku, gemini, dia: date, carpeta: Path, avi
         raise ef.NarrarError("Ningún hecho de hoy es una historia humana con un lugar concreto"
                              + (" (sin contar las que ya salieron hoy)" if excluir else ""))
     lista = otro_pais_primero(lista, evitar_paises)
-    elegidos = elegir(sonnet, lista[:20])
+    elegidos = elegir(sonnet, lista[:A_PUNTUAR], cuantos=A_PUNTUAR)
     # Ni el mismo hecho ni la misma historia contada desde otra línea del día (2026-11-13: el 14/11 La
     # Pola aparece como nacimiento y como fusilamiento, con el mismo artículo).
     elegidos = [x for x in elegidos if x[0].texto not in (excluir or set()) and x[1] not in (excluir or set())]
@@ -674,9 +764,18 @@ def proponer(wiki: ef.Wiki, sonnet, haiku, gemini, dia: date, carpeta: Path, avi
         # emoción. Si hoy no hay ninguna, no sale (y quien llama avisa): nada de relleno.
         flojas = [f"{c.anio} {c.clasif.get('lugar')}: {c.clasif.get('puntaje', 0):.1f}"
                   for c, _, _ in elegidos if c.clasif.get("puntaje", 0) < PUNTAJE_MIN]
+        todos_ok = list(elegidos)
         elegidos = [x for x in elegidos if x[0].clasif.get("puntaje", 0) >= PUNTAJE_MIN]
         if flojas:
             avisar(f"debajo de {PUNTAJE_MIN:g}: " + " | ".join(flojas))
+        if not elegidos and piso_alternativo:
+            # Santi, 2026-11-15: si no hay ninguna de 8, sale igual la mejor del día si tiene 7 o más
+            # (una sola por día: quien llama solo da el piso si hoy todavía no salió ninguna de menos de 8).
+            mejor = max(todos_ok, key=lambda x: x[0].clasif.get("puntaje", 0), default=None)
+            if mejor and mejor[0].clasif.get("puntaje", 0) >= piso_alternativo:
+                avisar(f"ninguna de {PUNTAJE_MIN:g}: sale la mejor ({mejor[0].clasif.get('puntaje'):.2f}, "
+                       f"piso {piso_alternativo:g})")
+                elegidos = [mejor]
         # Las mejores primero (el calendario igual manda).
         elegidos.sort(key=lambda x: (not en_calendario(x[0]), -x[0].clasif.get("puntaje", 0)))
         if not elegidos:

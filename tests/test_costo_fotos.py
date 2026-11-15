@@ -58,6 +58,7 @@ class _Sonnet:
 
 def test_sonnet_mira_solo_las_mejores_de_cada_frase(tmp_path, monkeypatch):
     monkeypatch.setattr(ef, "CACHE_DESCRIPCIONES", tmp_path / "desc")
+    monkeypatch.setattr(ef, "PREFILTRO_POR_FRASE", 3)
     pool = [_foto(tmp_path, n) for n in range(20)]
     g = ef.Guion(fotos=[], descartadas=[], descripcion="d", hashtags=[], titulo="t", frases=["Una frase.", "Otra frase."], mostrar=["a 1907", "b 1907"],
                  presente=[False, False])
@@ -162,6 +163,7 @@ def test_informe_diario_de_ayer_desde_las_9(conn):
 
 def test_videos_quedan_los_2_mejores_por_frase(tmp_path, monkeypatch):
     monkeypatch.setattr(ef, "CACHE_DESCRIPCIONES", tmp_path / "desc")
+    monkeypatch.setattr(ef, "VIDEOS_POR_FRASE", 2)
     from PIL import Image
 
     vids = []
@@ -183,3 +185,64 @@ def test_videos_quedan_los_2_mejores_por_frase(tmp_path, monkeypatch):
     ef.prefiltrar_fotos(H(), ["frase 1", "frase 2"], pool, [b"x%d" % n for n in range(20)],
                         [list(range(10)), list(range(10, 20))], None, 1950, lambda *_: None, videos=videos)
     assert [v.titulo for v in videos[0]] == ["video 3", "video 1"]
+
+
+def test_aviso_de_presupuesto_del_mes(conn):
+    import clips_bot.__main__ as m
+
+    class TG:
+        m = []
+
+        def send_message(self, chat, texto, **k):
+            self.m.append(texto)
+
+    tg = TG()
+    db.anotar_gemini(conn, "marcas.escribir_guion", claude.SONNET, "claude", 1_000_000, 5_500_000, origen="produccion")
+    dia = conn.execute("SELECT dia FROM gemini_uso LIMIT 1").fetchone()[0]
+    assert claude.costo_mes(conn, dia[:7]) == pytest.approx(57.0)
+    ahora = datetime.fromisoformat(dia + "T08:00").replace(tzinfo=m.AR)
+    m._costo_claude_tick(conn, tg, load_settings(), ahora=ahora)
+    m._costo_claude_tick(conn, tg, load_settings(), ahora=ahora)
+    assert len(tg.m) == 0                                     # 57 < 60 (75 % de 80)
+    db.anotar_gemini(conn, "marcas.escribir_guion", claude.SONNET, "claude", 0, 400_000, origen="produccion")
+    m._costo_claude_tick(conn, tg, load_settings(), ahora=ahora)
+    m._costo_claude_tick(conn, tg, load_settings(), ahora=ahora)
+    assert len(tg.m) == 1 and "75%" in tg.m[0] and "US$ 61.00" in tg.m[0]
+
+
+def test_respuesta_cortada_reintenta_con_mas_limite(tmp_path):
+    class Uso:
+        input_tokens, output_tokens = 100, 50
+
+    def resp(stop):
+        return type("R", (), {"usage": Uso(), "stop_reason": stop, "model": claude.SONNET,
+                              "content": [type("B", (), {"type": "text", "text": '{"ok": true}'})()]})()
+
+    pedidos = []
+
+    class Api:
+        class beta:
+            class messages:
+                @staticmethod
+                def create(**k):
+                    pedidos.append(k["max_tokens"])
+                    return resp("max_tokens")
+
+                @staticmethod
+                def stream(**k):
+                    pedidos.append(k["max_tokens"])
+
+                    class S:
+                        def __enter__(self):
+                            return self
+
+                        def __exit__(self, *a):
+                            return False
+
+                        def get_final_message(self):
+                            return resp("end_turn")
+                    return S()
+
+    c = claude.ClaudeClient("x", cliente=Api(), max_tokens=16000)
+    assert c.json("s", "p", {"type": "OBJECT", "properties": {}}) == '{"ok": true}'
+    assert pedidos == [16000, 32000]                          # el segundo, con el doble (y por streaming)

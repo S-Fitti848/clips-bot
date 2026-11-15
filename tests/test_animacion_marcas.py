@@ -876,16 +876,50 @@ def test_tick_una_vez_por_dia_con_el_turno(conn):
 
     llamadas = []
 
-    def armar(c, tg, chats, settings, hoy):
-        llamadas.append((chats, hoy))
+    def armar(c, tg, chats, settings, hoy, k=0):
+        llamadas.append((chats, hoy, k))
         assert db.hay_trabajo_pesado(c, m.VENCIMIENTO_PESADO_S)   # con el turno tomado
 
     m._animacion_tick(conn, TgFalso(), _settings(), _ahora("06:30"), armar=armar)   # antes de la hora
     assert not llamadas
-    m._animacion_tick(conn, TgFalso(), _settings(), _ahora("07:10"), armar=armar)
-    m._animacion_tick(conn, TgFalso(), _settings(), _ahora("09:00"), armar=armar)
-    assert llamadas == [([m.DUENO], date(2026, 11, 20))]
+    for hhmm in ("07:10", "07:30", "09:00", "10:00"):
+        m._animacion_tick(conn, TgFalso(), _settings(), _ahora(hhmm), armar=armar)
+    # 2 por día (13:00 y 20:00, 2026-11-15): uno detrás del otro, y nada más
+    assert llamadas == [([m.DUENO], date(2026, 11, 20), 0), ([m.DUENO], date(2026, 11, 20), 1)]
     assert not db.hay_trabajo_pesado(conn, m.VENCIMIENTO_PESADO_S)   # lo soltó
+
+
+def test_tick_si_falla_reintenta_en_una_hora(conn):
+    import clips_bot.__main__ as m
+
+    from clips_bot.claude import ClaudeError
+
+    llamadas, tg = [], TgFalso()
+
+    def armar(c, tg_, chats, settings, hoy, k=0):
+        llamadas.append(k)
+        if len(llamadas) == 1:
+            raise ClaudeError("Claude (claude-sonnet-5-5): la respuesta se cortó (max_tokens)")
+
+    m._animacion_tick(conn, tg, _settings(), _ahora("07:00"), armar=armar)
+    assert "Reintento a las 08:00" in tg.mensajes[-1][1]
+    m._animacion_tick(conn, tg, _settings(), _ahora("07:30"), armar=armar)      # todavía no
+    assert llamadas == [0]
+    m._animacion_tick(conn, tg, _settings(), _ahora("08:01"), armar=armar)
+    m._animacion_tick(conn, tg, _settings(), _ahora("08:20"), armar=armar)
+    assert llamadas == [0, 0, 1]
+
+
+def test_tick_no_reintenta_despues_de_las_22(conn):
+    import clips_bot.__main__ as m
+
+    tg = TgFalso()
+
+    def armar(*a, **k):
+        raise RuntimeError("Gemini caído")
+
+    m._animacion_tick(conn, tg, _settings(), _ahora("21:30"), armar=armar)
+    assert "hoy no sale" in tg.mensajes[-1][1]
 
 
 def test_tick_espera_si_el_turno_esta_ocupado(conn):

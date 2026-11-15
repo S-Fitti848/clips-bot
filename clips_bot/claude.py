@@ -33,6 +33,7 @@ MAX_IMAGENES = 100        # tope de la API por pedido
 # imágenes idéntico a uno anterior (mismo modelo, sistema, prompt, schema e imágenes) devuelve la
 # respuesta guardada. Solo con imágenes: los guiones tienen que poder salir distintos si se reintentan.
 CACHE_DIAS = 30
+MAX_TOKENS_TOPE = 64000   # el reintento de una respuesta cortada no pasa de acá
 
 
 class ClaudeError(GeminiError):
@@ -108,6 +109,28 @@ def resumen_costo(conn, dia: str, origen: str | None = None) -> tuple[float, lis
     return round(sum(c for _, _, c in filas), 4), filas
 
 
+# Presupuesto (Santi, 2026-11-15): el crédito es de US$ 100 por mes y se renueva; el tope propio es ~US$ 80.
+PRESUPUESTO_MES = 80.0
+AVISO_MES = (0.75, 1.0)     # avisa al pasar el 75 % y al llegar al 100 % del tope (una vez cada uno)
+
+
+def costo_mes(conn, mes: str) -> float:
+    """US$ de Claude en el mes `mes` (AAAA-MM), todos los orígenes."""
+    total = 0.0
+    for modelo, entrada, salida in conn.execute(
+            "SELECT modelo, entrada, salida FROM gemini_uso WHERE clave = 'claude' AND dia LIKE ?", (mes + "-%",)):
+        total += costo(modelo, entrada or 0, salida or 0)
+    return round(total, 2)
+
+
+def proyeccion_mes(gastado: float, dia: str) -> float:
+    """Lo que se gastaría en el mes a este ritmo (`dia` = el último día contado, AAAA-MM-DD)."""
+    import calendar
+
+    a, m, d = (int(x) for x in dia.split("-"))
+    return round(gastado / max(1, d) * calendar.monthrange(a, m)[1], 2)
+
+
 def texto_costo(conn, dia: str) -> str:
     """El informe del día, separado por origen (Santi, 2026-11-15): la producción normal arriba, con su
     proyección por mes; lo hecho a mano y las pruebas aparte, para que no inflen la cuenta."""
@@ -123,6 +146,9 @@ def texto_costo(conn, dia: str) -> str:
             continue
         lineas += ["", f"<b>{nombre}</b>: US$ {sub:.2f}"]
         lineas += [f"• {k}: US$ {c:.3f} ({n})" for k, n, c in filas]
+    mes = costo_mes(conn, dia[:7])
+    lineas += ["", f"<b>En el mes</b>: US$ {mes:.2f} de US$ {PRESUPUESTO_MES:.0f} "
+                   f"(a este ritmo, ≈ US$ {proyeccion_mes(mes, dia):.0f} al cerrar el mes)"]
     return "\n".join(lineas)
 
 
@@ -165,36 +191,52 @@ class ClaudeClient:
                                                   "data": base64.standard_b64encode(img).decode()}}
                      for img in imagenes or []]
         contenido.append({"type": "text", "text": prompt})
-        pedido = dict(model=modelo, max_tokens=self.max_tokens, system=sistema,
-                      messages=[{"role": "user", "content": contenido if imagenes else prompt}],
-                      output_config={"format": {"type": "json_schema", "schema": a_json_schema(schema)},
-                                     **({"effort": self.esfuerzo} if self.esfuerzo else {})})
-        try:
-            if modelo == SONNET:
-                r = self._c.beta.messages.create(**pedido, betas=[BETA_FALLBACK], fallbacks="default")
-            else:
-                r = self._c.messages.create(**pedido)
-        except anthropic.RateLimitError as e:
-            raise ClaudeError(f"Claude ({modelo}): límite de uso ({e.message})", pasajero=True) from e
-        except anthropic.APIStatusError as e:
-            raise ClaudeError(f"Claude ({modelo}): {e.status_code} {e.message}",
-                              pasajero=e.status_code >= 500) from e
-        except anthropic.APIConnectionError as e:
-            raise ClaudeError(f"Claude ({modelo}): sin conexión ({e})", pasajero=True) from e
-        entrada, salida = r.usage.input_tokens, r.usage.output_tokens
-        log.info("Claude %s para %s (%d + %d tokens, US$ %.4f)", r.model, funcion, entrada, salida,
-                 costo(modelo, entrada, salida))
-        if self.uso:
-            self.uso(funcion, r.model, "claude", entrada, salida, False)
+        # Si la respuesta se corta (max_tokens: el 15/11 el guion de Así Nació pidió 16.000 y no entró), se
+        # reintenta UNA vez con el doble de límite (hasta MAX_TOKENS_TOPE) antes de rendirse.
+        limites = [self.max_tokens] + ([min(MAX_TOKENS_TOPE, self.max_tokens * 2)]
+                                       if self.max_tokens < MAX_TOKENS_TOPE else [])
+        for n_lim, limite in enumerate(limites):
+            pedido = dict(model=modelo, max_tokens=limite, system=sistema,
+                          messages=[{"role": "user", "content": contenido if imagenes else prompt}],
+                          output_config={"format": {"type": "json_schema", "schema": a_json_schema(schema)},
+                                         **({"effort": self.esfuerzo} if self.esfuerzo else {})})
+            try:
+                r = self._pedir(pedido, modelo, limite)
+            except anthropic.RateLimitError as e:
+                raise ClaudeError(f"Claude ({modelo}): límite de uso ({e.message})", pasajero=True) from e
+            except anthropic.APIStatusError as e:
+                raise ClaudeError(f"Claude ({modelo}): {e.status_code} {e.message}",
+                                  pasajero=e.status_code >= 500) from e
+            except anthropic.APIConnectionError as e:
+                raise ClaudeError(f"Claude ({modelo}): sin conexión ({e})", pasajero=True) from e
+            entrada, salida = r.usage.input_tokens, r.usage.output_tokens
+            log.info("Claude %s para %s (%d + %d tokens, US$ %.4f)", r.model, funcion, entrada, salida,
+                     costo(modelo, entrada, salida))
+            if self.uso:
+                self.uso(funcion, r.model, "claude", entrada, salida, False)
+            if r.stop_reason != "max_tokens":
+                break
+            if n_lim + 1 < len(limites):
+                log.warning("Claude %s para %s: se cortó con %d tokens, reintento con %d", modelo, funcion,
+                            limite, limites[n_lim + 1])
         if r.stop_reason == "refusal":
             raise ClaudeError(f"Claude ({modelo}) no quiso responder")
         if r.stop_reason == "max_tokens":
-            raise ClaudeError(f"Claude ({modelo}): la respuesta se cortó (max_tokens)")
+            raise ClaudeError(f"Claude ({modelo}): la respuesta se cortó (max_tokens {limites[-1]})")
         texto = next((b.text for b in r.content if b.type == "text"), "")
         if not texto:
             raise ClaudeError(f"Claude ({modelo}): respuesta sin texto")
         self._a_cache(clave_cache, texto)
         return texto
+
+    def _pedir(self, pedido: dict, modelo: str, limite: int):
+        """Un pedido. Con límites grandes va por streaming (la API no deja pedidos largos sin stream)."""
+        extra = dict(betas=[BETA_FALLBACK], fallbacks="default") if modelo == SONNET else {}
+        api = self._c.beta.messages if modelo == SONNET else self._c.messages
+        if limite > 16000 and hasattr(api, "stream"):
+            with api.stream(**pedido, **extra) as st:
+                return st.get_final_message()
+        return api.create(**pedido, **extra)
 
     def _clave_cache(self, modelo, sistema, prompt, schema, imagenes) -> str | None:
         if not self.cache_dir or not imagenes:
@@ -261,7 +303,7 @@ def para_texto(gemini, modelo: str = SONNET, esfuerzo: str | None = None):
     return ConRespaldo(c, gemini) if c is not None else gemini
 
 
-def cliente(modelo: str = SONNET, esfuerzo: str | None = None) -> ClaudeClient | None:
+def cliente(modelo: str = SONNET, esfuerzo: str | None = None, max_tokens: int = 16000) -> ClaudeClient | None:
     """Con ANTHROPIC_API_KEY del .env; None si no está."""
     from .config import env
     from .gemini import registrar_uso
@@ -271,5 +313,5 @@ def cliente(modelo: str = SONNET, esfuerzo: str | None = None) -> ClaudeClient |
     clave = env("ANTHROPIC_API_KEY", requerido=False)
     if not clave:
         return None
-    return ClaudeClient(clave, modelo, uso=registrar_uso, esfuerzo=esfuerzo,
+    return ClaudeClient(clave, modelo, uso=registrar_uso, esfuerzo=esfuerzo, max_tokens=max_tokens,
                         cache_dir=DATA_DIR / "cache_claude")

@@ -521,4 +521,4 @@ def test_si_ninguno_llega_usa_el_de_mas_fotos_con_aviso(monkeypatch):
     g = ef.Guion.de_dict(p.guion)
     texto = ef.texto_aprobacion(ef.Evento(**p.evento), g, [], ef.date(2026, 9, 29))
     assert "Ningún hecho de hoy llegó a 4 fotos de la época" in texto and "(3)" in texto
-    assert ilustrar.MIN_FOTOS_ABSOLUTO == 4 and ef.MAX_GUIONES == 3
+    assert ilustrar.MIN_FOTOS_ABSOLUTO == 4 and ef.MAX_GUIONES == 4

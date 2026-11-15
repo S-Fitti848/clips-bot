@@ -3610,12 +3610,15 @@ def _fb_proponer(conn, tg: TelegramClient, chats: list[str], dia, settings: Sett
                              excluir={v for x in _latam_del_dia(conn, dia)
                                       for v in (x.get("texto"), x.get("articulo")) if v},
                              evitar_paises={x["pais"] for x in _latam_del_dia(conn, dia) if x.get("pais")},
-                             mas_video=settings.efemerides.estilo_nuevo)
+                             mas_video=settings.efemerides.estilo_nuevo,
+                             piso_alternativo=None if any(float(x.get("puntaje") or 10) < locales.PUNTAJE_MIN
+                                                          for x in _latam_del_dia(conn, dia))
+                             else locales.PISO_UNA_POR_DIA)
     except (NarrarError, ef.WikiError, GeminiError) as e:
         return f"No salió la historia de Latinoamérica: {html.escape(str(e)[:400])}"
     ya = _latam_del_dia(conn, dia)
     ya.append({"texto": p.evento.get("texto"), "pais": (p.local or {}).get("pais"),
-               "articulo": (p.evento.get("paginas") or [""])[0]})
+               "articulo": (p.evento.get("paginas") or [""])[0], "puntaje": (p.local or {}).get("puntaje")})
     db.set_valor(conn, f"{PH_LATAM}:{dia.isoformat()}", json.dumps(ya, ensure_ascii=False))
     estado = {"propuesta": p.__dict__, "carpeta": str(carpeta), "chat_id": chats[0]}
     if auto:
@@ -3809,6 +3812,7 @@ COSTO_PEDIDO = "costo_claude_pedido"   # bot_estado: el día (AR) cuyo costo de 
 
 COSTO_ENVIADO = "costo_claude_enviado"  # bot_estado: el último día (AR) cuyo informe diario ya salió
 COSTO_HORA = 9                            # el informe del día anterior, desde las 09:00 AR
+COSTO_ALERTA = "costo_claude_alerta"      # bot_estado, costo_claude_alerta:<AAAA-MM>: los umbrales ya avisados
 
 
 def _costo_claude_tick(conn, tg: TelegramClient, settings: Settings, ahora=None) -> None:
@@ -3824,6 +3828,19 @@ def _costo_claude_tick(conn, tg: TelegramClient, settings: Settings, ahora=None)
         tg.send_message(DUENO, claude.texto_costo(conn, dia))
         if dia == (ahora.date() - timedelta(days=1)).isoformat():
             db.set_valor(conn, COSTO_ENVIADO, dia)
+    # Presupuesto del mes (Santi, 2026-11-15: "avisame si un mes se acerca a los US$ 80"): en cada vuelta,
+    # al pasar el 75 % y al llegar al 100 %, una vez cada uno.
+    mes = ahora.strftime("%Y-%m")
+    gastado = claude.costo_mes(conn, mes)
+    avisados = json.loads(db.get_valor(conn, f"{COSTO_ALERTA}:{mes}") or "[]")
+    for umbral in claude.AVISO_MES:
+        if gastado >= claude.PRESUPUESTO_MES * umbral and umbral not in avisados:
+            avisados.append(umbral)
+            db.set_valor(conn, f"{COSTO_ALERTA}:{mes}", json.dumps(avisados))
+            tg.send_message(DUENO, f"🔧 Claude Code: ⚠️ <b>Claude este mes: US$ {gastado:.2f}</b> "
+                                   f"({umbral:.0%} del tope de US$ {claude.PRESUPUESTO_MES:.0f}; "
+                                   f"a este ritmo, ≈ US$ {claude.proyeccion_mes(gastado, ahora.date().isoformat()):.0f}"
+                                   " al cerrar el mes).")
     ayer = (ahora.date() - timedelta(days=1)).isoformat()
     if ahora.hour < COSTO_HORA or (db.get_valor(conn, COSTO_ENVIADO) or "") >= ayer:
         return
@@ -3910,14 +3927,25 @@ ANIM_DIA = "animacion_dia"   # bot_estado: el día (AR) en que ya se armó (o se
 PREFIJO_ASINACIO = "asinacio_"   # clip_id de los videos de Así Nació (asinacio_AAAAMMDD)
 
 
-def _animacion_armar(conn, tg: TelegramClient, chats: list[str], settings: Settings, hoy) -> None:
+def horas_asinacio(settings: Settings) -> list[str]:
+    """Los horarios de publicación de Así Nació: uno por video del día (2026-11-15: 13:00 y 20:00)."""
+    cfg = settings.animacion
+    return list(cfg.horas_publicacion) or [cfg.hora_publicacion]
+
+
+def clip_asinacio(hoy, k: int = 0) -> str:
+    """asinacio_AAAAMMDD el primero del día; asinacio_AAAAMMDD_2 el segundo."""
+    return f"{PREFIJO_ASINACIO}{hoy:%Y%m%d}" + (f"_{k + 1}" if k else "")
+
+
+def _animacion_armar(conn, tg: TelegramClient, chats: list[str], settings: Settings, hoy, k: int = 0) -> None:
     from .animacion import marcas
 
-    carpeta = DATA_DIR.parent / "output" / "animacion" / hoy.strftime("%Y%m%d")
+    carpeta = DATA_DIR.parent / "output" / "animacion" / (hoy.strftime("%Y%m%d") + (f"_{k + 1}" if k else ""))
     r = marcas.armar_video(conn, settings, carpeta, hoy=hoy, avisar=log.info,
                            procesos=settings.animacion.procesos)
-    avisos = _animacion_subir(conn, settings, r, carpeta, hoy) if settings.animacion.subir else []
-    clip_id = f"{PREFIJO_ASINACIO}{hoy:%Y%m%d}"
+    avisos = _animacion_subir(conn, settings, r, carpeta, hoy, k) if settings.animacion.subir else []
+    clip_id = clip_asinacio(hoy, k)
     programado = any(a.startswith(("📤", "📘")) for a in avisos)
     encabezado = (("🤖 <b>Se publica sola</b>: si no tocás nada sale a su hora; ❌ Cancelar la frena.\n"
                    if programado else "") + "\n".join(avisos))
@@ -3926,25 +3954,42 @@ def _animacion_armar(conn, tg: TelegramClient, chats: list[str], settings: Setti
         for chat in chats:
             tg.send_message(chat, "¿La frenás?", {"inline_keyboard": [[
                 {"text": "❌ Cancelar la publicación", "callback_data": f"sub:x:{clip_id}"}]]})
-    # Recién entregado entra en la rotación (un ángulo nunca se repite; la marca no vuelve en 7 días).
+    # Recién entregado entra en la rotación (un ángulo nunca se repite; la marca no vuelve en 7 días): así
+    # el segundo del día es de otra marca.
     marcas.registrar(conn, r.marca, r.angulo, hoy, r.promedio, r.titulo, r.video)
-    log.info("animación: %s / %s (%.1f) en %.0f s, Claude US$ %.3f", r.marca, r.angulo, r.promedio,
+    log.info("animación %d: %s / %s (%.1f) en %.0f s, Claude US$ %.3f", k + 1, r.marca, r.angulo, r.promedio,
              r.total_s, r.costo_usd)
 
 
-def _animacion_subir(conn, settings: Settings, r, carpeta: Path, hoy) -> list[str]:
-    """Programa el video de Así Nació en YouTube (y en Facebook, si está conectado) para
-    animacion.hora_publicacion. Guarda el meta al lado del video (para ❌ Cancelar). Devuelve los avisos."""
+def _hora_asinacio(settings: Settings, hora: str, ahora: datetime | None = None) -> datetime:
+    """Cuándo se publica: `hora` de hoy; si ya pasó (un reintento que terminó tarde), en 30 min, nunca
+    después de las 23:55 y nunca al día siguiente (pisaría el de mañana)."""
+    from . import youtube
+
+    hoy = (ahora or datetime.now(timezone.utc)).astimezone(AR)
+    cuando = youtube.proximo_horario(hora, ahora=hoy)
+    if cuando.date() != hoy.date():
+        limite = hoy.replace(hour=23, minute=55, second=0, microsecond=0)
+        cuando = max(min(hoy + timedelta(minutes=30), limite), hoy + timedelta(minutes=5)).replace(second=0,
+                                                                                                    microsecond=0)
+    return cuando
+
+
+def _animacion_subir(conn, settings: Settings, r, carpeta: Path, hoy, k: int = 0) -> list[str]:
+    """Programa el video de Así Nació en YouTube (y en Facebook, si está conectado) para su horario (el
+    k-ésimo de horas_asinacio). Guarda el meta al lado del video (para ❌ Cancelar). Devuelve los avisos."""
+    horas = horas_asinacio(settings)
+    hora = horas[min(k, len(horas) - 1)]
     descripcion = (f"{r.descripcion}\n\nFuente: {r.articulo}"
                    + (f"\nMúsica: {r.credito_musica}" if r.credito_musica else ""))
-    meta = {"clip_id": f"{PREFIJO_ASINACIO}{hoy:%Y%m%d}", "salida": r.video, "streamer": "Así Nació",
-            "duracion_s": r.duracion_s, "subtitulos_quemados": True,
+    meta = {"clip_id": clip_asinacio(hoy, k), "salida": r.video, "streamer": "Así Nació",
+            "duracion_s": r.duracion_s, "subtitulos_quemados": True, "hora": hora,
             "textos": {"titulo": r.titulo, "descripcion": descripcion, "hashtags": list(r.hashtags)},
             "animacion": {"marca": r.marca, "angulo": r.angulo, "fecha": hoy.isoformat()}}
     carpeta.mkdir(parents=True, exist_ok=True)
     (carpeta / f"{meta['clip_id']}.json").write_text(json.dumps(meta, ensure_ascii=False, indent=1),
                                                     encoding="utf-8")
-    avisos = [_programar_subida(conn, settings, meta, "animacion", settings.animacion.hora_publicacion)]
+    avisos = [_programar_subida(conn, settings, meta, "animacion", hora)]
     if settings.animacion.facebook:
         avisos.append(_subir_facebook_asinacio(conn, settings, meta))
     return [a for a in avisos if a]
@@ -3972,8 +4017,7 @@ def _subir_facebook_asinacio(conn, settings: Settings, meta: dict, ahora: dateti
     clip_id = meta["clip_id"]
     if any(s["canal"] == ASINACIO_FB for s in db.subidas(conn, ("programada", "publicada"), clip_id=clip_id)):
         return ""
-    hoy = (ahora or datetime.now(timezone.utc)).astimezone(AR)
-    cuando = youtube.proximo_horario(settings.animacion.hora_publicacion, ahora=hoy)
+    cuando = _hora_asinacio(settings, meta.get("hora") or horas_asinacio(settings)[0], ahora)
     t = meta["textos"]
     texto = f"{t['titulo']}\n\n{t['descripcion']}\n\n{' '.join(t.get('hashtags') or [])}"
     try:
@@ -3988,10 +4032,16 @@ def _subir_facebook_asinacio(conn, settings: Settings, meta: dict, ahora: dateti
     return f"📘 Programado en la página de Facebook de Así Nació para el {cuando:%d/%m a las %H:%M} (AR)."
 
 
+ANIM_ESTADO = "animacion_estado"   # bot_estado, animacion_estado:<día>: {"hechos": [k], "reintento": {k: HH:MM}, "fallas": {k: n}}
+ANIM_FALLAS_MAX = 4                # intentos por video y día (el primero + 3 reintentos)
+
+
 def _animacion_tick(conn, tg: TelegramClient, settings: Settings, ahora=None, armar=None) -> None:
-    """Canal de marcas animadas (Santi, 2026-11-14): desde animacion.hora, una vez por día, con el
-    turno pesado libre y NUNCA en la franja de Pequeña Historia (03:45-06:00). El video va a Telegram
-    y no se sube a ningún lado. Una falla (o un día sin candidato de 8) se avisa y no se reintenta."""
+    """Canal de marcas animadas: desde animacion.hora, uno por cada horario de horas_asinacio (2026-11-15:
+    13:00 y 20:00, de marcas distintas), de a uno, con el turno pesado libre y NUNCA en la franja de
+    Pequeña Historia (03:45-06:00). Si un video falla (Claude cortado, Gemini caído, lo que sea que no
+    sea "no hay candidato"), se reintenta en animacion.reintento_min (1 h) hasta reintento_hasta, en vez
+    de perder el día (Santi, 2026-11-15)."""
     cfg = settings.animacion
     if not cfg.activo:
         return
@@ -4001,25 +4051,51 @@ def _animacion_tick(conn, tg: TelegramClient, settings: Settings, ahora=None, ar
         return
     if db.get_valor(conn, ANIM_DIA) == hoy or db.hay_trabajo_pesado(conn, VENCIMIENTO_PESADO_S):
         return
+    clave = f"{ANIM_ESTADO}:{hoy}"
+    estado = json.loads(db.get_valor(conn, clave) or "{}")
+    hechos, reint, fallas = estado.get("hechos", []), estado.get("reintento", {}), estado.get("fallas", {})
+    n = len(horas_asinacio(settings))
+    k = next((i for i in range(n) if i not in hechos), None)
+    if k is None:
+        db.set_valor(conn, ANIM_DIA, hoy)
+        return
+    if reint.get(str(k)) and hm < reint[str(k)]:
+        return
     turno = "animacion:diaria"
     if not db.tomar_turno(conn, db.RECURSO_PESADO, turno, maximo=1, vencimiento_s=VENCIMIENTO_PESADO_S):
         return
-    db.set_valor(conn, ANIM_DIA, hoy)    # una por día, aunque falle
     chats = [c.strip() for c in cfg.chat.split(",") if c.strip()] or [DUENO]
-    error = ""
+    error, sin_candidato = "", False
     try:
-        (armar or _animacion_armar)(conn, tg, chats, settings, ahora.date())
+        (armar or _animacion_armar)(conn, tg, chats, settings, ahora.date(), k)
     except Exception as e:
         from .animacion.marcas import SinCandidato
 
-        if not isinstance(e, SinCandidato):
-            log.exception("el video de marcas falló")
+        sin_candidato = isinstance(e, SinCandidato)
+        if not sin_candidato:
+            log.exception("el video de marcas %d falló", k + 1)
         error = html.escape(str(e)[:500])
     finally:
         db.soltar_turno(conn, db.RECURSO_PESADO, turno, VENCIMIENTO_PESADO_S)
-    if error:
+    cual = f" ({k + 1} de {n})" if n > 1 else ""
+    if not error:
+        hechos.append(k)
+        reint.pop(str(k), None)
+    else:
+        fallas[str(k)] = fallas.get(str(k), 0) + 1
+        otra = (ahora + timedelta(minutes=cfg.reintento_min)).strftime("%H:%M")
+        if not sin_candidato and fallas[str(k)] < ANIM_FALLAS_MAX and otra < cfg.reintento_hasta \
+                and (ahora + timedelta(minutes=cfg.reintento_min)).date() == ahora.date():
+            reint[str(k)] = otra
+            texto = f"🎨 <b>Así Nació{cual}</b>: no salió ({error}). Reintento a las {otra}."
+        else:
+            hechos.append(k)
+            texto = f"🎨 <b>Marcas animadas{cual}</b>: hoy no sale. {error}"
         for chat in chats:
-            tg.send_message(chat, f"🎨 <b>Marcas animadas</b>: hoy no sale. {error}")
+            tg.send_message(chat, texto)
+    db.set_valor(conn, clave, json.dumps({"hechos": hechos, "reintento": reint, "fallas": fallas}))
+    if len(hechos) >= n:
+        db.set_valor(conn, ANIM_DIA, hoy)
 
 
 EFE_REINTENTO = "efemeride_reintento"   # bot_estado: la propuesta de hoy que falló y espera turno
@@ -4593,6 +4669,8 @@ def _programar_subida(conn, settings: Settings, meta: dict, canal: str, hora: st
         if demo:
             hh, mm = (int(x) for x in hora.split(":"))
             cuando = (hoy + timedelta(days=1)).replace(hour=hh, minute=mm, second=0, microsecond=0)
+        elif canal == "animacion":
+            cuando = _hora_asinacio(settings, hora, hoy)
         elif canal == "pequena_historia" and cuando.date() != hoy.date():
             # "Un día como hoy" publicado mañana está mal: si ya pasó la hora, sale hoy en 30 min,
             # y nunca después de las 23:55 (a las 23:32 "en 30 min" caía al día siguiente: lo

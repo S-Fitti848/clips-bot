@@ -39,7 +39,9 @@ def test_programa_youtube_y_guarda_el_meta(conn, tmp_path, monkeypatch):
         vistos.append((meta, canal, hora)), "📤 Programado en <b>Así Nació</b> para el 15/11 a las 19:00 (AR).")[1])
     avisos = m._animacion_subir(conn, s, R(), tmp_path, date(2026, 11, 15))
     meta, canal, hora = vistos[0]
-    assert canal == "animacion" and hora == "19:00" and meta["clip_id"] == "asinacio_20261115"
+    assert canal == "animacion" and hora == "13:00" and meta["clip_id"] == "asinacio_20261115"
+    m._animacion_subir(conn, s, R(), tmp_path, date(2026, 11, 15), 1)          # el segundo del día
+    assert vistos[1][2] == "20:00" and vistos[1][0]["clip_id"] == "asinacio_20261115_2"
     assert "Música: Tema X (CC BY)" in meta["textos"]["descripcion"]       # el crédito de la licencia
     assert json.loads((tmp_path / "asinacio_20261115.json").read_text(encoding="utf-8"))["salida"] == "v.mp4"
     assert avisos and avisos[0].startswith("📤")

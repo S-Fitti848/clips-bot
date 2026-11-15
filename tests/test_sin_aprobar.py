@@ -25,8 +25,8 @@ def _estado(tmp_path, destino=""):
     return {"propuesta": p.__dict__, "carpeta": str(tmp_path), "chat_id": "1"}
 
 
-def test_apagado_por_defecto():
-    assert load_settings().efemerides.sin_aprobar is False
+def test_prendido_por_santi():
+    assert load_settings().efemerides.sin_aprobar is True     # 2026-11-15
 
 
 @pytest.mark.parametrize("destino", ["", "facebook"])

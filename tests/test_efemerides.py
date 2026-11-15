@@ -18,6 +18,25 @@ HOY = date(2026, 9, 27)
 
 # ---- eventos --------------------------------------------------------------------------
 
+
+@pytest.fixture(autouse=True)
+def _con_aprobacion(monkeypatch):
+    """Estos tests son del flujo CON aprobación (✅): desde el 2026-11-15 `sin_aprobar` está prendido."""
+    from dataclasses import replace
+
+    import clips_bot.config as cfg_mod
+
+    original = cfg_mod.load_settings
+
+    def cargar(*a, **k):
+        s = original(*a, **k)
+        return replace(s, efemerides=replace(s.efemerides, sin_aprobar=False))
+
+    monkeypatch.setattr(cfg_mod, "load_settings", cargar)
+    monkeypatch.setattr(m, "load_settings", cargar)
+    if "load_settings" in globals():
+        monkeypatch.setitem(globals(), "load_settings", cargar)
+
 @pytest.mark.parametrize("anio,texto,motivo", [
     (2014, "63 people are killed in an eruption of Mount Ontake in Japan.", "tema sensible"),
     (2020, "Second Nagorno-Karabakh War: Azerbaijan launches an offensive", "guerra reciente"),

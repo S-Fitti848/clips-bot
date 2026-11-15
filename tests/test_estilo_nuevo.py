@@ -22,7 +22,7 @@ def _g(**k):
 def test_prendido_y_sin_aprobar_apagado():
     # Santi, 2026-11-15: "ya apruebo el estilo nuevo; la publicación sin aprobar sigue apagada"
     e = load_settings().efemerides
-    assert e.estilo_nuevo is True and e.sin_aprobar is False
+    assert e.estilo_nuevo is True and e.sin_aprobar is True    # sin aprobar: prendido por Santi el 15/11
 
 
 def test_el_gancho_es_un_montaje_de_3_con_golpe():
