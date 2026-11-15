@@ -30,7 +30,9 @@ from . import ilustrar
 
 log = logging.getLogger(__name__)
 
-TIPOS = ("heroe_de_pueblo", "gente_comun", "anecdota", "momento_emotivo", "fundacion", "otro")
+TIPOS = ("heroe_de_pueblo", "gente_comun", "anecdota", "momento_emotivo", "fundacion",
+         # Santi, 2026-11-15: "historias curiosas y reales de Latinoamérica", no solo héroes y personas
+         "lugar_curioso", "invento", "costumbre", "record", "misterio", "dato_sorprendente", "otro")
 
 # Lugares de Latinoamérica: países, sus gentilicios y las provincias, estados y ciudades que más
 # aparecen en las páginas de cada día. Sin esto, Haiku vería ~150 líneas por día.
@@ -347,8 +349,12 @@ def historia_de_ciudades(wiki: ef.Wiki, dia: date, lugares: list[str], tope: int
 # Fuente 5 (2026-11-15): personajes populares y hazañas. El buscador de es.wikipedia con la fecha y una
 # palabra de historia humana; solo artículos de Latinoamérica, y de cada uno la oración con la fecha.
 FRASES_PERSONAJES = ('"el {d} de" héroe', '"el {d} de" heroína', '"el {d} de" hazaña', '"el {d} de" salvó',
-                     '"el {d} de" rescate', '"el {d} de" leyenda', '"el {d} de" popular', '"el {d} de" ídolo')
-TOPE_PERSONAJES = 25
+                     '"el {d} de" rescate', '"el {d} de" leyenda', '"el {d} de" popular', '"el {d} de" ídolo',
+                     # historias curiosas (2026-11-15): lugares, inventos, costumbres, récords, misterios
+                     '"el {d} de" récord', '"el {d} de" misterio', '"el {d} de" inventó', '"el {d} de" invento',
+                     '"el {d} de" curioso', '"el {d} de" tradición', '"el {d} de" primera vez',
+                     '"el {d} de" insólito', '"el {d} de" enigma', '"el {d} de" patentó')
+TOPE_PERSONAJES = 40
 
 
 def buscar_personajes(wiki: ef.Wiki, dia: date, tope: int = TOPE_PERSONAJES) -> list[Candidato]:
@@ -474,24 +480,27 @@ def filtrar(cands: list[Candidato], hoy: date, homenajeados: set[str]) -> tuple[
 
 # ---- 2. Haiku clasifica -------------------------------------------------------------------------
 
-SISTEMA_CLASIFICAR = """Clasificás hechos históricos para un canal de videos cortos de historias
-humanas de Latinoamérica ("Pequeña Historia"). Para CADA hecho de la lista decí:
-- `humana`: true si es una HISTORIA HUMANA: hay personas concretas (o un pueblo entero) que hacen o
-  viven algo notable que se puede contar como una historia (un héroe de pueblo, gente común que hizo
-  algo, una anécdota, un momento emotivo, la fundación de un pueblo con quienes la hicieron). false
-  si es un trámite institucional, una ley, un cambio de gobierno, una elección, un tratado, la
-  fundación de una empresa, un canal de TV, un club o una universidad sin historia detrás, un
-  resultado deportivo suelto o política partidaria.
-- `lugar`: el pueblo o la ciudad CONCRETA donde pasó (no el país). Vacío si no hay uno.
+SISTEMA_CLASIFICAR = """Clasificás hechos para un canal de videos cortos de HISTORIAS CURIOSAS Y REALES de
+Latinoamérica ("Pequeña Historia"): héroes y gente común, pero también lugares insólitos, inventos de la
+región, costumbres y tradiciones, récords, misterios y datos sorprendentes de ciudades y países. Para CADA
+hecho de la lista decí:
+- `humana`: true si se puede contar como una HISTORIA CURIOSA REAL que engancha: gente concreta que hace o
+  vive algo notable, o un lugar, un invento, una costumbre, un récord, un misterio o un dato sorprendente con
+  algo que contar (cómo nació, qué tiene de raro, qué pasó). false si es un trámite institucional, una ley, un
+  cambio de gobierno, una elección, un tratado, la fundación de una empresa, un canal de TV, un club o una
+  universidad sin nada curioso detrás, un resultado deportivo suelto o política partidaria.
+- `lugar`: el pueblo o la ciudad CONCRETA donde pasó; si es un dato de un país entero, el país. Vacío si no
+  hay ninguno.
 - `region`: la provincia, estado o departamento, si se sabe. `pais`: el país de hoy.
-- `tipo`: heroe_de_pueblo, gente_comun, anecdota, momento_emotivo, fundacion u otro.
-- `tragedia_sola`: true si lo central es una muerte, un desastre, un crimen o una represión SIN un
-  acto heroico o algo luminoso que contar. (Un maquinista que muere salvando a su pueblo: false.
-  Un terremoto con miles de muertos: true. Una heroína fusilada por defender la independencia: false.)
-- `conmemora`: si alguna de las conmemoraciones de hoy recuerda este hecho o a su protagonista,
-  cuál (corta); si no, vacío.
+- `tipo`: heroe_de_pueblo, gente_comun, anecdota, momento_emotivo, fundacion, lugar_curioso, invento,
+  costumbre, record, misterio, dato_sorprendente u otro.
+- `tragedia_sola`: true si lo central es una muerte, un desastre, un crimen o una represión SIN un acto
+  heroico o algo luminoso que contar. (Un maquinista que muere salvando a su pueblo: false. Un terremoto
+  con miles de muertos: true. Una heroína fusilada por defender la independencia: false.)
+- `conmemora`: si alguna de las conmemoraciones de hoy recuerda este hecho o a su protagonista, cuál
+  (corta); si no, vacío.
 - `interes` de 1 a 10: cuánto engancharía a gente de ese lugar y de Latinoamérica ("¡eso pasó en mi
-  pueblo!"), como el maquinista de Nacozari.
+  pueblo!", "¡no sabía que eso se inventó acá!"), como el maquinista de Nacozari.
 Respondé solo con el JSON pedido, una entrada por hecho, con su número."""
 
 SCHEMA_CLASIFICAR = {
@@ -562,14 +571,17 @@ def buenos(cands: list[Candidato]) -> list[Candidato]:
 
 # ---- 3. Sonnet elige -------------------------------------------------------------------------
 
-SISTEMA_ELEGIR = """Elegís la historia del día para "Pequeña Historia" en Facebook: un video corto
-con una historia HUMANA y REAL de un lugar concreto de Latinoamérica. El modelo a seguir es el
+SISTEMA_ELEGIR = """Elegís la historia del día para "Pequeña Historia": un video corto con una historia
+CURIOSA y REAL de Latinoamérica (Santi, 2026-11-15): héroes y gente común, y también lugares insólitos,
+inventos, costumbres, récords, misterios y datos sorprendentes de ciudades y países, siempre desde un hecho
+real con fecha. El modelo a seguir es el
 maquinista Jesús García, que en 1907 alejó un tren con dinamita encendida y salvó a Nacozari: la
 gente de ese lugar se siente identificada, la comparte y cuenta sus recuerdos.
 
 Ordená del mejor al peor (hasta {cuantos}) los que más se parecen a eso, y puntuá TODOS los que pongas:
 - gente concreta que hizo algo notable (héroes de pueblo, gente común, anécdotas, momentos
-  emotivos), en un pueblo o ciudad que se pueda nombrar;
+  emotivos), en un pueblo o ciudad que se pueda nombrar; o un lugar, un invento, una costumbre, un récord,
+  un misterio o un dato de un país que sorprenda y tenga una historia detrás;
 - los marcados ★ CALENDARIO se recuerdan HOY (aniversario, fundación, día nacional, fiesta del
   lugar): van SIEMPRE primero, antes que cualquier otro, y entre ellos primero México, Colombia,
   Argentina, Perú, Chile y Venezuela (es cuando la gente lo comparte);
@@ -581,9 +593,10 @@ Ordená del mejor al peor (hasta {cuantos}) los que más se parecen a eso, y pun
   cómo se hizo, impacto, récords).
 PUNTUÁ cada uno del 1 al 10 en cuatro cosas (Santi, 2026-11-13: la gente se va después del
 segundo 3, hacen falta historias que atrapen):
-- `persona`: ¿hay una persona concreta, con nombre, en el centro? (10 = alguien con nombre que hace
-  algo; 1 = una institución o una ley);
-- `peligro`: ¿hay peligro, conflicto o algo en juego? (10 = vidas en riesgo; 1 = nada en juego);
+- `persona`: ¿hay un protagonista concreto, con nombre, en el centro? (10 = alguien con nombre que hace
+  algo, o un lugar o un invento con nombre propio que "hace" algo insólito; 1 = una institución o una ley);
+- `peligro`: ¿hay peligro, conflicto, misterio o algo en juego? (10 = vidas en riesgo o un misterio sin
+  resolver; 1 = nada en juego);
 - `giro`: ¿hay un giro o un final sorprendente?;
 - `emocion`: ¿genera emoción (orgullo, asombro, tristeza)?
 EJEMPLO DE 10 EN LAS CUATRO: Nacozari (1907): el maquinista Jesús García ve que el tren lleva
