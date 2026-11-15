@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-11-14 | **Versión:** v1.04.0 (desplegado) | **Modo:** Fase 2: corriendo solo en la Pi. **Rots APAGADO.** Pequeña Historia (3 por día, madrugada desde las 04:00) y **Así Nació** (1 por día, arma 07:00, publica 19:00 en YouTube y Facebook con ❌ Cancelar), todo al privado de Santi
+**Snapshot:** 2026-11-15 | **Versión:** v1.04.0 (desplegado) | **Modo:** Fase 2: corriendo solo en la Pi. **Rots APAGADO.** Pequeña Historia (3 por día, madrugada desde las 04:00) y **Así Nació** (1 por día, arma 07:00, publica 19:00 en YouTube y Facebook con ❌ Cancelar), todo al privado de Santi
 
 > **SI ESTÁS EMPEZANDO UNA SESIÓN NUEVA, LEÉ §10.** Ahí está qué está hecho, qué quedó a medias,
 > qué falta, y las trampas que ya nos mordieron.
@@ -2503,7 +2503,7 @@ clips" queda sin uso mientras Rots siga apagado.
 | subidas | YouTube: Pequeña Historia, Así Nació (y Rots, apagado); Facebook: página de Pequeña Historia y página de Así Nació. La app de Meta (clips-bot) estaba en modo desarrollo en octubre: si sigue así, el público no ve los Reels (pasarla a Live es de Santi) |
 | apagado | Rots; `efemerides.sin_aprobar` y `efemerides.estilo_nuevo` (esperan el OK de Santi); ElevenLabs (sin clave ni voz); multi-POV; prueba manual vs API; portadas con IA |
 
-### Estado real de la Pi (verificado el 2026-11-14 noche)
+### Estado real de la Pi (verificado el 2026-11-15, 03:20)
 
 | | |
 |---|---|
@@ -2518,7 +2518,7 @@ clips" queda sin uso mientras Rots siga apagado.
 | chats | Santi (`8668060171`, `DUENO`): todo; grupo "Rots clips" (`-5453399767`): sin uso con Rots apagado |
 | música | `musica/` fuera de git |
 
-### Lo que se hizo en la última sesión (2026-11-14, v0.94.0 a v1.00.0 + subtítulos virales)
+### Lo que se hizo en la última sesión (2026-11-14, v0.94.0 a v1.04.0)
 
 - **Rots apagado** y Pequeña Historia al privado; **por qué el 14/11 no salió nada a la madrugada**
   (tecnología 7,25 < 7,5; La Pola y Túpac Katari frenadas por el control del 70 %) → escenas
@@ -2533,7 +2533,7 @@ clips" queda sin uso mientras Rots siga apagado.
 - **Remotion:** skill oficial instalada (`.claude/skills/remotion-best-practices`, fuera de git),
   licencia gratis para una persona, prototipo con dibujos con volumen y perspectiva (Nerf: 8-10 min de
   render en la Pi contra 5 del motor actual). **NO en producción.**
-- **Subtítulos virales de Así Nació** (commit `8a7e7b1`, NO desplegado): 1-3 palabras, Montserrat
+- **Subtítulos virales de Así Nació** (aprobados por Santi y PRENDIDOS, v1.03.0): 1-3 palabras, Montserrat
   Black (OFL, `assets/fuentes/`) dibujada como trazos, pop sincronizado, claves en amarillo/rojo con
   temblor, emojis dibujados (💥💰😱🤣) cada 4,5 s como mínimo; en los dos motores.
 - **Imágenes de los canales:** perfil de Tito con fondo celeste (elegido); banners de YouTube rehechos
@@ -2542,6 +2542,11 @@ clips" queda sin uso mientras Rots siga apagado.
 - **Intel:** el Short "El procesador barato de Intel que salió mal" (13/11) hizo 3.220 vistas (los
   demás ~1.200). Analytics todavía no tenía sus datos (llega solo). Lo que se ve: marca conocida +
   "salió mal" (único con ese ángulo), primera imagen un primer plano del producto, 29 s.
+- **Calor de la Pi** (v1.02.0): nunca faltó corriente, sí frenadas por calor. Control del Fan SHIM
+  (`ventilador.service`, 55/48 °C, siempre prendido en renders), pausa para enfriar entre renders
+  (65 °C, máx. 10 min) y x264 con 3 hilos: ffmpeg frena 17 % del tiempo (antes 35 %), pero el pico
+  sigue en ~86 °C. Santi va a poner disipadores: medir de nuevo cuando avise.
+- **Así Nació con 1 proceso de dibujo** (v1.04.0): 134 s contra 157 con 2 en el demo de 35 s.
 
 ### Decisiones de Santi vigentes (además de §1)
 
