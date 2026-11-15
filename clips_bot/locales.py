@@ -597,6 +597,10 @@ segundo 3, hacen falta historias que atrapen):
   algo, o un lugar o un invento con nombre propio que "hace" algo insólito; 1 = una institución o una ley);
 - `peligro`: ¿hay peligro, conflicto, misterio o algo en juego? (10 = vidas en riesgo o un misterio sin
   resolver; 1 = nada en juego);
+- `sorpresa` (SOLO para las historias CURIOSAS: lugar insólito, invento, costumbre, récord, misterio o
+  dato sorprendente; para las de personas poné 0): ¿el dato o el giro hace decir "no puede ser"? (10 =
+  increíble pero cierto; 1 = un dato común). En las curiosas, `sorpresa` reemplaza a `peligro` (poné
+  `peligro` igual, pero no cuenta);
 - `giro`: ¿hay un giro o un final sorprendente?;
 - `emocion`: ¿genera emoción (orgullo, asombro, tristeza)?
 EJEMPLO DE 10 EN LAS CUATRO: Nacozari (1907): el maquinista Jesús García ve que el tren lleva
@@ -614,15 +618,22 @@ SCHEMA_ELEGIR = {
         "properties": {"n": {"type": "INTEGER"}, "articulo": {"type": "STRING"},
                        "articulo_lugar": {"type": "STRING"}, "motivo": {"type": "STRING"},
                        "persona": {"type": "INTEGER"}, "peligro": {"type": "INTEGER"},
-                       "giro": {"type": "INTEGER"}, "emocion": {"type": "INTEGER"}},
+                       "giro": {"type": "INTEGER"}, "emocion": {"type": "INTEGER"},
+                       "sorpresa": {"type": "INTEGER"}},
         "required": ["n", "articulo", "articulo_lugar", "motivo", "persona", "peligro", "giro",
-                     "emocion"]}}},
+                     "emocion", "sorpresa"]}}},
     "required": ["elegidos"],
 }
 
 
 CRITERIOS = ("persona", "peligro", "giro", "emocion")
 PUNTAJE_MIN = 8.0    # Santi, 2026-11-13: solo pasan las de 8 o más de promedio
+CURIOSAS = {"lugar_curioso", "invento", "costumbre", "record", "misterio", "dato_sorprendente"}
+
+
+def es_curiosa(c: "Candidato") -> bool:
+    """Una historia curiosa (no de personas): ahí "peligro" se mide como "sorpresa" (Santi, 2026-11-15)."""
+    return str(c.clasif.get("tipo") or "") in CURIOSAS
 PISO_UNA_POR_DIA = 7.0   # Santi, 2026-11-15: sin ninguna de 8, la mejor del día si tiene 7 (una por día)
 A_PUNTUAR = 30       # cuántas puntúa Sonnet por propuesta (eran 8 de 20; presupuesto de 2026-11-15)
 
@@ -648,8 +659,13 @@ def elegir(sonnet, cands: list[Candidato], cuantos: int = A_PUNTUAR) -> list[tup
         lug = x.get("articulo_lugar") if x.get("articulo_lugar") in c.paginas else ""
         vistos.add(n)
         notas = {k: x.get(k) for k in CRITERIOS if isinstance(x.get(k), int)}
+        if es_curiosa(c) and isinstance(x.get("sorpresa"), int) and x.get("sorpresa") > 0:
+            # Santi, 2026-11-15: en las historias curiosas "peligro" pasa a ser "sorpresa"
+            notas["peligro"] = x["sorpresa"]
+            notas["sorpresa"] = x["sorpresa"]
         c.clasif["puntajes"] = notas
-        c.clasif["puntaje"] = round(sum(notas.values()) / len(CRITERIOS), 2) if len(notas) == len(CRITERIOS) else 0.0
+        c.clasif["puntaje"] = (round(sum(notas[k] for k in CRITERIOS) / len(CRITERIOS), 2)
+                               if all(k in notas for k in CRITERIOS) else 0.0)
         out.append((c, art, lug if lug != art else ""))
     # El calendario manda aunque Sonnet no lo respete (sorted es estable: dentro de cada grupo, su orden).
     out.sort(key=lambda x: not en_calendario(x[0]))
@@ -727,7 +743,7 @@ def proponer(wiki: ef.Wiki, sonnet, haiku, gemini, dia: date, carpeta: Path, avi
              imagen_frase: bool = False, corto: bool = False, elector=None,
              elector_reintento=None, excluir: set | None = None,
              evitar_paises: set | None = None, mas_video: bool = False,
-             piso_alternativo: float | None = None) -> ef.Propuesta:
+             piso_alternativo: float | None = None, puntuador=None) -> ef.Propuesta:
     """`excluir`: hechos (su texto) que ya salieron hoy; `evitar_paises`: los países de esos (Santi,
     2026-11-12: 2 historias por día, sin repetir país si se puede: van al final, no afuera).
 
@@ -768,7 +784,8 @@ def proponer(wiki: ef.Wiki, sonnet, haiku, gemini, dia: date, carpeta: Path, avi
         raise ef.NarrarError("Ningún hecho de hoy es una historia humana con un lugar concreto"
                              + (" (sin contar las que ya salieron hoy)" if excluir else ""))
     lista = otro_pais_primero(lista, evitar_paises)
-    elegidos = elegir(sonnet, lista[:A_PUNTUAR], cuantos=A_PUNTUAR)
+    # Puntúa Haiku (Santi, 2026-11-15: Sonnet solo para escribir y corregir guiones).
+    elegidos = elegir(puntuador or sonnet, lista[:A_PUNTUAR], cuantos=A_PUNTUAR)
     # Ni el mismo hecho ni la misma historia contada desde otra línea del día (2026-11-13: el 14/11 La
     # Pola aparece como nacimiento y como fusilamiento, con el mismo artículo).
     elegidos = [x for x in elegidos if x[0].texto not in (excluir or set()) and x[1] not in (excluir or set())]

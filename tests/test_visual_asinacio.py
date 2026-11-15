@@ -84,3 +84,36 @@ def test_los_efectos_del_render_no_los_elige_el_guion():
     from clips_bot.animacion import marcas as mk
 
     assert not set(mk.EFECTOS_RENDER) & set(mk.PROPS)
+
+
+def test_dibujo_nuevo_se_limpia_y_se_guarda(tmp_path, monkeypatch):
+    import json as _json
+
+    from clips_bot.animacion import dibujos
+
+    monkeypatch.setattr(dibujos, "CARPETA", tmp_path)
+    sucio = ('<svg><script>alert(1)</script><rect x="-50" y="-50" width="100" height="100" fill="#ff0000" '
+             'onclick="x()"/><circle cx="0" cy="0" r="20" fill="url(http://malo)"/><text>HOLA</text></svg>')
+    limpio = dibujos.limpiar(sucio)
+    assert "script" not in limpio and "onclick" not in limpio and "text" not in limpio and "url(" not in limpio
+
+    class C:
+        def json(self, *a, **k):
+            return _json.dumps({"svg": '<rect x="-60" y="-60" width="120" height="120" fill="#e63946" stroke="#1f1a24" '
+                                       'stroke-width="8"/><circle cx="-20" cy="-20" r="12" fill="#ffffff"/>'})
+
+    dibujos.dibujar(C(), "cubo_rubik", "un cubo de colores")
+    assert dibujos.svg_de("cubo_rubik") and dibujos.biblioteca() == {"cubo_rubik": "un cubo de colores"}
+    from clips_bot.animacion import escenas as esc
+
+    assert esc.es_prop("cubo_rubik") and "<rect" in esc.prop("cubo_rubik")
+
+
+def test_personaje_fiel_genero_y_edad():
+    from clips_bot.animacion import acciones as ac
+
+    nombre, cambios, _ = ac.aspecto("inventor", "hombre", "adulto")
+    assert nombre == "narrador" and cambios.get("peinado") not in ("largo", "rulos")
+    nombre, cambios, _ = ac.aspecto("inventor", "mujer", "mayor")
+    assert nombre == "vecina" and "bigote" not in cambios and cambios["pelo"] == ac.P.PELO[4]
+    assert ac.aspecto("inventor") == ac.ROLES["inventor"]           # sin datos, como siempre

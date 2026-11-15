@@ -1212,8 +1212,20 @@ PROPS = {"primer_plano": prop_primer_plano, "polvo": prop_polvo, "lineas_mov": p
          "idea_fallida": prop_bombilla_rota}
 
 
+def es_prop(nombre: str) -> bool:
+    """De la biblioteca de siempre o un dibujo guardado (dibujos.py, 2026-11-15)."""
+    from . import dibujos
+
+    return nombre in PROPS or dibujos.svg_de(nombre) is not None
+
+
 def prop(nombre: str, **params) -> str:
     f = PROPS.get(nombre)
     if f is None:
+        from . import dibujos
+
+        svg_ = dibujos.svg_de(nombre)
+        if svg_ is not None:
+            return svg_
         raise ValueError(f"Prop desconocido: {nombre!r} (hay {', '.join(sorted(PROPS))})")
     return f(**params)

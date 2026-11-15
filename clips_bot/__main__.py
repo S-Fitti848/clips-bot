@@ -3509,7 +3509,7 @@ def _efe_proponer(conn, tg: TelegramClient, chats: list[str], dia, settings: Set
                         elector_reintento=_elector_fotos(settings, reintento=True),
                         tema="" if hecho else settings.efemerides.tema,
                         corto=settings.efemerides.corto, texto=_texto_efemeride(settings, gemini),
-                        mas_video=settings.efemerides.estilo_nuevo)
+                        mas_video=settings.efemerides.estilo_nuevo, puntuador=_puntuador(settings))
     except (NarrarError, ef.WikiError, GeminiError) as e:
         error = f"No salió la efeméride: {html.escape(str(e)[:400])}"
         if isinstance(e, (ef.SinFotosReales, ef.SinTema)):
@@ -3566,6 +3566,14 @@ def _texto_efemeride(settings: Settings, gemini):
     return claude.para_texto(gemini, settings.historias_fb.modelo_texto)
 
 
+def _puntuador(settings: Settings):
+    """Haiku para puntuar y elegir hechos e historias (Santi, 2026-11-15: "Sonnet solo para escribir y
+    corregir guiones"). None sin ANTHROPIC_API_KEY (puntúa el mismo que escribe)."""
+    from . import claude
+
+    return claude.cliente(settings.historias_fb.modelo_simple, max_tokens=32000)
+
+
 def _claude_textos(settings: Settings):
     """(Sonnet, Haiku) para el texto del video de Facebook; (None, None) sin ANTHROPIC_API_KEY."""
     from . import claude
@@ -3612,6 +3620,7 @@ def _fb_proponer(conn, tg: TelegramClient, chats: list[str], dia, settings: Sett
                                       for v in (x.get("texto"), x.get("articulo")) if v},
                              evitar_paises={x["pais"] for x in _latam_del_dia(conn, dia) if x.get("pais")},
                              mas_video=settings.efemerides.estilo_nuevo,
+                             puntuador=_puntuador(settings),
                              piso_alternativo=None if any(float(x.get("puntaje") or 10) < locales.PUNTAJE_MIN
                                                           for x in _latam_del_dia(conn, dia))
                              else locales.PISO_UNA_POR_DIA)

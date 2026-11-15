@@ -1207,11 +1207,21 @@ def escribir_guion(cliente, e: Evento, fuente: str, correccion: str = "", anteri
               f"{fuente[:12000]}")
     if correccion:
         prompt += f"\n\nEl guion anterior no sirvió:\n{anterior}\nLo que hay que cambiar: {correccion}"
+    from . import correcciones
+
     errores: list[str] = []
-    for _ in range(reintentos + 1):
-        extra = f"\n\nTu respuesta anterior tenía estos errores: {'; '.join(errores)}" if errores else ""
-        base = sistema or (SISTEMA_GUION_HABLADO if hablado else SISTEMA_GUION)   # efemerides.guion_hablado
-        d = json.loads(cliente.json(base, prompt + extra, SCHEMA_GUION, temperatura=0.5))
+    d, puntuales = None, 0
+    base = sistema or (SISTEMA_GUION_HABLADO if hablado else SISTEMA_GUION)   # efemerides.guion_hablado
+    # Corregir solo lo que falla (Santi, 2026-11-15): las frases que no validan, con el resto como contexto;
+    # el guion entero de nuevo solo después de CORRECCIONES_MAX correcciones puntuales fallidas.
+    for _ in range(reintentos + 1 + correcciones.CORRECCIONES_MAX):
+        if d is not None and errores and puntuales < correcciones.CORRECCIONES_MAX:
+            puntuales += 1
+            d = correcciones.corregir(cliente, base, prompt, d, errores, SCHEMA_GUION, "frases", "frase")
+        else:
+            extra = f"\n\nTu respuesta anterior tenía estos errores: {'; '.join(errores)}" if errores else ""
+            puntuales = 0
+            d = json.loads(cliente.json(base, prompt + extra, SCHEMA_GUION, temperatura=0.5))
         errores = validar_guion(d, e.anio, fuente + "\n" + e.texto + f" {e.anio}", corto=corto,
                                 rango=rango)
         if validar_extra and not errores:
@@ -2630,7 +2640,8 @@ def proponer(wiki: Wiki, cliente, dia: date, carpeta: Path, avisar=log.info,
              correccion: str = "", saltear: int = 0, hecho: str = "", videos: bool = False,
              tope_fotos_s: float | None = None, hablado: bool = False,
              imagen_frase: bool = False, elector=None, elector_reintento=None,
-             tema: str = "", corto: bool = False, texto=None, mas_video: bool = False) -> Propuesta:
+             tema: str = "", corto: bool = False, texto=None, mas_video: bool = False,
+             puntuador=None) -> Propuesta:
     """`tema` (2026-11-12, efemerides.tema): solo hechos de ese tema (TEMAS); si no hay ninguno,
     SinTema (no sale video). `corto`: el formato corto (SISTEMA_GUION_CORTO, 20-30 s).
 
@@ -2662,7 +2673,8 @@ def proponer(wiki: Wiki, cliente, dia: date, carpeta: Path, avisar=log.info,
                           + (f" (con «{hecho}»)" if hecho else "") + ".")
     escritor = texto or cliente     # 2026-11-12: el texto con Claude; `cliente` (Gemini) para las fotos
     notas: dict = {}
-    elegidos = elegir(escritor, candidatos, tema=tema, notas=notas)
+    # Puntuar y elegir con Haiku (Santi, 2026-11-15: "Sonnet solo para escribir y corregir guiones").
+    elegidos = elegir(puntuador or escritor, candidatos, tema=tema, notas=notas)
     if tema and not elegidos:
         raise SinTema(f"Hoy no hay ningún hecho de «{tema}» que sirva: no saco el video (nada de relleno).")
     if tema == "tecnologia":

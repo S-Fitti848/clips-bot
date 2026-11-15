@@ -130,7 +130,7 @@ class Elemento:
         tipo = d.get("tipo")
         if tipo not in TIPOS_ELEMENTO:
             raise ErrorGuion(f"{donde}: tipo {tipo!r} desconocido (hay {', '.join(TIPOS_ELEMENTO)})")
-        if tipo == "prop" and d.get("nombre") not in esc.PROPS:
+        if tipo == "prop" and not esc.es_prop(d.get("nombre")):
             raise ErrorGuion(f"{donde}: prop {d.get('nombre')!r} desconocido "
                              f"(hay {', '.join(sorted(esc.PROPS))})")
         if tipo in ("gancho", "texto") and not str(d.get("texto", "")).strip():

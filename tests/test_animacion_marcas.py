@@ -348,9 +348,10 @@ def test_escribir_guion_reintenta_con_los_errores():
     cliente = ClienteFalso(malo, guion())
     e = mk.Elegido(marca(), "nombre", {c: 9 for c in mk.CRITERIOS})
     assert mk.escribir_guion(cliente, e, FUENTE, avisar=lambda *_: None)["locutor"]
-    assert "NO SIRVIÓ" in cliente.pedidos[1] and "SE VE" in cliente.pedidos[1]
+    # 2026-11-15: el segundo pedido es una CORRECCIÓN PUNTUAL (el guion como contexto y los errores)
+    assert "ERRORES:" in cliente.pedidos[1] and "el locutor interrumpe" in cliente.pedidos[1]
     with pytest.raises(mk.GuionInvalido):
-        mk.escribir_guion(ClienteFalso(malo, malo), e, FUENTE, reintentos=2, avisar=lambda *_: None)
+        mk.escribir_guion(ClienteFalso(malo, malo, malo, malo, malo), e, FUENTE, reintentos=5, avisar=lambda *_: None)
 
 
 def test_el_chequeo_de_haiku_tambien_hace_reintentar():
@@ -1020,3 +1021,16 @@ def test_marca_con_guion_fallido_queda_afuera_ese_dia(conn):
     despues = {m.nombre for m, _ in mk.candidatos(conn, cat, hoy, 20, excluir=mk.fallidos_de(conn, hoy))}
     assert una not in despues and despues != antes
     assert not issubclass(mk.GuionesFallidos, mk.SinCandidato)     # se reintenta en 1 h
+
+
+
+def test_correccion_puntual_toca_solo_lo_que_falla():
+    from clips_bot import correcciones as co
+
+    d = {"titulo": "t", "escenas": [{"frase": "uno"}, {"frase": "dos"}, {"frase": "tres"}]}
+    out = co.aplicar(d, {"cambios": [{"indice": 2, "item": {"frase": "DOS"}}], "agregar": [{"despues_de": 3,
+                         "item": {"frase": "cuatro"}}], "sacar": [1], "campos": {"titulo": "nuevo"}}, "escenas")
+    assert [x["frase"] for x in out["escenas"]] == ["DOS", "tres", "cuatro"] and out["titulo"] == "nuevo"
+    assert d["escenas"][1]["frase"] == "dos"                       # el original no se toca
+    sch = co.schema_parche(mk.SCHEMA_GUION, "escenas")
+    assert sch["properties"]["campos"]["required"] == [] and "escenas" not in sch["properties"]["campos"]["properties"]

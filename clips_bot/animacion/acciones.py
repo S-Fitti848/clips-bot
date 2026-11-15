@@ -41,8 +41,8 @@ ROLES = {
     "papa": ("narrador", {"anteojos": False, "bigote": True, "ropa": P.AZUL, "peinado": "corto"}, 0.74),
     "abuela": ("vecina", {"pelo": P.PELO[4], "ropa": P.VIOLETA}, 0.72),
     "fundador": ("abuelo", {}, 0.74),
-    "inventor": ("abuelo", {"anteojos": True, "ropa": P.BLANCO, "sombrero": "ninguno",
-                            "peinado": "rulos", "pelo": P.PELO[4]}, 0.74),
+    "inventor": ("narrador", {"anteojos": True, "ropa": P.BLANCO, "sombrero": "ninguno",
+                              "peinado": "jopo", "pelo": P.PELO[0], "bigote": True}, 0.74),
     "empresario": ("narrador", {"ropa": P.GRIS_OSCURO, "anteojos": False, "bigote": True,
                                 "sombrero": "galera", "color_sombrero": "#2b2b33"}, 0.74),
     "rival": ("narrador", {"ropa": P.ROJO, "peinado": "corto", "bigote": True, "anteojos": False,
@@ -70,6 +70,41 @@ ROLES = {
 }
 NINOS = {"nene", "nena"}
 
+# Personajes fieles (Santi, 2026-11-15: "Ernő Rubik es un hombre y salió como una señora"): el género y la
+# edad mandan sobre el dibujo base del rol; el rol pone la ropa y los accesorios.
+GENEROS = ("hombre", "mujer")
+EDADES = ("chico", "joven", "adulto", "mayor")
+BASE = {("hombre", "chico"): ("nene", 0.8), ("mujer", "chico"): ("nene", 0.8),
+        ("hombre", "joven"): ("pibe", 0.76), ("mujer", "joven"): ("vecina", 0.72),
+        ("hombre", "adulto"): ("narrador", 0.74), ("mujer", "adulto"): ("mama", 0.74),
+        ("hombre", "mayor"): ("abuelo", 0.72), ("mujer", "mayor"): ("vecina", 0.72)}
+
+
+def aspecto(rol: str, genero: str = "", edad: str = "") -> tuple[str, dict, float]:
+    """(personaje base, cambios, escala) del rol, con el género y la edad pedidos (si vienen)."""
+    nombre, cambios, escala = ROLES.get(rol, ROLES["joven"])
+    if genero not in GENEROS and edad not in EDADES:
+        return nombre, cambios, escala
+    genero = genero if genero in GENEROS else ("mujer" if nombre in ("mama", "vecina") else "hombre")
+    edad = edad if edad in EDADES else ("chico" if rol in NINOS else "adulto")
+    nombre, escala = BASE[(genero, edad)]
+    cambios = dict(cambios)
+    if genero == "mujer":
+        cambios.pop("bigote", None)
+        if cambios.get("peinado") in (None, "corto", "jopo", "pelado"):
+            cambios["peinado"] = "largo"
+    else:
+        if cambios.get("peinado") in ("largo", "rulos"):
+            cambios["peinado"] = "corto"
+    if edad == "mayor":
+        cambios["pelo"] = P.PELO[4]
+    elif cambios.get("pelo") == P.PELO[4]:
+        cambios["pelo"] = P.PELO[0]
+    if edad == "chico":
+        cambios = {k: v for k, v in cambios.items() if k in ("ropa", "pelo", "peinado", "pantalon")}
+        cambios["peinado"] = "largo" if genero == "mujer" else "corto"
+    return nombre, cambios, escala
+
 # Acciones de un personaje. Las de MOVIMIENTO son las que hacen que una escena no sea "estática".
 ACCIONES = ("caminar", "correr", "saltar", "caerse", "retar", "martillar", "tirar", "atrapar",
             "festejar", "asustarse", "pensar", "entrar", "salir", "senalar", "quieto",
@@ -78,7 +113,7 @@ MOVIMIENTO = {"caminar", "correr", "saltar", "caerse", "retar", "martillar", "ti
               "festejar", "asustarse", "entrar", "salir", "fabricar", "vender", "usar", "probar"}
 # Acciones de trabajo (2026-11-15: "fabricando, inventando, vendiendo, gente usando el producto"): se
 # dibujan con los gestos de otra acción que ya tiene movimiento con peso.
-ALIAS_ACCION = {"fabricar": "martillar", "usar": "atrapar", "probar": "saltar"}
+ALIAS_ACCION = {"usar": "atrapar", "probar": "saltar"}
 CARAS = ("feliz", "enojado", "sorprendido", "triste", "normal")
 
 # Efectos de un objeto. Los DINÁMICOS cuentan como acción.
@@ -292,13 +327,14 @@ class Escena:
 
     # ---- personajes ---------------------------------------------------------------------
     def actor(self, rol: str, accion: str, desde: str = "centro", hacia: str | None = None,
-              cara: str = "normal", k: int = 0, x0: float | None = None, x1: float | None = None) -> None:
+              cara: str = "normal", k: int = 0, x0: float | None = None, x1: float | None = None,
+              genero: str = "", edad: str = "") -> None:
         """Un personaje con su acción. Movimiento con peso (Santi, 2026-11-14: "se mueven rígidos"):
         caminar/correr con el CICLO de la base (piernas que se levantan con la rodilla doblada, brazos
         en contrafase, el cuerpo sube y baja con cada paso, la cabeza se balancea), anticipación y
         squash & stretch en saltos y golpes, la cabeza que se inclina y la cara que cambia con la acción.
         `x0`/`x1` (numéricos) los pone el plan de la escena para que nadie se pise."""
-        nombre, cambios, escala = ROLES.get(rol, ROLES["joven"])
+        nombre, cambios, escala = aspecto(rol, genero, edad)
         accion = ALIAS_ACCION.get(accion, accion)
         x0 = _x(desde) if x0 is None else x0
         x1 = (_x(hacia, desde) if hacia and hacia in POS else x0) if x1 is None else x1
@@ -439,6 +475,14 @@ class Escena:
             self.elementos.append({"tipo": "prop", "nombre": "lamparita", "x": x0,
                                    "y": PISO - alto - 130, "escala": 0.65, "entrada": "rebote", "desde": ding})
             self.sfx.append((ding, "ding"))
+        elif accion == "fabricar":   # arma con las manos lo que hace (2026-11-15: nada de martillo genérico)
+            caras.append({"t": t0, "cara": "normal"})
+            gestos += _alternar("atrapar", "explicar", t0, fin, 0.32)
+            t, s_ = t0, 1
+            while t < fin:   # mira lo que tiene en las manos y se mueve con el trabajo
+                kf.append({"t": round(t, 3), "cabeza": 8 + 3 * s_, "estirar": 1.0 - 0.02 * s_, "easing": "suave"})
+                t += 0.32
+                s_ = -s_
         elif accion == "vender":   # ofrece con entusiasmo: señala y muestra, rebotando sobre los pies
             caras.append({"t": t0, "cara": "feliz"})
             gestos += _alternar("senalar" if x0 < 540 else "senalar_izq", "explicar", t0, fin, 0.45)
@@ -1106,7 +1150,8 @@ def escena_accion(spec: dict, dur: float, i: int, primera: bool = False, tono: f
         e.multitud()
     for k, a in enumerate(planear(spec.get("actores") or [], reservar)):
         e.actor(a.get("rol") or "joven", a.get("accion") or "quieto", a["carril"], a.get("hacia"),
-                a.get("cara") or "normal", k, x0=a["x0"], x1=a["x1"])
+                a.get("cara") or "normal", k, x0=a["x0"], x1=a["x1"], genero=a.get("genero") or "",
+                edad=a.get("edad") or "")
     colores = (P.NARANJA, P.AZUL, P.ROJO, P.VERDE, P.VIOLETA)
     objetos = list(spec.get("objetos") or [])[:3]
     cadena = [o for o in (spec.get("cadena") or []) if o.get("prop")][:4]

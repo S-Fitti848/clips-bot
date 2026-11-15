@@ -94,6 +94,17 @@ FONDOS = ("casa", "taller", "fabrica", "tienda", "oficina", "ciudad", "escenario
 # Los efectos que agrega el render (polvo, líneas de movimiento, destellos, primer plano) NO los elige el guion.
 EFECTOS_RENDER = ("polvo", "lineas_mov", "destello", "primer_plano")
 PROPS = tuple(sorted(n for n in esc.PROPS if n not in ("pedazo", "microfono", "mesa", "estante") + EFECTOS_RENDER))
+# Lo que puede pedir el guion: la biblioteca, los dibujos guardados y "dibujo_nuevo" (Claude lo dibuja, dibujos.py)
+DIBUJO_NUEVO = "dibujo_nuevo"
+
+
+def _props_guion() -> tuple:
+    from . import dibujos
+
+    return tuple(sorted(set(PROPS) | set(dibujos.biblioteca()))) + (DIBUJO_NUEVO,)
+
+
+PROPS_GUION = _props_guion()
 TRANSICIONES = ("corte", "fundido", "zoom", "barrido")
 
 
@@ -404,6 +415,27 @@ y el taller solo si la historia pasa ahí. Cuando cambia el momento, cambia el l
 distintos en el video y nunca más de 2 escenas seguidas en el mismo. Muy visual. Los personajes reaccionan
 con el cuerpo y la cara (`cara`); nunca dos en el mismo lugar (cada uno en su `desde`, sin cruzarse).
 
+REGLA 11 — EL OBJETO DESDE EL PRINCIPIO (Santi, 2026-11-15). El gancho MUESTRA el protagonista (el producto)
+o el momento clave de su historia: en el cubo de Rubik se ve el cubo (de colores, girando, alguien intentando
+resolverlo). El `protagonista` va en los `objetos` de la escena 1.
+
+REGLA 12 — ACCIONES ESPECÍFICAS. Mostrá lo concreto de ESTA historia: el objeto, la máquina, el ingrediente o
+el proceso real (Rubik armando el cubo con piezas y girando las caras: `fabricar` con el cubo en la mano y
+`gira`). `martillar` y los engranajes solo si de verdad se martilla o hay una máquina de engranajes.
+
+REGLA 13 — PERSONAJES FIELES Y ÉPOCA. Cada actor lleva `genero` (hombre/mujer), `edad` (chico, joven, adulto,
+mayor) y, si es una persona real del texto, `persona_real` con su nombre (vacío si no): el protagonista real
+coincide con la persona (Ernő Rubik es un hombre adulto). `anio_escena`: el año del momento que muestra la
+escena (también el gancho, si muestra un momento del pasado; 0 si es hoy): la decoración sale de ese año
+(nada de monitores en 1974).
+
+REGLA 14 — SI FALTA UN DIBUJO. Si la escena necesita algo que no está en la lista de objetos (un cubo de
+Rubik, una lupa de detective), poné `prop` = dibujo_nuevo y en `dibujo` un nombre corto en minúsculas con
+guiones bajos (ej. cubo_rubik), y agregalo en `dibujos_nuevos` con qué es (forma, colores, sin texto ni
+logos): se dibuja para este video y queda guardado. Para un personaje que no está (un detective), usá un
+rol parecido con un objeto que lo identifique (un dibujo nuevo en la mano). En los demás objetos, `dibujo`
+vacío.
+
 REGLA 10 — PERSONAJES SEGÚN LA HISTORIA Y LA ÉPOCA. Elegí los `rol` que hay en esa historia (obrero, obrera,
 científica, inventora, médico, enfermera, granjero, marinero, cocinero, deportista, empresario, vendedor,
 cliente, estudiante…): al menos 3 roles distintos en el video. Los chicos (nene, nena) solo si la historia
@@ -449,15 +481,18 @@ _ACTOR = {"type": "OBJECT", "properties": {
     "accion": {"type": "STRING", "enum": list(ac.ACCIONES)},
     "desde": {"type": "STRING", "enum": list(ac.POS)},
     "hacia": {"type": "STRING", "enum": list(ac.POS) + ["ninguno"]},
-    "cara": {"type": "STRING", "enum": list(ac.CARAS)}},
-    "required": ["rol", "accion", "desde", "hacia", "cara"]}
+    "cara": {"type": "STRING", "enum": list(ac.CARAS)},
+    "genero": {"type": "STRING", "enum": list(ac.GENEROS)},
+    "edad": {"type": "STRING", "enum": list(ac.EDADES)},
+    "persona_real": {"type": "STRING"}},
+    "required": ["rol", "accion", "desde", "hacia", "cara", "genero", "edad", "persona_real"]}
 _OBJETO = {"type": "OBJECT", "properties": {
-    "prop": {"type": "STRING", "enum": list(PROPS)},
+    "prop": {"type": "STRING", "enum": list(PROPS_GUION)},
     "efecto": {"type": "STRING", "enum": list(ac.EFECTOS)},
     "donde": {"type": "STRING", "enum": list(ac.LADOS)},
     "soporte": {"type": "STRING", "enum": list(ac.SOPORTES)},
-    "texto": {"type": "STRING"}},
-    "required": ["prop", "efecto", "donde", "soporte", "texto"]}
+    "texto": {"type": "STRING"}, "dibujo": {"type": "STRING"}},
+    "required": ["prop", "efecto", "donde", "soporte", "texto", "dibujo"]}
 _CADENA = {"type": "OBJECT", "properties": {
     "prop": {"type": "STRING", "enum": sorted(ROMPIBLES)},
     "soporte": {"type": "STRING", "enum": list(ac.SOPORTES)},
@@ -487,23 +522,28 @@ SCHEMA_GUION = {
                 "viaje_a_anio": {"type": "INTEGER"},
                 "vuelve_al_presente": {"type": "BOOLEAN"},
                 "claves": _CLAVES, "emoji": _EMOJI, "multitud": {"type": "BOOLEAN"},
+                "anio_escena": {"type": "INTEGER"},
             },
             "required": ["frase", "parte", "fondo", "actores", "objetos", "camara", "texto_pantalla",
                          "transicion", "cadena", "viaje_a_anio", "vuelve_al_presente", "claves", "emoji",
-                         "multitud"]}},
+                         "multitud", "anio_escena"]}},
         "locutor": {"type": "ARRAY", "items": {"type": "OBJECT", "properties": {
             "despues_de_frase": {"type": "INTEGER"}, "texto": {"type": "STRING"},
             "claves": _CLAVES, "emoji": _EMOJI},
             "required": ["despues_de_frase", "texto", "claves", "emoji"]}},
         "protagonista": {"type": "OBJECT", "properties": {
-            "prop": {"type": "STRING", "enum": sorted(DETALLADOS)}, "que_es": {"type": "STRING"}},
-            "required": ["prop", "que_es"]},
+            "prop": {"type": "STRING", "enum": sorted(set(DETALLADOS) | set(PROPS_GUION))},
+            "que_es": {"type": "STRING"}, "dibujo": {"type": "STRING"}},
+            "required": ["prop", "que_es", "dibujo"]},
+        "dibujos_nuevos": {"type": "ARRAY", "items": {"type": "OBJECT", "properties": {
+            "nombre": {"type": "STRING"}, "descripcion": {"type": "STRING"}},
+            "required": ["nombre", "descripcion"]}},
         "entidades": {"type": "ARRAY", "items": {"type": "OBJECT", "properties": {
             "nombre": {"type": "STRING"}, "presentacion": {"type": "STRING"},
             "frase": {"type": "INTEGER"}}, "required": ["nombre", "presentacion", "frase"]}},
     },
     "required": ["titulo", "descripcion", "tono", "pregunta_gancho", "escenas", "locutor", "entidades",
-                 "protagonista"],
+                 "protagonista", "dibujos_nuevos"],
 }
 
 
@@ -640,12 +680,56 @@ def errores_escenas_con_sentido(escenas: list[dict]) -> list[str]:
     return errores
 
 
+def prop_real(o: dict) -> str:
+    """El nombre del dibujo de un objeto del guion (el de la biblioteca o el `dibujo` de un dibujo_nuevo)."""
+    return str(o.get("dibujo") or "").strip() if o.get("prop") == DIBUJO_NUEVO else str(o.get("prop") or "")
+
+
+def errores_fieles(d: dict) -> list[str]:
+    """Reglas 11-14 (Santi, 2026-11-15): el protagonista en el gancho, acciones específicas, personajes fieles,
+    época por escena y los dibujos nuevos bien pedidos."""
+    from . import dibujos
+
+    errores = []
+    escenas = d.get("escenas") or []
+    pr = d.get("protagonista") or {}
+    prota = prop_real(pr)
+    if escenas and prota and not any(prop_real(o) == prota for o in escenas[0].get("objetos") or []) \
+            and not any(c.get("prop") == prota for c in escenas[0].get("cadena") or []):
+        errores.append(f"el gancho (escena 1) tiene que MOSTRAR el protagonista ({prota}): ponelo en sus `objetos`")
+    nuevos = {str(x.get("nombre") or "").strip() for x in d.get("dibujos_nuevos") or []}
+    for x in d.get("dibujos_nuevos") or []:
+        if not dibujos.nombre_valido(x.get("nombre")):
+            errores.append(f"dibujo nuevo {x.get('nombre')!r}: nombre corto en minúsculas con guiones bajos")
+    pedidos = [prop_real(o) for e in escenas for o in e.get("objetos") or [] if o.get("prop") == DIBUJO_NUEVO]
+    if pr.get("prop") == DIBUJO_NUEVO:
+        pedidos.append(prota)
+    for n_ in pedidos:
+        if n_ not in nuevos and not esc.es_prop(n_):
+            errores.append(f"`{n_}` es un dibujo nuevo que no está en `dibujos_nuevos` (agregalo con qué es)")
+    martillos = sum(1 for e in escenas if any(a.get("accion") == "martillar" for a in e.get("actores") or []))
+    engranajes = sum(1 for e in escenas if any(prop_real(o) == "engranaje" for o in e.get("objetos") or []))
+    if martillos > 1 or engranajes > 1:
+        errores.append("acciones genéricas (martillo o engranajes en varias escenas): mostrá el proceso real de "
+                       "ESTA historia (`fabricar` con el objeto en la mano, la máquina, el ingrediente)")
+    personas: dict[str, set] = {}
+    for e in escenas:
+        for a in e.get("actores") or []:
+            if str(a.get("persona_real") or "").strip():
+                personas.setdefault(a["persona_real"].strip(), set()).add((a.get("genero"), a.get("edad") == "chico"))
+    for nombre, vistos in personas.items():
+        if len({g for g, _ in vistos}) > 1:
+            errores.append(f"{nombre} aparece como hombre y como mujer: tiene que ser siempre igual (fiel a la persona)")
+    return errores
+
+
 def errores_protagonista(d: dict) -> list[str]:
     """Regla 7: el objeto de la historia, dibujado con detalle (no un rótulo) y en 2 escenas o más."""
     errores = []
     pr = d.get("protagonista") or {}
-    prop = pr.get("prop")
-    if prop not in DETALLADOS:
+    prop = prop_real(pr)
+    nuevos = {str(x.get("nombre") or "").strip() for x in d.get("dibujos_nuevos") or []}
+    if prop not in DETALLADOS and prop not in nuevos and not (prop and esc.es_prop(prop) and prop not in esc.PROPS):
         errores.append(f"`protagonista`: {prop!r} no es un objeto dibujado con detalle (elegí uno de: "
                        f"{', '.join(sorted(DETALLADOS))})")
     elif not str(pr.get("que_es") or "").strip():
@@ -653,7 +737,7 @@ def errores_protagonista(d: dict) -> list[str]:
     else:
         apariciones = 0
         for e in d.get("escenas") or []:
-            en_objetos = any(o.get("prop") == prop for o in e.get("objetos") or [])
+            en_objetos = any(prop_real(o) == prop for o in e.get("objetos") or [])
             en_cadena = bool(e.get("cadena")) and prop in ac.LANZABLES
             apariciones += en_objetos or en_cadena
         if apariciones < 2:
@@ -858,6 +942,7 @@ def validar_guion(d: dict, m: Marca, fuente: str, ganchos_previos: list[dict] | 
     errores += errores_lugares_y_personajes(escenas)
     errores += errores_gancho_repetido(escenas, ganchos_previos or [])
     errores += errores_protagonista(d)
+    errores += errores_fieles(d)
     errores += errores_viajes(d)
     # El locutor (Tito).
     if not LOCUTOR_MIN <= len(loc) <= LOCUTOR_MAX:
@@ -878,10 +963,13 @@ def validar_guion(d: dict, m: Marca, fuente: str, ganchos_previos: list[dict] | 
         if len(actores) > 3 or len(objetos) > 3:
             errores.append(f"escena {i}: 3 actores y 3 objetos como mucho")
         for a in actores:
+            if a.get("genero") and a.get("genero") not in ac.GENEROS:
+                errores.append(f"escena {i}: genero {a.get('genero')!r} (hombre o mujer)")
             if a.get("rol") not in ac.ROLES or a.get("accion") not in ac.ACCIONES:
                 errores.append(f"escena {i}: actor {a.get('rol')!r}/{a.get('accion')!r} no existe")
         for o in objetos:
-            if o.get("prop") not in PROPS or o.get("efecto") not in ac.EFECTOS:
+            if (o.get("prop") not in PROPS and o.get("prop") != DIBUJO_NUEVO and not esc.es_prop(o.get("prop"))) \
+                    or o.get("efecto") not in ac.EFECTOS:
                 errores.append(f"escena {i}: objeto {o.get('prop')!r}/{o.get('efecto')!r} no existe")
             if len(str(o.get("texto") or "")) > 12:
                 errores.append(f"escena {i}: el texto de un objeto va de 12 letras como mucho")
@@ -992,10 +1080,21 @@ def escribir_guion(cliente, e: Elegido, fuente: str, reintentos: int = 6, avisar
                  "acción, otro objeto):\n" + texto_ganchos(ganchos_previos) if ganchos_previos else ""))
     from clips_bot.gemini import GeminiError
 
-    correccion, ultimo = "", []
+    from clips_bot import correcciones
+
+    # Corregir solo lo que falla (Santi, 2026-11-15): con un guion entero que no valida, se piden SOLO las
+    # escenas o los campos a cambiar; recién con CORRECCIONES_MAX correcciones fallidas seguidas, el guion
+    # entero de nuevo. Cada pedido (entero o corrección) cuenta como un intento.
+    correccion, ultimo, d, puntuales = "", [], None, 0
     for intento in range(reintentos):
         try:
-            d = json.loads(cliente.json(SISTEMA_GUION, pedido + correccion, SCHEMA_GUION, 0.9))
+            if d is not None and ultimo and puntuales < correcciones.CORRECCIONES_MAX:
+                puntuales += 1
+                d = correcciones.corregir(cliente, SISTEMA_GUION, pedido, d, ultimo, SCHEMA_GUION, "escenas",
+                                          "escena")
+            else:
+                puntuales = 0
+                d = json.loads(cliente.json(SISTEMA_GUION, pedido + correccion, SCHEMA_GUION, 0.9))
         except GeminiError as err:   # ClaudeError hereda: una respuesta cortada cuenta como un intento
             if getattr(err, "pasajero", False):
                 raise
@@ -1010,10 +1109,46 @@ def escribir_guion(cliente, e: Elegido, fuente: str, reintentos: int = 6, avisar
             ultimo = chequear_calidad(revisor, d, e.marca)
         if not ultimo:
             return d
-        avisar(f"guion de {e.marca.nombre} ({e.angulo}), intento {intento + 1}: {'; '.join(ultimo)[:400]}")
-        correccion = ("\n\nTU GUION ANTERIOR:\n" + describir(d) +
-                      "\n\nNO SIRVIÓ POR ESTO (corregilo y devolvé el guion entero):\n- " + "\n- ".join(ultimo))
+        avisar(f"guion de {e.marca.nombre} ({e.angulo}), intento {intento + 1}"
+               f"{' (corrección puntual)' if puntuales else ''}: {'; '.join(ultimo)[:400]}")
+        if puntuales >= correcciones.CORRECCIONES_MAX:
+            correccion = ("\n\nTU GUION ANTERIOR:\n" + describir(d) +
+                          "\n\nNO SIRVIÓ POR ESTO (corregilo y devolvé el guion entero):\n- " + "\n- ".join(ultimo))
     raise GuionInvalido(f"{e.marca.nombre} ({e.angulo}): {'; '.join(ultimo)[:400]}")
+
+
+def asegurar_dibujos(cliente, d: dict, e: "Elegido", fuente: str, avisar=log.info) -> dict:
+    """Dibuja con Claude los `dibujos_nuevos` que no están guardados. Si uno no se puede dibujar, se le pide a
+    Claude que reformule esas escenas con objetos de la lista (corrección puntual) y se vuelve a validar."""
+    from clips_bot import correcciones
+
+    from . import dibujos
+
+    fallidos = []
+    for x in d.get("dibujos_nuevos") or []:
+        nombre = str(x.get("nombre") or "").strip()
+        if not nombre or esc.es_prop(nombre):
+            continue
+        try:
+            dibujos.dibujar(cliente, nombre, str(x.get("descripcion") or ""), f"{e.marca.nombre}: {e.angulo}")
+            avisar(f"dibujo nuevo: {nombre} ({x.get('descripcion')})")
+        except Exception as err:  # noqa: BLE001
+            avisar(f"no pude dibujar {nombre}: {str(err)[:150]}")
+            fallidos.append(nombre)
+    if not fallidos:
+        return d
+    errores = [f"no se pudo dibujar «{n}»: reemplazalo por un objeto de la lista o reformulá esa frase" for n in fallidos]
+    try:
+        d2 = correcciones.corregir(cliente, SISTEMA_GUION, f"MARCA: {e.marca.nombre}\nTEXTO:\n{fuente[:12000]}",
+                                   d, errores, SCHEMA_GUION, "escenas", "escena")
+        if not validar_guion(d2, e.marca, fuente) or not fuente:
+            return d2
+    except Exception as err:  # noqa: BLE001
+        avisar(f"no pude reformular sin {fallidos}: {str(err)[:150]}")
+    # último recurso: sacar esos objetos (la escena sigue con sus actores)
+    for esc_ in d.get("escenas") or []:
+        esc_["objetos"] = [o for o in esc_.get("objetos") or [] if prop_real(o) not in fallidos]
+    return d
 
 
 def hashtags(m: Marca) -> list[str]:
@@ -1047,7 +1182,7 @@ def linea_de_tiempo(d: dict, inicios: list[float], fin: float, palabras: list,
     durs = cortes(inicios, fin)
     escenas, sfx, t = [], [], 0.0
     anio_actual, pasado = presente, False
-    prota = str((d.get("protagonista") or {}).get("prop") or "")
+    prota = prop_real(d.get("protagonista") or {})
     proyectil = prota if prota in ac.LANZABLES else "pelota"
     vistas: dict[tuple, int] = {}     # (fondo, década) → cuántas veces: la variante, para no repetir igual
     for n_seg, ((tipo, k, _), dur) in enumerate(zip(segs, durs)):
@@ -1077,9 +1212,11 @@ def linea_de_tiempo(d: dict, inicios: list[float], fin: float, palabras: list,
         clave = (e.get("fondo"), anio_actual // 10)
         variante = vistas.get(clave, 0)
         vistas[clave] = variante + 1
+        anio_esc = int(e.get("anio_escena") or 0)
+        e = {**e, "objetos": [{**o, "prop": prop_real(o)} for o in e.get("objetos") or [] if prop_real(o)]}
         esc_d, fx = ac.escena_accion(e, dur, k, primera=(k == 0), tono=1.0 if pasado else 0.0,
-                                     anio=anio_actual, variante=variante, reservar=reservar,
-                                     proyectil=proyectil)
+                                     anio=anio_esc if 1800 <= anio_esc < presente else anio_actual,
+                                     variante=variante, reservar=reservar, proyectil=proyectil)
         esc_d["frase"] = k          # para la revisión visual: qué frase del guion es esta escena
         pisados = ac.superposiciones(esc_d)
         if pisados:
@@ -1240,8 +1377,12 @@ que un espectador notaría:
   chico rompiendo cosas en un living") o se parece a los arranques anteriores que te paso;
 - un LUGAR que no tiene sentido para lo que dice la frase (una fábrica contada en un living), o el mismo
   lugar repetido cuando la historia ya cambió de momento;
-- dos personas paradas hablando cuando la frase cuenta una acción.
-Para estos tres usá `arreglo` = otro y decí en `que` qué escena y qué cambiar.
+- dos personas paradas hablando cuando la frase cuenta una acción;
+- (2026-11-15) el gancho NO muestra el producto protagonista ni el momento clave de su historia;
+- una acción genérica (martillo, engranajes) cuando la frase cuenta un proceso concreto;
+- un personaje que no coincide con la persona real (otro género, otra edad, ropa de otra época);
+- algo fuera de época para el año de esa escena (un monitor moderno en 1974, un celular en 1950).
+Para estos usá `arreglo` = otro y decí en `que` qué escena y qué cambiar.
 Para cada problema: `cuadro` (el número), `que` (corto) y `arreglo`: mover_objeto (a otro lugar),
 cambiar_soporte (apoyarlo en otro lado), sacar_objeto, separar_personajes, sacar_texto u otro; y
 `objeto` (el nombre del objeto, si es un objeto). Si está todo bien, lista vacía. No inventes problemas."""
@@ -1346,7 +1487,11 @@ def revisar_visual(cliente, d: dict, datos: dict, carpeta: Path, capturar=None, 
     frases = frases_de(d)
     def qd(i, q):
         k = datos["escenas"][i].get("frase")
-        extra = (f" — dice: «{frases[k]}» (lugar: {(d.get('escenas') or [])[k].get('fondo')})"
+        esc_k = (d.get("escenas") or [])[k] if isinstance(k, int) and k < len(d.get("escenas") or []) else {}
+        gente = ", ".join(f"{a.get('persona_real') or a.get('rol')} ({a.get('genero')}, {a.get('edad')})"
+                          for a in esc_k.get("actores") or [])
+        extra = (f" — dice: «{frases[k]}» (lugar: {esc_k.get('fondo')}, año: {esc_k.get('anio_escena') or 'hoy'}; "
+                 f"personajes: {gente or '-'}; protagonista: {(d.get('protagonista') or {}).get('que_es')})"
                  if isinstance(k, int) and k < len(frases) else "")
         return q + extra
     lista = "\n".join(f"Cuadro {n + 1}: {qd(i, q)}" for n, (_t, i, q) in enumerate(claves))
@@ -1431,7 +1576,7 @@ def proponer(conn, cliente, wiki, hoy: date, catalogo: list[Marca] | None = None
             textos.append((m, a, extracto(wiki.texto("es", m.wiki_es), a)))
         except Exception as e:
             avisar(f"no pude leer el artículo de {m.nombre}: {str(e)[:120]}")
-    elegidos = elegir(cliente, textos, minimo)
+    elegidos = elegir(revisor or cliente, textos, minimo)   # puntúa Haiku (2026-11-15); Sonnet escribe
     avisar("candidatos: " + ", ".join(f"{m.nombre}/{a}" for m, a, _ in textos) +
            f" → pasan {len(elegidos)}: " + ", ".join(f"{e.marca.nombre}/{e.angulo} {e.promedio}" for e in elegidos))
     if not elegidos:
@@ -1505,6 +1650,7 @@ def armar_video(conn, settings, carpeta: Path, cliente=None, wiki=None, hoy: dat
             marcar_claves(revisor, d)
         except Exception as err:   # sin marcas el video sale igual (sin claves ni emojis)
             avisar(f"no pude marcar las claves de los subtítulos: {str(err)[:150]}")
+    d = asegurar_dibujos(cliente, d, e, fuente or "", avisar)
     try:
         anotar_gancho(conn, d, e.marca.nombre)
     except Exception as err:  # noqa: BLE001 — anotar nunca frena el video
