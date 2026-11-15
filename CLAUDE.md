@@ -233,6 +233,11 @@ servicio systemd separado: `clips-bot`).
   (además de los pedazos), líneas de movimiento detrás de lo que vuela (alineadas, solo a velocidad), 4
   destellos con un "ding" en el remate (en anillo alrededor de la cara, nunca encima) y transición "iris"
   hacia el giro y el final.
+- **Voz falsa en las pruebas (Santi, 2026-11-15: "las voces de Gemini no alcanzan, 8 de ~10"):** la voz real de
+  Gemini SOLO para el video que se publica. `ef.voz_falsa()`: con origen "prueba" (scripts y CLI a mano) la voz es
+  Piper o silencio con la duración estimada (`voz_de_prueba`, motor `falsa:…`); producción (ticks, `diario`,
+  `efemeride-diaria`) y Telegram (✅) usan la real. Un script que arma un video PARA PUBLICAR (como el Intel del
+  15/11) tiene que correr con `CLIPS_VOZ_REAL=1`. En bot-videos lo hace su propia sesión.
 - **Nunca un día sin video (Santi, 2026-11-15; `banco.py`):** (1) si nadie llega al mínimo, sale la mejor
   del día con **piso absoluto de 6** (tecnología siempre; Latinoamérica solo la PRIMERA del día, la segunda
   sigue pidiendo 8, o 7 si hoy no salió ninguna de menos de 8; Así Nació en el último intento del día). (2)
