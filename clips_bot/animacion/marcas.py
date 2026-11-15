@@ -549,8 +549,8 @@ SCHEMA_GUION = {
                 "vuelve_al_presente": {"type": "BOOLEAN"},
                 "claves": _CLAVES, "emoji": _EMOJI, "multitud": {"type": "BOOLEAN"},
                 "anio_escena": {"type": "INTEGER"},
-                "accion_escena": {"type": "STRING", "enum": _acciones_guion()},
-                "plano": {"type": "STRING", "enum": list(_lib.PLANOS)},
+                "accion_escena": {"type": "STRING"},   # sin enum: la gramática de Claude se pasaba de tamaño (15/11)
+                "plano": {"type": "STRING"},
                 "accion_nueva": {"type": "STRING"},
             },
             "required": ["frase", "parte", "fondo", "actores", "objetos", "camara", "texto_pantalla",
@@ -561,7 +561,7 @@ SCHEMA_GUION = {
             "claves": _CLAVES, "emoji": _EMOJI},
             "required": ["despues_de_frase", "texto", "claves", "emoji"]}},
         "protagonista": {"type": "OBJECT", "properties": {
-            "prop": {"type": "STRING", "enum": sorted(set(DETALLADOS) | set(PROPS_GUION))},
+            "prop": {"type": "STRING"},
             "que_es": {"type": "STRING"}, "dibujo": {"type": "STRING"}},
             "required": ["prop", "que_es", "dibujo"]},
         "dibujos_nuevos": {"type": "ARRAY", "items": {"type": "OBJECT", "properties": {
@@ -729,8 +729,14 @@ def errores_accion(d: dict) -> list[str]:
     if len(escenas) >= 5 and len(libres) > len(escenas) * 0.4:
         errores.append(f"demasiadas escenas `libre` ({', '.join(map(str, libres))}): usá la escena de la biblioteca "
                        "que muestra lo que dice cada frase")
+    validas = set(_acciones_guion())
     for i, e in enumerate(escenas, 1):
         frase = str(e.get("frase") or "")
+        if (e.get("accion_escena") or _lib.LIBRE) not in validas:
+            errores.append(f"escena {i}: `accion_escena` {e.get('accion_escena')!r} no existe (elegí una de: "
+                           f"{', '.join(sorted(validas))})")
+        if (e.get("plano") or "") and e.get("plano") not in _lib.PLANOS:
+            errores.append(f"escena {i}: `plano` {e.get('plano')!r} no existe ({', '.join(_lib.PLANOS)})")
         if e.get("accion_escena") == "nueva" and not str(e.get("accion_nueva") or "").strip():
             errores.append(f"escena {i}: `nueva` necesita `accion_nueva` (un nombre corto)")
         libre = (e.get("accion_escena") or _lib.LIBRE) == _lib.LIBRE    # las de la biblioteca arman sus actores
