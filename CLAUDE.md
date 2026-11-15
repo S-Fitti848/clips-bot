@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-11-15 | **Versión:** v1.05.0 (desplegado) | **Modo:** Fase 2: corriendo solo en la Pi. **Rots APAGADO.** Pequeña Historia (3 por día, madrugada desde las 04:00) y **Así Nació** (1 por día, arma 07:00, publica 19:00 en YouTube y Facebook con ❌ Cancelar), todo al privado de Santi
+**Snapshot:** 2026-11-15 | **Versión:** v1.06.0 (desplegado) | **Modo:** Fase 2: corriendo solo en la Pi. **Rots APAGADO.** Pequeña Historia (3 por día, madrugada desde las 04:00) (publicación sin aprobar: llegan con ❌ Cancelar) y **Así Nació** (2 por día, desde las 07:00, publican 13:00 y 20:00 en YouTube y Facebook con ❌ Cancelar), todo al privado de Santi
 
 > **SI ESTÁS EMPEZANDO UNA SESIÓN NUEVA, LEÉ §10.** Ahí está qué está hecho, qué quedó a medias,
 > qué falta, y las trampas que ya nos mordieron.
@@ -172,6 +172,17 @@ servicio systemd separado: `clips-bot`).
   marca el guion: nombres, números, el giro o el chiste; ≤ 2 por frase) más grandes y amarillas, rojas y
   temblando cerca de un golpe o en el remate; un emoji dibujado (💥💰😱🤣) como mucho cada 4,5 s, al lado
   de una clave; en la franja de arriba (y 168-294) sin tapar personajes ni acción.
+- **Presupuesto de Claude (Santi, 2026-11-15):** el crédito es de US$ 100 por mes y se renueva; el tope propio
+  es ~US$ 80 (`claude.PRESUPUESTO_MES`). No hace falta ahorrar: el margen va a calidad (Sonnet mira 5 fotos y
+  3 videos por frase, puntúa 14 hechos de tecnología, 30 historias de Latinoamérica y 14 marcas, más reintentos
+  de guion). Aviso por Telegram al pasar el 75 % y el 100 % del tope en el mes; informe diario a las 09:00.
+- **Así Nació: 2 por día (Santi, 2026-11-15):** a las 13:00 y a las 20:00 AR, de marcas distintas (la rotación
+  registra el primero antes de armar el segundo). Si un video falla por algo que no es "no hay candidato"
+  (Claude cortado, Gemini caído), otro intento en 1 h, hasta las 22:00 y 4 intentos por video: no se pierde el
+  día. Un guion cortado por max_tokens se reintenta solo con el doble de límite (hasta 64.000).
+- **Pequeña Historia sin aprobar: PRENDIDO (Santi, 2026-11-15):** los 3 videos llegan ya programados con
+  ❌ Cancelar y, si no se toca nada, salen a su hora. Latinoamérica: si ninguna llega a 8, sale la mejor del día
+  si tiene 7 o más (una sola por día).
 - **Así Nació: estilo visual (Santi, 2026-11-15; regla para TODOS los videos, motor actual;
   `tests/test_visual_asinacio.py`):** (a) volumen: toda forma con contorno lleva un degradé radial con la
   luz arriba a la izquierda y la sombra violeta abajo a la derecha, y el contorno es más grueso del lado de
@@ -985,6 +996,25 @@ Problemas abiertos:
 
 ## 9. CHANGELOG
 
+- v1.06.0 (2026-11-15, mediodía) — (1) **Así Nació no salió hoy a las 07:00**: el tercer intento de guion
+  pidió 16.000 tokens de salida (casi todo pensamiento) y se cortó (`max_tokens`); los dos primeros fueron de
+  14.538 y 7.188. Ahora: `animacion.max_tokens` 32.000; `ClaudeClient` reintenta solo con el doble (hasta
+  64.000, por streaming, que la API pide para pedidos largos) antes de rendirse; `escribir_guion` cuenta una
+  respuesta cortada como un intento y sigue (`reintentos_guion` 8); y el tick reintenta en 1 h. (2) **2 videos
+  por día** (`horas_publicacion` 13:00 y 20:00, `clip_asinacio`: asinacio_AAAAMMDD y asinacio_AAAAMMDD_2,
+  estado en `bot_estado.animacion_estado:<día>`); si un reintento termina pasada su hora, sale en 30 min
+  (nunca al día siguiente). El de hoy se armó a mano (se borró `animacion_dia` y se reinició la escucha). (3)
+  **Pequeña Historia sin aprobar PRENDIDO.** (4) **Latinoamérica con más fuentes** (`locales.leer_todo`):
+  anexos de días festivos, feriados, conmemoraciones y fiestas por país (`ANEXOS_PAIS`, medidos con la
+  búsqueda por prefijo: México, Colombia, Argentina, Chile, Perú, Paraguay, Bolivia, Guatemala, Honduras,
+  Panamá, Uruguay, Puerto Rico y fiestas de provincias argentinas y de La Guajira), personajes y hazañas
+  (`buscar_personajes`: el buscador con la fecha y "héroe", "hazaña", "salvó", "rescate"…, solo artículos de
+  Latinoamérica), nacimientos y muertes de gente de Latinoamérica (antes solo con conmemoración), y la
+  historia de 25 ciudades por día (eran 12) con más frases. Medido para el 16/11: 91 candidatas con lugar.
+  Sonnet puntúa hasta 30 (eran 8 de 20). Piso de 7 para una por día (`PISO_UNA_POR_DIA`). (5) **Presupuesto**
+  (§1): más fotos y videos por frase para Sonnet, ELEGIDOS 14, MAX_GUIONES 4, 3 reintentos de guion en
+  efemérides, 14 marcas y 4 intentos en Así Nació; aviso de presupuesto mensual y el mes en el informe diario.
+  1438 tests OK.
 - v1.05.0 (2026-11-15, madrugada) — Tres pedidos de Santi. (1) **Pequeña Historia: `efemerides.estilo_nuevo`
   PRENDIDO** ("ya apruebo el estilo nuevo, con el feedback de La Pola"); `sin_aprobar` sigue apagado. (2)
   **Costo de Claude en las fotos.** Medido el 14/11: US$ 2,57 en total, pero la producción (la madrugada,
@@ -2523,11 +2553,11 @@ clips" queda sin uso mientras Rots siga apagado.
 | después (desde 04:00) | 2 propuestas de Latinoamérica (puntaje ≥ 8, sin repetir país ni artículo) | `_fb_tick` |
 | 05:30 | tope de "todo en Telegram" (`LISTO_DESDE`) | |
 | 05:00 / 06:00 | timers de respaldo (no hacen nada si ya se hizo) | systemd |
-| **07:00** | **Así Nació: arma el video del día** (nunca 03:45-06:00), lo programa y lo manda al privado con ❌ Cancelar | `_animacion_tick` |
+| **07:00** | **Así Nació: arma los 2 videos del día** de a uno (nunca 03:45-06:00), los programa y los manda al privado con ❌ Cancelar; si uno falla, reintento en 1 h hasta las 22:00 | `_animacion_tick` |
 | 08:30 del país (11:00 AR sin país) | Latinoamérica en Facebook (≥ 4 h entre las dos) | `hora_historia_fb` |
 | desde 09:00 | medición de Pequeña Historia + análisis pedido de un Short + propuesta de mezcla | `_medicion_ph_tick` → `_analisis_y_mezcla` |
 | 11:00 / 15:30 / 20:00 | Pequeña Historia en YouTube (primer horario libre, ≥ 4 h entre videos) | `efemerides.horas_youtube` |
-| **19:00** | **Así Nació se publica** en YouTube (@asinacio.oficial) y en su página de Facebook | `animacion.hora_publicacion` |
+| **13:00 / 20:00** | **Así Nació se publica** en YouTube (@asinacio.oficial) y en su página de Facebook | `animacion.horas_publicacion` |
 | lunes 08:00 | lista de fechas de la semana a Santi | `_calendario_tick` |
 | al terminar el día pedido | costo real de Claude a Santi | `_costo_claude_tick` |
 
@@ -2537,7 +2567,7 @@ clips" queda sin uso mientras Rots siga apagado.
 |---|---|
 | Rots | **APAGADO desde 2026-11-14** (`publicacion.rots: false`; código y canal intactos; /buscar a mano sigue). Al prenderlo vuelve con `render.edicion_rots`, `publicacion.subir_solo`, `textos.motor: claude`, etc. |
 | Pequeña Historia | 3 por día: `efemerides.tema: tecnologia` + `corto` (20-30 s, solo YouTube) y `historias_fb.por_dia: 2` (30-40 s, YouTube + Facebook); `imagen_frase`, `formato_corto`, `videos`; gancho primero, intriga en la 2.ª, año/lugar en la 3.ª-4.ª, revisión del final; **escenas ilustrativas también en las frases centrales** (`ESCENAS_EN_CENTRALES`); humor suave cuando se puede; mapa sincronizado con la voz (solo con `estilo_nuevo`); `efemerides.chat` / `historias_fb.chat` = privado de Santi |
-| Así Nació | `animacion.activo / subir / facebook: true`, `hora: 07:00`, `hora_publicacion: 19:00`, motor actual (SVG → cairosvg); reglas permanentes de v0.96.0 a v0.98.0 (acción, gancho en cadena, Tito con pausa en gris, viaje en el tiempo en sepia, composición verificada, revisión visual, ritmo 32-38 s con voz ×1,065, subtítulos arriba) |
+| Así Nació | `animacion.activo / subir / facebook: true`, `hora: 07:00`, `horas_publicacion: [13:00, 20:00]` (2 por día, marcas distintas), `max_tokens: 32000`, `reintentos_guion: 8`, `candidatos: 14`, motor actual (SVG → cairosvg); reglas permanentes de v0.96.0 a v0.98.0 (acción, gancho en cadena, Tito con pausa en gris, viaje en el tiempo en sepia, composición verificada, revisión visual, ritmo 32-38 s con voz ×1,065, subtítulos arriba) |
 | Claude | Sonnet elige, puntúa, escribe guiones, revisa el final, elige fotos y revisa los cuadros de Así Nació; Haiku clasifica y chequea; Gemini SOLO voces y audio (y de respaldo) |
 | subidas | YouTube: Pequeña Historia, Así Nació (y Rots, apagado); Facebook: página de Pequeña Historia y página de Así Nació. La app de Meta (clips-bot) estaba en modo desarrollo en octubre: si sigue así, el público no ve los Reels (pasarla a Live es de Santi) |
 | apagado | Rots; `efemerides.sin_aprobar` (espera el OK de Santi; `estilo_nuevo` PRENDIDO el 15/11); ElevenLabs (sin clave ni voz); multi-POV; prueba manual vs API; portadas con IA |

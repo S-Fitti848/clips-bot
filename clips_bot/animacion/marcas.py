@@ -758,7 +758,9 @@ def validar_guion(d: dict, m: Marca, fuente: str) -> list[str]:
     anios = [str(e.get("viaje_a_anio")) for e in escenas if isinstance(e.get("viaje_a_anio"), int)
              and e.get("viaje_a_anio") > 0]
     texto = " ".join(hablado + [titulo] + [_sin_mayusculas(t) + "." for t in textos_en_pantalla(d)] + anios)
-    faltan = no_respaldados(texto, base)
+    # Los números chicos (hasta 12) son palabras de todos los días ("dos hermanos", "cuatro amigos"), no
+    # cifras: el 15/11 el guion de Popeyes falló 8 veces porque "2" y "4" no estaban en el artículo.
+    faltan = [x for x in no_respaldados(texto, base) if not (x.isdigit() and int(x) <= NUMERO_CHICO)]
     if faltan:
         errores.append("esto no está en el artículo de Wikipedia (sacalo o usá lo que dice el texto): "
                        + ", ".join(faltan[:12]))
@@ -1229,6 +1231,10 @@ class Resultado:
         return asdict(self)
 
 
+NUMERO_CHICO = 12
+TOPE_USD_VIDEO = 2.0   # Claude por video: pasado esto no se prueba otra marca (8 intentos × 4 marcas = ~US$ 4)
+
+
 def costo_desde(conn, fila: int) -> float:
     """US$ de Claude anotados en gemini_uso después de la fila `fila` (lo de ESTE video)."""
     from clips_bot import claude
@@ -1273,7 +1279,11 @@ def proponer(conn, cliente, wiki, hoy: date, catalogo: list[Marca] | None = None
     if not elegidos:
         raise SinCandidato(f"ninguno de los {len(textos)} candidatos de hoy llegó a {minimo:g} de promedio")
     errores = []
+    fila0 = ultima_fila_uso(conn) if conn is not None else 0
     for e in elegidos[:max_intentos]:
+        if conn is not None and errores and costo_desde(conn, fila0) > TOPE_USD_VIDEO:
+            errores.append(f"corté: este video ya gastó más de US$ {TOPE_USD_VIDEO:g} de Claude")
+            break
         fuente = fuente_de(wiki, e.marca)
         try:
             return e, escribir_guion(cliente, e, fuente, reintentos_guion, avisar=avisar, revisor=revisor), fuente
