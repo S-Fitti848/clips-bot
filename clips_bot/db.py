@@ -58,18 +58,23 @@ def connect(path: Path) -> sqlite3.Connection:
             conn.execute(f"ALTER TABLE subidas ADD COLUMN {columna}")
         except sqlite3.OperationalError:
             pass
+    # produccion | a_mano | prueba (2026-11-15; vacío = anterior a esto)
+    try:
+        conn.execute("ALTER TABLE gemini_uso ADD COLUMN origen TEXT NOT NULL DEFAULT ''")
+    except sqlite3.OperationalError:
+        pass
     return conn
 
 
 def anotar_gemini(conn: sqlite3.Connection, funcion: str, modelo: str, clave: str, entrada: int,
-                  salida: int, cache: bool = False) -> None:
+                  salida: int, cache: bool = False, origen: str = "") -> None:
     from datetime import timedelta, timezone
 
     ahora = datetime.now(timezone.utc)
     dia = (ahora + timedelta(hours=-3)).date().isoformat()
-    conn.execute("INSERT INTO gemini_uso (ts, dia, funcion, modelo, clave, entrada, salida, cache) "
-                 "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                 (ahora.isoformat(), dia, funcion, modelo, clave, entrada, salida, int(cache)))
+    conn.execute("INSERT INTO gemini_uso (ts, dia, funcion, modelo, clave, entrada, salida, cache, origen) "
+                 "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                 (ahora.isoformat(), dia, funcion, modelo, clave, entrada, salida, int(cache), origen))
     conn.commit()
 
 

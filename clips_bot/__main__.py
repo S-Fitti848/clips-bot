@@ -33,6 +33,7 @@ from pathlib import Path
 import requests
 
 from . import __version__, db, metricas
+from . import gemini as gemini_mod
 from .idioma import L
 from .candidates import (MOTIVO_COSTREAM, Resultado, buscar_candidatos, buscar_catalogo, buscar_kick,
                          consolidar_evento)
@@ -791,6 +792,7 @@ def _ya_corrio_hoy(conn) -> str | None:
 
 def cmd_diario(args: argparse.Namespace) -> int:
     """Corrida diaria completa: candidatos → procesar lo necesario → elegir → entregar."""
+    gemini_mod.fijar_origen(gemini_mod.PRODUCCION if not args.simular else gemini_mod.PRUEBA)
     settings = load_settings()
     if not args.simular:
         conn = db.connect(DB_PATH)
@@ -860,6 +862,7 @@ def cmd_efemeride_diaria(args: argparse.Namespace) -> int:
     comió los 90 min de la corrida). Toma el turno pesado; si la corrida de clips sigue andando
     después de ESPERA_EFEMERIDE_S, no la pisa: deja la propuesta para los reintentos de la escucha
     (07:00 y 10:00)."""
+    gemini_mod.fijar_origen(gemini_mod.PRODUCCION)
     settings = load_settings()
     token = f"efemeride:{datetime.now(timezone.utc).timestamp():.0f}"
     conn = db.connect(DB_PATH)
@@ -2662,6 +2665,15 @@ def _resumen(descartes) -> str:
     return f"\nDescartes ({total}):\n<pre>{cuerpo}</pre>"
 
 
+def _auto(tick):
+    """Un tick automático de la escucha: sus llamadas a Claude y Gemini cuentan como producción."""
+    def f(*a, **k):
+        with gemini_mod.origen(gemini_mod.PRODUCCION):
+            return tick(*a, **k)
+    f.__name__ = getattr(tick, "__name__", "tick")
+    return f
+
+
 def escuchar_telegram(settings: Settings, timeout_poll: int = 50) -> int:
     """`atender-telegram --escuchar`: long polling, para que /buscar ande cuando lo mandás y no
     recién en la corrida del día siguiente. Lo corre clips-bot-telegram.service.
@@ -2679,6 +2691,7 @@ def escuchar_telegram(settings: Settings, timeout_poll: int = 50) -> int:
     reloj_envivo: dict[str, float] = {}   # última detección por plataforma (modo en vivo)
     chat_ultimo = env("TELEGRAM_CHAT_ID", requerido=False)
     print(f"Escuchando (long polling {timeout_poll}s). Ctrl-C para salir.")
+    gemini_mod.fijar_origen(gemini_mod.A_MANO)   # lo que no es un tick automático: comandos y botones
     while True:
         # Se relee en cada vuelta: sumar a alguien a la lista tiene que andar sin reiniciar el
         # servicio, porque el restart pide sudo y no siempre está a mano.
@@ -2692,20 +2705,20 @@ def escuchar_telegram(settings: Settings, timeout_poll: int = 50) -> int:
             _seguro(tg, str(db.envivo_chat(conn) or chat_ultimo or ""), "el modo en vivo",
                     _envivo_tick, conn, tg, settings, reloj_envivo)
             _seguro(tg, str(chat_ultimo or ""), "el reintento de la efeméride",
-                    _efe_reintento_tick, conn, tg, settings)
+                    _auto(_efe_reintento_tick), conn, tg, settings)
             _seguro(tg, str(chat_ultimo or ""), "la madrugada (Rots y la de tecnología)",
-                    _madrugada_tick, conn, tg, settings)
-            _seguro(tg, str(chat_ultimo or ""), "la historia de Facebook", _fb_tick, conn, tg, settings)
-            _seguro(tg, str(chat_ultimo or ""), "el video de marcas", _animacion_tick, conn, tg, settings)
+                    _auto(_madrugada_tick), conn, tg, settings)
+            _seguro(tg, str(chat_ultimo or ""), "la historia de Facebook", _auto(_fb_tick), conn, tg, settings)
+            _seguro(tg, str(chat_ultimo or ""), "el video de marcas", _auto(_animacion_tick), conn, tg, settings)
             _seguro(tg, str(chat_ultimo or ""), "el calendario", _calendario_tick, conn, tg, settings)
             _seguro(tg, str(chat_ultimo or ""), "la medición de Pequeña Historia",
-                    _medicion_ph_tick, conn, tg, settings)
+                    _auto(_medicion_ph_tick), conn, tg, settings)
             _seguro(tg, str(chat_ultimo or ""), "el aviso de las voces", _voces_tick, conn, tg, settings)
             _seguro(tg, str(chat_ultimo or ""), "el costo de Claude", _costo_claude_tick, conn, tg, settings)
             _seguro(tg, str(chat_ultimo or ""), "el reintento de los clips",
-                    _clips_reintento_tick, conn, settings)
+                    _auto(_clips_reintento_tick), conn, settings)
             _seguro(tg, str(chat_ultimo or ""), "la búsqueda de lo que pegó",
-                    _pego_tick, conn, settings)
+                    _auto(_pego_tick), conn, settings)
             _seguro(tg, str(chat_ultimo or ""), "el chequeo de las subidas", _chequeo_subidas_tick, conn, tg)
             _seguro(tg, str(chat_ultimo or ""), "la cola", _drenar_cola, conn, tg, cola, settings)
             guardado = db.get_valor(conn, "telegram_offset")
@@ -3539,7 +3552,10 @@ def _elector_fotos(settings: Settings, reintento: bool = False):
         return None
     from . import claude
 
-    return claude.cliente(settings.historias_fb.modelo_texto)
+    c = claude.cliente(settings.historias_fb.modelo_texto)
+    if c is not None:   # el primer filtro (2026-11-15): Haiku ordena, Sonnet mira solo las mejores
+        c.prefiltro = claude.cliente(settings.historias_fb.modelo_simple, esfuerzo="low")
+    return c
 
 
 def _texto_efemeride(settings: Settings, gemini):
@@ -3791,17 +3807,29 @@ def _madrugada_tick(conn, tg: TelegramClient, settings: Settings, ahora=None, la
 COSTO_PEDIDO = "costo_claude_pedido"   # bot_estado: el día (AR) cuyo costo de Claude pidió Santi
 
 
+COSTO_ENVIADO = "costo_claude_enviado"  # bot_estado: el último día (AR) cuyo informe diario ya salió
+COSTO_HORA = 9                            # el informe del día anterior, desde las 09:00 AR
+
+
 def _costo_claude_tick(conn, tg: TelegramClient, settings: Settings, ahora=None) -> None:
-    """Santi pidió el costo real de Claude de un día (2026-11-13: "pasámelo cuando lo tengas"): apenas
-    termina ese día, se lo manda (una vez) y borra el pedido."""
+    """El informe diario del costo de Claude (Santi, 2026-11-15: "en el informe diario, separá lo que es
+    prueba o rehecho de la producción normal"): desde las 09:00, el de ayer, una vez. Si Santi pidió un
+    día puntual (`costo_claude_pedido`, 2026-11-13), ese también, apenas termina."""
     from . import claude
 
-    dia = db.get_valor(conn, COSTO_PEDIDO)
     ahora = ahora or datetime.now(AR)
-    if not dia or ahora.date().isoformat() <= dia:
+    dia = db.get_valor(conn, COSTO_PEDIDO)
+    if dia and ahora.date().isoformat() > dia:
+        db.borrar_valor(conn, COSTO_PEDIDO)
+        tg.send_message(DUENO, claude.texto_costo(conn, dia))
+        if dia == (ahora.date() - timedelta(days=1)).isoformat():
+            db.set_valor(conn, COSTO_ENVIADO, dia)
+    ayer = (ahora.date() - timedelta(days=1)).isoformat()
+    if ahora.hour < COSTO_HORA or (db.get_valor(conn, COSTO_ENVIADO) or "") >= ayer:
         return
-    db.borrar_valor(conn, COSTO_PEDIDO)
-    tg.send_message(DUENO, claude.texto_costo(conn, dia))
+    db.set_valor(conn, COSTO_ENVIADO, ayer)
+    if claude.resumen_costo(conn, ayer)[1]:
+        tg.send_message(DUENO, claude.texto_costo(conn, ayer))
 
 
 def _voces_tick(conn, tg: TelegramClient, settings: Settings, ahora=None) -> None:

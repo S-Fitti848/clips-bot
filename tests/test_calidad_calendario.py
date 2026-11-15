@@ -133,9 +133,15 @@ def test_el_reintento_va_con_claude_aunque_la_regla_este_apagada(monkeypatch):
 
     s = load_settings()
     s = replace(s, efemerides=replace(s.efemerides, imagen_frase=False))
-    monkeypatch.setattr(claude, "cliente", lambda modelo, **k: f"claude:{modelo}")
+    class C:
+        def __init__(self, modelo):
+            self.modelo = modelo
+
+    monkeypatch.setattr(claude, "cliente", lambda modelo, **k: C(modelo))
     assert m._elector_fotos(s) is None
-    assert m._elector_fotos(s, reintento=True) == f"claude:{s.historias_fb.modelo_texto}"
+    c = m._elector_fotos(s, reintento=True)
+    assert c.modelo == s.historias_fb.modelo_texto
+    assert c.prefiltro.modelo == s.historias_fb.modelo_simple     # el primer filtro (2026-11-15), Haiku
 
 
 def test_la_tarjeta_entra_en_el_ancho(tmp_path):

@@ -19,8 +19,10 @@ def _g(**k):
     return ef.Guion(**base)
 
 
-def test_apagado_por_defecto():
-    assert load_settings().efemerides.estilo_nuevo is False
+def test_prendido_y_sin_aprobar_apagado():
+    # Santi, 2026-11-15: "ya apruebo el estilo nuevo; la publicación sin aprobar sigue apagada"
+    e = load_settings().efemerides
+    assert e.estilo_nuevo is True and e.sin_aprobar is False
 
 
 def test_el_gancho_es_un_montaje_de_3_con_golpe():

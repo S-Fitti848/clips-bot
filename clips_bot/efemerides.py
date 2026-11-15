@@ -1476,11 +1476,133 @@ def rankings_de(d: dict, candidatas: list[list[int]],
     return rankings, descartadas
 
 
+# ---- Primer filtro con Haiku (Santi, 2026-11-15: "el 14/11 fueron US$ 2,57, casi la mitad en elegir
+# fotos"). Cada pedido de Sonnet veía ~50 fotos y escribía un `tipo` por cada una (2.000-10.000 tokens
+# de salida: lo caro). Ahora Haiku describe cada foto UNA vez (guardado por foto: la misma foto no se
+# vuelve a pagar) y, solo con texto, ordena las candidatas de cada frase; Sonnet mira las mejores
+# PREFILTRO_POR_FRASE de cada una (la frase 1, una más: la del gancho) y decide como siempre.
+PREFILTRO_POR_FRASE = 3
+PREFILTRO_MIN = 14            # con menos fotos que esto, Sonnet las mira todas (no hay nada que ahorrar)
+CACHE_DESCRIPCIONES = DATA_DIR / "cache_claude" / "fotos"
+
+SISTEMA_DESCRIBIR = """Describís fotos para un primer filtro. La imagen k es la foto k. Para CADA foto:
+`se_ve`: qué se ve de verdad, concreto y corto (máx. 15 palabras, en castellano; ej.: "tren de vapor
+cruzando un puente de hierro, blanco y negro, unas 1900"); `tipo`: "foto" (fotografía, pintura o
+grabado de algo real), "captura", "interfaz", "documento", "planilla", "grafico", "diagrama", "mapa",
+"logo" u "otro"; `otro_idioma`: si se lee texto en un idioma que no es castellano ni inglés; `dura`:
+si muestra muertos, heridos o violencia real. Respondé solo con el JSON pedido."""
+
+SCHEMA_DESCRIBIR = {
+    "type": "OBJECT",
+    "properties": {"fotos": {"type": "ARRAY", "items": {
+        "type": "OBJECT",
+        "properties": {"foto": {"type": "INTEGER"}, "se_ve": {"type": "STRING"},
+                       "tipo": {"type": "STRING", "enum": ["foto", "captura", "interfaz", "documento",
+                                                          "planilla", "grafico", "diagrama", "mapa",
+                                                          "logo", "otro"]},
+                       "otro_idioma": {"type": "BOOLEAN"}, "dura": {"type": "BOOLEAN"}},
+        "required": ["foto", "se_ve", "tipo", "otro_idioma", "dura"]}}},
+    "required": ["fotos"],
+}
+
+SISTEMA_PREFILTRO = """Primer filtro de las fotos de un video corto narrado. Te paso las frases del guion
+(qué conviene mostrar y los números de sus candidatas) y, de cada foto, cuándo se sacó, su epígrafe y
+qué se ve. Para CADA frase, ordená de mejor a peor hasta {k} de SUS candidatas que muestren lo que dice
+LA FRASE (no solo el tema en general). Preferí: la foto del hecho o del lugar; para una frase del pasado,
+fotos de esa época; para una frase CENTRAL, una foto real del hecho o, si no hay, una escena que ilustre
+la situación; para una AL PASAR, una foto clara de la cosa que se nombra. Nada de mapas, logos,
+capturas, gráficos ni documentos salvo que la frase hable de eso. Si dudás entre dos, poné las dos:
+después alguien mira las imágenes y decide. Respondé solo con el JSON pedido."""
+
+SCHEMA_PREFILTRO = {
+    "type": "OBJECT",
+    "properties": {"frases": {"type": "ARRAY", "items": {
+        "type": "OBJECT", "properties": {"fotos": {"type": "ARRAY", "items": {"type": "INTEGER"}}},
+        "required": ["fotos"]}}},
+    "required": ["frases"],
+}
+
+
+def _huella_jpeg(img: bytes) -> str:
+    return hashlib.sha256(img).hexdigest()[:32]
+
+
+def describir_fotos(haiku, imagenes: list[bytes], carpeta: Path | None = None,
+                    avisar=log.info) -> list[dict]:
+    """Una descripción por imagen ({se_ve, tipo, otro_idioma, dura}). Las ya descriptas se leen de
+    `carpeta` (por huella del JPEG): solo las nuevas van a Haiku, en UN pedido."""
+    carpeta = CACHE_DESCRIPCIONES if carpeta is None else carpeta
+    out: list = []
+    faltan = []
+    for k, img in enumerate(imagenes):
+        f = carpeta / f"{_huella_jpeg(img)}.json"
+        try:
+            out.append(json.loads(f.read_text(encoding="utf-8")))
+        except (OSError, ValueError):
+            out.append(None)
+            faltan.append(k)
+    if faltan:
+        d = json.loads(haiku.json(SISTEMA_DESCRIBIR,
+                                  f"Son {len(faltan)} fotos, numeradas de 1 a {len(faltan)}.",
+                                  SCHEMA_DESCRIBIR, imagenes=[imagenes[k] for k in faltan]))
+        por_num = {x.get("foto"): x for x in d.get("fotos") or [] if isinstance(x, dict)}
+        for j, k in enumerate(faltan, 1):
+            x = por_num.get(j)
+            if not x:
+                continue
+            x = {c: x.get(c) for c in ("se_ve", "tipo", "otro_idioma", "dura")}
+            out[k] = x
+            try:
+                carpeta.mkdir(parents=True, exist_ok=True)
+                (carpeta / f"{_huella_jpeg(imagenes[k])}.json").write_text(
+                    json.dumps(x, ensure_ascii=False), encoding="utf-8")
+            except OSError:
+                pass
+    avisar(f"    primer filtro: {len(imagenes) - len(faltan)} fotos ya descriptas, {len(faltan)} nuevas")
+    return [x or {} for x in out]
+
+
+def prefiltrar_fotos(haiku, lineas: list[str], pool: list[Foto], imagenes: list[bytes],
+                     candidatas: list[list[int]], propias: list[list[int]] | None,
+                     anio: int | None, avisar=log.info, carpeta: Path | None = None) -> set[int]:
+    """Las fotos (índices del pool) que va a mirar Sonnet: por frase, las mejores PREFILTRO_POR_FRASE de
+    sus candidatas según Haiku (la frase 1, una más), completando con las de su búsqueda si Haiku
+    devuelve menos. Lo que Haiku ve como duro (muertos, heridos) no pasa."""
+    desc = describir_fotos(haiku, imagenes, carpeta, avisar)
+    duras = {k for k, x in enumerate(desc) if x.get("dura")}
+    fotos = "\n".join(f"foto {k} ({f.anio or 'sin fecha'}): {f.epigrafe[:100]} — se ve: "
+                      f"{desc[k - 1].get('se_ve') or '?'} [{desc[k - 1].get('tipo') or '?'}]"
+                      for k, f in enumerate(pool, 1))
+    prompt = ((f"EL HECHO ES DE {anio}.\n\n" if anio else "") + "FRASES:\n" + "\n".join(lineas)
+              + "\n\nFOTOS:\n" + fotos)
+    d = json.loads(haiku.json(SISTEMA_PREFILTRO.replace("{k}", str(PREFILTRO_POR_FRASE)), prompt,
+                              SCHEMA_PREFILTRO))
+    frases = d.get("frases") or []
+    keep: set[int] = set()
+    for i, cands in enumerate(candidatas):
+        tope = PREFILTRO_POR_FRASE + (1 if i == 0 else 0)
+        validas = set(cands) - duras
+        dichas = ((frases[i] or {}).get("fotos") if i < len(frases) else None) or []
+        elegidas = [x - 1 for x in dichas if isinstance(x, int) and x - 1 in validas]
+        suyas = propias[i] if propias and i < len(propias) else []
+        orden = elegidas + [x for x in suyas if x in validas] + [x for x in cands if x in validas]
+        vistas: list[int] = []
+        for x in orden:
+            if x not in vistas:
+                vistas.append(x)
+            if len(vistas) >= tope:
+                break
+        keep.update(vistas)
+    avisar(f"    primer filtro (Haiku): Sonnet mira {len(keep)} de {len(pool)} fotos")
+    return keep
+
+
 def elegir_fotos(cliente, g: Guion, pool: list[Foto], candidatas: list[list[int]],
                  propias: list[list[int]] | None = None, reintentos: int = 1,
                  avisar=log.info, anio: int | None = None, videos: dict | None = None,
                  elegidos: dict | None = None, ocr: dict[int, float] | None = None,
-                 extra: dict | None = None, elector=None) -> tuple[list[list[int]], set[int]]:
+                 extra: dict | None = None, elector=None,
+                 prefiltrado: bool = False) -> tuple[list[list[int]], set[int]]:
     """UNA llamada: el modelo ve todas las fotos y ordena las que sirven para cada frase.
     `elector`: Claude (Sonnet) para elegir y verificar (Santi, 2026-11-10: "así no dependemos de la
     cuota gratis"); si falla, Gemini (`cliente`) de respaldo.
@@ -1507,6 +1629,31 @@ def elegir_fotos(cliente, g: Guion, pool: list[Foto], candidatas: list[list[int]
                       + ", ".join(str(c + 1) for c in cands)
                       + (f"\n  de su búsqueda: {', '.join(str(c + 1) for c in suyas)}" if suyas else ""))
     orden = g.imagen_frase
+    haiku = getattr(elector, "prefiltro", None) if elector is not None else None
+    if haiku is not None and not prefiltrado and len(pool) >= PREFILTRO_MIN:
+        try:
+            keep = prefiltrar_fotos(haiku, lineas, pool, [_jpeg_chico(Path(f.ruta), 384) for f in pool],
+                                    candidatas, propias, anio, avisar)
+        except Exception as e:    # el filtro solo ahorra: si falla, Sonnet mira todas, como antes
+            avisar(f"    primer filtro: falló ({str(e)[:80]}), Sonnet mira todas")
+            keep = None
+        if keep and len(keep) < len(pool):
+            idx = sorted(keep)
+            nuevo = {v: k for k, v in enumerate(idx)}
+
+            def sub(listas):
+                return [[nuevo[c] for c in l if c in nuevo] for l in listas]
+
+            sub_extra = {} if extra is not None else None
+            rk, malas = elegir_fotos(cliente, g, [pool[i] for i in idx], sub(candidatas),
+                                     sub(propias) if propias else None, reintentos, avisar, anio, videos,
+                                     elegidos, {nuevo[k]: v for k, v in (ocr or {}).items() if k in nuevo},
+                                     sub_extra, elector=elector, prefiltrado=True)
+            if extra is not None:
+                extra.update({k: v for k, v in sub_extra.items() if k != "tipos"})
+                if "tipos" in sub_extra:
+                    extra["tipos"] = {idx[k]: v for k, v in sub_extra["tipos"].items()}
+            return [[idx[x] for x in r] for r in rk], {idx[x] for x in malas}
 
     def origen(f: Foto) -> str:
         if not orden:

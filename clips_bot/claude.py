@@ -13,7 +13,11 @@ elige la API (`fallbacks: "default"`)."""
 
 from __future__ import annotations
 
+import hashlib
+import json as _json
 import logging
+import time
+from pathlib import Path
 
 from .gemini import GeminiError, _llamador
 
@@ -25,6 +29,10 @@ HAIKU = "claude-haiku-5-5"
 PRECIOS = {SONNET: (2.00, 10.00), HAIKU: (0.10, 0.50)}
 BETA_FALLBACK = "server-side-fallback-2026-07-01"
 MAX_IMAGENES = 100        # tope de la API por pedido
+# Caché de lo ya evaluado (Santi, 2026-11-15: "no pagar dos veces la misma foto"): un pedido CON
+# imágenes idéntico a uno anterior (mismo modelo, sistema, prompt, schema e imágenes) devuelve la
+# respuesta guardada. Solo con imágenes: los guiones tienen que poder salir distintos si se reintentan.
+CACHE_DIAS = 30
 
 
 class ClaudeError(GeminiError):
@@ -69,15 +77,29 @@ QUE_ES = {"textos.generar": "Rots: textos de los clips", "revision.revisar": "Ro
           "locales.elegir": "Latinoamérica: elegir y puntuar", "efemerides.elegir": "Tecnología: elegir y puntuar",
           "efemerides.escribir_guion": "Guiones (Latinoamérica y tecnología)",
           "efemerides.final_que_paga": "Revisión del final", "efemerides.pedir": "Fotos (elegir y verificar)",
+          "efemerides.elegir_fotos": "Fotos (elegir y verificar)",
+          "efemerides.prefiltrar_fotos": "Fotos: primer filtro (Haiku)",
+          "marcas.revisar_visual": "Animación: revisión visual", "marcas.chequear_calidad": "Animación: chequeo (Haiku)",
+          "marcas.marcar_claves": "Animación: claves de subtítulos (Haiku)",
           "efemerides.acortar_guion": "Acortar guion",
           "marcas.elegir": "Animación: elegir y puntuar la marca", "marcas.escribir_guion": "Animación: guion"}
 
 
-def resumen_costo(conn, dia: str) -> tuple[float, list[tuple[str, int, float]]]:
-    """(US$ total, [(qué es, pedidos, US$)]) de Claude en el día `dia` (AR, AAAA-MM-DD), de gemini_uso."""
+ORIGENES = (("produccion", "Producción (lo que el bot hace solo)"),
+            ("a_mano", "A mano por Telegram (✏️, 🔁, /efemeride, /historia…)"),
+            ("prueba", "Pruebas y rehechos (scripts y comandos a mano)"))
+
+
+def resumen_costo(conn, dia: str, origen: str | None = None) -> tuple[float, list[tuple[str, int, float]]]:
+    """(US$ total, [(qué es, pedidos, US$)]) de Claude en el día `dia` (AR, AAAA-MM-DD), de gemini_uso.
+    `origen`: solo ese (produccion | a_mano | prueba; "" = filas anteriores al 2026-11-15)."""
     por: dict[str, list] = {}
-    for funcion, modelo, entrada, salida in conn.execute(
-            "SELECT funcion, modelo, entrada, salida FROM gemini_uso WHERE clave = 'claude' AND dia = ?", (dia,)):
+    sql = "SELECT funcion, modelo, entrada, salida FROM gemini_uso WHERE clave = 'claude' AND dia = ?"
+    params: tuple = (dia,)
+    if origen is not None:
+        sql += " AND origen = ?"
+        params += (origen,)
+    for funcion, modelo, entrada, salida in conn.execute(sql, params):
         k = QUE_ES.get(funcion, funcion)
         x = por.setdefault(k, [0, 0.0])
         x[0] += 1
@@ -87,18 +109,30 @@ def resumen_costo(conn, dia: str) -> tuple[float, list[tuple[str, int, float]]]:
 
 
 def texto_costo(conn, dia: str) -> str:
-    total, filas = resumen_costo(conn, dia)
-    lineas = [f"🔧 Claude Code: <b>Costo real de Claude del {dia[8:10]}/{dia[5:7]}</b>: US$ {total:.2f}"
-              f" (≈ US$ {total * 30:.0f} por mes a este ritmo)"]
+    """El informe del día, separado por origen (Santi, 2026-11-15): la producción normal arriba, con su
+    proyección por mes; lo hecho a mano y las pruebas aparte, para que no inflen la cuenta."""
+    total, _ = resumen_costo(conn, dia)
+    prod, filas = resumen_costo(conn, dia, "produccion")
+    lineas = [f"🔧 Claude Code: <b>Costo de Claude del {dia[8:10]}/{dia[5:7]}</b>: US$ {total:.2f} en total",
+              "",
+              f"<b>Producción</b>: US$ {prod:.2f} (≈ US$ {prod * 30:.0f} por mes a este ritmo)"]
     lineas += [f"• {k}: US$ {c:.3f} ({n} pedido{'s' if n != 1 else ''})" for k, n, c in filas]
+    for clave, nombre in ORIGENES[1:] + (("", "Sin origen anotado (antes del 15/11)"),):
+        sub, filas = resumen_costo(conn, dia, clave)
+        if not filas:
+            continue
+        lineas += ["", f"<b>{nombre}</b>: US$ {sub:.2f}"]
+        lineas += [f"• {k}: US$ {c:.3f} ({n})" for k, n, c in filas]
     return "\n".join(lineas)
 
 
 class ClaudeClient:
     def __init__(self, api_key: str, modelo: str = SONNET, cliente=None, uso=None,
-                 max_tokens: int = 16000, esfuerzo: str | None = None, timeout: float = 300):
+                 max_tokens: int = 16000, esfuerzo: str | None = None, timeout: float = 300,
+                 cache_dir=None):
         import anthropic
 
+        self.cache_dir = Path(cache_dir) if cache_dir else None
         self.modelo = modelo
         self.uso = uso
         self.max_tokens = max_tokens
@@ -120,6 +154,13 @@ class ClaudeClient:
             raise ClaudeError(f"Claude: {len(imagenes)} imágenes (máximo {MAX_IMAGENES} por pedido)")
         modelo = modelo or self.modelo
         funcion = _llamador()
+        clave_cache = self._clave_cache(modelo, sistema, prompt, schema, imagenes)
+        guardado = self._de_cache(clave_cache)
+        if guardado is not None:
+            log.info("Claude %s para %s: de la caché (US$ 0)", modelo, funcion)
+            if self.uso:
+                self.uso(funcion, modelo, "claude", 0, 0, True)
+            return guardado
         contenido = [{"type": "image", "source": {"type": "base64", "media_type": "image/jpeg",
                                                   "data": base64.standard_b64encode(img).decode()}}
                      for img in imagenes or []]
@@ -152,7 +193,42 @@ class ClaudeClient:
         texto = next((b.text for b in r.content if b.type == "text"), "")
         if not texto:
             raise ClaudeError(f"Claude ({modelo}): respuesta sin texto")
+        self._a_cache(clave_cache, texto)
         return texto
+
+    def _clave_cache(self, modelo, sistema, prompt, schema, imagenes) -> str | None:
+        if not self.cache_dir or not imagenes:
+            return None
+        h = hashlib.sha256(_json.dumps([modelo, self.esfuerzo, sistema, prompt, schema], sort_keys=True,
+                                       ensure_ascii=False).encode())
+        for img in imagenes:
+            h.update(hashlib.sha256(img).digest())
+        return h.hexdigest()
+
+    def _de_cache(self, clave: str | None) -> str | None:
+        if not clave:
+            return None
+        f = self.cache_dir / f"{clave}.json"
+        try:
+            if time.time() - f.stat().st_mtime > CACHE_DIAS * 86400:
+                return None
+            return _json.loads(f.read_text(encoding="utf-8"))["texto"]
+        except (OSError, ValueError, KeyError):
+            return None
+
+    def _a_cache(self, clave: str | None, texto: str) -> None:
+        if not clave:
+            return
+        try:
+            self.cache_dir.mkdir(parents=True, exist_ok=True)
+            (self.cache_dir / f"{clave}.json").write_text(_json.dumps({"texto": texto}, ensure_ascii=False),
+                                                         encoding="utf-8")
+            limite = time.time() - CACHE_DIAS * 86400
+            for viejo in self.cache_dir.glob("*.json"):
+                if viejo.stat().st_mtime < limite:
+                    viejo.unlink(missing_ok=True)
+        except OSError as e:
+            log.warning("Claude: no pude guardar en la caché: %s", e)
 
 
 class ConRespaldo:
@@ -190,7 +266,10 @@ def cliente(modelo: str = SONNET, esfuerzo: str | None = None) -> ClaudeClient |
     from .config import env
     from .gemini import registrar_uso
 
+    from .config import DATA_DIR
+
     clave = env("ANTHROPIC_API_KEY", requerido=False)
     if not clave:
         return None
-    return ClaudeClient(clave, modelo, uso=registrar_uso, esfuerzo=esfuerzo)
+    return ClaudeClient(clave, modelo, uso=registrar_uso, esfuerzo=esfuerzo,
+                        cache_dir=DATA_DIR / "cache_claude")

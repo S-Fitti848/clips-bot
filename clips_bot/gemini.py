@@ -60,13 +60,46 @@ def achicar(img: bytes, lado: int = IMAGEN_MAX_PX) -> bytes:
         return img
 
 
+# De dónde sale cada llamada (Santi, 2026-11-15: "en el informe, separá lo que es prueba o rehecho de la
+# producción normal"): "produccion" = lo que el bot hace solo (la madrugada, las historias, Así Nació, los
+# timers); "a_mano" = comandos y botones de Telegram (✏️, 🔁, /efemeride, /historia…); "prueba" = todo
+# lo demás (scripts y CLI a mano). La escucha arranca en "a_mano" y cada tick automático va en "produccion".
+PRODUCCION, A_MANO, PRUEBA = "produccion", "a_mano", "prueba"
+ORIGEN = PRUEBA
+
+
+class origen:
+    """`with origen(PRODUCCION): ...`: las llamadas de adentro se anotan con ese origen."""
+
+    def __init__(self, nombre: str):
+        self.nombre, self.antes = nombre, None
+
+    def __enter__(self):
+        global ORIGEN
+        self.antes, ORIGEN = ORIGEN, self.nombre
+        return self
+
+    def __exit__(self, *exc):
+        global ORIGEN
+        ORIGEN = self.antes
+        return False
+
+
+def fijar_origen(nombre: str) -> None:
+    global ORIGEN
+    ORIGEN = nombre
+
+
 def _llamador() -> str:
     """Qué función del bot pidió la llamada ("textos.generar", "efemerides.elegir_fotos"…), para
     medir el uso por función sin tener que pasarlo en cada llamada."""
     import sys
 
     f = sys._getframe(2)
-    while f is not None and f.f_globals.get("__name__") == __name__:
+    # Ni este módulo ni claude.py (ConRespaldo): si no, todo lo que pasaba por el respaldo se anotaba
+    # como "claude.json" (2026-11-14: 3 pedidos sin saber de qué).
+    propios = (__name__, __name__.rsplit(".", 1)[0] + ".claude")
+    while f is not None and f.f_globals.get("__name__") in propios:
         f = f.f_back
     if f is None:
         return "?"
@@ -82,7 +115,7 @@ def registrar_uso(funcion: str, modelo: str, clave: str, entrada: int, salida: i
     try:
         conn = db.connect(DB_PATH)
         try:
-            db.anotar_gemini(conn, funcion, modelo, clave, entrada, salida, cache)
+            db.anotar_gemini(conn, funcion, modelo, clave, entrada, salida, cache, origen=ORIGEN)
         finally:
             conn.close()
     except Exception as e:     # medir no puede romper lo que se mide
