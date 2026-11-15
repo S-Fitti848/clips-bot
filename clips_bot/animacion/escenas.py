@@ -9,7 +9,7 @@ import math
 import random
 
 from . import paleta as P
-from .svg import camino, circulo, elipse, g, linea_gruesa, n, rect, texto_con_borde, trazo
+from .svg import aclarar, camino, circulo, elipse, g, linea_gruesa, mezcla, n, oscurecer, rect, texto_con_borde, trazo
 
 W, H = P.ANCHO, P.ALTO
 
@@ -503,15 +503,144 @@ FONDOS = {"casa": fondo_casa, "taller": fondo_taller, "cielo": fondo_cielo, "ciu
           "tienda": fondo_tienda, "escenario": fondo_escenario}
 
 
+# ---- ambiente de los fondos (Santi, 2026-11-15: "escenarios ricos: profundidad, texturas simples (madera,
+# ladrillo, empapelado), luz de ventana, sombras en el piso") --------------------------------------------
+# Encima de cada fondo, en el MISMO dibujo cacheado (no cuesta nada por cuadro): la textura de la pared y
+# del piso, la luz que entra por la ventana y cae al piso, la sombra donde la pared toca el piso y debajo
+# de los muebles, y una bruma suave arriba (lo lejano, más claro). La línea del piso y la ventana de cada
+# lugar están acá; si un fondo cambia de lugar la ventana, se cambia esta tabla.
+PISO_Y = {"casa": 0.72, "oficina": 0.72, "taller": 0.72, "fabrica": 0.70, "tienda": 0.74, "escenario": 0.72}
+VENTANA = {"casa": (640, 250, 300, 330), "oficina": (560, 260, 400, 480), "fabrica": (80, 200, 920, 420)}
+PARED_TEXTURA = {"casa": "empapelado", "oficina": "empapelado", "taller": "ladrillo", "fabrica": "ladrillo",
+                 "tienda": "azulejo"}
+MUEBLES_SOMBRA = {"casa": [(790, 1385, 270, 26), (130, 1385, 110, 18)], "oficina": [(390, 1520, 330, 30),
+                  (920, 1408, 80, 16)], "taller": [(540, 1540, 470, 30)], "fabrica": [(540, 1330, 560, 26)],
+                  "tienda": [(190, 1425, 160, 22)]}
+
+
+def _patrones() -> str:
+    return (
+        '<defs>'
+        '<pattern id="pat_madera" width="240" height="60" patternUnits="userSpaceOnUse">'
+        '<path d="M0 59 L240 59" stroke="#000000" stroke-opacity="0.16" stroke-width="3"/>'
+        '<path d="M150 0 L150 60" stroke="#000000" stroke-opacity="0.1" stroke-width="3"/>'
+        '<path d="M14 20 Q60 14 110 22 M170 36 Q200 30 232 38 M30 44 Q48 41 70 45" fill="none" '
+        'stroke="#000000" stroke-opacity="0.08" stroke-width="2.5"/></pattern>'
+        '<pattern id="pat_ladrillo" width="140" height="70" patternUnits="userSpaceOnUse">'
+        '<path d="M0 0.5 L140 0.5 M0 35 L140 35 M35 0 L35 35 M105 35 L105 70" stroke="#000000" '
+        'stroke-opacity="0.13" stroke-width="4"/>'
+        '<rect x="40" y="6" width="58" height="24" fill="#ffffff" opacity="0.05"/></pattern>'
+        '<pattern id="pat_empapelado" width="90" height="120" patternUnits="userSpaceOnUse">'
+        '<path d="M45 0 L45 120" stroke="#000000" stroke-opacity="0.045" stroke-width="16"/>'
+        '<path d="M45 52 L53 60 L45 68 L37 60 Z" fill="#ffffff" opacity="0.18"/></pattern>'
+        '<pattern id="pat_azulejo" width="80" height="80" patternUnits="userSpaceOnUse">'
+        '<path d="M0 0.5 L80 0.5 M0.5 0 L0.5 80" stroke="#000000" stroke-opacity="0.07" stroke-width="3"/></pattern>'
+        '<linearGradient id="amb_zocalo" x1="0" y1="0" x2="0" y2="1">'
+        f'<stop offset="0" stop-color="{P.SOMBRA_TINTE}" stop-opacity="0"/>'
+        f'<stop offset="1" stop-color="{P.SOMBRA_TINTE}" stop-opacity="0.32"/></linearGradient>'
+        '<linearGradient id="amb_piso" x1="0" y1="0" x2="0" y2="1">'
+        f'<stop offset="0" stop-color="{P.SOMBRA_TINTE}" stop-opacity="0.38"/>'
+        f'<stop offset="1" stop-color="{P.SOMBRA_TINTE}" stop-opacity="0"/></linearGradient>'
+        '<linearGradient id="amb_haz" x1="0" y1="0" x2="0" y2="1">'
+        f'<stop offset="0" stop-color="{P.LUZ}" stop-opacity="0.42"/>'
+        f'<stop offset="1" stop-color="{P.LUZ}" stop-opacity="0"/></linearGradient>'
+        '<linearGradient id="amb_bruma" x1="0" y1="0" x2="0" y2="1">'
+        '<stop offset="0" stop-color="#fff6e6" stop-opacity="0.28"/>'
+        '<stop offset="1" stop-color="#fff6e6" stop-opacity="0"/></linearGradient>'
+        '<radialGradient id="amb_sombra_mueble"><stop offset="0" stop-color="#2a1838" stop-opacity="0.42"/>'
+        '<stop offset="1" stop-color="#2a1838" stop-opacity="0"/></radialGradient>'
+        '</defs>')
+
+
+def ambiente(tipo: str) -> str:
+    """Lo que le da profundidad y luz a un fondo (ver arriba). Vacío para los que no lo llevan."""
+    out = []
+    if tipo in PISO_Y:
+        py = H * PISO_Y[tipo]
+        tex = PARED_TEXTURA.get(tipo)
+        if tex:
+            out.append(f'<rect x="0" y="0" width="{W}" height="{n(py)}" fill="url(#pat_{tex})"/>')
+        # el piso: tablas de madera (o el patrón de cada lugar) y la sombra donde toca la pared
+        out.append(f'<rect x="0" y="{n(py)}" width="{W}" height="{n(H - py)}" fill="url(#pat_madera)" '
+                   f'opacity="{0.55 if tipo in ("fabrica", "tienda") else 1}"/>')
+        out.append(f'<rect x="0" y="{n(py - 150)}" width="{W}" height="150" fill="url(#amb_zocalo)"/>')
+        out.append(f'<rect x="0" y="{n(py)}" width="{W}" height="140" fill="url(#amb_piso)"/>')
+        for cx, cy, rx, ry in MUEBLES_SOMBRA.get(tipo, []):
+            out.append(f'<ellipse cx="{cx}" cy="{cy}" rx="{rx}" ry="{ry}" fill="url(#amb_sombra_mueble)"/>')
+        v = VENTANA.get(tipo)
+        if v:   # el haz de luz: de la ventana baja en diagonal hasta el piso
+            x, y, w, h = v
+            caida = py + 260
+            corre = -0.55 * (caida - (y + h))
+            out.append(f'<path d="M{x} {y + h} L{x + w} {y + h} L{n(x + w + corre)} {n(caida)} '
+                       f'L{n(x + corre - 60)} {n(caida)} Z" fill="url(#amb_haz)"/>')
+            out.append(f'<path d="M{n(x + corre - 60)} {n(caida)} L{n(x + w + corre)} {n(caida)} '
+                       f'L{n(x + w + corre - 50)} {n(caida - 120)} L{n(x + corre - 10)} {n(caida - 120)} Z" '
+                       f'fill="{P.LUZ}" opacity="0.18"/>')
+        out.append(f'<rect x="0" y="0" width="{W}" height="{n(py * 0.55)}" fill="url(#amb_bruma)"/>')
+    elif tipo == "ciudad":
+        out.append(f'<rect x="0" y="0" width="{W}" height="{n(H * 0.6)}" fill="url(#amb_bruma)"/>')
+        out.append(f'<rect x="0" y="{n(H * 0.8)}" width="{W}" height="120" fill="url(#amb_piso)"/>')
+    elif tipo == "cielo":
+        out.append(f'<rect x="0" y="0" width="{W}" height="{n(H * 0.5)}" fill="url(#amb_bruma)"/>')
+    return (_patrones() + "".join(out)) if out else ""
+
+
+# ---- color por escena (Santi, 2026-11-15: "paleta más linda: cálidos y armónicos por escena") -----------
+# Encima de TODO (personajes incluidos) y debajo de los subtítulos: un tinte suave del color de la luz de
+# ese lugar y una viñeta que oscurece los bordes (el ojo va al centro). Así cada lugar tiene su paleta y
+# los personajes "están" en esa luz. Cuesta un rectángulo con degradé por cuadro.
+TINTE = {"casa": ("#ffb36b", 0.07), "oficina": ("#ffd59a", 0.06), "taller": ("#ffad5c", 0.07),
+         "fabrica": ("#ff9a5c", 0.06), "tienda": ("#ffd28a", 0.05), "ciudad": ("#ff8f5c", 0.08),
+         "cielo": ("#ffd08a", 0.05), "escenario": ("#ff6b8a", 0.06), "globo": ("#7c6bff", 0.05),
+         "mapa": ("#7c6bff", 0.05)}
+VINETA = 0.34
+
+
+def grade(tipo: str) -> str:
+    """El tinte y la viñeta de ese lugar (SVG en coordenadas de pantalla)."""
+    color, op = TINTE.get(tipo, ("#ffc08a", 0.05))
+    borde = mezcla(oscurecer(color, 0.75), P.SOMBRA_TINTE, 0.5)
+    return (f'<defs><radialGradient id="vineta" cx="0.5" cy="0.48" r="0.75">'
+            f'<stop offset="0.55" stop-color="{borde}" stop-opacity="0"/>'
+            f'<stop offset="1" stop-color="{borde}" stop-opacity="{VINETA}"/></radialGradient></defs>'
+            f'<rect width="{W}" height="{H}" fill="{color}" opacity="{op}"/>'
+            f'<rect width="{W}" height="{H}" fill="url(#vineta)"/>')
+
+
+# ---- primer plano (profundidad): algo cerca de la cámara en una esquina de abajo, oscuro y grande -------
+def primer_plano(tipo: str, lado: int = 1, variante: int = 0) -> str:
+    """Un objeto MUY cerca de la cámara, recortado por el borde de abajo (una planta, el respaldo de una
+    silla, una caja, un poste): más oscuro (fuera de la luz). Coordenadas de pantalla: la esquina de abajo
+    del `lado` (-1 izquierda, 1 derecha). Ocupa solo el borde (≤ 120 px adentro, de y 1640 para abajo)."""
+    oscuro = lambda c: oscurecer(c, 0.55)   # noqa: E731
+    if tipo in ("casa", "oficina", "cielo") and variante % 2 == 0:     # hojas de una planta
+        hojas = "".join(g(camino("M0 0 Q-55 -140 0 -300 Q55 -140 0 0 Z", oscuro(P.VERDE), ancho=P.TRAZO_FINO),
+                          0, 0, rot=a) for a in (-30, -8, 16))
+        cosa = g(hojas, -10, 2000) + elipse(-10, 1965, 130, 55, oscuro(P.NARANJA))
+    elif tipo in ("casa", "oficina", "tienda"):                          # respaldo de una silla
+        cosa = (rect(-60, 1700, 170, 320, oscuro(P.MADERA), r=24)
+                + rect(-30, 1740, 110, 240, oscuro(mezcla(P.MADERA, P.ROJO, 0.4)), r=16, ancho=P.TRAZO_FINO))
+    elif tipo in ("taller", "fabrica"):                                  # cajón de madera
+        cosa = (rect(-80, 1690, 200, 300, oscuro("#a8714a"), r=8)
+                + f'<path d="M-80 1760 L120 1760 M-80 1850 L120 1850" {trazo(ancho=P.TRAZO_FINO)}/>')
+    elif tipo == "ciudad":                                               # un poste con un cartel
+        cosa = rect(30, 1500, 50, 500, oscuro(P.GRIS_OSCURO)) + rect(-40, 1560, 160, 90, oscuro(P.AMARILLO), r=10)
+    else:                                                                # cualquier otro lugar: la planta
+        return primer_plano("casa", lado, 0)
+    return cosa if lado < 0 else f'<g transform="translate({W} 0) scale(-1 1)">{cosa}</g>'
+
+
 def fondo(tipo: str, semilla: int | None = None) -> str:
     """El fondo. Con la semilla nueva (década*100 + variante) las variantes impares salen ESPEJADAS
-    (otro "ángulo" del mismo lugar: dos escenas seguidas en la casa no se ven idénticas)."""
+    (otro "ángulo" del mismo lugar: dos escenas seguidas en la casa no se ven idénticas). Encima va el
+    ambiente (texturas, luz, sombras), espejado junto con el lugar."""
     f = FONDOS.get(tipo)
     if f is None:
         raise ValueError(f"Fondo desconocido: {tipo!r} (hay {', '.join(sorted(FONDOS))})")
     if semilla is None:
-        return f()
-    svg_ = f(semilla)
+        return f() + (ambiente(tipo) if P.VOLUMEN else "")
+    svg_ = f(semilla) + (ambiente(tipo) if P.VOLUMEN else "")
     if semilla >= 1000 and (semilla % 100) % 2 == 1:
         return f'<g transform="translate({W} 0) scale(-1 1)">{svg_}</g>'
     return svg_
@@ -920,6 +1049,35 @@ def prop_consola(**_) -> str:
             + g(prop_control(), 120, 130, escala=0.6))
 
 
+def prop_primer_plano(texto: str = "casa", forma: int = 1, **_) -> str:
+    """El primer plano como prop (lo agrega acciones.py; `texto` = el lugar, `forma` = el lado)."""
+    return primer_plano(texto, -1 if forma < 0 else 1, abs(forma) // 2)
+
+
+def prop_polvo(color: str = "#d9c7a8", **_) -> str:
+    """Una nube de polvo (partícula de los golpes y las roturas): 3 bolas suaves, sin contorno."""
+    return (circulo(-26, 6, 34, color, borde=False) + circulo(18, -8, 40, color, borde=False)
+            + circulo(36, 18, 26, aclarar(color, 0.3), borde=False))
+
+
+def prop_lineas_mov(color: str = "#ffffff", **_) -> str:
+    """Líneas de movimiento DETRÁS de algo que vuela (mirando a +x): la rotación las alinea con la
+    dirección. Blancas con borde, como en los dibujos animados."""
+    out = []
+    for dy, largo in ((-34, 150), (0, 210), (34, 140)):
+        d = f"M-60 {dy} L{-60 - largo} {dy}"
+        out.append(f'<path d="{d}" stroke="{P.CONTORNO}" stroke-width="15" stroke-linecap="round" opacity="0.55"/>'
+                   f'<path d="{d}" stroke="{color}" stroke-width="8" stroke-linecap="round"/>')
+    return "".join(out)
+
+
+def prop_destello(color: str = P.AMARILLO, **_) -> str:
+    """Un destello de 4 puntas (el remate brilla)."""
+    d = "M0 -90 Q10 -10 90 0 Q10 10 0 90 Q-10 10 -90 0 Q-10 -10 0 -90 Z"
+    return (f'<path d="{d}" fill="{color}" stroke="{P.CONTORNO}" stroke-width="6" stroke-linejoin="round"/>'
+            f'<path d="M0 -50 Q5 -5 50 0 Q5 5 0 50 Q-5 5 -50 0 Q-5 -5 0 -50 Z" fill="#ffffff"/>')
+
+
 def icono_pausa() -> str:
     """El "⏸" de la pausa del locutor (dos barras), centrado en (0, 0)."""
     return (circulo(0, 0, 70, "#ffffff", ancho=P.TRAZO_FINO)
@@ -927,7 +1085,8 @@ def icono_pausa() -> str:
             + rect(10, -36, 20, 72, P.CONTORNO, r=4, borde=False))
 
 
-PROPS = {"pelota_espuma": prop_pelota_espuma, "juego_mesa": prop_juego_mesa, "hamburguesa": prop_hamburguesa,
+PROPS = {"primer_plano": prop_primer_plano, "polvo": prop_polvo, "lineas_mov": prop_lineas_mov,
+         "destello": prop_destello, "pelota_espuma": prop_pelota_espuma, "juego_mesa": prop_juego_mesa, "hamburguesa": prop_hamburguesa,
          "chocolate": prop_chocolate, "galletitas": prop_galletitas, "auto": prop_auto,
          "telefono_disco": prop_telefono_disco, "radio": prop_radio, "consola": prop_consola,
          "tele": prop_tele, "cuadro": prop_cuadro, "mesa": prop_mesa, "estante": prop_estante,

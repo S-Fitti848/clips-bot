@@ -57,7 +57,7 @@ CARAS = {"feliz": ("arriba", "sonrisa", 0.0), "enojado": ("enojo", "cerrada", 0.
 CICLOS = {"caminar": (1.7, 16.0, 24.0, 18.0, 3.0), "correr": (2.8, 30.0, 40.0, 75.0, 4.0)}
 GRIS_PAUSA = "#4a4f5c"
 TIPOS_ELEMENTO = ("personaje", "prop", "gancho", "texto", "tito", "contador")
-TRANSICIONES = ("corte", "fundido", "zoom", "barrido")
+TRANSICIONES = ("corte", "fundido", "zoom", "barrido", "iris")
 ENTRADAS = ("rebote", "izquierda", "derecha", "abajo", "arriba", "fundido")
 
 
@@ -193,9 +193,17 @@ class Elemento:
         if v["opacidad"] <= 0.001 or v["escala"] <= 0.001:
             return ""
         tl = t - self.desde
+        sombra = ""
         if self.tipo == "personaje":
             est, dy = self._estado(t, apertura, cuadro, v["mirada"], v["cabeza"])
             contenido = self._pj.svg(est)
+            # sombra de contacto en el piso (2026-11-15, "sombras en el piso"): se queda en el piso y se
+            # achica y aclara cuando salta
+            alto = max(0.0, -dy)
+            k = max(0.35, 1 - alto / 420)
+            sombra = (f'<ellipse cx="{round(v["x"], 1)}" cy="{round(v["y"] + 6, 1)}" '
+                      f'rx="{round(150 * v["escala"] * k, 1)}" ry="{round(30 * v["escala"] * k, 1)}" '
+                      f'fill="{P.SOMBRA_TINTE}" opacity="{round(0.28 * k * min(1.0, v["opacidad"]), 3)}"/>')
             v["y"] += dy
         elif self.tipo == "prop":
             params = {k: val for k, val in self.datos.items()
@@ -235,9 +243,9 @@ class Elemento:
                                         color=self.datos.get("color", P.TEXTO))
         st = max(0.5, min(1.5, v["estirar"]))
         if abs(st - 1) > 1e-3:   # squash & stretch desde los pies: más alto = más angosto
-            return g(contenido, v["x"], v["y"], v["escala"] * (1 + (1 - st) * 0.5), v["rotacion"],
-                     v["opacidad"], escala_y=v["escala"] * st)
-        return g(contenido, v["x"], v["y"], v["escala"], v["rotacion"], v["opacidad"])
+            return sombra + g(contenido, v["x"], v["y"], v["escala"] * (1 + (1 - st) * 0.5), v["rotacion"],
+                              v["opacidad"], escala_y=v["escala"] * st)
+        return sombra + g(contenido, v["x"], v["y"], v["escala"], v["rotacion"], v["opacidad"])
 
     def _ciclo(self, t: float):
         """(tipo, fase, peso 0..1, sentido) del ciclo de caminata/carrera activo en `t`, o None. El peso

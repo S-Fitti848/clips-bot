@@ -191,6 +191,67 @@ def anclar_abajo(kf: list[dict], dur: float) -> list[dict]:
     return out
 
 
+# ---- efectos (Santi, 2026-11-15: "partículas cuando algo se rompe (vidrios, polvo), líneas de movimiento
+# cuando algo vuela, destellos en el remate") ------------------------------------------------------------
+VEL_LINEAS = 900.0     # px/s desde donde se ven las líneas de movimiento (más rápido = más opacas)
+
+
+def estela(kfs: list[dict], desde: float | None = None, hasta: float | None = None) -> dict | None:
+    """Las líneas de movimiento de algo que vuela: un elemento que sigue los mismos puntos, girado hacia
+    donde va, y que se ve solo mientras va rápido. None si no hay trayectoria."""
+    pts = [k for k in kfs if "x" in k and "y" in k]
+    if len(pts) < 2:
+        return None
+    out = []
+    for a, b in zip(pts, pts[1:]):
+        dt = max(1e-3, float(b["t"]) - float(a["t"]))
+        dx, dy = float(b["x"]) - float(a["x"]), float(b["y"]) - float(a["y"])
+        v = math.hypot(dx, dy) / dt
+        op = max(0.0, min(1.0, (v - VEL_LINEAS * 0.5) / VEL_LINEAS))
+        out.append({"t": a["t"], "x": a["x"], "y": a["y"], "rotacion": round(math.degrees(math.atan2(dy, dx)), 1),
+                    "opacidad": round(op, 2), "easing": "lineal"})
+    ult = pts[-1]
+    out.append({"t": ult["t"], "x": ult["x"], "y": ult["y"], "opacidad": 0.0, "easing": "lineal"})
+    el = {"tipo": "prop", "nombre": "lineas_mov", "x": out[0]["x"], "y": out[0]["y"], "escala": 0.8,
+          "desde": round(desde if desde is not None else float(pts[0]["t"]), 3), "keyframes": out}
+    if hasta is not None:
+        el["hasta"] = round(hasta, 3)
+    return el
+
+
+def polvo(x: float, y: float, t: float, rnd, n_: int = 4, color: str = "#d9c7a8") -> list[dict]:
+    """Nubes de polvo que salen del golpe, crecen y se desvanecen (0,7 s)."""
+    out = []
+    for i in range(n_):
+        ang = rnd.uniform(-math.pi, 0)
+        dist = rnd.uniform(70, 150)
+        out.append({"tipo": "prop", "nombre": "polvo", "color": color, "x": x, "y": y, "escala": 0.3,
+                    "desde": round(t, 3), "hasta": round(t + 0.72, 3),
+                    "keyframes": [{"t": t, "x": x, "y": y, "escala": 0.3, "opacidad": 0.9},
+                                  {"t": t + 0.7, "x": round(x + math.cos(ang) * dist, 1),
+                                   "y": round(y + math.sin(ang) * dist * 0.6, 1), "escala": rnd.uniform(1.0, 1.5),
+                                   "opacidad": 0.0, "easing": "salida"}]})
+    return out
+
+
+def destellos(t: float, rnd, centro: tuple[float, float] = (540, 1000), n_: int = 4) -> list[dict]:
+    """Destellos que brillan alrededor de lo importante (el remate): aparecen con un pop, giran y se van."""
+    out = []
+    for i in range(n_):
+        x = centro[0] + rnd.uniform(-330, 330)
+        y = max(BANDA_SUBTITULOS + 120, centro[1] + rnd.uniform(-360, 160))
+        ti = t + i * 0.13
+        e = rnd.uniform(0.45, 0.8)
+        out.append({"tipo": "prop", "nombre": "destello", "x": round(x, 1), "y": round(y, 1),
+                    "color": P.AMARILLO if i % 2 == 0 else "#ffffff",
+                    "desde": round(ti, 3), "hasta": round(ti + 0.75, 3),
+                    "keyframes": [{"t": ti, "escala": 0.05, "rotacion": 0, "opacidad": 1},
+                                  {"t": ti + 0.22, "escala": e, "rotacion": 45, "easing": "rebote"},
+                                  {"t": ti + 0.75, "escala": 0.05, "rotacion": 120, "opacidad": 0.2,
+                                   "easing": "entrada"}]})
+    return out
+
+
 class Escena:
     """Arma UNA escena: elementos, cámara y SFX (segundos locales a la escena)."""
 
@@ -204,6 +265,7 @@ class Escena:
         self.golpes: list[tuple[float, float]] = []   # (segundo, fuerza) para el sacudón de cámara
         self.rnd = random.Random(semilla)
         self.mano: tuple[float, float, float] | None = None   # (x, y, t) de un "tirar"
+        self.primer_plano_en: tuple[float, float, float] | None = None   # (t, x, y) de la cara en primer plano
         self.actores: list[dict] = []    # el elemento de cada personaje (para lo que llevan en la mano)
         self._soportes: set = set()
 
@@ -463,9 +525,13 @@ class Escena:
                 ox, oy, tt = (-150 if x >= 540 else 1230), 900, te
             dx, dy = blanco if blanco else ((1230 if ox < 540 else -150), 700)
             dur = 0.8
+            arco = _arco(ox, oy, dx, dy, tt, dur, 380, 540)
+            lin = estela(arco, tt, tt + dur)
+            if lin:
+                self.elementos.append(lin)
             self.elementos.append({**base, "x": ox, "y": oy, "escala": 0.8, "desde": round(tt, 2),
                                    "hasta": round(tt + dur + (0.02 if blanco else 0.6), 2),
-                                   "keyframes": _arco(ox, oy, dx, dy, tt, dur, 380, 540)})
+                                   "keyframes": arco})
             self.sfx.append((tt, "whoosh"))
             return round(tt + dur, 3)
         if efecto == "rebota":
@@ -494,6 +560,9 @@ class Escena:
                     vy = -vy * 0.62
                     vx *= 0.85
                 t += paso
+            lin = estela(pts, tt)
+            if lin:
+                self.elementos.append(lin)
             self.elementos.append({**base, "x": pts[0]["x"] if pts else x, "y": pts[0]["y"] if pts else y,
                                    "escala": 0.8, "desde": round(tt, 2), "keyframes": pts})
             return None
@@ -554,6 +623,9 @@ class Escena:
             pts += _arco(cx, cy, cx + (120 if cx < 540 else -120), PISO_PARED + 100, t, fin - t, 80, 200)[1:]
             self.sfx.append((round(fin, 3), "boing"))
         if pts:
+            lin = estela(pts)
+            if lin:
+                self.elementos.append(lin)
             el = {"tipo": "prop", "nombre": proyectil, "x": pts[0]["x"], "y": pts[0]["y"], "escala": 0.7,
                   "desde": pts[0]["t"], "keyframes": pts}
             if color:
@@ -578,15 +650,31 @@ class Escena:
             self.elementos.append({"tipo": "prop", "nombre": "pedazo", "forma": i % 4, "color": c, "x": x,
                                    "y": y, "escala": self.rnd.uniform(0.6, 1.1), "desde": round(t, 3),
                                    "hasta": round(t + 0.95, 3), "keyframes": pts})
+        self.elementos += polvo(x, y, t, self.rnd, 3 if prop in ROMPIBLES_VIDRIO else 5)
         self.sfx.append((round(t, 3), "vidrio" if prop in ROMPIBLES_VIDRIO else "golpe"))
         self.golpes.append((t, fuerza))
 
     # ---- cámara -----------------------------------------------------------------------------
-    def camara(self, tipo: str) -> list[dict]:
+    def cara_de(self, el: dict, t: float) -> tuple[float, float]:
+        """(x, y) en pantalla (sin cámara) de la cara del personaje `el` en el segundo `t`."""
+        from . import personajes as per
+
+        x = float(el["x"])
+        for k in sorted(el.get("keyframes", []), key=lambda k: float(k["t"])):
+            if "x" in k and float(k["t"]) <= t:
+                x = float(k["x"])
+        pj = per.personaje(el.get("nombre", "narrador"), **(el.get("cambios") or {}))
+        _cx, cy, _r = pj.cara()
+        return x, PISO + float(el.get("escala", 1)) * cy
+
+    def camara(self, tipo: str, fuerte: bool = False) -> list[dict]:
+        """Zoom suave siempre (nada queda quieto), paneo, temblor en los golpes, cambio de plano a la mitad
+        y, en los momentos FUERTES (el gancho, el giro, el final, una cara de sorpresa o enojo), un
+        PRIMER PLANO de la cara del protagonista justo después del golpe (Santi, 2026-11-15)."""
         d = self.dur
         golpes = sorted(self.golpes) or ([(d * 0.5, 22)] if tipo == "sacudon" else [])
         z0, z1 = {"acercar": (1.0, 1.14), "alejar": (1.16, 1.02), "paneo": (1.18, 1.18),
-                  "sacudon": (1.08, 1.12)}.get(tipo, (1.0, 1.04))
+                  "sacudon": (1.08, 1.12)}.get(tipo, (1.02, 1.09))
         if golpes:
             z0, z1 = max(z0, 1.06), max(z1, 1.06)
         kf = [{"t": 0, "zoom": z0}, {"t": d, "zoom": z1, "easing": "suave"}]
@@ -603,7 +691,10 @@ class Escena:
         if xs:
             medio = (max(xs) - min(xs)) / 2 + 150
             z_corte = min(1.24, 540 / max(1.0, medio))
-        if d > 2.6 and tipo != "paneo" and z_corte >= 1.08 and not any(tg > d * 0.45 for tg, _ in golpes):
+        primer = self._primer_plano(golpes, fuerte, z0, z1)
+        if primer:
+            kf += primer
+        elif d > 2.6 and tipo != "paneo" and z_corte >= 1.08 and not any(tg > d * 0.45 for tg, _ in golpes):
             tc = round(d * 0.5, 3)
             dx = (max(xs) + min(xs)) / 2 - 540
             mx = 540 * (1 - 1 / z_corte)
@@ -613,16 +704,58 @@ class Escena:
                    {"t": d, "zoom": round(z_corte + 0.03, 3), "x": round(dx, 1), "easing": "suave"}]
             kf = [k for k in kf if not (k["t"] == d and k.get("zoom") == z1)]
         ultimo = -1.0
+        pp = self.primer_plano_en
         for tg, fuerza in golpes[:4]:   # sacudón: 0,35 s de corridas cortas que se apagan
             if tg - ultimo < 0.3:
+                continue
+            if pp and pp[0] - 0.33 <= tg <= pp[0] + self.DUR_CARA:   # en el primer plano no se sacude
                 continue
             ultimo = tg
             for i in range(6):
                 a = fuerza * (1 - i / 6)
                 kf.append({"t": round(tg + i * 0.05, 3), "x": round(a * (1 if i % 2 else -1), 1),
-                           "y": round(a * 0.6 * (1 if i % 3 else -1), 1), "easing": "lineal"})
-            kf.append({"t": round(tg + 0.32, 3), "x": 0, "y": 0, "easing": "suave"})
-        return anclar_abajo(kf, d)
+                           "y": round(a * 0.6 * (1 if i % 3 else -1), 1),
+                           "rotacion": round(0.08 * a * (1 if i % 2 else -1), 2), "easing": "lineal"})
+            kf.append({"t": round(tg + 0.32, 3), "x": 0, "y": 0, "rotacion": 0, "easing": "suave"})
+        kf = sorted(kf, key=lambda k: float(k["t"]))
+        out = anclar_abajo([k for k in kf if not k.get("_cara")], d)
+        # el primer plano ya trae su corrida vertical exacta: no se ancla abajo
+        out += [{k_: v for k_, v in k.items() if k_ != "_cara"} for k in kf if k.get("_cara")]
+        return sorted(out, key=lambda k: float(k["t"]))
+
+    ZOOM_CARA = 1.9
+    DUR_CARA = 0.8
+
+    def _primer_plano(self, golpes, fuerte: bool, z0: float, z1: float) -> list[dict]:
+        """Corte a un primer plano de la cara (con un empujón suave) y vuelta al plano general."""
+        self.primer_plano_en = None
+        if not fuerte or not self.actores or self.dur < 1.6:
+            return []
+        limite = self.dur - self.DUR_CARA - 0.15
+        # justo después del último golpe que deja lugar (la reacción); si ninguno deja, lo antes posible
+        despues = [tg + 0.36 for tg, _ in golpes if tg + 0.36 <= limite]
+        tc = max(despues) if despues else (min(limite, self.dur * 0.42) if not golpes else limite)
+        tc = round(tc, 3)
+        if tc < 0.3:
+            return []
+        el = self.actores[0]
+        X, Y = self.cara_de(el, tc)
+        out = []
+        cx, cy = P.ANCHO / 2, P.ALTO / 2
+        zs = (self.ZOOM_CARA, self.ZOOM_CARA + 0.08)
+        for t_, z in ((tc, zs[0]), (tc + self.DUR_CARA, zs[1])):
+            mx, my = cx * (1 - 1 / z), cy * (1 - 1 / z)
+            dx = max(-mx, min(mx, X - cx))
+            dy = max(-my, min(my, Y - cy - (0.44 * P.ALTO - cy) / z))
+            out.append({"t": round(t_, 3), "zoom": round(z, 3), "x": round(dx, 1), "y": round(dy, 1),
+                        "rotacion": 0, "easing": "escalon" if t_ == tc else "suave", "_cara": True})
+        self.primer_plano_en = (tc, X, Y)
+        zm = z0 + (z1 - z0) * (tc / self.dur)
+        antes = {"t": round(tc - 0.01, 3), "zoom": round(zm, 3), "x": 0, "rotacion": 0}
+        zf = z0 + (z1 - z0) * min(1.0, (tc + self.DUR_CARA + 0.01) / self.dur)
+        despues = {"t": round(tc + self.DUR_CARA + 0.01, 3), "zoom": round(zf, 3), "x": 0, "y": 0,
+                   "rotacion": 0, "easing": "escalon"}
+        return [antes] + out + [despues]
 
 
 # ---- lugares: nunca un personaje encima de otro (Santi, 2026-11-14) ------------------------------
@@ -740,7 +873,8 @@ CAJAS = {"mesa": (150, 0, 226), "estante": (140, 0, 70), "lampara": (110, -150, 
          "control": (190, -110, 130), "camion": (200, -110, 86), "cohete": (120, -200, 150),
          "martillo": (70, -90, 160), "lamparita": (90, -200, 140), "grafico_sube": (190, -170, 150),
          "grafico_baja": (190, -170, 150), "cartel": (190, -140, 230), "calendario": (130, -144, 130)}
-NO_CHOCAN = {"pedazo", "lamparita", "gancho", "nube", "martillo", "pregunta", "exclamacion", "flecha", "idea_fallida"}
+NO_CHOCAN = {"pedazo", "lamparita", "gancho", "nube", "martillo", "pregunta", "exclamacion", "flecha", "idea_fallida",
+             "polvo", "lineas_mov", "destello", "primer_plano"}
 
 
 def _en_mundo(el, t: float):
@@ -902,6 +1036,9 @@ def semilla_fondo(anio: int, variante: int) -> int:
     return (int(anio) // 10) * 100 + int(variante) % 100
 
 
+TRANSICIONES_OK = ("corte", "fundido", "zoom", "barrido", "iris")
+
+
 def escena_accion(spec: dict, dur: float, i: int, primera: bool = False, tono: float = 0.0,
                   anio: int = 2026, variante: int = 0, reservar: str | None = None,
                   proyectil: str = "pelota") -> tuple[dict, list[tuple[float, str]]]:
@@ -965,10 +1102,36 @@ def escena_accion(spec: dict, dur: float, i: int, primera: bool = False, tono: f
     if texto:
         elementos.append({"tipo": "gancho", "texto": texto, "y": Y_TEXTO_PANTALLA, "modo": "palabras" if primera else "rebote",
                           "tam": 100, "desde": 0.0 if primera else 0.2})
-    tr = spec.get("transicion") if spec.get("transicion") in ("corte", "fundido", "zoom", "barrido") else "barrido"
+    parte = spec.get("parte") or ""
+    remate = parte in ("giro", "final")
+    fuerte = parte in ("gancho", "giro", "final") or bool(cadena) or \
+        any((a.get("cara") or "") in ("sorprendido", "enojado") for a in spec.get("actores") or [])
+    camara = e.camara(spec.get("camara") or "fija", fuerte)
+    if remate:   # el remate brilla (Santi, 2026-11-15): alrededor de la cara del primer plano, si lo hay
+        pp = getattr(e, "primer_plano_en", None)
+        t_d, centro = ((pp[0] + 0.1, (pp[1], pp[2])) if pp else (min(dur * 0.45, max(0.3, dur - 1.0)), (540, 1050)))
+        for k, el in enumerate(destellos(t_d, e.rnd, centro)):
+            if pp:   # en un anillo alrededor de la cara, nunca encima (nada tapa una cara)
+                ang = math.radians(-160 + k * 47 + e.rnd.uniform(-12, 12))
+                dist = e.rnd.uniform(175, 235)
+                el["x"] = round(centro[0] + math.cos(ang) * dist, 1)
+                el["y"] = round(max(BANDA_SUBTITULOS + 120, centro[1] + math.sin(ang) * dist * 0.9), 1)
+            elementos.append(el)
+        e.sfx.append((round(t_d, 3), "ding"))
+    if fondo in ("casa", "oficina", "taller", "fabrica", "tienda", "ciudad") and i % 2 == 0:
+        # profundidad: algo cerca de la cámara en una esquina de abajo, con parallax (se corre al revés)
+        lado = -1 if (i // 2) % 2 == 0 else 1
+        elementos.append({"tipo": "prop", "nombre": "primer_plano", "texto": fondo, "forma": lado * (1 + 2 * (i // 4 % 2)),
+                          "x": 0, "y": 0, "keyframes": [{"t": 0, "x": 22 * lado}, {"t": dur, "x": -22 * lado,
+                                                                                  "easing": "suave"}]})
+    if texto:
+        elementos.append(elementos.pop(next(k for k, el in enumerate(elementos) if el.get("tipo") == "gancho")))
+    tr = spec.get("transicion") if spec.get("transicion") in TRANSICIONES_OK else "barrido"
+    if not primera and parte in ("giro", "final") and tr in ("corte", "barrido"):
+        tr = "iris"            # transición con estilo hacia el remate
     d = {"duracion": dur, "fondo": {"tipo": fondo, "semilla": semilla},
-         "transicion": {"tipo": "corte" if primera else tr, "duracion": 0.25},
-         "camara": e.camara(spec.get("camara") or "fija"), "elementos": elementos, "tono": tono}
+         "transicion": {"tipo": "corte" if primera else tr, "duracion": 0.3 if tr == "iris" else 0.25},
+         "camara": camara, "elementos": elementos, "tono": tono}
     sfx = sorted((round(t, 3), s) for t, s in e.sfx if 0 <= t < dur)
     arreglar_composicion(d)
     return d, sfx

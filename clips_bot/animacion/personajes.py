@@ -13,7 +13,7 @@ import math
 from dataclasses import dataclass, replace
 
 from . import paleta as P
-from .svg import camino, circulo, elipse, g, linea_gruesa, n, trazo
+from .svg import aclarar, camino, circulo, elipse, g, linea_gruesa, n, oscurecer, trazo
 
 BLANCO_SUCIO = "#f2ece0"
 
@@ -295,7 +295,40 @@ class Personaje:
              f"Q{-w_ab - 6} {n(tope + 40)} {-w_ab} {n(piso)} Z")
         cuello = (f'<path d="M-30 {n(tope + 2)} Q0 {n(tope + 34)} 30 {n(tope + 2)}" '
                   f'fill="{BLANCO_SUCIO}" {trazo(ancho=P.TRAZO_FINO)}/>')
-        return camino(d, self.ropa) + cuello
+        return camino(d, self.ropa) + cuello + self._detalle_ropa(piso, tope)
+
+    def _detalle_ropa(self, piso: float, tope: float) -> str:
+        """Pliegues, botones, bolsillo y costuras (Santi, 2026-11-15: "más detalle en la ropa")."""
+        sombra = oscurecer(self.ropa, 0.28)
+        luz = aclarar(self.ropa, 0.45)
+        alto = piso - tope
+        p = []
+        # tapeta con botones por el medio
+        p.append(f'<path d="M0 {n(tope + 34)} L0 {n(piso - 6)}" fill="none" stroke="{sombra}" stroke-width="5" '
+                 f'stroke-linecap="round"/>')
+        for k in range(3):
+            y = tope + 70 + k * alto * 0.24
+            p.append(f'<circle cx="0" cy="{n(y)}" r="9" fill="{luz}" stroke="{P.CONTORNO}" stroke-width="3.5"/>'
+                     f'<circle cx="-2" cy="{n(y - 2)}" r="3" fill="#ffffff" opacity="0.7"/>')
+        # bolsillo en el pecho, del lado de la luz
+        bx, by = -64, tope + 70
+        p.append(f'<path d="M{bx - 24} {n(by)} L{bx + 24} {n(by)} L{bx + 22} {n(by + 38)} Q{bx} {n(by + 46)} '
+                 f'{bx - 22} {n(by + 38)} Z" fill="{oscurecer(self.ropa, 0.12)}" {trazo(ancho=3.5)}/>'
+                 f'<path d="M{bx - 24} {n(by + 9)} L{bx + 24} {n(by + 9)}" stroke="{P.CONTORNO}" '
+                 f'stroke-width="3" opacity="0.6"/>')
+        # pliegues: en las axilas y en la cintura (lado de la sombra más marcados)
+        for s_, op in ((-1, 0.35), (1, 0.6)):
+            p.append(f'<path d="M{s_ * 70} {n(tope + 58)} Q{s_ * 52} {n(tope + 96)} {s_ * 66} {n(tope + 132)}" '
+                     f'fill="none" stroke="{sombra}" stroke-width="6" stroke-linecap="round" opacity="{op}"/>')
+            p.append(f'<path d="M{s_ * 92} {n(piso - 52)} Q{s_ * 70} {n(piso - 34)} {s_ * 82} {n(piso - 10)}" '
+                     f'fill="none" stroke="{sombra}" stroke-width="5" stroke-linecap="round" opacity="{op}"/>')
+        # cinturón (costura) abajo
+        p.append(f'<path d="M-112 {n(piso - 22)} L112 {n(piso - 22)}" stroke="{sombra}" stroke-width="7" '
+                 f'opacity="0.55"/>')
+        # brillo en el hombro de la luz
+        p.append(f'<path d="M-84 {n(tope + 22)} Q-60 {n(tope + 8)} -30 {n(tope + 10)}" fill="none" '
+                 f'stroke="{luz}" stroke-width="8" stroke-linecap="round" opacity="0.8"/>')
+        return "".join(p)
 
     def _brazo(self, lado: int, hombro_y: float, hombro: float, codo: float) -> str:
         x0 = lado * 92
@@ -317,6 +350,9 @@ class Personaje:
         for s in (-1, 1):             # orejas
             p.append(circulo(s * (R - 4), 12, 26, self.piel))
         p.append(circulo(0, 0, R, self.piel))
+        # la nariz: un toque de sombra y brillo (volumen en la cara)
+        p.append(f'<path d="M6 16 Q16 30 4 36" fill="none" stroke="{oscurecer(self.piel, 0.3)}" stroke-width="6" '
+                 f'stroke-linecap="round"/>')
         p.append(self._pelo())
         if self.cachetes:
             for s in (-1, 1):
@@ -350,27 +386,58 @@ class Personaje:
         return camino(f"M{-R + 2} -14 Q{-R + 6} {-R - 14} 0 {-R - 12} Q{R - 6} {-R - 14} "
                       f"{R - 2} -14 Q50 -64 0 -60 Q-50 -64 {-R + 2} -14 Z", c)
 
+    IRIS = "#6b4a2e"
+
     def _ojos(self, e: Estado) -> str:
+        """Ojos expresivos (2026-11-15): iris de color con pupila y dos brillos; sorprendido = más
+        grandes y la pupila chica; enojado = el párpado de arriba cae en diagonal; contento (sonrisa) =
+        el párpado de abajo sube (ojos que sonríen); triste = el párpado de arriba cae hacia afuera."""
         p = []
         cierre = max(0.0, min(1.0, e.parpadeo))
+        sorpresa = e.cejas == "arriba" and e.boca != "sonrisa"
         for s in (-1, 1):
             cx, cy = s * 42, -8
             if cierre > 0.85:   # cerrado: una rayita curva
                 p.append(camino(f"M{cx - 20} {cy} Q{cx} {cy + 10} {cx + 20} {cy}",
                                 ancho=P.TRAZO_FINO + 1))
                 continue
-            ry = 26 * (1 - cierre)
-            p.append(elipse(cx, cy, 20, ry, P.BLANCO, ancho=P.TRAZO_FINO))
-            pr = min(11, ry * 0.6)
-            p.append(circulo(cx + 6 * e.mirada, cy + 3, pr, P.CONTORNO, borde=False))
-            p.append(circulo(cx + 6 * e.mirada + 4, cy - 2, pr * 0.35, P.BLANCO, borde=False))
+            rx = 23 if sorpresa else 20
+            ry = (31 if sorpresa else 26) * (1 - cierre)
+            p.append(elipse(cx, cy, rx, ry, "#fffdf6", ancho=P.TRAZO_FINO))
+            pr = min(13 if not sorpresa else 9, ry * 0.62)
+            ix, iy = cx + 6 * e.mirada, cy + 3
+            p.append(circulo(ix, iy, pr * 1.45, self.IRIS, borde=False))
+            p.append(circulo(ix, iy, pr * 0.85, P.CONTORNO, borde=False))
+            p.append(circulo(ix + 5, iy - 5, max(2.5, pr * 0.42), "#ffffff", borde=False))
+            p.append(circulo(ix - 4, iy + 5, max(1.5, pr * 0.2), "#ffffff", borde=False))
+            # párpados (del color de la piel, con su línea): la emoción se lee en los ojos
+            if e.cejas == "enojo":
+                p.append(f'<path d="M{cx - rx - 4} {cy - ry - 4} L{cx + rx + 4} {cy - ry - 4} '
+                         f'L{cx + rx + 4} {n(cy - ry * (0.15 if s < 0 else 0.75))} '
+                         f'L{cx - rx - 4} {n(cy - ry * (0.75 if s < 0 else 0.15))} Z" fill="{self.piel}"/>'
+                         f'<path d="M{cx - rx - 2} {n(cy - ry * (0.75 if s < 0 else 0.15))} '
+                         f'L{cx + rx + 2} {n(cy - ry * (0.15 if s < 0 else 0.75))}" {trazo(ancho=P.TRAZO_FINO)}/>')
+            elif e.cejas == "triste":
+                afuera, adentro = (cx - s * rx, cx + s * rx)
+                p.append(f'<path d="M{afuera - s * 4} {cy - ry - 4} L{adentro + s * 4} {cy - ry - 4} '
+                         f'L{adentro + s * 4} {n(cy - ry * 0.7)} L{afuera - s * 4} {n(cy - ry * 0.05)} Z" fill="{self.piel}"/>'
+                         f'<path d="M{afuera} {n(cy - ry * 0.05)} L{adentro} {n(cy - ry * 0.7)}" {trazo(ancho=P.TRAZO_FINO)}/>')
+            if e.boca == "sonrisa" and e.cejas != "enojo":
+                p.append(f'<path d="M{cx - rx - 4} {cy + ry + 4} L{cx + rx + 4} {cy + ry + 4} '
+                         f'L{cx + rx + 4} {n(cy + ry * 0.3)} Q{cx} {n(cy - ry * 0.05)} {cx - rx - 4} {n(cy + ry * 0.3)} Z" '
+                         f'fill="{self.piel}"/><path d="M{cx - rx} {n(cy + ry * 0.32)} Q{cx} {n(cy - ry * 0.02)} '
+                         f'{cx + rx} {n(cy + ry * 0.32)}" fill="none" {trazo(ancho=P.TRAZO_FINO - 1)}/>')
         return "".join(p)
 
     def _cejas(self, tipo: str) -> str:
-        dy, rot = {"normal": (0, 0), "arriba": (-16, -6), "enojo": (2, 14),
-                   "triste": (-6, -16)}.get(tipo, (0, 0))
-        return "".join(g(f'<path d="M-20 0 L20 0" {trazo(ancho=11)}/>', s * 42, -50 + dy,
-                         rot=s * rot) for s in (-1, 1))
+        """Cejas con forma (gruesas en el medio, finas en las puntas) y más movimiento."""
+        # rotación positiva = horaria (y hacia abajo): en el ojo derecho baja la punta de afuera
+        dy, rot = {"normal": (0, 0), "arriba": (-22, 0), "enojo": (6, -18),
+                   "triste": (-8, 18)}.get(tipo, (0, 0))
+        ceja = (f'<path d="M-24 3 Q0 -13 24 3 Q0 -3 -24 3 Z" fill="{self.pelo}" '
+                f'stroke="{P.CONTORNO}" stroke-width="5" stroke-linejoin="round"/>')
+        return "".join(g(g(ceja, escala=1, escala_y=1) if s > 0 else g(ceja, escala=-1, escala_y=1),
+                         s * 42, -50 + dy, rot=s * rot) for s in (-1, 1))
 
     def _anteojos(self) -> str:
         return (f'<g fill="none" {trazo(ancho=P.TRAZO_FINO + 1)}>'
@@ -387,10 +454,14 @@ class Personaje:
                   "o": (16 + 6 * ap, 10 + 24 * ap)}.get(e.boca, (30, 8 + 26 * ap))
         cy = y + ry * 0.35
         interior = elipse(0, cy, rx, ry, "#5a1e2a", ancho=P.TRAZO_FINO + 1)
-        lengua = ""
+        lengua = dientes = ""
         if ry > 16:
             lengua = elipse(0, cy + ry * 0.5, rx * 0.55, ry * 0.35, "#ff7a8a", borde=False)
-        return interior + lengua
+        if ry > 12 and rx > 22:   # la fila de dientes de arriba
+            dientes = (f'<path d="M{n(-rx * 0.62)} {n(cy - ry * 0.72)} Q0 {n(cy - ry * 1.02)} {n(rx * 0.62)} '
+                       f'{n(cy - ry * 0.72)} L{n(rx * 0.55)} {n(cy - ry * 0.45)} Q0 {n(cy - ry * 0.62)} '
+                       f'{n(-rx * 0.55)} {n(cy - ry * 0.45)} Z" fill="#ffffff"/>')
+        return interior + lengua + dientes
 
     def _sombrero(self) -> str:
         R = self.R_CABEZA

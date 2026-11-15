@@ -172,7 +172,7 @@ def test_boca_del_que_habla_sigue_el_audio(tmp_path):
     abiertos = [i for i in range(30) if v.envolvente[i] > 0.5]
     assert abiertos
     callado = per.personaje("narrador").svg(per.Estado())
-    assert "#5a1e2a" in v.cuadro(abiertos[0]).a.frente   # interior de la boca abierta
+    assert "5a1e2a" in v.cuadro(abiertos[0]).a.frente    # interior de la boca abierta (con volumen: url(#v5a1e2a))
     assert callado
 
 

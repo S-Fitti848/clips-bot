@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import functools
 import os
+import re
 from pathlib import Path
 from xml.sax.saxutils import escape
 
@@ -43,42 +44,115 @@ def trazo(color: str = P.CONTORNO, ancho: float = P.TRAZO) -> str:
             f'stroke-linecap="round"')
 
 
+# ---- volumen (Santi, 2026-11-15: "dibujos con volumen: sombras y luces suaves, contornos con grosor
+# variable") -------------------------------------------------------------------------------------------
+# Toda forma CON contorno (personajes, muebles, objetos) se pinta con un degradé radial de su color: más
+# clara arriba a la izquierda (de donde viene la luz de la ventana), el color en el medio y más oscura y
+# un poco violeta abajo a la derecha. Abajo de la forma va una copia del contorno corrida hacia abajo a la
+# derecha: el borde sale fino del lado de la luz y grueso del de la sombra. Las formas SIN contorno
+# (brillos, sombras, cachetes) quedan planas. Todo en este archivo: con P.VOLUMEN = False vuelve lo plano.
+_HEX6 = re.compile(r"#[0-9a-fA-F]{6}$")
+_URL_VOL = re.compile(r"url\(#v([0-9a-f]{6})\)")
+
+
+def _rgb(c: str) -> tuple[int, int, int]:
+    return int(c[1:3], 16), int(c[3:5], 16), int(c[5:7], 16)
+
+
+def mezcla(a: str, b: str, t: float) -> str:
+    """El color `a` corrido una fracción `t` hacia `b` (los dos #rrggbb)."""
+    ra, rb = _rgb(a), _rgb(b)
+    return "#" + "".join(f"{max(0, min(255, round(x + (y - x) * t))):02x}" for x, y in zip(ra, rb))
+
+
+def aclarar(c: str, t: float = 0.3) -> str:
+    return mezcla(c, P.LUZ, t)
+
+
+def oscurecer(c: str, t: float = 0.3) -> str:
+    return mezcla(mezcla(c, "#000000", t), P.SOMBRA_TINTE, 0.18)
+
+
+def _vol(relleno: str) -> str:
+    if P.VOLUMEN and isinstance(relleno, str) and _HEX6.match(relleno) and relleno.lower() != P.CONTORNO:
+        return f"url(#v{relleno[1:].lower()})"
+    return relleno
+
+
+def _base(etiqueta: str, attrs: str, relleno: str, borde: bool, ancho: float) -> str:
+    """La forma (con contorno: con volumen y el contorno variable abajo)."""
+    if not borde:
+        return f'<{etiqueta} {attrs} fill="{relleno}" stroke="none"/>'
+    forma = f'<{etiqueta} {attrs} fill="{_vol(relleno)}" {trazo(ancho=ancho)}/>'
+    if not P.VOLUMEN or relleno == "none":
+        return forma
+    dx, dy = n(ancho * P.CONTORNO_CORRIDO[0]), n(ancho * P.CONTORNO_CORRIDO[1])
+    return (f'<{etiqueta} {attrs} fill="{P.CONTORNO}" {trazo(ancho=ancho)} '
+            f'transform="translate({dx} {dy})"/>' + forma)
+
+
 def circulo(cx, cy, r, relleno, borde=True, ancho=P.TRAZO) -> str:
-    b = trazo(ancho=ancho) if borde else 'stroke="none"'
-    return f'<circle cx="{n(cx)}" cy="{n(cy)}" r="{n(r)}" fill="{relleno}" {b}/>'
+    return _base("circle", f'cx="{n(cx)}" cy="{n(cy)}" r="{n(r)}"', relleno, borde, ancho)
 
 
 def elipse(cx, cy, rx, ry, relleno, borde=True, ancho=P.TRAZO) -> str:
-    b = trazo(ancho=ancho) if borde else 'stroke="none"'
-    return (f'<ellipse cx="{n(cx)}" cy="{n(cy)}" rx="{n(rx)}" ry="{n(ry)}" fill="{relleno}" '
-            f'{b}/>')
+    return _base("ellipse", f'cx="{n(cx)}" cy="{n(cy)}" rx="{n(rx)}" ry="{n(ry)}"', relleno, borde, ancho)
 
 
 def rect(x, y, w, h, relleno, r=0, borde=True, ancho=P.TRAZO) -> str:
-    b = trazo(ancho=ancho) if borde else 'stroke="none"'
     rr = f' rx="{n(r)}"' if r else ""
-    return (f'<rect x="{n(x)}" y="{n(y)}" width="{n(w)}" height="{n(h)}"{rr} fill="{relleno}" '
-            f'{b}/>')
+    return _base("rect", f'x="{n(x)}" y="{n(y)}" width="{n(w)}" height="{n(h)}"{rr}', relleno, borde, ancho)
 
 
 def camino(d: str, relleno: str = "none", borde=True, ancho=P.TRAZO, color=P.CONTORNO) -> str:
-    b = trazo(color, ancho) if borde else 'stroke="none"'
-    return f'<path d="{d}" fill="{relleno}" {b}/>'
+    if not borde:
+        return f'<path d="{d}" fill="{relleno}" stroke="none"/>'
+    if color != P.CONTORNO:     # un trazo de color (no es un contorno): plano
+        return f'<path d="{d}" fill="{relleno}" {trazo(color, ancho)}/>'
+    return _base("path", f'd="{d}"', relleno, borde, ancho)
 
 
 def linea_gruesa(puntos: list[tuple[float, float]], color: str, ancho: float) -> str:
     """Una línea gruesa con contorno: primero el trazo oscuro más ancho, después el color.
-    Así se dibujan los brazos (se doblan sin tener que calcular el contorno del polígono)."""
+    Así se dibujan los brazos (se doblan sin tener que calcular el contorno del polígono).
+    Con volumen: el contorno corrido abajo a la derecha, y adentro una franja de sombra de un lado y
+    un brillo del otro (el brazo se ve redondo)."""
     d = "M" + " L".join(f"{n(x)} {n(y)}" for x, y in puntos)
-    return (f'<path d="{d}" fill="none" {trazo(P.CONTORNO, ancho + 2 * P.TRAZO)}/>'
+    base = (f'<path d="{d}" fill="none" {trazo(P.CONTORNO, ancho + 2 * P.TRAZO)}/>'
             f'<path d="{d}" fill="none" {trazo(color, ancho)}/>')
+    if not P.VOLUMEN or not _HEX6.match(str(color)):
+        return base
+    k = P.TRAZO
+    sombra = (f'<path d="{d}" fill="none" {trazo(P.CONTORNO, ancho + 2 * k)} '
+              f'transform="translate({n(k * P.CONTORNO_CORRIDO[0])} {n(k * P.CONTORNO_CORRIDO[1])})"/>')
+    franjas = (f'<path d="{d}" fill="none" {trazo(oscurecer(color, 0.22), ancho * 0.42)} '
+               f'transform="translate({n(ancho * 0.2)} {n(ancho * 0.12)})"/>'
+               f'<path d="{d}" fill="none" {trazo(aclarar(color, 0.35), ancho * 0.2)} '
+               f'transform="translate({n(-ancho * 0.22)} {n(-ancho * 0.1)})"/>')
+    return sombra + base + franjas
+
+
+def defs_volumen(contenido: str) -> str:
+    """Los degradés de las formas con volumen que usa `contenido` (uno por color)."""
+    usados = sorted(set(_URL_VOL.findall(contenido)))
+    if not usados:
+        return ""
+    partes = []
+    for h in usados:
+        c = "#" + h
+        partes.append(
+            f'<radialGradient id="v{h}" cx="0.36" cy="0.3" r="0.82" fx="0.3" fy="0.22">'
+            f'<stop offset="0" stop-color="{aclarar(c, 0.32)}"/>'
+            f'<stop offset="0.5" stop-color="{c}"/>'
+            f'<stop offset="1" stop-color="{oscurecer(c, 0.24)}"/></radialGradient>')
+    return "<defs>" + "".join(partes) + "</defs>"
 
 
 def documento(contenido: str, ancho: int = P.ANCHO, alto: int = P.ALTO,
               fondo: str | None = None) -> str:
     bg = f'<rect width="{ancho}" height="{alto}" fill="{fondo}"/>' if fondo else ""
     return (f'<svg xmlns="http://www.w3.org/2000/svg" width="{ancho}" height="{alto}" '
-            f'viewBox="0 0 {ancho} {alto}">{bg}{contenido}</svg>')
+            f'viewBox="0 0 {ancho} {alto}">{defs_volumen(contenido)}{bg}{contenido}</svg>')
 
 
 # ---- fuente -----------------------------------------------------------------

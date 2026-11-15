@@ -4,8 +4,15 @@ ANCHO, ALTO, FPS = 1080, 1920, 30
 
 # Trazo
 CONTORNO = "#1f1a24"        # casi negro, un poco violeta: más "dibujo" que el negro puro
-TRAZO = 9                   # grosor del contorno en px a escala 1
+TRAZO = 8                   # grosor del contorno en px a escala 1 (con el corrido, ~8 de un lado y ~12 del otro)
 TRAZO_FINO = 5
+
+# Volumen (Santi, 2026-11-15): degradé con la luz arriba a la izquierda y el contorno más grueso del lado
+# de la sombra (svg.py). LUZ y SOMBRA_TINTE: hacia dónde se corren los colores al aclarar y oscurecer.
+VOLUMEN = True
+CONTORNO_CORRIDO = (0.42, 0.55)    # cuánto (en anchos de trazo) se corre la copia del contorno
+LUZ = "#fff3dc"                    # luz cálida de ventana
+SOMBRA_TINTE = "#3b2350"           # las sombras tiran a violeta, no a gris
 
 # Piel / pelo
 PIEL = ["#f6c9a0", "#e0a47a", "#b97a52", "#7d4f33"]

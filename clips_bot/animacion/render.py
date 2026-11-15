@@ -153,13 +153,14 @@ def crear(nombre: str = "auto") -> Rasterizador:
 
 # ---- composición de un cuadro (corre en los procesos) -----------------------------
 
-_W = {"r": None, "w": 0, "h": 0, "fondos": {}, "cache_fondo": True}
+_W = {"r": None, "w": 0, "h": 0, "fondos": {}, "grades": {}, "cache_fondo": True}
 
 
 def _iniciar(nombre: str, w: int, h: int, cache_fondo: bool):
     _W["r"] = crear(nombre)
     _W["w"], _W["h"] = w, h
     _W["fondos"] = {}
+    _W["grades"] = {}
     _W["cache_fondo"] = cache_fondo
 
 
@@ -180,6 +181,30 @@ def _fondo(fondo: tuple):
     if img is None:
         img = _W["r"].rgba(_doc(_svg_fondo(fondo)), _W["w"], _W["h"])
         _W["fondos"][fondo] = img
+    return img
+
+
+def _grade(fondo: tuple) -> str:
+    """El tinte y la viñeta del lugar (escenas.grade), encima de la escena y debajo de los subtítulos."""
+    if not P.VOLUMEN:
+        return ""
+    return esc.grade(fondo[0] if fondo[0] != "color" else "")
+
+
+def _grade_img(fondo: tuple):
+    """El mismo tinte y viñeta, rasterizado UNA vez por lugar (como SVG costaba ~30 % de cada cuadro)."""
+    if not P.VOLUMEN:
+        return None
+    clave = fondo[0]
+    img = _W["grades"].get(clave)
+    if img is None:
+        r = _W["r"]
+        if getattr(r, "nativo", False):
+            img = r.superficie(_W["w"], _W["h"])
+            r.dibujar_en(_doc(_grade(fondo)), img)
+        else:
+            img = r.rgba(_doc(_grade(fondo)), _W["w"], _W["h"])
+        _W["grades"][clave] = img
     return img
 
 
@@ -216,7 +241,7 @@ def _capa(capa: CapaEscena, encima: str = ""):
     w, h = _W["w"], _W["h"]
     if not _W["cache_fondo"]:   # todo junto en un solo SVG (para comparar)
         cuerpo = (_svg_camara(_svg_fondo(capa.fondo) + capa.frente, capa.camara) + capa.fijo
-                  + encima)
+                  + _grade(capa.fondo) + encima)
         return _W["r"].rgba(_doc(cuerpo), w, h)
     base = _fondo(capa.fondo)
     if capa.camara != (1.0, 0.0, 0.0, 0.0):
@@ -224,9 +249,14 @@ def _capa(capa: CapaEscena, encima: str = ""):
                               resample=Image.BILINEAR)
     else:
         base = base.copy()
-    cuerpo = _svg_camara(capa.frente, capa.camara) + capa.fijo + encima
+    cuerpo = _svg_camara(capa.frente, capa.camara) + capa.fijo
     if cuerpo:
         base.alpha_composite(_W["r"].rgba(_doc(cuerpo), w, h))
+    gr = _grade_img(capa.fondo)
+    if gr is not None:
+        base.alpha_composite(gr)
+    if encima:
+        base.alpha_composite(_W["r"].rgba(_doc(encima), w, h))
     return base
 
 
@@ -248,6 +278,20 @@ def _transicion(sale, entra, tipo: str, u: float):
         if u < 0.5:
             return _zoom(sale, 1 + 0.8 * suave(u / 0.5))
         return _zoom(entra, 1.8 - 0.8 * salida((u - 0.5) / 0.5))
+    if tipo == "iris":   # (2026-11-15, "transiciones con estilo") un círculo que se abre desde el centro
+        w, h = sale.size
+        r = salida(u) * (w * w + h * h) ** 0.5 / 2
+        mascara = Image.new("L", (w, h), 0)
+        caja = [w / 2 - r, h / 2 - r, w / 2 + r, h / 2 + r]
+        ImageDraw.Draw(mascara).ellipse(caja, fill=255)
+        out = sale.copy()
+        out.paste(entra, (0, 0), mascara)
+        anillo = max(6, w // 70)
+        dib = ImageDraw.Draw(out)
+        dib.ellipse([caja[0] - anillo, caja[1] - anillo, caja[2] + anillo, caja[3] + anillo],
+                    outline=P.CONTORNO, width=anillo * 2)
+        dib.ellipse(caja, outline=P.AMARILLO, width=anillo)
+        return out
     if tipo == "barrido":   # empuja de derecha a izquierda, con una franja de color en el borde
         w, h = sale.size
         x = int(round(w * (1 - salida(u))))
@@ -289,7 +333,7 @@ def _capa_cairo(capa: CapaEscena, encima: str = ""):
     sup = r.superficie(w, h)
     if not _W["cache_fondo"]:
         cuerpo = (_svg_camara(_svg_fondo(capa.fondo) + capa.frente, capa.camara) + capa.fijo
-                  + encima)
+                  + _grade(capa.fondo) + encima)
         r.dibujar_en(_doc(cuerpo), sup)
         return sup
     ctx = r._cairo.Context(sup)
@@ -298,9 +342,16 @@ def _capa_cairo(capa: CapaEscena, encima: str = ""):
     ctx.set_source_surface(_fondo_cairo(capa.fondo), 0, 0)
     ctx.get_source().set_filter(r._cairo.FILTER_BILINEAR)
     ctx.paint()
-    cuerpo = _svg_camara(capa.frente, capa.camara) + capa.fijo + encima
+    cuerpo = _svg_camara(capa.frente, capa.camara) + capa.fijo
     if cuerpo:
         r.dibujar_en(_doc(cuerpo), sup)
+    gr = _grade_img(capa.fondo)
+    if gr is not None:
+        ctx2 = r._cairo.Context(sup)
+        ctx2.set_source_surface(gr, 0, 0)
+        ctx2.paint()
+    if encima:
+        r.dibujar_en(_doc(encima), sup)
     return sup
 
 
@@ -325,6 +376,28 @@ def _transicion_cairo(sale, entra, tipo: str, u: float):
         ctx.set_source_surface(img, 0, 0)
         ctx.get_source().set_filter(cairo.FILTER_BILINEAR)
         ctx.paint()
+        return out
+    if tipo == "iris":
+        import math as _m
+
+        r = salida(u) * _m.hypot(w, h) / 2
+        ctx.set_source_surface(sale, 0, 0)
+        ctx.paint()
+        ctx.save()
+        ctx.arc(w / 2, h / 2, max(0.1, r), 0, 2 * _m.pi)
+        ctx.clip()
+        ctx.set_source_surface(entra, 0, 0)
+        ctx.paint()
+        ctx.restore()
+        anillo = max(6, w // 70)
+        ctx.arc(w / 2, h / 2, max(0.1, r + anillo / 2), 0, 2 * _m.pi)
+        ctx.set_source_rgb(0x1f / 255, 0x1a / 255, 0x24 / 255)
+        ctx.set_line_width(anillo * 2)
+        ctx.stroke()
+        ctx.arc(w / 2, h / 2, max(0.1, r + anillo / 2), 0, 2 * _m.pi)
+        ctx.set_source_rgb(1.0, 0.82, 0.25)
+        ctx.set_line_width(anillo)
+        ctx.stroke()
         return out
     if tipo == "barrido":
         x = int(round(w * (1 - salida(u))))
