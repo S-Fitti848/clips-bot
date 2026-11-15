@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-11-15 | **Versión:** v1.04.0 (desplegado) | **Modo:** Fase 2: corriendo solo en la Pi. **Rots APAGADO.** Pequeña Historia (3 por día, madrugada desde las 04:00) y **Así Nació** (1 por día, arma 07:00, publica 19:00 en YouTube y Facebook con ❌ Cancelar), todo al privado de Santi
+**Snapshot:** 2026-11-15 | **Versión:** v1.05.0 (desplegado) | **Modo:** Fase 2: corriendo solo en la Pi. **Rots APAGADO.** Pequeña Historia (3 por día, madrugada desde las 04:00) y **Así Nació** (1 por día, arma 07:00, publica 19:00 en YouTube y Facebook con ❌ Cancelar), todo al privado de Santi
 
 > **SI ESTÁS EMPEZANDO UNA SESIÓN NUEVA, LEÉ §10.** Ahí está qué está hecho, qué quedó a medias,
 > qué falta, y las trampas que ya nos mordieron.
@@ -172,6 +172,22 @@ servicio systemd separado: `clips-bot`).
   marca el guion: nombres, números, el giro o el chiste; ≤ 2 por frase) más grandes y amarillas, rojas y
   temblando cerca de un golpe o en el remate; un emoji dibujado (💥💰😱🤣) como mucho cada 4,5 s, al lado
   de una clave; en la franja de arriba (y 168-294) sin tapar personajes ni acción.
+- **Así Nació: estilo visual (Santi, 2026-11-15; regla para TODOS los videos, motor actual;
+  `tests/test_visual_asinacio.py`):** (a) volumen: toda forma con contorno lleva un degradé radial con la
+  luz arriba a la izquierda y la sombra violeta abajo a la derecha, y el contorno es más grueso del lado de
+  la sombra (`svg.py`, `P.VOLUMEN`); brazos y piernas con franja de sombra y brillo; ropa con botones,
+  bolsillo, pliegues y costura; ojos con iris, dos brillos y párpados según la emoción, cejas con forma,
+  dientes; sombra de contacto en el piso (se achica al saltar). (b) escenarios: textura de pared
+  (empapelado, ladrillo, azulejo) y de piso (madera), haz de luz de la ventana, sombra donde la pared toca
+  el piso y debajo de los muebles, bruma arriba (`escenas.ambiente`, en el fondo cacheado: gratis) y un
+  objeto en primer plano en una esquina de abajo con parallax en una de cada dos escenas. (c) color: tinte
+  cálido y viñeta por lugar sobre todo menos los subtítulos (`escenas.grade`, rasterizado una vez por
+  lugar). (d) cámara: zoom suave siempre, temblor con giro en los golpes, y en los momentos fuertes (gancho,
+  giro, final, cara de sorpresa o enojo, cadena) un PRIMER PLANO de la cara del primer personaje ×1,9
+  durante 0,8 s después del último golpe (sin temblor encima). (e) efectos: polvo en cada golpe o rotura
+  (además de los pedazos), líneas de movimiento detrás de lo que vuela (alineadas, solo a velocidad), 4
+  destellos con un "ding" en el remate (en anillo alrededor de la cara, nunca encima) y transición "iris"
+  hacia el giro y el final.
 - **Videos largos: NO por ahora (decisión de Santi, 2026-09-28).** No quiere videos largos con voz
   de IA. Si más adelante se hacen, van con SU voz grabada, no con Gemini TTS ni Piper.
 - **Sin música agregada en los clips.** Cualquier música es riesgo de Content ID. Si el clip trae
@@ -969,6 +985,29 @@ Problemas abiertos:
 
 ## 9. CHANGELOG
 
+- v1.05.0 (2026-11-15, madrugada) — Tres pedidos de Santi. (1) **Pequeña Historia: `efemerides.estilo_nuevo`
+  PRENDIDO** ("ya apruebo el estilo nuevo, con el feedback de La Pola"); `sin_aprobar` sigue apagado. (2)
+  **Costo de Claude en las fotos.** Medido el 14/11: US$ 2,57 en total, pero la producción (la madrugada,
+  04:00-04:20 AR) fue ~US$ 0,65; el resto (~US$ 1,92) fueron rehechos a mano de La Pola y Túpac Katari y las
+  pruebas de Así Nació. Cada pedido de fotos a Sonnet costaba ~US$ 0,09 (15-21 mil tokens de entrada y 4-7
+  mil de salida: ~50 fotos + hasta 4 videos × 3 cuadros por frase de acción, y un `tipo` por cada foto).
+  Ahora (`efemerides.prefiltrar_fotos`): Haiku describe cada foto UNA vez (guardada por huella en
+  `data/cache_claude/fotos/`: la segunda búsqueda y los rehechos no la vuelven a pagar) y, solo con texto,
+  ordena; Sonnet mira las 3 mejores por frase (la frase 1, 4) y los 2 mejores videos por frase; si Haiku
+  falla, Sonnet mira todo como antes. Las imágenes ya iban a 384 px (menos que los 512 que sugirió Santi).
+  Además, un pedido CON imágenes idéntico a uno anterior sale de la caché (`data/cache_claude/`, 30 días).
+  Primer dato real (15/11, tecnología, todavía sin el recorte de videos): Sonnet miró 19 de 33 y 18 de 43
+  fotos; pedidos de US$ 0,097 y 0,046 (Haiku: US$ 0,003 cada uno). (3) **Informe diario del costo**
+  (`_costo_claude_tick`, desde las 09:00, el de ayer; `gemini_uso.origen`): Producción (los ticks de la
+  escucha, `diario` y `efemeride-diaria`), A mano por Telegram (comandos y botones) y Pruebas (scripts y
+  CLI). Arreglado de paso: lo que pasaba por `ConRespaldo` se anotaba como "claude.json". (4) **Así Nació:
+  estilo visual nuevo** (regla en §1; `tests/test_visual_asinacio.py`). Nerf rehecho con el mismo guion, voz y
+  tiempos del 14/11 (en la Pi: `~/remotion_prueba/nerf/nerf_visual_v2.mp4`, mandado a Santi). **Render en la
+  Pi: 512 s contra 134 s del motor de ayer (+378 s, ~3,8×), pico 84,2 °C (antes 83,7)**, 1 proceso,
+  arrancando a 65 °C. Medido por partes en la Pi (ms por cuadro): plano 310, todo 565; los degradés
+  ~120, el contorno doble ~65, el resto (detalles, efectos, la segunda llamada de los subtítulos) ~70. Las
+  formas chicas (< 34 px) quedan planas (bajó de 544 a 512 s); el tinte y la viñeta se rasterizan una vez
+  por lugar (como SVG costaban ~30 % de cada cuadro). 1434 tests OK.
 - v1.04.0 (2026-11-14, noche) — Así Nació dibuja con **1 proceso de cairosvg** (`animacion.procesos: 1`,
   antes 2; pedido de Santi: "dejalo si tarda casi lo mismo"). Medido en la Pi con el demo de 35 s
   (x264 con 3 hilos, arrancando debajo de 62 °C): 2 procesos 157 s y pico 84,2 °C, 1 proceso **134 s**
@@ -2501,13 +2540,13 @@ clips" queda sin uso mientras Rots siga apagado.
 | Así Nació | `animacion.activo / subir / facebook: true`, `hora: 07:00`, `hora_publicacion: 19:00`, motor actual (SVG → cairosvg); reglas permanentes de v0.96.0 a v0.98.0 (acción, gancho en cadena, Tito con pausa en gris, viaje en el tiempo en sepia, composición verificada, revisión visual, ritmo 32-38 s con voz ×1,065, subtítulos arriba) |
 | Claude | Sonnet elige, puntúa, escribe guiones, revisa el final, elige fotos y revisa los cuadros de Así Nació; Haiku clasifica y chequea; Gemini SOLO voces y audio (y de respaldo) |
 | subidas | YouTube: Pequeña Historia, Así Nació (y Rots, apagado); Facebook: página de Pequeña Historia y página de Así Nació. La app de Meta (clips-bot) estaba en modo desarrollo en octubre: si sigue así, el público no ve los Reels (pasarla a Live es de Santi) |
-| apagado | Rots; `efemerides.sin_aprobar` y `efemerides.estilo_nuevo` (esperan el OK de Santi); ElevenLabs (sin clave ni voz); multi-POV; prueba manual vs API; portadas con IA |
+| apagado | Rots; `efemerides.sin_aprobar` (espera el OK de Santi; `estilo_nuevo` PRENDIDO el 15/11); ElevenLabs (sin clave ni voz); multi-POV; prueba manual vs API; portadas con IA |
 
 ### Estado real de la Pi (verificado el 2026-11-15, 03:20)
 
 | | |
 |---|---|
-| commit | v1.04.0, desplegado (Así Nació con 1 proceso de dibujo: 134 s contra 157 con 2). Subtítulos virales de Así Nació PRENDIDOS (`animacion.subtitulos_virales: true`, aprobados el 14/11). |
+| commit | v1.05.0, desplegado (estilo visual nuevo de Así Nació, primer filtro de fotos con Haiku, informe de costo por origen, `estilo_nuevo` de Pequeña Historia prendido). Así Nació con 1 proceso de dibujo. Subtítulos virales de Así Nació PRENDIDOS (`animacion.subtitulos_virales: true`, aprobados el 14/11). |
 | ventilador | Fan SHIM (GPIO 18) controlado por `ventilador.service` de usuario (55/48 °C, siempre en renders); x264 con 3 hilos; pausa para enfriar entre renders (65 °C, máx. 10 min) |
 | timers y escucha | `clips-bot.timer`, `clips-bot-efemeride.timer`, `clips-bot-telegram` activos |
 | Así Nació | `animacion_dia` = 2026-11-14 (marcado a mano): el primer video real sale el **15/11** (arma 07:00, publica 19:00) |
@@ -2560,6 +2599,11 @@ clips" queda sin uso mientras Rots siga apagado.
 
 ### Esperando respuesta de Santi (NO programar sin su OK)
 
+- **Así Nació, estilo visual nuevo (15/11):** el render en la Pi pasó de 134 a 512 s por video (pico 84 °C,
+  igual que antes). Si Santi lo quiere más rápido: sacar los degradés de los personajes (−~120 ms por
+  cuadro) o el contorno doble (−~65 ms). Medir el costo real de las fotos con el informe diario (el
+  primero llega el 16/11 a las 09:00) y confirmar la estimación de ahorro.
+
 - **Calor:** Santi va a comprar **disipadores para el chip** (debajo del Fan SHIM). **Cuando avise que los
   puso, medir de nuevo** con el mismo render de prueba del 14/11 (antes: ffmpeg pico 86,2 °C, 1.434 MHz de
   media, frenada 17 %; animación pico 86,2 °C, frenada 33 %) y comparar. Otra opción si no alcanza:
@@ -2575,8 +2619,7 @@ clips" queda sin uso mientras Rots siga apagado.
   `hamburguesa`, `auto`, `consola` y el fondo del globo en el estilo nuevo.
 - **Banner de Así Nació:** opción 1 o 2 del taller sin portal (`output/canales/banners_taller/asinacio_v3_*`).
   **Banner y perfil de Pequeña Historia:** opción 1 o 2 (`output/canales/banners_yt/`, `output/canales/ph/`).
-- **Pequeña Historia:** prender `efemerides.estilo_nuevo` (Santi dio feedback y pidió combinarlo en
-  "el estilo final", pero no dijo "prendelo") y `efemerides.sin_aprobar`.
+- **Pequeña Historia:** `efemerides.sin_aprobar` (sigue apagado; `estilo_nuevo` lo prendió Santi el 15/11).
 - **Mezcla 2 tecnología + 1 Latinoamérica en YouTube:** la propuesta llega sola si los datos lo
   justifican; cambiarla recién con su OK.
 - **Retención y alcance** (`docs/diseno-retencion-alcance.md`): Instagram (volver a autorizar con el
