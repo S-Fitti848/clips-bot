@@ -625,10 +625,10 @@ animacion:
   reintento_hasta: "22:00"
   facebook: true             # el Reel en la página de Facebook de Así Nació (conectada el 2026-11-14)
   subtitulos_virales: true   # subtítulos estilo Shorts virales (aprobados por Santi el 2026-11-14)
-  # La voz de Tito con ElevenLabs (Santi, 2026-11-15). Vacía = la de siempre (Gemini) hasta que Santi elija una
-  # de las 3 muestras; si ElevenLabs falla o se queda sin créditos, también la de siempre.
-  elevenlabs_voz: ""
-  elevenlabs_nombre: ""
+  # La voz de Tito con ElevenLabs: Abuelo Charlie (elegida por Santi el 2026-11-15, la muestra 1), fija para todos
+  # los videos. Si ElevenLabs falla o se queda sin créditos, la de siempre (Gemini).
+  elevenlabs_voz: "Yb8JGzcZyW5YYzenhRCm"
+  elevenlabs_nombre: "Abuelo Charlie"
   elevenlabs_modelo: eleven_v4
   elevenlabs_estabilidad: 0.4
   hora: "07:00"              # AR: desde cuándo la escucha arma el del día

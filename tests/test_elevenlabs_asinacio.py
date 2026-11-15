@@ -212,3 +212,15 @@ def test_costos_muestra_los_creditos_del_mes(tmp_path):
     txt = elevenlabs.texto_creditos(conn, mes, _sub(1025))
     assert "1.025 de 40.000 créditos (3%)" in txt.replace(" %", "%")
     assert "voces (produccion): 2 pedidos, 1.000 créditos" in txt and "efectos (a_mano): 1 pedidos, 25" in txt
+
+
+# ---- duración: primero la velocidad, después reescribir ------------------------------------------------
+
+def test_ajuste_de_velocidad_antes_de_reescribir():
+    from clips_bot.animacion import marcas
+
+    assert marcas.ajuste_velocidad(35.0) is None                      # adentro: nada
+    assert marcas.ajuste_velocidad(39.5) == pytest.approx(39.5 / 37.5)  # 5 % más rápido: alcanza
+    assert marcas.ajuste_velocidad(30.5) == pytest.approx(30.5 / 32.5)  # 6 % más lento: alcanza
+    assert marcas.ajuste_velocidad(42.0) is None                      # haría falta 12 %: se reescribe
+    assert marcas.ajuste_velocidad(29.0) is None

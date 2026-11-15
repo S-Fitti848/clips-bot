@@ -74,10 +74,23 @@ DIAS_SIN_REPETIR_MARCA = 7
 PALABRAS_MIN, PALABRAS_MAX = 68, 98      # frases + locutor: con la voz ×1,065 y pausas cortas, 32-38 s
 FRASES_MIN, FRASES_MAX = 7, 12
 GANCHO_MAX_PALABRAS = 8                   # el gancho dura menos de 3 s
-MAX_S = 38.0            # Santi (2026-11-14): 32-38 s; fuera de eso se REESCRIBE el guion (nunca más aceleración)
+MAX_S = 38.0            # Santi (2026-11-14): 32-38 s; fuera de eso, ±8 % de velocidad y si no alcanza se reescribe
 MIN_S = 32.0
 VELOCIDAD_VOZ = 1.065   # atempo (sin cambiar el tono): ×1,13 quedó "un pelín rápido" (Santi, 2026-11-14)
 PAUSA_MAX_S = 0.22      # el silencio entre frases, como mucho
+AJUSTE_VEL_MAX = 0.08   # Santi (2026-11-15): fuera de 32-38 s, primero la velocidad del audio que ya está (±8 %,
+                        # sin cambiar el tono); recién si no alcanza se reescribe el guion y se paga otra voz
+
+
+def ajuste_velocidad(fin: float, minimo: float = MIN_S, maximo: float = MAX_S,
+                     tope: float = AJUSTE_VEL_MAX) -> float | None:
+    """El atempo que lleva una voz de `fin` s adentro del rango (con medio segundo de margen); None si ya está
+    adentro o si haría falta más de ±`tope` (ahí se reescribe)."""
+    if minimo <= fin <= maximo:
+        return None
+    objetivo = (maximo - 0.5) if fin > maximo else (minimo + 0.5)
+    factor = fin / objetivo
+    return factor if abs(factor - 1) <= tope else None
 
 # Nunca humor sobre tragedias, muertes, accidentes ni temas sensibles (Santi). El modelo lo marca al
 # elegir y, además, el guion no puede nombrarlos.
@@ -1982,6 +1995,12 @@ def armar_video(conn, settings, carpeta: Path, cliente=None, wiki=None, hoy: dat
         narrar.sacar_silencio_inicial(wav)
         fin = narrar.duracion_wav(wav)
         avisar(f"voz: {fin:.1f} s (×{VELOCIDAD_VOZ}, {sacado:.1f} s de pausas menos)")
+        ajuste = ajuste_velocidad(fin)
+        if ajuste:
+            # primero la velocidad del audio que ya está (no se paga otra voz)
+            ef.acelerar(wav, ajuste)
+            antes, fin = fin, narrar.duracion_wav(wav)
+            avisar(f"voz: {antes:.1f} s → {fin:.1f} s ajustando la velocidad ×{ajuste:.3f} (sin reescribir)")
         if MIN_S <= fin <= MAX_S or intento == 2 or not reescribir:
             break
         # fuera de 32-38 s: se reescribe el guion (más corto o más largo), nunca se acelera más
