@@ -731,11 +731,31 @@ def contexto_de(c: Candidato) -> str:
             f"Hoy se conmemora: {k.get('conmemora') or 'nada en particular'}.\n")
 
 
-def local_de(c: Candidato) -> dict:
+def local_de(c: Candidato, aviso: str = "") -> dict:
     k = c.clasif
-    return {"lugar": k.get("lugar"), "region": k.get("region"), "pais": k.get("pais"),
-            "tipo": k.get("tipo"), "conmemora": k.get("conmemora"), "seccion": c.seccion,
-            "puntaje": k.get("puntaje"), "puntajes": k.get("puntajes")}
+    out = {"lugar": k.get("lugar"), "region": k.get("region"), "pais": k.get("pais"),
+           "tipo": k.get("tipo"), "conmemora": k.get("conmemora"), "seccion": c.seccion,
+           "puntaje": k.get("puntaje"), "puntajes": k.get("puntajes")}
+    if k.get("banco_id"):
+        out["banco_id"] = k["banco_id"]
+    if aviso:
+        out["aviso"] = aviso
+    return out
+
+
+PISO_ABSOLUTO = 6.0   # Santi, 2026-11-15: la mejor del día sale si tiene 6 o más; debajo, el banco
+
+
+def de_banco(banco: list[dict] | None, excluir: set | None = None) -> list[tuple[Candidato, str, str]]:
+    """Las historias del banco de reserva como candidatos elegidos (mejor puntaje primero)."""
+    out = []
+    for it in sorted(banco or [], key=lambda x: -float(x.get("puntaje") or 0)):
+        if it.get("texto") in (excluir or set()) or it.get("articulo") in (excluir or set()):
+            continue
+        clasif = dict(it.get("clasif") or {}, banco_id=it.get("id"), puntaje=it.get("puntaje"), conmemora="")
+        c = Candidato("banco", int(it["anio"]), it["texto"], list(it["paginas"]), clasif)
+        out.append((c, it.get("articulo") or c.paginas[0], it.get("articulo_lugar") or ""))
+    return out
 
 
 def proponer(wiki: ef.Wiki, sonnet, haiku, gemini, dia: date, carpeta: Path, avisar=log.info,
@@ -743,7 +763,8 @@ def proponer(wiki: ef.Wiki, sonnet, haiku, gemini, dia: date, carpeta: Path, avi
              imagen_frase: bool = False, corto: bool = False, elector=None,
              elector_reintento=None, excluir: set | None = None,
              evitar_paises: set | None = None, mas_video: bool = False,
-             piso_alternativo: float | None = None, puntuador=None) -> ef.Propuesta:
+             piso_alternativo: float | None = None, puntuador=None,
+             banco: list[dict] | None = None) -> ef.Propuesta:
     """`excluir`: hechos (su texto) que ya salieron hoy; `evitar_paises`: los países de esos (Santi,
     2026-11-12: 2 historias por día, sin repetir país si se puede: van al final, no afuera).
 
@@ -754,81 +775,99 @@ def proponer(wiki: ef.Wiki, sonnet, haiku, gemini, dia: date, carpeta: Path, avi
     from . import bitacora
 
     fuentes_fotos.nueva_corrida()
-    bitacora.paso("busqueda")
-    todos, conmemoraciones, homenajeados = leer_todo(wiki, dia, avisar)
-    cands, motivos = filtrar(todos, date.today(), homenajeados)
-    if hecho:
-        # Haiku clasifica igual el día entero (solo, un hecho lo juzga distinto); después se queda
-        # con los que lo mencionan.
+    aviso = [""]
+
+    def seleccionar():
+        nonlocal haiku
+        bitacora.paso("busqueda")
+        todos, conmemoraciones, homenajeados = leer_todo(wiki, dia, avisar)
+        cands, motivos = filtrar(todos, date.today(), homenajeados)
+        if hecho:
+            # Haiku clasifica igual el día entero (solo, un hecho lo juzga distinto); después se queda
+            # con los que lo mencionan.
+            clasificar(haiku, cands, conmemoraciones)
+            cands = [c for c in cands if ef._norm(hecho) in ef._norm(c.texto)]
+            haiku = None
+        avisar(f"{len(todos)} hechos del {dia:%d/%m} en es.wikipedia; {len(cands)} con lugar de "
+               f"Latinoamérica {motivos}")
+        if not cands:
+            raise ef.NarrarError("Ningún hecho de hoy tiene un lugar de Latinoamérica" +
+                                 (f" (con «{hecho}»)" if hecho else ""))
         clasificar(haiku, cands, conmemoraciones)
-        cands = [c for c in cands if ef._norm(hecho) in ef._norm(c.texto)]
-        haiku = None
-    avisar(f"{len(todos)} hechos del {dia:%d/%m} en es.wikipedia; {len(cands)} con lugar de "
-           f"Latinoamérica {motivos}")
-    if not cands:
-        raise ef.NarrarError("Ningún hecho de hoy tiene un lugar de Latinoamérica" +
-                             (f" (con «{hecho}»)" if hecho else ""))
-    clasificar(haiku, cands, conmemoraciones)
-    for c in cands:     # un aniversario de fundación: el lugar es la ciudad misma
-        if c.seccion == "fundacion" and c.clasif and not str(c.clasif.get("lugar") or "").strip():
-            c.clasif["lugar"] = c.paginas[0]
-    lista = buenos(cands)
-    if hecho:
-        # Lo eligió una persona (/historia 10/11 Epecuén, o el fijado para el día): Haiku no lo
-        # descarta. Medido el 2026-11-09: con Epecuén solo en la lista dijo "no es una historia
-        # humana"; con el día entero, "gente común, interés 8". Sin lugar, el del primer artículo.
-        lista = lista + [c for c in cands if c not in lista]
-        for c in lista:
-            if not str(c.clasif.get("lugar") or "").strip():
+        for c in cands:     # un aniversario de fundación: el lugar es la ciudad misma
+            if c.seccion == "fundacion" and c.clasif and not str(c.clasif.get("lugar") or "").strip():
                 c.clasif["lugar"] = c.paginas[0]
-    lista = [c for c in lista if c.texto not in (excluir or set())]
-    avisar(f"Haiku: {len(lista)} historias humanas con lugar concreto")
-    if not lista:
-        raise ef.NarrarError("Ningún hecho de hoy es una historia humana con un lugar concreto"
-                             + (" (sin contar las que ya salieron hoy)" if excluir else ""))
-    lista = otro_pais_primero(lista, evitar_paises)
-    # Puntúa Haiku (Santi, 2026-11-15: Sonnet solo para escribir y corregir guiones).
-    fila_elegir = bitacora.fila_actual()
-    elegidos = elegir(puntuador or sonnet, lista[:A_PUNTUAR], cuantos=A_PUNTUAR)
-    parte_puntaje = bitacora.costo_entre_activa(fila_elegir) / max(1, len(lista[:A_PUNTUAR]))
-    # Ni el mismo hecho ni la misma historia contada desde otra línea del día (2026-11-13: el 14/11 La
-    # Pola aparece como nacimiento y como fusilamiento, con el mismo artículo).
-    elegidos = [x for x in elegidos if x[0].texto not in (excluir or set()) and x[1] not in (excluir or set())]
-    if not hecho:
-        # Solo las que atrapan (Santi, 2026-11-13): 8 o más de promedio en persona, peligro, giro y
-        # emoción. Si hoy no hay ninguna, no sale (y quien llama avisa): nada de relleno.
-        flojas = [f"{c.anio} {c.clasif.get('lugar')}: {c.clasif.get('puntaje', 0):.1f}"
-                  for c, _, _ in elegidos if c.clasif.get("puntaje", 0) < PUNTAJE_MIN]
-        todos_ok = list(elegidos)
-        elegidos = [x for x in elegidos if x[0].clasif.get("puntaje", 0) >= PUNTAJE_MIN]
-        if flojas:
-            avisar(f"debajo de {PUNTAJE_MIN:g}: " + " | ".join(flojas))
-        if not elegidos and piso_alternativo:
-            # Santi, 2026-11-15: si no hay ninguna de 8, sale igual la mejor del día si tiene 7 o más
-            # (una sola por día: quien llama solo da el piso si hoy todavía no salió ninguna de menos de 8).
-            mejor = max(todos_ok, key=lambda x: x[0].clasif.get("puntaje", 0), default=None)
-            if mejor and mejor[0].clasif.get("puntaje", 0) >= piso_alternativo:
-                avisar(f"ninguna de {PUNTAJE_MIN:g}: sale la mejor ({mejor[0].clasif.get('puntaje'):.2f}, "
-                       f"piso {piso_alternativo:g})")
-                elegidos = [mejor]
-        # a la bitácora: las que no pasan el puntaje, con su parte del pedido (Santi, 2026-11-15)
-        quedan = {id(c) for c, _, _ in elegidos}
-        for c, _, _ in todos_ok:
-            if id(c) not in quedan:
-                bitacora.descarte(f"{c.anio} {c.clasif.get('lugar') or ''}: {c.texto[:80]}",
-                                  f"puntaje {c.clasif.get('puntaje', 0):.2f} < {PUNTAJE_MIN:g}", "puntaje",
-                                  costo=parte_puntaje)
-        # Las mejores primero (el calendario igual manda).
-        elegidos.sort(key=lambda x: (not en_calendario(x[0]), -x[0].clasif.get("puntaje", 0)))
+        lista = buenos(cands)
+        if hecho:
+            # Lo eligió una persona (/historia 10/11 Epecuén, o el fijado para el día): Haiku no lo
+            # descarta. Medido el 2026-11-09: con Epecuén solo en la lista dijo "no es una historia
+            # humana"; con el día entero, "gente común, interés 8". Sin lugar, el del primer artículo.
+            lista = lista + [c for c in cands if c not in lista]
+            for c in lista:
+                if not str(c.clasif.get("lugar") or "").strip():
+                    c.clasif["lugar"] = c.paginas[0]
+        lista = [c for c in lista if c.texto not in (excluir or set())]
+        avisar(f"Haiku: {len(lista)} historias humanas con lugar concreto")
+        if not lista:
+            raise ef.NarrarError("Ningún hecho de hoy es una historia humana con un lugar concreto"
+                                 + (" (sin contar las que ya salieron hoy)" if excluir else ""))
+        lista = otro_pais_primero(lista, evitar_paises)
+        # Puntúa Haiku (Santi, 2026-11-15: Sonnet solo para escribir y corregir guiones).
+        fila_elegir = bitacora.fila_actual()
+        elegidos = elegir(puntuador or sonnet, lista[:A_PUNTUAR], cuantos=A_PUNTUAR)
+        parte_puntaje = bitacora.costo_entre_activa(fila_elegir) / max(1, len(lista[:A_PUNTUAR]))
+        # Ni el mismo hecho ni la misma historia contada desde otra línea del día (2026-11-13: el 14/11 La
+        # Pola aparece como nacimiento y como fusilamiento, con el mismo artículo).
+        elegidos = [x for x in elegidos if x[0].texto not in (excluir or set()) and x[1] not in (excluir or set())]
+        if not hecho:
+            # Solo las que atrapan (Santi, 2026-11-13): 8 o más de promedio en persona, peligro, giro y
+            # emoción. Si hoy no hay ninguna, no sale (y quien llama avisa): nada de relleno.
+            flojas = [f"{c.anio} {c.clasif.get('lugar')}: {c.clasif.get('puntaje', 0):.1f}"
+                      for c, _, _ in elegidos if c.clasif.get("puntaje", 0) < PUNTAJE_MIN]
+            todos_ok = list(elegidos)
+            elegidos = [x for x in elegidos if x[0].clasif.get("puntaje", 0) >= PUNTAJE_MIN]
+            if flojas:
+                avisar(f"debajo de {PUNTAJE_MIN:g}: " + " | ".join(flojas))
+            if not elegidos and piso_alternativo:
+                # Santi, 2026-11-15: si no hay ninguna de 8, sale igual la mejor del día si tiene 7 o más
+                # (una sola por día: quien llama solo da el piso si hoy todavía no salió ninguna de menos de 8).
+                mejor = max(todos_ok, key=lambda x: x[0].clasif.get("puntaje", 0), default=None)
+                if mejor and mejor[0].clasif.get("puntaje", 0) >= piso_alternativo:
+                    avisar(f"ninguna de {PUNTAJE_MIN:g}: sale la mejor ({mejor[0].clasif.get('puntaje'):.2f}, "
+                           f"piso {piso_alternativo:g})")
+                    elegidos = [mejor]
+                    aviso[0] = (f"⚠️ salió con puntaje {mejor[0].clasif.get('puntaje', 0):.1f} "
+                                f"(mínimo {PUNTAJE_MIN:g})").replace(".", ",")
+            # a la bitácora: las que no pasan el puntaje, con su parte del pedido (Santi, 2026-11-15)
+            quedan = {id(c) for c, _, _ in elegidos}
+            for c, _, _ in todos_ok:
+                if id(c) not in quedan:
+                    bitacora.descarte(f"{c.anio} {c.clasif.get('lugar') or ''}: {c.texto[:80]}",
+                                      f"puntaje {c.clasif.get('puntaje', 0):.2f} < {PUNTAJE_MIN:g}", "puntaje",
+                                      costo=parte_puntaje)
+            # Las mejores primero (el calendario igual manda).
+            elegidos.sort(key=lambda x: (not en_calendario(x[0]), -x[0].clasif.get("puntaje", 0)))
+            if not elegidos:
+                raise ef.NarrarError(f"Hoy ninguna historia llega a {PUNTAJE_MIN:g} de promedio (persona, "
+                                     "peligro, giro y emoción): no saco una floja. "
+                                     + ("Las mejores: " + " | ".join(flojas[:3]) if flojas else ""))
+        return elegidos
+
+    try:
+        elegidos = seleccionar()
+    except ef.NarrarError as err:
+        # Nunca un día sin video (Santi, 2026-11-15): debajo del piso (6) o sin candidatas, una historia
+        # del banco de reserva (no depende de la fecha, puntuada de antemano con 8 o más).
+        elegidos = de_banco(banco, excluir)
         if not elegidos:
-            raise ef.NarrarError(f"Hoy ninguna historia llega a {PUNTAJE_MIN:g} de promedio (persona, "
-                                 "peligro, giro y emoción): no saco una floja. "
-                                 + ("Las mejores: " + " | ".join(flojas[:3]) if flojas else ""))
+            raise
+        aviso[0] = "📦 del banco de reserva (" + str(err).split(":")[0][:120] + ")"
+        avisar(f"banco de reserva: {len(elegidos)} historias ({err})")
     orden = otro_pais_primero([c for c, _, _ in elegidos], evitar_paises)
     elegidos = sorted(elegidos, key=lambda x: orden.index(x[0]))
     avisar("Sonnet eligió: " + " | ".join(f"{c.anio} {c.clasif.get('lugar')}: {c.texto[:50]} [{a}]"
                                           for c, a, _ in elegidos))
-    fallas, respaldo, descartes = [], None, {}
+    fallas, respaldo, descartes, insuf = [], None, {}, None
     for c, articulo, art_lugar in elegidos[:ef.MAX_GUIONES]:
         e = ef.Evento("es", c.anio, c.texto, [articulo] + [x for x in c.paginas if x != articulo])
         fotos, desc = ef.fotos_del_evento(wiki, e)
@@ -852,7 +891,8 @@ def proponer(wiki: ef.Wiki, sonnet, haiku, gemini, dia: date, carpeta: Path, avi
         try:
             bitacora.paso("guion")
             g = ef.escribir_guion(sonnet, e, fuente, sistema=SISTEMA_GUION_CORTO if corto else SISTEMA_GUION_LOCAL,
-                                  validar_extra=validar_lugar(lugar, corto), contexto=contexto_de(c),
+                                  validar_extra=validar_lugar(lugar, corto),
+                                  contexto=contexto_de(c) + (ef.NO_ES_DE_HOY if c.clasif.get("banco_id") else ""),
                                   corto=corto, rango=ef.LATAM_PALABRAS if corto else None,
                                   max_s=ef.LATAM_MAX_S if corto else 0.0)
             g.imagen_frase = imagen_frase or corto
@@ -873,6 +913,8 @@ def proponer(wiki: ef.Wiki, sonnet, haiku, gemini, dia: date, carpeta: Path, avi
         except ef.NarrarError as err:
             avisar(f"  no salió: {err}")
             fallas.append(f"{e.anio}: {err}")
+            if isinstance(err, ef.FotosInsuficientes) and (insuf is None or err.pct > insuf[0].pct):
+                insuf = (err, e, fuente, c)
             en_fotos = g is not None
             bitacora.descarte(nombre_c, str(err), "fotos" if en_fotos else "guion", desde_fila=fila_h,
                               buscado=list(g.mostrar) if en_fotos else None,
@@ -880,14 +922,19 @@ def proponer(wiki: ef.Wiki, sonnet, haiku, gemini, dia: date, carpeta: Path, avi
             continue
         return ef.Propuesta(fecha=dia.isoformat(), evento=e.a_dict(), fotos=[f.a_dict() for f in pool],
                             reserva=[], guion=g.a_dict(), fuente=fuente[:20000], descartes=descartes,
-                            destino="facebook", local=local_de(c))
+                            destino="facebook", local=local_de(c, aviso[0]))
+    if insuf and not respaldo and ef.aceptar_relajado(insuf[0], avisar):
+        err, e, fuente, c = insuf
+        return ef.Propuesta(fecha=dia.isoformat(), evento=e.a_dict(), fotos=[f.a_dict() for f in err.pool],
+                            reserva=[], guion=err.guion.a_dict(), fuente=fuente[:20000], descartes=descartes,
+                            destino="facebook", local=local_de(c, aviso[0]))
     if respaldo:
         e, fuente, pocas, n, c = respaldo
         avisar(f"Ningún hecho llegó a {ilustrar.MIN_FOTOS_ABSOLUTO} fotos de época: uso {e.anio} ({n})")
         pocas.guion.sin_alternativa = True
         return ef.Propuesta(fecha=dia.isoformat(), evento=e.a_dict(), fotos=[f.a_dict() for f in pocas.pool],
                             reserva=[], guion=pocas.guion.a_dict(), fuente=fuente[:20000],
-                            descartes=descartes, destino="facebook", local=local_de(c))
+                            descartes=descartes, destino="facebook", local=local_de(c, aviso[0]))
     raise ef.SinFotosReales("Ninguna historia de hoy salió, no armo un video malo: "
                             + " | ".join(fallas)[:600])
 

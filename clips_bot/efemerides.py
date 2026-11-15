@@ -445,6 +445,10 @@ contado con giro (dominaba la web, se saltó una versión entera, la siguiente s
 Internet Explorer se quedó con todo). Un estándar técnico que nadie conoce (UML) no pasa de 3 en marca."""}
 
 
+NO_ES_DE_HOY = ("ESTA HISTORIA NO PASÓ UN DÍA COMO HOY (es del banco de reserva): no digas «hoy», «un día como "
+               "hoy», «se cumplen» ni «aniversario»; contala como una historia, con su año.\n")
+
+
 class SinTema(NarrarError):
     """Ningún hecho del día es del tema del canal: no sale video y se avisa (sin reintentos)."""
 
@@ -978,6 +982,9 @@ class Guion:
     # si es la segunda búsqueda (con Claude, sin la regla de época, documentos del hecho permitidos).
     fotos_reales: float = 0.0
     segunda_busqueda: bool = False
+    # Nunca un día sin video (Santi, 2026-11-15): si ningún hecho llega al 70 %, el mejor sale con el
+    # mínimo bajado de a 5 puntos hasta el 50 % (este es el mínimo con el que salió; 0 = el de siempre).
+    umbral_fotos: float = 0.0
     # Las tarjetas que ya están en el pool (índices): el corto las usa antes de repetir una foto.
     tarjetas_fotos: list[int] = field(default_factory=list)
     # Estilo nuevo (Santi, 2026-11-14): más video y menos fotos quietas (frases_video).
@@ -1942,10 +1949,22 @@ def fotos_para_guion(wiki: Wiki, cliente, e: Evento, g: Guion, fotos_articulo: l
     g.tarjetas_fotos = []
     del_hecho = [i for i in sumar(fotos_articulo, FOTOS_ARTICULO_MAX) if i not in descartadas]
     if segunda:
-        # Fotos reales del protagonista y del lugar: Commons con el título de cada artículo del hecho.
-        for titulo in e.paginas[:3]:
-            nuevas, _ = filtrar_infos(wiki, "commons", wiki.buscar_commons(titulo), f"Commons: {titulo}",
-                                      e.anio)
+        # Fotos reales del protagonista y del lugar: Commons con el título de cada artículo del hecho y,
+        # desde el 2026-11-15 (Santi: "nunca un día sin video"), la búsqueda mejorada: en castellano y en
+        # inglés con la época, en las categorías de los archivos nacionales que están en Commons y en
+        # Europeana.
+        for q in consultas_segunda(wiki, e):
+            nuevas, _ = filtrar_infos(wiki, "commons", wiki.buscar_commons(q), f"Commons: {q}", e.anio)
+            del_hecho += [i for i in sumar(nuevas, FOTOS_BUSQUEDA_MAX)
+                          if i not in descartadas and i not in del_hecho]
+        from . import fuentes_fotos as _ff
+        for titulo in e.paginas[:2]:
+            try:
+                halladas = (fuentes or _ff.Fuentes()).europeana(titulo.replace("_", " "))
+            except Exception as err:   # una fuente caída no frena la búsqueda
+                avisar(f"    fotos: Europeana «{titulo}» falló ({str(err)[:80]})")
+                continue
+            nuevas = [_foto_de(h, titulo) for h in halladas if h.get("url") and h.get("licencia")]
             del_hecho += [i for i in sumar(nuevas, FOTOS_BUSQUEDA_MAX)
                           if i not in descartadas and i not in del_hecho]
     propias, descartes = [], {}
@@ -2138,6 +2157,43 @@ def fotos_para_guion(wiki: Wiki, cliente, e: Evento, g: Guion, fotos_articulo: l
 # buscar fotos con Claude; si sigue sin alcanzar, elegí otro hecho del día. Si ninguno alcanza,
 # avisame." El ejemplo del refrigerador de Einstein (10/11) pasó ~27 de 37 s con tarjetas.
 UMBRAL_FOTOS_REALES = 0.70
+UMBRAL_FOTOS_PISO = 0.50     # Santi, 2026-11-15: el 70 % baja de a 5 puntos hasta el 50 % (nunca menos)
+PASO_UMBRAL = 0.05
+
+
+def umbral_relajado(pct: float) -> float | None:
+    """El mínimo más alto (70, 65, 60, 55 o 50 %) que `pct` alcanza; None si no llega ni al 50 %."""
+    u = UMBRAL_FOTOS_REALES
+    while u >= UMBRAL_FOTOS_PISO - 1e-9:
+        if pct >= u - 1e-9:
+            return round(u, 2)
+        u -= PASO_UMBRAL
+    return None
+
+
+def umbral_de(g) -> float:
+    """El mínimo de fotos reales de ESTE guion (el relajado, si salió con uno)."""
+    return float(getattr(g, "umbral_fotos", 0) or 0) or UMBRAL_FOTOS_REALES
+
+
+def aviso_fotos(g) -> str:
+    """El aviso para Telegram cuando salió con el mínimo relajado; vacío si no."""
+    if not getattr(g, "umbral_fotos", 0) or g.umbral_fotos >= UMBRAL_FOTOS_REALES:
+        return ""
+    return (f"⚠️ fotos reales {g.fotos_reales * 100:.0f} % (mínimo {UMBRAL_FOTOS_REALES * 100:.0f}; "
+            f"salió con el mínimo bajado a {g.umbral_fotos * 100:.0f} %, el resto con mapa, retratos y texto)")
+
+
+def aceptar_relajado(err: "FotosInsuficientes", avisar=log.info) -> bool:
+    """Si las fotos de `err` llegan al 50 %, el guion queda con el mínimo relajado y sirve."""
+    u = umbral_relajado(err.pct)
+    if u is None:
+        return False
+    err.guion.umbral_fotos = u
+    err.guion.fotos_reales = round(err.pct, 3)
+    avisar(f"  ningún hecho llegó al {UMBRAL_FOTOS_REALES * 100:.0f} %: sale con {err.pct * 100:.0f} % "
+           f"(mínimo bajado a {u * 100:.0f} %)")
+    return True
 
 
 def es_tarjeta(f) -> bool:
@@ -2184,6 +2240,39 @@ def control_calidad(pool: list, g: "Guion", plan: list[tuple[int, int, float]]) 
     return pct
 
 
+# Archivos nacionales cuyas fotos están en Commons (2026-11-15): la Biblioteca del Congreso de EE. UU. y la
+# Biblioteca Digital Hispánica bloquean a los bots (403) y Memoria Chilena no tiene API: se usan sus
+# copias en Commons, con las licencias que Commons ya verificó.
+ARCHIVOS_COMMONS = ("Archivo General de la Nación Argentina", "Archivo General de la Nación (Mexico)",
+                    "Images from the Biblioteca Nacional de Chile", "Biblioteca Nacional de Colombia",
+                    "Images from Biblioteca Nacional de España", "Images from the Library of Congress",
+                    "Archivo Histórico de Guayaquil", "Biblioteca Nacional del Perú")
+
+
+def consultas_segunda(wiki: "Wiki", e: "Evento") -> list[str]:
+    """Las búsquedas de la segunda vuelta: cada artículo del hecho (persona, lugar), en castellano y en
+    inglés, con la década; y los mismos nombres en las categorías de los archivos nacionales."""
+    decada = f"{e.anio // 10 * 10}s" if e.anio else ""
+    nombres = []
+    for t in e.paginas[:3]:
+        nombres.append(t.replace("_", " "))
+        try:
+            otro = wiki.en_espanol(t) if e.lang == "en" else None
+        except Exception:
+            otro = None
+        if otro:
+            nombres.append(otro.replace("_", " "))
+    nombres = list(dict.fromkeys(n for n in nombres if n))
+    out = []
+    for n in nombres:
+        out.append(n)
+        if decada:
+            out.append(f"{n} {decada}")
+    cats = "|".join(f'"{c}"' for c in ARCHIVOS_COMMONS)
+    out += [f"{n} incategory:{cats}" for n in nombres[:2]]
+    return list(dict.fromkeys(out))[:10]
+
+
 def fotos_con_control(wiki: "Wiki", cliente, e: "Evento", g: "Guion", fotos_articulo: list,
                       carpeta: Path, avisar=log.info, elector=None, elector_reintento=None,
                       **k) -> tuple[list, "Guion"]:
@@ -2200,6 +2289,19 @@ def fotos_con_control(wiki: "Wiki", cliente, e: "Evento", g: "Guion", fotos_arti
     k = {**k, "pool": pool_antes, "descartadas": set(anterior.descartadas)}
     return fotos_para_guion(wiki, cliente, e, anterior, fotos_articulo, carpeta, avisar,
                             elector=elector_reintento or elector, segunda=True, **k)
+
+
+def _control_real(g, pct: float, avisar=log.info) -> None:
+    """El control con los tiempos REALES de la voz: el mínimo del guion; si la voz lo baja, el mínimo
+    baja de a 5 puntos hasta el 50 % (con aviso). Debajo del 50 %, no se arma."""
+    if pct >= umbral_de(g) - 1e-9:
+        return
+    u = umbral_relajado(pct)
+    if u is None:
+        raise SinFotosReales(f"solo {pct * 100:.0f} % del tiempo con fotos reales (mínimo "
+                             f"{UMBRAL_FOTOS_PISO * 100:.0f} % aun bajándolo): no armo el video")
+    g.umbral_fotos, g.fotos_reales = u, round(pct, 3)
+    avisar(f"⚠️ con la voz real quedan {pct * 100:.0f} % de fotos reales: mínimo bajado a {u * 100:.0f} %")
 
 
 def respaldo_sirve(pocas: "PocasFotos") -> bool:
@@ -2641,8 +2743,12 @@ def proponer(wiki: Wiki, cliente, dia: date, carpeta: Path, avisar=log.info,
              tope_fotos_s: float | None = None, hablado: bool = False,
              imagen_frase: bool = False, elector=None, elector_reintento=None,
              tema: str = "", corto: bool = False, texto=None, mas_video: bool = False,
-             puntuador=None) -> Propuesta:
-    """`tema` (2026-11-12, efemerides.tema): solo hechos de ese tema (TEMAS); si no hay ninguno,
+             puntuador=None, piso: float | None = None, banco: list[dict] | None = None) -> Propuesta:
+    """`piso` y `banco` (Santi, 2026-11-15, "nunca un día sin video"): si ningún hecho de tecnología
+    llega a PUNTAJE_TEC_MIN, sale el mejor si tiene `piso` (6) o más; si tampoco (o no hay ninguno),
+    uno del banco de reserva (historias que no dependen de la fecha, puntuadas de antemano con 8+).
+
+    `tema` (2026-11-12, efemerides.tema): solo hechos de ese tema (TEMAS); si no hay ninguno,
     SinTema (no sale video). `corto`: el formato corto (SISTEMA_GUION_CORTO, 20-30 s).
 
     Elige el evento, escribe el guion (con qué mostrar en cada frase), busca y elige las fotos
@@ -2678,9 +2784,30 @@ def proponer(wiki: Wiki, cliente, dia: date, carpeta: Path, avisar=log.info,
     notas: dict = {}
     fila_elegir = bitacora.fila_actual()
     # Puntuar y elegir con Haiku (Santi, 2026-11-15: "Sonnet solo para escribir y corregir guiones").
-    elegidos = elegir(puntuador or escritor, candidatos, tema=tema, notas=notas)
+    elegidos = elegir(puntuador or escritor, candidatos, tema=tema, notas=notas) if candidatos else []
+    aviso_puntaje, del_banco = "", None
+
+    def usar_banco(motivo: str) -> list[tuple[int, str]]:
+        nonlocal del_banco, aviso_puntaje
+        for item in banco or []:
+            ev = Evento(item.get("lang", "es"), int(item["anio"]), item["texto"], list(item["paginas"]))
+            candidatos.append(ev)
+            i = len(candidatos) - 1
+            notas[i] = dict(item.get("notas") or {}, puntaje=item.get("puntaje"))
+            del_banco = del_banco or {}
+            del_banco[i] = item.get("id")
+            yield_ = (i, item.get("articulo") or ev.paginas[0])
+            elegidos_banco.append(yield_)
+        if elegidos_banco:
+            aviso_puntaje = f"📦 del banco de reserva ({motivo})"
+            avisar(f"banco de reserva: {len(elegidos_banco)} historias ({motivo})")
+        return elegidos_banco
+
+    elegidos_banco: list = []
     if tema and not elegidos:
-        raise SinTema(f"Hoy no hay ningún hecho de «{tema}» que sirva: no saco el video (nada de relleno).")
+        if not usar_banco("hoy no hay ningún hecho del tema"):
+            raise SinTema(f"Hoy no hay ningún hecho de «{tema}» que sirva y el banco de reserva está vacío.")
+        elegidos = list(elegidos_banco)
     if tema == "tecnologia":
         # Puntaje propio (Santi, 2026-11-13): marca conocida, sorpresa, consecuencia y final; pasan
         # las de PUNTAJE_TEC_MIN (7,5) o más, de mejor a peor.
@@ -2694,17 +2821,28 @@ def proponer(wiki: Wiki, cliente, dia: date, carpeta: Path, avisar=log.info,
                 bitacora.descarte(f"{candidatos[i].anio} {candidatos[i].texto[:90]}",
                                   f"puntaje {notas.get(i, {}).get('puntaje', 0):.2f} < {PUNTAJE_TEC_MIN:g}",
                                   "puntaje", costo=parte)
+        todos_tec = list(elegidos)
         elegidos = sorted([x for x in elegidos if x[0] not in flojos],
                           key=lambda x: -notas.get(x[0], {}).get("puntaje", 0))
-        if not elegidos:
-            raise SinTema(f"Hoy ningún hecho de tecnología llega a {PUNTAJE_TEC_MIN:g} (marca, sorpresa, "
-                          "consecuencia y final): no saco uno flojo.")
+        if not elegidos and not elegidos_banco:
+            mejor = max(todos_tec, key=lambda x: notas.get(x[0], {}).get("puntaje", 0), default=None)
+            nota = notas.get(mejor[0], {}).get("puntaje", 0) if mejor else 0
+            if mejor and piso is not None and nota >= piso:
+                elegidos = [mejor]
+                aviso_puntaje = f"⚠️ salió con puntaje {nota:.1f} (mínimo {PUNTAJE_TEC_MIN:g})".replace(".", ",")
+                avisar(f"ninguno llega a {PUNTAJE_TEC_MIN:g}: sale el mejor ({nota:.2f}, piso {piso:g})")
+            elif not usar_banco(f"el mejor del día tenía {nota:.1f}".replace(".", ",")):
+                raise SinTema(f"Hoy ningún hecho de tecnología llega a {PUNTAJE_TEC_MIN:g} (marca, sorpresa, "
+                              "consecuencia y final): no saco uno flojo.")
+            else:
+                elegidos = list(elegidos_banco)
     avisar("Gemini eligió: " + " | ".join(f"{candidatos[i].anio} {candidatos[i].texto[:50]} [{a}]"
                                           for i, a in elegidos))
     descartes: dict = {}
     guiones = 0
     fallas: list[str] = []
     respaldo = None   # (evento, fuente, PocasFotos, fotos): el de más fotos de los que no llegaron a 4
+    insuf = None      # (FotosInsuficientes, evento, fuente, índice): el que más se acercó al 70 %
     for i, articulo in elegidos[saltear:]:
         if guiones >= MAX_GUIONES:
             break
@@ -2721,7 +2859,8 @@ def proponer(wiki: Wiki, cliente, dia: date, carpeta: Path, avisar=log.info,
         try:
             bitacora.paso("guion")
             g = escribir_guion(escritor, e, fuente, correccion, hablado=hablado and not corto,
-                               sistema=SISTEMA_GUION_CORTO if corto else None, corto=corto)
+                               sistema=SISTEMA_GUION_CORTO if corto else None, corto=corto,
+                               contexto=NO_ES_DE_HOY if del_banco and i in del_banco else "")
             g.imagen_frase = imagen_frase or corto      # efemerides.imagen_frase (2026-11-10)
             g.mas_video = mas_video                     # efemerides.estilo_nuevo (2026-11-14)
             bitacora.paso("fotos")
@@ -2741,6 +2880,8 @@ def proponer(wiki: Wiki, cliente, dia: date, carpeta: Path, avisar=log.info,
         except NarrarError as err:
             avisar(f"  no salió: {err}")
             fallas.append(f"{e.anio}: {err}")
+            if isinstance(err, FotosInsuficientes) and (insuf is None or err.pct > insuf[0].pct):
+                insuf = (err, e, fuente, i)
             en_fotos = g is not None
             bitacora.descarte(f"{e.anio} {e.texto[:90]}", str(err), "fotos" if en_fotos else "guion", desde_fila=fila_h,
                               buscado=list(g.mostrar) if en_fotos else None,
@@ -2750,10 +2891,27 @@ def proponer(wiki: Wiki, cliente, dia: date, carpeta: Path, avisar=log.info,
             if 0 <= k < len(pool):
                 avisar(f"    descartada {k + 1}: {pool[k].epigrafe[:90]}")
         n = notas.get(i) or {}
+        local = ({"puntaje": n.get("puntaje"), "puntajes": {k: n.get(k) for k in CRITERIOS_TEC}}
+                 if tema else {})
+        if del_banco and i in del_banco:
+            local["banco_id"] = del_banco[i]
+        if aviso_puntaje:
+            local["aviso"] = aviso_puntaje
         return Propuesta(fecha=dia.isoformat(), evento=e.a_dict(), fotos=[f.a_dict() for f in pool],
                          reserva=[], guion=g.a_dict(), fuente=fuente[:20000], descartes=descartes,
-                         local={"puntaje": n.get("puntaje"),
-                                "puntajes": {k: n.get(k) for k in CRITERIOS_TEC}} if tema else {})
+                         local=local)
+    if insuf and not respaldo and aceptar_relajado(insuf[0], avisar):
+        err, e, fuente, i = insuf
+        n = notas.get(i) or {}
+        local = ({"puntaje": n.get("puntaje"), "puntajes": {k: n.get(k) for k in CRITERIOS_TEC}}
+                 if tema else {})
+        if del_banco and i in del_banco:
+            local["banco_id"] = del_banco[i]
+        if aviso_puntaje:
+            local["aviso"] = aviso_puntaje
+        return Propuesta(fecha=dia.isoformat(), evento=e.a_dict(), fotos=[f.a_dict() for f in err.pool],
+                         reserva=[], guion=err.guion.a_dict(), fuente=fuente[:20000], descartes=descartes,
+                         local=local)
     if respaldo:
         e, fuente, pocas, n = respaldo
         avisar(f"Ningún hecho llegó a {ilustrar.MIN_FOTOS_ABSOLUTO} fotos de época: uso {e.anio} "
@@ -2802,7 +2960,9 @@ def rehacer_guion(p: Propuesta, wiki: Wiki, cliente, carpeta: Path, correccion: 
         pool, g = pocas.pool, pocas.guion
         g.sin_alternativa = anterior.sin_alternativa
     except FotosInsuficientes as f:
-        raise SinFotosReales(f"{f}, también con la segunda búsqueda: no armo el video") from f
+        if not aceptar_relajado(f, avisar):
+            raise SinFotosReales(f"{f}, también con la segunda búsqueda: no armo el video") from f
+        pool, g = f.pool, f.guion
     return Propuesta(fecha=p.fecha, evento=p.evento, fotos=[f.a_dict() for f in pool],
                      reserva=p.reserva, guion=g.a_dict(), fuente=p.fuente, descartes=p.descartes)
 
@@ -3558,9 +3718,7 @@ def hacer_video(p: Propuesta, settings, carpeta: Path, avisar=log.info, conn=Non
     # Control de calidad con los tiempos REALES de la voz (Santi, 2026-11-11): sin 70 % de fotos
     # reales, no se arma.
     pct = fraccion_real(p.fotos, plan)
-    if pct < UMBRAL_FOTOS_REALES:
-        raise SinFotosReales(f"solo {pct * 100:.0f} % del tiempo con fotos reales (mínimo "
-                             f"{UMBRAL_FOTOS_REALES * 100:.0f} %): no armo el video")
+    _control_real(g, pct, avisar)
     movimientos = None
     if g.corto:
         nueva = fabrica_tarjetas(g, e.anio, carpeta, lambda k: Foto.de_dict(p.fotos[k]),
@@ -3571,9 +3729,8 @@ def hacer_video(p: Propuesta, settings, carpeta: Path, avisar=log.info, conn=Non
         if faltas:
             avisar(f"⚠️ fotos: en {len(faltas)} cortes no quedaba otra foto ni tarjeta: se repite")
         pct = fraccion_real(p.fotos, plan)
-        if pct < UMBRAL_FOTOS_REALES:
-            raise SinFotosReales(f"solo {pct * 100:.0f} % del tiempo con fotos reales (mínimo "
-                                 f"{UMBRAL_FOTOS_REALES * 100:.0f} %): no armo el video")
+        _control_real(g, pct, avisar)
+        p.guion = g.a_dict()
         avisar(f"formato corto: {len(plan)} cortes de {min(s for *_, s in plan):.1f} a "
                f"{max(s for *_, s in plan):.1f} s")
     mapa = None
@@ -3668,7 +3825,7 @@ def hacer_video(p: Propuesta, settings, carpeta: Path, avisar=log.info, conn=Non
             "efemeride": {"fecha": p.fecha, "anio": e.anio, "evento": e.texto,
                           "articulo": e.paginas[0], "lang": e.lang, "guion": g.frases,
                           "musica": tema.ruta if tema else None, "tono": g.tono, "voz": motor,
-                          "destino": p.destino, "local": p.local}}
+                          "destino": p.destino, "local": p.local, "aviso_fotos": aviso_fotos(g)}}
 
 
 def _jpeg_chico(ruta: Path, ancho: int = 512) -> bytes:

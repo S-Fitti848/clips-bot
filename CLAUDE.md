@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-11-15 | **Versión:** v1.11.0 (desplegado) | **Modo:** Fase 2: corriendo solo en la Pi. **Rots APAGADO.** Pequeña Historia (3 por día, madrugada desde las 04:00) (publicación sin aprobar: llegan con ❌ Cancelar) y **Así Nació** (2 por día, desde las 07:00, publican 13:00 y 20:00 en YouTube y Facebook con ❌ Cancelar), todo al privado de Santi
+**Snapshot:** 2026-11-15 | **Versión:** v1.13.0 (desplegado) | **Modo:** Fase 2: corriendo solo en la Pi. **Rots APAGADO.** Pequeña Historia (3 por día, madrugada desde las 04:00) (publicación sin aprobar: llegan con ❌ Cancelar) y **Así Nació** (2 por día, desde las 07:00, publican 13:00 y 20:00 en YouTube y Facebook con ❌ Cancelar), todo al privado de Santi
 
 > **SI ESTÁS EMPEZANDO UNA SESIÓN NUEVA, LEÉ §10.** Ahí está qué está hecho, qué quedó a medias,
 > qué falta, y las trampas que ya nos mordieron.
@@ -233,6 +233,31 @@ servicio systemd separado: `clips-bot`).
   (además de los pedazos), líneas de movimiento detrás de lo que vuela (alineadas, solo a velocidad), 4
   destellos con un "ding" en el remate (en anillo alrededor de la cara, nunca encima) y transición "iris"
   hacia el giro y el final.
+- **Nunca un día sin video (Santi, 2026-11-15; `banco.py`):** (1) si nadie llega al mínimo, sale la mejor
+  del día con **piso absoluto de 6** (tecnología siempre; Latinoamérica solo la PRIMERA del día, la segunda
+  sigue pidiendo 8, o 7 si hoy no salió ninguna de menos de 8; Así Nació en el último intento del día). (2)
+  Debajo de 6, o sin candidatas: **banco de reserva** de historias que no dependen de la fecha (curiosidades,
+  personajes, lugares; hechos de tecnología; marcas y ángulos de Así Nació), puntuadas de antemano con 8+;
+  al menos 20 por banco, se repone solo al bajar de 10 (`_bancos_tick`, 09:30-21:30, en un hilo, cosechando
+  días a más de 100 días de hoy; sin conmemoraciones ni fundaciones). El guion de una del banco no dice
+  "hoy" (`ef.NO_ES_DE_HOY`). (3) Fotos: si ningún hecho llega al 70 % de fotos reales, el mejor sale con el
+  mínimo bajado de a 5 puntos hasta el 50 % (`ef.umbral_relajado`, también con la voz real); la segunda
+  búsqueda va en castellano y en inglés con la década, en las categorías de archivos nacionales de Commons
+  (`ARCHIVOS_COMMONS`) y en Europeana. LoC y la Biblioteca Digital Hispánica dan 403 a bots y Memoria
+  Chilena no tiene API: no se usan directo. (4) Aviso en el mensaje del video ("⚠️ salió con puntaje 6,2
+  (mínimo 8)", "📦 del banco de reserva", "⚠️ fotos reales 55 %"). (5) A las 20:00, si un canal no tiene nada
+  programado ni publicado hoy, aviso a Santi (`_sin_video_tick`).
+- **Así Nació: lo que se ve = lo que dice la voz (Santi, 2026-11-15; regla permanente para TODOS los videos;
+  `escenas_lib.py`, `marcas.errores_accion`):** (1) cada frase muestra la acción concreta que dice la voz;
+  festejar solo si la frase habla de un éxito. (2) **Biblioteca de escenas** reutilizables con planos (desde
+  arriba, manos, de lejos, de espaldas): armar en la mesa, vender en la tienda, fábrica produciendo, reunión,
+  cargar un barco, contador de ventas, estantes que se llenan, objeto girando, despegue; el guion elige
+  `accion_escena` + `plano` y cambia objeto y personajes; si falta, `nueva` + `accion_nueva` y la receta queda
+  guardada (`data/animacion/escenas_lib.json`). "libre" como mucho en el 40 % de las escenas. (3) el objeto
+  protagonista se mueve (el cubo se arma solo con `fase`, la cinta, el barco, los estantes, el contador, el
+  despegue con humo y fuego). (4) la revisión visual marca `cambiar_accion` cuando lo que se ve no es lo que
+  dice la frase, y se corrige esa escena. (5) nada de engranajes ni martillo salvo que la frase hable de una
+  máquina o un taller.
 - **Videos largos: NO por ahora (decisión de Santi, 2026-09-28).** No quiere videos largos con voz
   de IA. Si más adelante se hacen, van con SU voz grabada, no con Gemini TTS ni Piper.
 - **Sin música agregada en los clips.** Cualquier música es riesgo de Content ID. Si el clip trae
@@ -1030,6 +1055,22 @@ Problemas abiertos:
 
 ## 9. CHANGELOG
 
+- v1.13.0 (2026-11-15, noche) — **Nunca un día sin video** (plan aprobado por Santi con el piso de 6 y los
+  bancos; regla en §1). `banco.py` (bot_estado `banco:<canal>`, `banco_llenando:<canal>`, `banco_cursor:<canal>`),
+  `_bancos_tick`, `_sin_video_tick`, `_piso_latam`; `ef.proponer(piso, banco)`, `locales.proponer(banco)`
+  (`de_banco`, `PISO_ABSOLUTO`), `marcas.proponer(banco, ultimo)`; `ef.umbral_relajado`, `_control_real`,
+  `aceptar_relajado`, `consultas_segunda`. Además: el **Intel 4004** del 15/11 (`efe:45a83b`) se armó y quedó
+  programado en Pequeña Historia para las 20:00 (`3NyyFp_M3IM`), y el schema del guion de Así Nació pasaba el
+  tope de gramática de Claude ("compiled grammar is too large") con los campos de la biblioteca:
+  `accion_escena`, `plano` y `protagonista.prop` van sin enum y los valida el código (probado contra Claude en
+  la Pi). `tests/test_nunca_sin_video.py`.
+- v1.12.0 (2026-11-15, noche) — **Así Nació: lo que se ve = lo que dice la voz** (regla en §1). Biblioteca de
+  escenas (`escenas_lib.py`: 9 acciones con planos, constructores que arman fondo, personajes, objetos, cámara
+  y sfx; recetas nuevas guardadas), props nuevos (`mano`, `mostrador`, `fuego`, `cubo_rubik` con `fase`),
+  fondo `mesa_arriba`, personajes de espaldas, `fase` animable, `dejar_lugar_a_tito` (los personajes de una
+  escena de la biblioteca se corren enteros para no quedar debajo de Tito), `errores_accion` en la validación
+  y `cambiar_accion` en la revisión visual con corrección puntual. `visual_plus` sigue APAGADO hasta el OK de
+  Santi. Prueba: Cubo de Rubik rehecho desde el guion en la Pi (ver §10). 1477 tests OK.
 - v1.11.0 (2026-11-15, tarde) — (1) **Diagnóstico del 15/11 sin Pequeña Historia** (sin cambios de código,
   esperando el OK del plan "nunca un día sin video"): la de tecnología (Intel 4004, 8,5) se propuso a las 04:2x
   CON aprobación (`sin_aprobar` se prendió recién a las ~12:00) y nadie tocó ✅: quedó guardada (`efe:45a83b`),

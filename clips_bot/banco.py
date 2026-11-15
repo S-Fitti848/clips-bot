@@ -1,0 +1,183 @@
+"""Bancos de reserva (Santi, 2026-11-15: "nunca un día sin video").
+
+Historias que NO dependen de la fecha (curiosidades, personajes, lugares; inventos y empresas de
+tecnología; marcas de Así Nació), puntuadas de antemano con PUNTAJE_BANCO (8) o más. Se usan cuando la
+mejor candidata del día queda debajo del piso absoluto (6) o cuando no hay candidatas. Cada banco tiene
+al menos OBJETIVO (20) y se repone solo cuando baja de MINIMO (10).
+
+Se guardan en bot_estado (`banco:<canal>`, una lista JSON). Se llenan cosechando otros días del año (los
+que están lejos de hoy, así una historia de fecha no sale cerca de su aniversario): Wikipedia de ese día,
+la misma clasificación y el mismo puntaje con Haiku que en producción; quedan solo las de 8 o más que no
+son conmemoraciones ni fundaciones (esas sí dependen de la fecha).
+"""
+from __future__ import annotations
+
+import json
+import logging
+import random
+import time
+from datetime import date, timedelta
+
+from . import db
+
+log = logging.getLogger(__name__)
+
+CANALES = ("latam", "tecnologia", "asinacio")
+NOMBRES = {"latam": "Latinoamérica", "tecnologia": "tecnología", "asinacio": "Así Nació"}
+PUNTAJE_BANCO = 8.0
+PISO_ABSOLUTO = 6.0     # debajo de esto, la mejor del día no sale: va una del banco
+MINIMO = 10
+OBJETIVO = 20
+LEJOS_DIAS = 100        # se cosechan días a más de 100 días de hoy (lejos de su aniversario)
+CLAVE = "banco:{}"
+LLENANDO = "banco_llenando:{}"
+CURSOR = "banco_cursor:{}"
+
+
+# ---- guardar y leer ------------------------------------------------------------------------------
+
+def leer(conn, canal: str) -> list[dict]:
+    try:
+        return json.loads(db.get_valor(conn, CLAVE.format(canal)) or "[]")
+    except ValueError:
+        return []
+
+
+def guardar(conn, canal: str, items: list[dict]) -> None:
+    db.set_valor(conn, CLAVE.format(canal), json.dumps(items, ensure_ascii=False))
+
+
+def agregar(conn, canal: str, nuevos: list[dict]) -> int:
+    """Suma los que no estaban (por `id`). Devuelve cuántos sumó."""
+    items = leer(conn, canal)
+    ids = {x.get("id") for x in items}
+    sumados = []
+    for x in nuevos:
+        if x.get("id") and x["id"] not in ids and float(x.get("puntaje") or 0) >= PUNTAJE_BANCO:
+            ids.add(x["id"])
+            sumados.append(x)
+    if sumados:
+        guardar(conn, canal, items + sumados)
+    return len(sumados)
+
+
+def sacar(conn, canal: str, id_: str | None) -> None:
+    """La historia ya se usó: sale del banco (nunca se repite)."""
+    if not id_:
+        return
+    items = leer(conn, canal)
+    quedan = [x for x in items if x.get("id") != id_]
+    if len(quedan) != len(items):
+        guardar(conn, canal, quedan)
+
+
+def hay_que_reponer(conn, canal: str) -> bool:
+    """Con menos de MINIMO empieza a llenar y sigue hasta OBJETIVO (entonces para)."""
+    n = len(leer(conn, canal))
+    clave = LLENANDO.format(canal)
+    if n < MINIMO:
+        db.set_valor(conn, clave, "1")
+    elif n >= OBJETIVO:
+        db.borrar_valor(conn, clave)
+    return db.get_valor(conn, clave) == "1"
+
+
+def proximo_dia(conn, canal: str, hoy: date) -> date:
+    """El próximo día del año a cosechar: desde hoy + LEJOS_DIAS, de a uno; da la vuelta al año."""
+    raw = db.get_valor(conn, CURSOR.format(canal))
+    try:
+        dia = date.fromisoformat(raw) if raw else hoy + timedelta(days=LEJOS_DIAS)
+    except ValueError:
+        dia = hoy + timedelta(days=LEJOS_DIAS)
+    if dia < hoy + timedelta(days=LEJOS_DIAS) or dia > hoy + timedelta(days=365 - 30):
+        dia = hoy + timedelta(days=LEJOS_DIAS)
+    db.set_valor(conn, CURSOR.format(canal), (dia + timedelta(days=1)).isoformat())
+    return dia
+
+
+def resumen(conn) -> str:
+    return " · ".join(f"{NOMBRES[c]} {len(leer(conn, c))}" for c in CANALES)
+
+
+# ---- cosechar ------------------------------------------------------------------------------------
+
+def cosechar_latam(wiki, haiku, puntuador, dia: date, avisar=log.info) -> list[dict]:
+    """Historias de Latinoamérica de `dia` que no dependen de la fecha, con 8 o más."""
+    from . import locales
+
+    todos, conmemoraciones, homenajeados = locales.leer_todo(wiki, dia, avisar)
+    cands, _ = locales.filtrar(todos, date.today(), homenajeados)
+    if not cands:
+        return []
+    locales.clasificar(haiku, cands, conmemoraciones)
+    lista = [c for c in locales.buenos(cands)
+             if c.seccion != "fundacion" and not locales.en_calendario(c) and not c.clasif.get("conmemora")]
+    if not lista:
+        return []
+    out = []
+    for c, art, lug in locales.elegir(puntuador, lista[:locales.A_PUNTUAR], cuantos=locales.A_PUNTUAR):
+        if c.clasif.get("puntaje", 0) < PUNTAJE_BANCO or not str(c.clasif.get("lugar") or "").strip():
+            continue
+        out.append({"id": f"latam:{art}", "texto": c.texto, "anio": c.anio, "paginas": c.paginas,
+                    "articulo": art, "articulo_lugar": lug, "puntaje": c.clasif.get("puntaje"),
+                    "clasif": {k: c.clasif.get(k) for k in ("lugar", "region", "pais", "tipo", "puntajes")},
+                    "de_dia": dia.isoformat()})
+    return out
+
+
+def cosechar_tecnologia(wiki, puntuador, dia: date, avisar=log.info) -> list[dict]:
+    """Hechos de tecnología de `dia` con 8 o más (contados como historia, sin la fecha)."""
+    from . import efemerides as ef
+
+    todos = wiki.eventos("es", dia) + wiki.eventos("en", dia)
+    cands = [e for e in todos if not ef.motivo_evento(e, date.today())]
+    if not cands:
+        return []
+    notas: dict = {}
+    out = []
+    for i, art in ef.elegir(puntuador, cands, tema="tecnologia", notas=notas):
+        n = notas.get(i) or {}
+        if n.get("puntaje", 0) < PUNTAJE_BANCO:
+            continue
+        e = cands[i]
+        out.append({"id": f"tec:{art}", "lang": e.lang, "anio": e.anio, "texto": e.texto,
+                    "paginas": [art] + [x for x in e.paginas if x != art], "articulo": art,
+                    "puntaje": n.get("puntaje"), "notas": {k: n.get(k) for k in ef.CRITERIOS_TEC},
+                    "de_dia": dia.isoformat()})
+    return out
+
+
+def cosechar_asinacio(conn, wiki, revisor, hoy: date, n: int = 20, avisar=log.info) -> list[dict]:
+    """Marcas y ángulos libres en la rotación, puntuados con Haiku: los de 8 o más."""
+    from .animacion import marcas
+
+    catalogo = marcas.cargar_catalogo()
+    ya = {x.get("marca") for x in leer(conn, "asinacio")}
+    cands = [(m, a) for m, a in marcas.candidatos(conn, catalogo, hoy, n * 2,
+                                                  azar=random.Random(time.time()), excluir=ya)][:n]
+    textos = []
+    for m, a in cands:
+        try:
+            textos.append((m, a, marcas.extracto(wiki.texto("es", m.wiki_es), a)))
+        except Exception as e:
+            avisar(f"banco: no pude leer {m.nombre}: {str(e)[:100]}")
+    out = []
+    for e in marcas.elegir(revisor, textos, PUNTAJE_BANCO):
+        out.append({"id": f"{e.marca.nombre}/{e.angulo}", "marca": e.marca.nombre, "angulo": e.angulo,
+                    "notas": e.notas, "dato": e.dato, "puntaje": e.promedio})
+    return out
+
+
+def paso(conn, canal: str, hoy: date, wiki, haiku, puntuador, revisor, avisar=log.info) -> int:
+    """Una cosecha (un día del año, o una tanda de marcas) del banco `canal`. Devuelve cuántas sumó."""
+    if canal == "latam":
+        dia = proximo_dia(conn, canal, hoy)
+        nuevos = cosechar_latam(wiki, haiku, puntuador, dia, avisar)
+    elif canal == "tecnologia":
+        dia = proximo_dia(conn, canal, hoy)
+        nuevos = cosechar_tecnologia(wiki, puntuador, dia, avisar)
+    else:
+        nuevos = cosechar_asinacio(conn, wiki, revisor, hoy, avisar=avisar)
+    n = agregar(conn, canal, nuevos)
+    avisar(f"banco {canal}: +{n} (quedan {len(leer(conn, canal))})")
+    return n

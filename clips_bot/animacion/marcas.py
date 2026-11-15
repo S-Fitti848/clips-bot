@@ -66,6 +66,7 @@ _CLAVES_ANGULO = {
 
 CRITERIOS = ("marca_conocida", "dato_sorprendente", "giro", "humor")
 PUNTAJE_MIN = 8.0
+PISO_ABSOLUTO = 6.0    # Santi, 2026-11-15: en el último intento del día sale la mejor si tiene 6; si no, el banco
 DIAS_SIN_REPETIR_MARCA = 7
 
 PALABRAS_MIN, PALABRAS_MAX = 68, 98      # frases + locutor: con la voz ×1,065 y pausas cortas, 32-38 s
@@ -315,6 +316,8 @@ class Elegido:
     angulo: str
     notas: dict
     dato: str = ""
+    aviso: str = ""        # "⚠️ salió con puntaje 6,5" o "📦 del banco de reserva" (Santi, 2026-11-15)
+    banco_id: str = ""
 
     @property
     def promedio(self) -> float:
@@ -1709,6 +1712,8 @@ class Resultado:
     tiempos: dict = field(default_factory=dict)
     revision: list = field(default_factory=list)      # lo que vio la revisión visual y lo que se corrigió
     niveles: dict = field(default_factory=dict)       # dB de la voz, la música, los SFX y la mezcla
+    aviso: str = ""        # puntaje bajo o banco de reserva (nunca un día sin video, 2026-11-15)
+    banco_id: str = ""
 
     def a_dict(self) -> dict:
         return asdict(self)
@@ -1736,7 +1741,8 @@ def ultima_fila_uso(conn) -> int:
 def proponer(conn, cliente, wiki, hoy: date, catalogo: list[Marca] | None = None, n: int = 8,
              minimo: float = PUNTAJE_MIN, max_intentos: int = 3, avisar=log.info,
              revisor=None, forzar: Elegido | None = None,
-             reintentos_guion: int = 6) -> tuple[Elegido, dict, str]:
+             reintentos_guion: int = 6, banco: list[dict] | None = None,
+             ultimo: bool = False) -> tuple[Elegido, dict, str]:
     """(elegido, guion validado, fuente). SinCandidato si ninguno llega al puntaje o ningún guion valida.
     `forzar`: una marca y ángulo elegidos a mano (para rehacer un ejemplo): sin rotación ni puntaje."""
     from clips_bot import bitacora
@@ -1753,8 +1759,34 @@ def proponer(conn, cliente, wiki, hoy: date, catalogo: list[Marca] | None = None
     catalogo = catalogo if catalogo is not None else cargar_catalogo()
     fallidas = fallidos_de(conn, hoy) if conn is not None else set()
     cands = candidatos(conn, catalogo, hoy, n, excluir=fallidas)
+
+    def con_banco(motivo: str, errores_previos: list[str] | None = None):
+        """Nunca un día sin video (Santi, 2026-11-15): una marca del banco de reserva (puntuada de antemano
+        con 8 o más) que siga libre en la rotación."""
+        libres = {(m.nombre, a) for m, a in disponibles(conn, catalogo, hoy)} if conn is not None else None
+        por_nombre = {m.nombre: m for m in catalogo}
+        errs = list(errores_previos or [])
+        for it in sorted(banco or [], key=lambda x: -float(x.get("puntaje") or 0))[:3]:
+            m = por_nombre.get(it.get("marca"))
+            if m is None or (libres is not None and (m.nombre, it.get("angulo")) not in libres) \
+                    or m.nombre in fallidas:
+                continue
+            e = Elegido(m, it["angulo"], dict(it.get("notas") or {}), str(it.get("dato") or ""),
+                        aviso=f"📦 del banco de reserva ({motivo})", banco_id=str(it.get("id") or ""))
+            avisar(f"banco de reserva: {m.nombre}/{e.angulo} ({motivo})")
+            fuente = fuente_de(wiki, m)
+            try:
+                return e, escribir_guion(cliente, e, fuente, reintentos_guion, avisar=avisar, revisor=revisor,
+                                         ganchos_previos=ganchos_recientes(conn)), fuente
+            except GuionInvalido as err:
+                errs.append(str(err))
+        return None
+
     if not cands:
-        raise SinCandidato("no queda ninguna marca/ángulo que pase la rotación")
+        hecho = con_banco("no queda ninguna marca en la rotación")
+        if hecho:
+            return hecho
+        raise SinCandidato("no queda ninguna marca/ángulo que pase la rotación (y el banco de reserva no tiene)")
     textos = []
     for m, a in cands:
         try:
@@ -1763,7 +1795,15 @@ def proponer(conn, cliente, wiki, hoy: date, catalogo: list[Marca] | None = None
             avisar(f"no pude leer el artículo de {m.nombre}: {str(e)[:120]}")
     fila_elegir = bitacora.fila_actual()
     notas_todas: dict = {}
-    elegidos = elegir(revisor or cliente, textos, minimo, notas_todas)   # puntúa Haiku (2026-11-15); Sonnet escribe
+    piso = PISO_ABSOLUTO if ultimo else minimo
+    elegidos = elegir(revisor or cliente, textos, min(minimo, piso), notas_todas)   # puntúa Haiku; Sonnet escribe
+    altos = [x for x in elegidos if x.promedio >= minimo]
+    if altos or not ultimo:
+        elegidos = altos
+    elif elegidos:
+        # el último intento del día: la mejor si tiene 6 o más (Santi, 2026-11-15)
+        elegidos = elegidos[:1]
+        elegidos[0].aviso = f"⚠️ salió con puntaje {elegidos[0].promedio:.1f} (mínimo {minimo:g})".replace(".", ",")
     # los que no llegan al puntaje: a la bitácora, con su parte del pedido (Santi, 2026-11-15)
     if conn is not None and textos:
         parte = bitacora.costo_entre(conn, fila_elegir, bitacora.fila_actual()) / len(textos) if fila_elegir else 0.0
@@ -1778,6 +1818,10 @@ def proponer(conn, cliente, wiki, hoy: date, catalogo: list[Marca] | None = None
     avisar("candidatos: " + ", ".join(f"{m.nombre}/{a}" for m, a, _ in textos) +
            f" → pasan {len(elegidos)}: " + ", ".join(f"{e.marca.nombre}/{e.angulo} {e.promedio}" for e in elegidos))
     if not elegidos:
+        if ultimo:
+            hecho = con_banco(f"ninguna llegó a {PISO_ABSOLUTO:g}")
+            if hecho:
+                return hecho
         # quedan afuera hoy y el reintento (en 1 h) prueba con otras: no se pierde el día (2026-11-15)
         anotar_fallidos(conn, hoy, [m.nombre for m, _, _ in textos])
         raise GuionesFallidos(f"ninguno de los {len(textos)} candidatos llegó a {minimo:g} de promedio; "
@@ -1798,6 +1842,11 @@ def proponer(conn, cliente, wiki, hoy: date, catalogo: list[Marca] | None = None
             errores.append(str(err))
             bitacora.descarte(f"{e.marca.nombre}/{e.angulo}", str(err).split(": ", 1)[-1], "guion", desde_fila=fila_g)
     anotar_fallidos(conn, hoy, [e.marca.nombre for e in elegidos[:max_intentos]])
+    if ultimo:
+        fallidas |= {e.marca.nombre for e in elegidos[:max_intentos]}
+        hecho = con_banco("ningún guion del día validó", errores)
+        if hecho:
+            return hecho
     raise GuionesFallidos("ningún guion pasó la validación (esas marcas quedan afuera hoy): "
                           + " | ".join(errores)[:600])
 
@@ -1814,7 +1863,7 @@ SUBTITULOS_TAM = sv.TAM
 def armar_video(conn, settings, carpeta: Path, cliente=None, wiki=None, hoy: date | None = None,
                 avisar=log.info, procesos: int = 2, catalogo: list[Marca] | None = None,
                 forzar: Elegido | None = None, revisor=None, guion: dict | None = None,
-                reescribir: bool = True) -> Resultado:
+                reescribir: bool = True, banco: list[dict] | None = None, ultimo: bool = False) -> Resultado:
     """De punta a punta: elegir → guion (con el chequeo de Haiku) → voz → Whisper → escenas de acción +
     pausas del locutor → SFX → mp4. No sube nada a ningún lado."""
     from clips_bot import claude, musica, narrar
@@ -1844,7 +1893,7 @@ def armar_video(conn, settings, carpeta: Path, cliente=None, wiki=None, hoy: dat
     else:
         e, d, fuente = proponer(conn, cliente, wiki, hoy, catalogo, cfg.candidatos, cfg.puntaje_min,
                                 cfg.max_intentos, avisar, revisor=revisor, forzar=forzar,
-                                reintentos_guion=cfg.reintentos_guion)
+                                reintentos_guion=cfg.reintentos_guion, banco=banco, ultimo=ultimo)
     tiempos["guion_s"] = round(time.time() - t0, 1)
     if not tiene_claves(d) and revisor is not None:     # REGLA 9 con un guion que no la trae
         try:
@@ -1990,7 +2039,8 @@ def armar_video(conn, settings, carpeta: Path, cliente=None, wiki=None, hoy: dat
         motor_voz=motor, musica=tema.ruta if tema else "", credito_musica=tema.credito() if tema else "",
         articulo=f"https://es.wikipedia.org/wiki/{e.marca.wiki_es.replace(' ', '_')}",
         render_s=tiempos["render_s"], total_s=round(time.time() - t_total, 1),
-        costo_usd=costo_desde(conn, fila0), tiempos=tiempos, revision=revision, niveles=niv)
+        costo_usd=costo_desde(conn, fila0), tiempos=tiempos, revision=revision, niveles=niv,
+        aviso=e.aviso, banco_id=e.banco_id)
 
 
 # ---- 8. a Telegram (sin subir a ningún lado) -----------------------------------------------------

@@ -25,6 +25,7 @@ import logging
 import re
 import signal
 import sys
+import threading
 import time
 from collections import Counter
 from datetime import datetime, timedelta, timezone
@@ -35,6 +36,7 @@ import requests
 from . import __version__, db, metricas
 from . import gemini as gemini_mod
 from . import bitacora
+from . import banco as banco_mod
 from .idioma import L
 from .candidates import (MOTIVO_COSTREAM, Resultado, buscar_candidatos, buscar_catalogo, buscar_kick,
                          consolidar_evento)
@@ -2722,6 +2724,8 @@ def escuchar_telegram(settings: Settings, timeout_poll: int = 50) -> int:
             _seguro(tg, str(chat_ultimo or ""), "la búsqueda de lo que pegó",
                     _auto(_pego_tick), conn, settings)
             _seguro(tg, str(chat_ultimo or ""), "el chequeo de las subidas", _chequeo_subidas_tick, conn, tg)
+            _seguro(tg, str(chat_ultimo or ""), "los bancos de reserva", _bancos_tick, conn, tg, settings)
+            _seguro(tg, str(chat_ultimo or ""), "el chequeo de las 20:00", _sin_video_tick, conn, tg, settings)
             _seguro(tg, str(chat_ultimo or ""), "la cola", _drenar_cola, conn, tg, cola, settings)
             guardado = db.get_valor(conn, "telegram_offset")
             pendientes = db.alertas(conn, estados=("pendiente",)) if db.envivo_chat(conn) else []
@@ -3515,7 +3519,10 @@ def _efe_proponer(conn, tg: TelegramClient, chats: list[str], dia, settings: Set
                         elector_reintento=_elector_fotos(settings, reintento=True),
                         tema="" if hecho else settings.efemerides.tema,
                         corto=settings.efemerides.corto, texto=_texto_efemeride(settings, gemini),
-                        mas_video=settings.efemerides.estilo_nuevo, puntuador=_puntuador(settings))
+                        mas_video=settings.efemerides.estilo_nuevo, puntuador=_puntuador(settings),
+                        # nunca un día sin video (Santi, 2026-11-15): piso de 6 y, debajo, el banco
+                        piso=None if hecho else banco_mod.PISO_ABSOLUTO,
+                        banco=None if hecho else banco_mod.leer(conn, "tecnologia"))
     except (NarrarError, ef.WikiError, GeminiError) as e:
         bitacora.fallo("", str(e))
         bitacora.cerrar(conn, "fallido")
@@ -3523,6 +3530,7 @@ def _efe_proponer(conn, tg: TelegramClient, chats: list[str], dia, settings: Set
         if isinstance(e, (ef.SinFotosReales, ef.SinTema)):
             return ErrorDefinitivo(error)
         return ErrorPasajero(error) if getattr(e, "pasajero", False) else error
+    banco_mod.sacar(conn, "tecnologia", (p.local or {}).get("banco_id"))
     estado = {"propuesta": p.__dict__, "carpeta": str(carpeta), "chat_id": chats[0]}
     bitacora.dato(titulo=(p.guion or {}).get("titulo", ""))
     if auto:
@@ -3600,6 +3608,21 @@ def _latam_del_dia(conn, dia) -> list[dict]:
     return json.loads(db.get_valor(conn, f"{PH_LATAM}:{dia.isoformat()}") or "[]")
 
 
+def _piso_latam(conn, dia, hecho: str = "") -> dict:
+    """Nunca un día sin video (Santi, 2026-11-15): la PRIMERA historia del día sale siempre (la mejor si
+    tiene 6 o más; si no, una del banco de reserva); la segunda, solo con 8 (o con 7 si hoy todavía no
+    salió ninguna de menos de 8). A mano (/historia con un hecho), como siempre."""
+    from . import locales
+
+    ya = _latam_del_dia(conn, dia)
+    if hecho:
+        return {}
+    if not ya:
+        return {"piso_alternativo": locales.PISO_ABSOLUTO, "banco": banco_mod.leer(conn, "latam")}
+    baja = any(float(x.get("puntaje") or 10) < locales.PUNTAJE_MIN for x in ya)
+    return {"piso_alternativo": None if baja else locales.PISO_UNA_POR_DIA}
+
+
 def _fb_proponer(conn, tg: TelegramClient, chats: list[str], dia, settings: Settings,
                  hecho: str = "", auto: bool = False) -> str | None:
     """Propone una historia de Latinoamérica (va a YouTube y a Facebook desde el 2026-11-12) y manda
@@ -3632,13 +3655,12 @@ def _fb_proponer(conn, tg: TelegramClient, chats: list[str], dia, settings: Sett
                              evitar_paises={x["pais"] for x in _latam_del_dia(conn, dia) if x.get("pais")},
                              mas_video=settings.efemerides.estilo_nuevo,
                              puntuador=_puntuador(settings),
-                             piso_alternativo=None if any(float(x.get("puntaje") or 10) < locales.PUNTAJE_MIN
-                                                          for x in _latam_del_dia(conn, dia))
-                             else locales.PISO_UNA_POR_DIA)
+                             **_piso_latam(conn, dia, hecho))
     except (NarrarError, ef.WikiError, GeminiError) as e:
         bitacora.fallo("", str(e))
         bitacora.cerrar(conn, "fallido")
         return f"No salió la historia de Latinoamérica: {html.escape(str(e)[:400])}"
+    banco_mod.sacar(conn, "latam", (p.local or {}).get("banco_id"))
     ya = _latam_del_dia(conn, dia)
     ya.append({"texto": p.evento.get("texto"), "pais": (p.local or {}).get("pais"),
                "articulo": (p.evento.get("paginas") or [""])[0], "puntaje": (p.local or {}).get("puntaje")})
@@ -3977,6 +3999,104 @@ def _fb_tick(conn, tg: TelegramClient, settings: Settings, ahora=None, proponer=
                                   "Probá a mano con <code>/historia</code>.")
 
 
+BANCO_HILO: dict = {}
+BANCO_DESDE, BANCO_HASTA = "09:30", "21:30"   # fuera de la madrugada y de lo pesado de la mañana
+
+
+def _banco_activo(settings: Settings, canal: str) -> bool:
+    if canal == "latam":
+        return settings.historias_fb.activo
+    if canal == "tecnologia":
+        return settings.efemerides.diaria and settings.efemerides.tema == "tecnologia"
+    return settings.animacion.activo
+
+
+def _bancos_tick(conn, tg: TelegramClient, settings: Settings, ahora=None, correr=None) -> None:
+    """Repone los bancos de reserva (banco.py, Santi 2026-11-15): si alguno bajó de 10, cosecha de a un
+    paso (un día del año o una tanda de marcas) en un hilo aparte, así la escucha sigue contestando,
+    hasta que vuelve a 20. Entre BANCO_DESDE y BANCO_HASTA."""
+    ahora = ahora or datetime.now(AR)
+    if not BANCO_DESDE <= ahora.strftime("%H:%M") < BANCO_HASTA:
+        return
+    hilo = BANCO_HILO.get("hilo")
+    if hilo is not None and hilo.is_alive():
+        return
+    canales = [c for c in banco_mod.CANALES if _banco_activo(settings, c) and banco_mod.hay_que_reponer(conn, c)]
+    if not canales:
+        return
+    canal = min(canales, key=lambda c: len(banco_mod.leer(conn, c)))
+    hoy = ahora.date()
+
+    def trabajo():
+        from . import efemerides as ef
+
+        c2 = db.connect(DB_PATH)
+        try:
+            with gemini_mod.origen(gemini_mod.PRODUCCION):
+                haiku = _claude_textos(settings)[1]
+                punt = _puntuador(settings)
+                if haiku is None or punt is None:
+                    return
+                banco_mod.paso(c2, canal, hoy, ef.Wiki(), haiku, punt, punt)
+        except Exception:
+            log.exception("banco de reserva (%s)", canal)
+        finally:
+            c2.close()
+
+    if correr is not None:
+        correr(trabajo)
+        return
+    hilo = threading.Thread(target=trabajo, daemon=True, name=f"banco-{canal}")
+    BANCO_HILO["hilo"] = hilo
+    hilo.start()
+
+
+SIN_VIDEO_AVISO = "sin_video_aviso"   # bot_estado: el día (AR) en que ya se hizo el chequeo de las 20:00
+SIN_VIDEO_HORA = "20:00"
+
+
+def canales_del_dia(settings: Settings) -> dict[str, str]:
+    """{canal de la tabla subidas: nombre}: lo que tiene que tener algo programado o publicado cada día."""
+    out = {}
+    if settings.efemerides.diaria or settings.historias_fb.activo:
+        out["pequena_historia"] = "Pequeña Historia (YouTube)"
+    if settings.historias_fb.activo and settings.facebook.activo:
+        out["facebook"] = "Pequeña Historia (Facebook)"
+    if settings.animacion.activo and settings.animacion.subir:
+        out["animacion"] = "Así Nació (YouTube)"
+    if settings.animacion.activo and settings.animacion.facebook:
+        out[ASINACIO_FB] = "Así Nació (Facebook)"
+    return out
+
+
+def _sin_video_tick(conn, tg: TelegramClient, settings: Settings, ahora=None) -> None:
+    """Red de seguridad (Santi, 2026-11-15): a las 20:00, si un canal no tiene nada programado ni publicado
+    para hoy, aviso a Santi (una vez por día)."""
+    ahora = ahora or datetime.now(AR)
+    hoy = ahora.date()
+    if ahora.strftime("%H:%M") < SIN_VIDEO_HORA or db.get_valor(conn, SIN_VIDEO_AVISO) == hoy.isoformat():
+        return
+    db.set_valor(conn, SIN_VIDEO_AVISO, hoy.isoformat())
+    con_video = set()
+    for canal, publish_at, creada in conn.execute(
+            "SELECT canal, publish_at, creada FROM subidas WHERE estado IN ('programada', 'publicada')"):
+        cuando = publish_at or creada
+        try:
+            t = datetime.fromisoformat(str(cuando).replace("Z", "+00:00").replace(" ", "T"))
+        except ValueError:
+            continue
+        if t.tzinfo is None:
+            t = t.replace(tzinfo=timezone.utc)
+        if t.astimezone(AR).date() == hoy:
+            con_video.add(canal)
+    faltan = [nombre for canal, nombre in canales_del_dia(settings).items() if canal not in con_video]
+    if not faltan:
+        log.info("chequeo de las %s: todos los canales tienen video hoy", SIN_VIDEO_HORA)
+        return
+    tg.send_message(DUENO, f"🚨 <b>Hoy ({hoy:%d/%m}) a las {SIN_VIDEO_HORA}, sin video</b> en: "
+                           + ", ".join(faltan) + ".\nBancos de reserva: " + banco_mod.resumen(conn) + ".")
+
+
 ANIM_DIA = "animacion_dia"   # bot_estado: el día (AR) en que ya se armó (o se intentó) el de marcas
 
 
@@ -3994,12 +4114,18 @@ def clip_asinacio(hoy, k: int = 0) -> str:
     return f"{PREFIJO_ASINACIO}{hoy:%Y%m%d}" + (f"_{k + 1}" if k else "")
 
 
-def _animacion_armar(conn, tg: TelegramClient, chats: list[str], settings: Settings, hoy, k: int = 0) -> None:
+def _animacion_armar(conn, tg: TelegramClient, chats: list[str], settings: Settings, hoy, k: int = 0,
+                     ultimo: bool = False) -> None:
+    """`ultimo`: el último intento del día (nunca un día sin video, Santi 2026-11-15): sale la mejor marca si
+    tiene 6 o más y, si no, una del banco de reserva. El banco se usa siempre que no quede ninguna en la
+    rotación."""
     from .animacion import marcas
 
     carpeta = DATA_DIR.parent / "output" / "animacion" / (hoy.strftime("%Y%m%d") + (f"_{k + 1}" if k else ""))
     r = marcas.armar_video(conn, settings, carpeta, hoy=hoy, avisar=log.info,
-                           procesos=settings.animacion.procesos)
+                           procesos=settings.animacion.procesos, banco=banco_mod.leer(conn, "asinacio"),
+                           ultimo=ultimo)
+    banco_mod.sacar(conn, "asinacio", getattr(r, "banco_id", ""))
     bitacora.dato(clip_id=clip_asinacio(hoy, k), titulo=r.titulo)
     bitacora.paso("subida")
     avisos = _animacion_subir(conn, settings, r, carpeta, hoy, k) if settings.animacion.subir else []
@@ -4007,7 +4133,7 @@ def _animacion_armar(conn, tg: TelegramClient, chats: list[str], settings: Setti
     clip_id = clip_asinacio(hoy, k)
     programado = any(a.startswith(("📤", "📘")) for a in avisos)
     encabezado = (("🤖 <b>Se publica sola</b>: si no tocás nada sale a su hora; ❌ Cancelar la frena.\n"
-                   if programado else "") + "\n".join(avisos))
+                   if programado else "") + "\n".join(avisos + ([html.escape(r.aviso)] if getattr(r, "aviso", "") else [])))
     marcas.enviar(tg, chats, r, encabezado=encabezado, subida=programado)
     if programado:
         for chat in chats:
@@ -4127,9 +4253,12 @@ def _animacion_tick(conn, tg: TelegramClient, settings: Settings, ahora=None, ar
     error, sin_candidato = "", False
     vid = clip_asinacio(ahora.date(), k)
     intento = (fallas.get(str(k), 0) + 1)
+    ultimo = intento >= ANIM_FALLAS_MAX or \
+        (ahora + timedelta(minutes=cfg.reintento_min)).strftime("%H:%M") >= cfg.reintento_hasta
     bitacora.abrir(conn, vid if intento == 1 else f"{vid}#{intento}", "asinacio", "marcas")
     try:
-        (armar or _animacion_armar)(conn, tg, chats, settings, ahora.date(), k)
+        (armar or _animacion_armar)(conn, tg, chats, settings, ahora.date(), k,
+                                    **({"ultimo": True} if ultimo else {}))
         bitacora.cerrar(conn, "programado" if cfg.subir else "entregado")
     except Exception as e:
         from .animacion.marcas import SinCandidato
@@ -4461,6 +4590,8 @@ def _efe_armar(conn, tg: TelegramClient, chat_id, token: str, settings: Settings
         return f"No pude armar el video: {html.escape(str(e)[:300])}"
     bitacora.dato(clip_id=meta.get("clip_id", ""), titulo=(meta.get("textos") or {}).get("titulo", ""))
     motor = meta.get("efemeride", {}).get("voz", "")
+    relajado = "\n".join(x for x in ((getattr(prop, "local", None) or {}).get("aviso"),
+                                      meta.get("efemeride", {}).get("aviso_fotos")) if x)
     # Con Piper (Gemini sin cuota o sin respuesta): el botón para rehacerla con Laomedeia
     # cuando vuelva la cuota. Por eso la propuesta se guarda hasta que salga con Laomedeia.
     extra = ([[{"text": "🔁 Rehacer con Laomedeia", "callback_data": f"efe:voz:{token}"}]]
@@ -4479,6 +4610,8 @@ def _efe_armar(conn, tg: TelegramClient, chat_id, token: str, settings: Settings
                       + hora_historia_fb(settings, (prop.local or {}).get("pais"), datetime.now(AR).date())
                       + " (AR)" if fb else
                       "📅 <b>Pequeña Historia</b> — subilo al canal de efemérides")
+    if relajado:
+        encabezado += "\n" + html.escape(relajado)
     enviar_clip(tg, chat_id, conn, meta["clip_id"], meta, 1, None,
                 encabezado=f"{encabezado}\n🎙 {html.escape(ef.texto_voz(motor))}", extra_filas=extra)
     bitacora.cerrar(conn, "programado" if auto else "entregado")
