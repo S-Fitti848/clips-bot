@@ -79,10 +79,16 @@ def _vol(relleno: str) -> str:
     return relleno
 
 
-def _base(etiqueta: str, attrs: str, relleno: str, borde: bool, ancho: float) -> str:
-    """La forma (con contorno: con volumen y el contorno variable abajo)."""
+VOLUMEN_MIN = 34    # px: las formas más chicas (ojos, botones, manos) quedan planas (en la Pi cada degradé cuesta)
+
+
+def _base(etiqueta: str, attrs: str, relleno: str, borde: bool, ancho: float, tam: float = 1e9) -> str:
+    """La forma (con contorno: con volumen y el contorno variable abajo). `tam`: su medida mayor (radio
+    o medio lado); debajo de VOLUMEN_MIN va plana."""
     if not borde:
         return f'<{etiqueta} {attrs} fill="{relleno}" stroke="none"/>'
+    if tam < VOLUMEN_MIN:
+        return f'<{etiqueta} {attrs} fill="{relleno}" {trazo(ancho=ancho)}/>'
     forma = f'<{etiqueta} {attrs} fill="{_vol(relleno)}" {trazo(ancho=ancho)}/>'
     if not P.VOLUMEN or relleno == "none":
         return forma
@@ -92,16 +98,18 @@ def _base(etiqueta: str, attrs: str, relleno: str, borde: bool, ancho: float) ->
 
 
 def circulo(cx, cy, r, relleno, borde=True, ancho=P.TRAZO) -> str:
-    return _base("circle", f'cx="{n(cx)}" cy="{n(cy)}" r="{n(r)}"', relleno, borde, ancho)
+    return _base("circle", f'cx="{n(cx)}" cy="{n(cy)}" r="{n(r)}"', relleno, borde, ancho, float(r))
 
 
 def elipse(cx, cy, rx, ry, relleno, borde=True, ancho=P.TRAZO) -> str:
-    return _base("ellipse", f'cx="{n(cx)}" cy="{n(cy)}" rx="{n(rx)}" ry="{n(ry)}"', relleno, borde, ancho)
+    return _base("ellipse", f'cx="{n(cx)}" cy="{n(cy)}" rx="{n(rx)}" ry="{n(ry)}"', relleno, borde, ancho,
+                 float(max(rx, ry)))
 
 
 def rect(x, y, w, h, relleno, r=0, borde=True, ancho=P.TRAZO) -> str:
     rr = f' rx="{n(r)}"' if r else ""
-    return _base("rect", f'x="{n(x)}" y="{n(y)}" width="{n(w)}" height="{n(h)}"{rr}', relleno, borde, ancho)
+    return _base("rect", f'x="{n(x)}" y="{n(y)}" width="{n(w)}" height="{n(h)}"{rr}', relleno, borde, ancho,
+                 float(max(w, h)) / 2)
 
 
 def camino(d: str, relleno: str = "none", borde=True, ancho=P.TRAZO, color=P.CONTORNO) -> str:
