@@ -232,31 +232,55 @@ def coeficientes_camara(camara: tuple, w: int, h: int) -> tuple:
     return (a, b, cx + dx * k - (a * cx + b * cy), d, e, cy + dy * k - (d * cx + e * cy))
 
 
-def _capa(capa: CapaEscena, encima: str = ""):
+def _capa(capa: CapaEscena, encima: str = "", tono: float = 0.0, remolino: float = 0.0):
     """Una escena rasterizada. `encima` (subtítulos) va en la MISMA llamada al rasterizador:
     cada llamada tiene un costo fijo alto (pixmap de 1080x1920 + PNG), medido en Windows con
-    resvg: 0,13 s por una capa de subtítulos sola."""
+    resvg: 0,13 s por una capa de subtítulos sola.
+
+    `remolino` (viaje en el tiempo, 0..1): la escena (fondo y frente) se retuerce; lo fijo (el reloj, el año,
+    Tito) va encima sin retorcer. `tono` (sepia, 0..1): toda la escena MENOS `capa.color` (el objeto
+    protagonista, que queda a todo color: Santi, 2026-11-15) y los subtítulos."""
     from PIL import Image
 
     w, h = _W["w"], _W["h"]
     if not _W["cache_fondo"]:   # todo junto en un solo SVG (para comparar)
-        cuerpo = (_svg_camara(_svg_fondo(capa.fondo) + capa.frente, capa.camara) + capa.fijo
-                  + _grade(capa.fondo) + encima)
-        return _W["r"].rgba(_doc(cuerpo), w, h)
+        cuerpo = (_svg_camara(_svg_fondo(capa.fondo) + capa.frente + capa.color, capa.camara) + capa.fijo
+                  + _grade(capa.fondo))
+        img = _W["r"].rgba(_doc(cuerpo), w, h)
+        if tono > 0.001:
+            import numpy as np
+
+            img = Image.fromarray(sepia(np.array(img.convert("RGBA")), tono))
+        if encima:
+            img.alpha_composite(_W["r"].rgba(_doc(encima), w, h))
+        return img
     base = _fondo(capa.fondo)
     if capa.camara != (1.0, 0.0, 0.0, 0.0):
         base = base.transform((w, h), Image.AFFINE, coeficientes_camara(capa.camara, w, h),
                               resample=Image.BILINEAR)
     else:
         base = base.copy()
-    cuerpo = _svg_camara(capa.frente, capa.camara) + capa.fijo
+    if remolino > 0.001:
+        import numpy as np
+
+        if capa.frente:
+            base.alpha_composite(_W["r"].rgba(_doc(_svg_camara(capa.frente, capa.camara)), w, h))
+        base = Image.fromarray(retorcer(np.array(base), remolino))
+        cuerpo = capa.fijo
+    else:
+        cuerpo = _svg_camara(capa.frente, capa.camara) + capa.fijo
     if cuerpo:
         base.alpha_composite(_W["r"].rgba(_doc(cuerpo), w, h))
     gr = _grade_img(capa.fondo)
     if gr is not None:
         base.alpha_composite(gr)
-    if encima:
-        base.alpha_composite(_W["r"].rgba(_doc(encima), w, h))
+    if tono > 0.001:
+        import numpy as np
+
+        base = Image.fromarray(sepia(np.array(base), tono))
+    arriba = (_svg_camara(capa.color, capa.camara) if capa.color else "") + encima
+    if arriba:
+        base.alpha_composite(_W["r"].rgba(_doc(arriba), w, h))
     return base
 
 
@@ -328,13 +352,18 @@ def _matriz_camara(ctx, camara: tuple, w: int, h: int) -> None:
     ctx.translate(-w / 2 - dx * k, -h / 2 - dy * k)
 
 
-def _capa_cairo(capa: CapaEscena, encima: str = ""):
+def _capa_cairo(capa: CapaEscena, encima: str = "", tono: float = 0.0, remolino: float = 0.0):
+    """Como `_capa`, con cairo: remolino sobre fondo y frente, sepia sobre todo menos el protagonista
+    (`capa.color`) y los subtítulos."""
     r, w, h = _W["r"], _W["w"], _W["h"]
     sup = r.superficie(w, h)
     if not _W["cache_fondo"]:
-        cuerpo = (_svg_camara(_svg_fondo(capa.fondo) + capa.frente, capa.camara) + capa.fijo
-                  + _grade(capa.fondo) + encima)
+        cuerpo = (_svg_camara(_svg_fondo(capa.fondo) + capa.frente + capa.color, capa.camara) + capa.fijo
+                  + _grade(capa.fondo))
         r.dibujar_en(_doc(cuerpo), sup)
+        _sepia_cairo(sup, tono)
+        if encima:
+            r.dibujar_en(_doc(encima), sup)
         return sup
     ctx = r._cairo.Context(sup)
     if capa.camara != (1.0, 0.0, 0.0, 0.0):
@@ -342,7 +371,13 @@ def _capa_cairo(capa: CapaEscena, encima: str = ""):
     ctx.set_source_surface(_fondo_cairo(capa.fondo), 0, 0)
     ctx.get_source().set_filter(r._cairo.FILTER_BILINEAR)
     ctx.paint()
-    cuerpo = _svg_camara(capa.frente, capa.camara) + capa.fijo
+    if remolino > 0.001:
+        if capa.frente:
+            r.dibujar_en(_doc(_svg_camara(capa.frente, capa.camara)), sup)
+        _remolino_cairo(sup, remolino)
+        cuerpo = capa.fijo
+    else:
+        cuerpo = _svg_camara(capa.frente, capa.camara) + capa.fijo
     if cuerpo:
         r.dibujar_en(_doc(cuerpo), sup)
     gr = _grade_img(capa.fondo)
@@ -350,8 +385,10 @@ def _capa_cairo(capa: CapaEscena, encima: str = ""):
         ctx2 = r._cairo.Context(sup)
         ctx2.set_source_surface(gr, 0, 0)
         ctx2.paint()
-    if encima:
-        r.dibujar_en(_doc(encima), sup)
+    _sepia_cairo(sup, tono)
+    arriba = (_svg_camara(capa.color, capa.camara) if capa.color else "") + encima
+    if arriba:
+        r.dibujar_en(_doc(arriba), sup)
     return sup
 
 
@@ -432,6 +469,48 @@ def sepia(rgb, k: float, bgr: bool = False):
     return rgb
 
 
+_MAPAS_REMOLINO: dict = {}
+
+
+def retorcer(arr, s: float):
+    """El remolino del viaje en el tiempo (Santi, 2026-11-15: "la imagen se retuerce en remolino"): cada punto
+    gira alrededor del centro más cuanto más cerca está, hasta ~2,5 vueltas en el centro con `s` = 1. Sobre un
+    array numpy HxWx4 (cualquier orden de canales); los mapas se guardan por fuerza (pocos cuadros por viaje)."""
+    import math as _m
+
+    import cv2
+    import numpy as np
+
+    h, w = arr.shape[:2]
+    clave = (h, w, round(float(s), 2))
+    mapas = _MAPAS_REMOLINO.get(clave)
+    if mapas is None:
+        ys, xs = np.mgrid[0:h, 0:w].astype(np.float32)
+        cx, cy = w / 2, h / 2
+        dx, dy = xs - cx, ys - cy
+        r = np.sqrt(dx * dx + dy * dy)
+        radio = 0.62 * _m.hypot(w, h) / 2
+        ang = np.arctan2(dy, dx) + float(s) * 16.0 * np.clip(1 - r / radio, 0, 1) ** 2
+        mapas = ((cx + r * np.cos(ang)).astype(np.float32), (cy + r * np.sin(ang)).astype(np.float32))
+        if len(_MAPAS_REMOLINO) > 120:
+            _MAPAS_REMOLINO.clear()
+        _MAPAS_REMOLINO[clave] = mapas
+    arr[...] = cv2.remap(np.ascontiguousarray(arr), mapas[0], mapas[1], cv2.INTER_LINEAR,
+                         borderMode=cv2.BORDER_REFLECT)
+    return arr
+
+
+def _remolino_cairo(sup, s: float) -> None:
+    import numpy as np
+
+    if s <= 0.001:
+        return
+    sup.flush()
+    arr = np.ndarray((sup.get_height(), sup.get_stride() // 4, 4), dtype=np.uint8, buffer=sup.get_data())
+    retorcer(arr, s)
+    sup.mark_dirty()
+
+
 def _sepia_cairo(sup, k: float) -> None:
     import numpy as np
 
@@ -445,19 +524,15 @@ def _sepia_cairo(sup, k: float) -> None:
 
 def _componer_cairo(cuadro: Cuadro) -> bytes:
     k = getattr(cuadro, "tono", 0.0)
+    rem = getattr(cuadro, "remolino", 0.0)
     if cuadro.b is not None and cuadro.transicion:
-        sup = _transicion_cairo(_capa_cairo(cuadro.b), _capa_cairo(cuadro.a),
+        # el sepia va por capa (así el protagonista de cada una queda en color) y los subtítulos al final
+        sup = _transicion_cairo(_capa_cairo(cuadro.b, tono=k), _capa_cairo(cuadro.a, tono=k, remolino=rem),
                                 *cuadro.transicion)
-        _sepia_cairo(sup, k)
-        if cuadro.encima:
-            _W["r"].dibujar_en(_doc(cuadro.encima), sup)
-    elif k > 0.001:      # el sepia no toca los subtítulos: van después
-        sup = _capa_cairo(cuadro.a)
-        _sepia_cairo(sup, k)
         if cuadro.encima:
             _W["r"].dibujar_en(_doc(cuadro.encima), sup)
     else:
-        sup = _capa_cairo(cuadro.a, cuadro.encima)
+        sup = _capa_cairo(cuadro.a, cuadro.encima, tono=k, remolino=rem)
     sup.flush()
     return bytes(sup.get_data())   # BGRA (ARGB32 de cairo en little-endian), stride = 4 * w
 
@@ -473,20 +548,13 @@ def componer(cuadro: Cuadro) -> tuple[bytes, float]:
     if getattr(_W["r"], "nativo", False):
         return _componer_cairo(cuadro), time.perf_counter() - t0
     k = getattr(cuadro, "tono", 0.0)
+    rem = getattr(cuadro, "remolino", 0.0)
     if cuadro.b is not None and cuadro.transicion:
-        img = _transicion(_capa(cuadro.b), _capa(cuadro.a), *cuadro.transicion)
-    elif k > 0.001:
-        img = _capa(cuadro.a)
+        img = _transicion(_capa(cuadro.b, tono=k), _capa(cuadro.a, tono=k, remolino=rem), *cuadro.transicion)
+        if cuadro.encima:   # los subtítulos no participan de la transición ni del sepia
+            img.alpha_composite(_W["r"].rgba(_doc(cuadro.encima), _W["w"], _W["h"]))
     else:
-        img = _capa(cuadro.a, cuadro.encima)
-    if k > 0.001:
-        import numpy as np
-        from PIL import Image
-
-        img = Image.fromarray(sepia(np.array(img.convert("RGBA")), k))
-    if cuadro.encima and (k > 0.001 or (cuadro.b is not None and cuadro.transicion)):
-        # los subtítulos no participan de la transición ni del sepia
-        img.alpha_composite(_W["r"].rgba(_doc(cuadro.encima), _W["w"], _W["h"]))
+        img = _capa(cuadro.a, cuadro.encima, tono=k, remolino=rem)
     return img.convert("RGB").tobytes(), time.perf_counter() - t0
 
 

@@ -102,6 +102,19 @@ def viaje() -> np.ndarray:
         t0 = 1.0 * (1 - (1 - k / 10) ** 1.6)
         m = (t >= t0) & (t < t0 + 0.03)
         out[m] += 0.5 * np.sin(2 * np.pi * 2200 * (t[m] - t0)) * np.exp(-(t[m] - t0) * 120)
+    # el whoosh FUERTE (Santi, 2026-11-15): un barrido de ruido de todo el viaje que sube y se corta, con
+    # un rugido grave abajo
+    ruido = _ruido(len(t), 11)
+    barrido = np.zeros_like(ruido)
+    acc = 0.0
+    for i, v in enumerate(ruido):
+        u = i / len(ruido)
+        a = 0.985 - 0.75 * u ** 1.5
+        acc = a * acc + (1 - a) * v
+        barrido[i] = acc
+    env_w = np.minimum(1.0, t / 0.08) * np.clip((1.2 - t) / 0.12, 0, 1) * (0.5 + 0.5 * t / 1.2)
+    out += 2.6 * barrido * env_w
+    out += 0.35 * np.sin(2 * np.pi * np.cumsum(55 + 40 * t) / SR) * env
     w = whoosh()
     out[:len(w)] += 0.5 * w[:len(out)]
     return out

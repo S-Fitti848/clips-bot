@@ -32,6 +32,10 @@ def gancho(texto: str, t: float, modo: str = "palabras", y: float = 380, tam: in
     """El título/gancho en el segundo `t` desde que aparece.
     - "rebote": entra todo junto, escalando desde 0 con un rebote (0,45 s).
     - "palabras": cada palabra aparece a `ritmo_s` de la anterior con un pop."""
+    # nada se sale de la pantalla (Santi, 2026-11-15): si una línea no entra, la letra se achica
+    while tam > 40 and any(sum(ancho_texto(p, tam) for p in l) + ancho_texto(" ", tam) * (len(l) - 1) > ancho_max
+                           for l in partir_lineas(texto.upper(), tam, ancho_max)):
+        tam = int(tam * 0.92)
     lineas = partir_lineas(texto.upper(), tam, ancho_max)
     alto_linea = tam * 1.12
     y0 = y - alto_linea * (len(lineas) - 1) / 2

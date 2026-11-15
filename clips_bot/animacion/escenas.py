@@ -1208,30 +1208,71 @@ def _partes(texto: str) -> tuple[str, str]:
     return a.strip(), b.strip()
 
 
+ANCHO_TEXTOS = 940   # Santi, 2026-11-15: ningún texto se sale de la pantalla (1080 menos los márgenes)
+
+
+def tam_que_entra(texto: str, tam: float, ancho_max: float, minimo: float = 34) -> float:
+    """El tamaño de letra más grande (hasta `tam`) con el que `texto` entra en `ancho_max` (medido con la
+    fuente del canal y un 8 % de aire por el contorno)."""
+    from .svg import ancho_texto
+
+    while tam > minimo and ancho_texto(texto, int(tam)) * 1.08 > ancho_max:
+        tam *= 0.94
+    return max(minimo, tam)
+
+
+def partir_en_dos(texto: str) -> tuple[str, str]:
+    """El texto en dos líneas lo más parejas posible (por palabras)."""
+    pal = texto.split()
+    if len(pal) < 2:
+        return texto, ""
+    mejor = min(range(1, len(pal)), key=lambda k: abs(len(" ".join(pal[:k])) - len(" ".join(pal[k:]))))
+    return " ".join(pal[:mejor]), " ".join(pal[mejor:])
+
+
 def prop_rotulo(texto: str = "1974 · Budapest", **_) -> str:
     """Rótulo tipo noticiero (año · lugar), arriba a la izquierda (coordenadas de pantalla: va fijo)."""
     anio, _, lugar = str(texto).partition(" · ")
     if not lugar and not anio.strip().isdigit():
         anio, lugar = "", anio
-    w_a = 30 + 34 * len(anio) if anio else 0
-    w_l = 40 + 30 * len(lugar)
+    from .svg import ancho_texto
+
+    w_a = 40 + ancho_texto(anio, 56) if anio else 0
+    w_l = 50 + ancho_texto(lugar.upper(), 46) if lugar else 0
     out = ""
     if anio:
         out += rect(0, 0, w_a, 76, P.ROJO, r=6, ancho=5) + texto_con_borde(anio, w_a / 2, 54, 56, ancho_borde=6)
     if lugar:
         out += (rect(w_a, 0, w_l, 76, "#1d3557", r=6, ancho=5)
                 + texto_con_borde(lugar.upper(), w_a + w_l / 2, 52, 46, ancho_borde=6))
+    total = w_a + w_l
+    if total > ANCHO_TEXTOS + 60:   # va desde x = 40: que no pase de 1040
+        return g(out, 0, 0, escala=(ANCHO_TEXTOS + 60) / total)
     return out
 
 
 def prop_dato(texto: str = "4 MILLONES|cubos vendidos", **_) -> str:
     """Un número gigante con qué es abajo, en una placa (fijo, arriba al centro)."""
+    from .svg import ancho_texto
+
     num, que = _partes(texto)
-    tam = 170 if len(num) <= 8 else 120
-    w = max(560, 0.62 * tam * len(num) + 80)
-    return (rect(-w / 2, -tam * 0.95, w, tam * 1.6 + (60 if que else 0), "#fff6dc", r=28)
-            + texto_con_borde(num, 0, tam * 0.35, tam, color=P.AMARILLO, ancho_borde=tam * 0.12)
-            + (texto_con_borde(que.upper(), 0, tam * 0.35 + 78, 48, color=P.BLANCO, ancho_borde=8) if que else ""))
+    interior = ANCHO_TEXTOS - 80
+    tam = tam_que_entra(num, 170, interior, minimo=90)
+    lineas = [num]
+    if ancho_texto(num, int(tam)) * 1.08 > interior:      # ni a 90 px entra: dos líneas
+        lineas = [x for x in partir_en_dos(num) if x]
+        tam = min(tam_que_entra(x, 150, interior, minimo=60) for x in lineas)
+    tam_q = tam_que_entra(que.upper(), 48, interior, minimo=28) if que else 0
+    w = min(ANCHO_TEXTOS, max(560, max(ancho_texto(x, int(tam)) for x in lineas) * 1.08 + 80))
+    alto_num = tam * 1.05 * len(lineas)
+    out = rect(-w / 2, -tam * 0.95, w, alto_num + tam * 0.55 + (60 if que else 0), "#fff6dc", r=28)
+    for k, linea in enumerate(lineas):
+        out += texto_con_borde(linea, 0, tam * 0.35 + k * tam * 1.05, int(tam), color=P.AMARILLO,
+                               ancho_borde=tam * 0.12)
+    if que:
+        out += texto_con_borde(que.upper(), 0, tam * 0.35 + (len(lineas) - 1) * tam * 1.05 + 78, int(tam_q),
+                               color=P.BLANCO, ancho_borde=8)
+    return out
 
 
 def prop_cita(texto: str = "«La cita»|Nombre, cargo", **_) -> str:
@@ -1249,10 +1290,12 @@ def prop_cita(texto: str = "«La cita»|Nombre, cargo", **_) -> str:
     lineas = lineas[:4]
     alto = 90 + 62 * len(lineas) + (70 if quien else 0)
     out = rect(-470, 0, 940, alto, "#fffdf6", r=26) + rect(-470, 0, 22, alto, P.ROJO, borde=False)
+    tam_c = min([tam_que_entra(l, 50, 860, minimo=30) for l in lineas] or [50])
     for k, l in enumerate(lineas):
-        out += texto_con_borde(l, 0, 86 + 62 * k, 50, color="#1f1a24", borde="#fffdf6", ancho_borde=2)
+        out += texto_con_borde(l, 0, 86 + 62 * k, int(tam_c), color="#1f1a24", borde="#fffdf6", ancho_borde=2)
     if quien:
-        out += texto_con_borde("— " + quien.upper(), 0, 86 + 62 * len(lineas) + 30, 34, color=P.ROJO,
+        out += texto_con_borde("— " + quien.upper(), 0, 86 + 62 * len(lineas) + 30,
+                               int(tam_que_entra("— " + quien.upper(), 34, 860, minimo=22)), color=P.ROJO,
                                borde="#fffdf6", ancho_borde=2)
     return out
 
@@ -1266,7 +1309,7 @@ def prop_cartel_comic(texto: str = "¡BOOM!", **_) -> str:
         r_ = 230 if k % 2 == 0 else 160
         a = _m.radians(k * 15)
         puntas.append(f"{n(_m.cos(a) * r_ * 1.25)} {n(_m.sin(a) * r_ * 0.8)}")
-    tam = 92 if len(texto) <= 8 else 70
+    tam = int(tam_que_entra(texto, 92, 360, minimo=40))
     return (f'<path d="M{" L".join(puntas)} Z" fill="{P.AMARILLO}" stroke="{P.CONTORNO}" stroke-width="10" '
             f'stroke-linejoin="round"/>' + texto_con_borde(texto, 0, tam * 0.35, tam, color=P.ROJO, ancho_borde=12))
 
@@ -1282,14 +1325,42 @@ def prop_tito_reaccion(forma: int = 0, **_) -> str:
     return circulo(0, 0, 118, "#7cc6ee", ancho=10) + g(cara, 0, 26, escala=0.62) + icono
 
 
+def _dedo(largo: float, ancho: float, piel: str, nudillos: int = 2) -> str:
+    """Un dedo visto desde arriba, apuntando hacia arriba desde (0, 0): falange redondeada, uña y los pliegues
+    de los nudillos."""
+    r = ancho / 2
+    d = (f"M{n(-r)} 0 L{n(-r)} {n(-largo + r)} A{n(r)} {n(r)} 0 0 1 {n(r)} {n(-largo + r)} "
+         f"L{n(r)} 0 Z")
+    out = camino(d, piel, ancho=5)
+    uña = rect(-r * 0.62, -largo + r * 0.35, r * 1.24, largo * 0.26, aclarar(piel, 0.45), r=r * 0.55, ancho=3)
+    pliegues = ""
+    for k in range(1, nudillos + 1):
+        y = -largo * (0.30 * k)
+        pliegues += (f'<path d="M{n(-r * 0.55)} {n(y)} Q0 {n(y - 5)} {n(r * 0.55)} {n(y)}" fill="none" '
+                     f'stroke="{oscurecer(piel, 0.28)}" stroke-width="3.5" stroke-linecap="round"/>')
+    return out + uña + pliegues
+
+
 def prop_mano(forma: int = 1, color: str = "", **_) -> str:
     """Una mano vista desde arriba con la manga (plano de manos de la biblioteca de escenas): entra desde abajo;
-    `forma` -1 = la izquierda, 1 = la derecha."""
-    s_ = -1 if int(forma or 1) < 0 else 1
+    `forma` -1 = la izquierda, 1 = la derecha. Con dedos separados, nudillos, uñas y pulgar (Santi, 2026-11-15:
+    "manos con dedos y más detalle, no tipo guante")."""
+    # vista desde arriba (el dorso): el pulgar y el índice van del lado de ADENTRO (hacia la otra mano)
+    s_ = 1 if int(forma or 1) < 0 else -1
     piel, manga = P.PIEL[0], color or P.AZUL
-    dedos = "".join(elipse(s_ * dx, -150 + dy, 16, 34, piel) for dx, dy in ((-36, 10), (-12, -4), (12, -2), (36, 12)))
-    return (rect(-58, -40, 116, 230, manga, r=30) + dedos + elipse(0, -95, 66, 70, piel)
-            + elipse(s_ * 68, -88, 18, 38, piel) + rect(-62, -40, 124, 26, aclarar(manga, 0.3), r=10, ancho=5))
+    sombra = oscurecer(piel, 0.18)
+    # dedos: índice, medio, anular y meñique (del pulgar hacia afuera), un poco en abanico
+    dedos = ""
+    for dx, largo, ang in ((22, 74, 4), (0, 84, 0), (-22, 78, -4), (-42, 60, -10)):
+        dedos += g(_dedo(largo, 21 if largo > 62 else 18, piel), s_ * dx, -118, rot=s_ * ang)
+    palma = camino(f"M{-56} -36 C-62 -80 -58 -118 -40 -126 L40 -126 C58 -118 62 -80 56 -36 Z", piel, ancho=5)
+    nudillos = "".join(elipse(s_ * dx, -122, 9, 5, sombra, borde=False) for dx in (22, 0, -22, -42))
+    tendones = "".join(f'<path d="M{s_ * dx} -50 L{s_ * dx * 1.05} -110" stroke="{sombra}" stroke-width="3" '
+                       f'stroke-linecap="round" opacity="0.6"/>' for dx in (18, 0, -18))
+    pulgar = g(_dedo(66, 24, piel, nudillos=1), s_ * 36, -52, rot=s_ * 42)
+    manga_svg = (rect(-60, -40, 120, 230, manga, r=26) + rect(-64, -44, 128, 28, aclarar(manga, 0.3), r=10, ancho=5)
+                 + f'<path d="M-30 -10 L-26 180 M30 -10 L26 180" stroke="{oscurecer(manga, 0.2)}" stroke-width="4"/>')
+    return manga_svg + pulgar + palma + tendones + nudillos + dedos
 
 
 def prop_mostrador(**_) -> str:
@@ -1302,6 +1373,67 @@ def prop_fuego(**_) -> str:
     """Llamas del despegue (debajo del objeto que sube)."""
     return (camino("M-70 -20 Q-90 90 0 220 Q90 90 70 -20 Q40 40 0 -10 Q-40 40 -70 -20 Z", P.NARANJA)
             + camino("M-40 -10 Q-50 70 0 150 Q50 70 40 -10 Q20 30 0 0 Q-20 30 -40 -10 Z", P.AMARILLO, ancho=5))
+
+
+def prop_reloj_gigante(fase: float = 0.0, forma: int = -1, **_) -> str:
+    """El reloj gigante del viaje en el tiempo (marca del canal, Santi 2026-11-15): esfera antigua con números
+    romanos y las agujas girando a toda velocidad, hacia ATRÁS (`forma` -1, al pasado) o hacia adelante (1).
+    `fase` 0..1 = cuánto avanzó el viaje."""
+    sentido = -1 if int(forma or -1) < 0 else 1
+    out = [circulo(0, 0, 400, "#3a2a1c", ancho=14), circulo(0, 0, 370, "#f3e6c4", ancho=8),
+           circulo(0, 0, 330, "none", ancho=3)]
+    romanos = ("XII", "I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X", "XI")
+    for k in range(60):
+        ang = math.radians(k * 6)
+        r0 = 345 if k % 5 else 315
+        out.append(f'<path d="M{n(math.sin(ang) * r0)} {n(-math.cos(ang) * r0)} L{n(math.sin(ang) * 362)} '
+                   f'{n(-math.cos(ang) * 362)}" stroke="{P.CONTORNO}" stroke-width="{8 if k % 5 == 0 else 4}"/>')
+    for k, rom in enumerate(romanos):
+        ang = math.radians(k * 30)
+        out.append(texto_con_borde(rom, math.sin(ang) * 262, -math.cos(ang) * 262 + 22, 64, color="#3a2a1c",
+                                   borde="#f3e6c4", ancho_borde=2))
+    vueltas = float(fase or 0) * 7.0      # la grande da 7 vueltas; la chica, una
+    minutero = sentido * vueltas * 360 + 0
+    horario = sentido * vueltas * 30 + 300
+    for ang, largo, ancho in ((horario, 190, 26), (minutero, 300, 16)):
+        rad = math.radians(ang)
+        out.append(f'<path d="M0 0 L{n(math.sin(rad) * largo)} {n(-math.cos(rad) * largo)}" stroke="{P.CONTORNO}" '
+                   f'stroke-width="{ancho}" stroke-linecap="round"/>')
+    # estela de la aguja grande (se ve que gira rapidísimo)
+    for k in range(1, 5):
+        rad = math.radians(minutero - sentido * k * 9)
+        out.append(f'<path d="M0 0 L{n(math.sin(rad) * 290)} {n(-math.cos(rad) * 290)}" stroke="{P.CONTORNO}" '
+                   f'stroke-width="{16 - 3 * k}" stroke-linecap="round" opacity="{round(0.35 - 0.07 * k, 2)}"/>')
+    out.append(circulo(0, 0, 30, P.AMARILLO, ancho=8))
+    return "".join(out)
+
+
+def odometro(valor: float, tam: int = 200) -> str:
+    """El año como cuentakilómetros (viaje en el tiempo): una cajita por dígito; el último rueda."""
+    v = max(0.0, float(valor))
+    entero = int(math.floor(v))
+    frac = v - entero
+    txt = str(entero)
+    bw, bh = tam * 0.66, tam * 1.0
+    total = bw * len(txt) + 10 * (len(txt) - 1)
+    x0 = -total / 2
+    out = [rect(x0 - 24, -bh / 2 - 24, total + 48, bh + 48, "#2a2420", r=22, ancho=10)]
+    for k, ch in enumerate(txt):
+        x = x0 + k * (bw + 10)
+        out.append(rect(x, -bh / 2, bw, bh, "#111014", r=10, ancho=5))
+        cx = x + bw / 2
+        if k == len(txt) - 1 and frac > 0.02:   # el último dígito rodando hacia el siguiente
+            sig = str((int(ch) + 1) % 10)
+            cid = f"odo{entero}_{int(frac * 100)}"
+            out.append(f'<clipPath id="{cid}"><rect x="{n(x)}" y="{n(-bh / 2)}" width="{n(bw)}" height="{n(bh)}"/>'
+                       f'</clipPath><g clip-path="url(#{cid})">'
+                       + texto_con_borde(ch, cx, tam * 0.36 + frac * bh, tam, color="#ffffff", ancho_borde=0)
+                       + texto_con_borde(sig, cx, tam * 0.36 + (frac - 1) * bh, tam, color="#ffffff", ancho_borde=0)
+                       + "</g>")
+        else:
+            out.append(texto_con_borde(ch, cx, tam * 0.36, tam, color="#ffffff", ancho_borde=0))
+    out.append(f'<rect x="{n(x0 - 10)}" y="-4" width="{n(total + 20)}" height="8" fill="#000000" opacity="0.35"/>')
+    return "".join(out)
 
 
 COLORES_CUBO = ("#ffffff", "#ffd23f", "#e63946", "#f59a3a", "#3a86ff", "#2a9d48")
@@ -1358,7 +1490,7 @@ def icono_pausa() -> str:
             + rect(10, -36, 20, 72, P.CONTORNO, r=4, borde=False))
 
 
-PROPS = {"mano": prop_mano, "mostrador": prop_mostrador, "fuego": prop_fuego, "cubo_rubik": prop_cubo_rubik,
+PROPS = {"reloj_gigante": prop_reloj_gigante, "mano": prop_mano, "mostrador": prop_mostrador, "fuego": prop_fuego, "cubo_rubik": prop_cubo_rubik,
          "rotulo": prop_rotulo, "dato": prop_dato, "cita": prop_cita, "cartel_comic": prop_cartel_comic,
          "tito_reaccion": prop_tito_reaccion, "primer_plano": prop_primer_plano, "polvo": prop_polvo, "lineas_mov": prop_lineas_mov,
          "destello": prop_destello, "pelota_espuma": prop_pelota_espuma, "juego_mesa": prop_juego_mesa, "hamburguesa": prop_hamburguesa,

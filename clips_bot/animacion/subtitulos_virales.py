@@ -23,7 +23,9 @@ from .easing import recortar
 
 TAM = 70                 # palabra común (px)
 TAM_CLAVE = 92           # palabra clave
-ANCHO_MAX = 900          # el grupo entero (con el emoji) entra acá; con el pop (+12 %) y el temblor, igual entra en 1080
+ANCHO_MAX = 860          # el grupo entero (con el emoji) entra acá; con el pop (+12 %), el temblor y el contorno, en 1080
+ACHIQUE_MIN = 0.75       # si para entrar hay que achicar más que esto, el grupo va en dos líneas (Santi, 2026-11-15)
+TAM_DOS = 56             # en dos líneas, la letra más grande (las dos entran en la franja de arriba, y 150-300)
 Y = 225                  # centro vertical de la línea (la escena no sube de y = 300)
 EMOJI = 0.95             # alto del emoji / tamaño de la clave
 TOPE_Y = 300             # nada del subtítulo baja de acá
@@ -101,6 +103,34 @@ def _medidas(grupo: list) -> tuple[list[float], list[float], float, float]:
     return tams, anchos, esp, emoji
 
 
+def lineas_de(grupo: list) -> list[list]:
+    """El grupo en una línea o, si para entrar habría que achicarlo demasiado, en dos."""
+    if len(grupo) < 2:
+        return [grupo]
+    tams, *_ = _medidas(grupo)
+    base = [TAM_CLAVE if getattr(p, "clave", False) else TAM for p in grupo]
+    if min(t / b for t, b in zip(tams, base)) >= ACHIQUE_MIN:
+        return [grupo]
+    corte = max(1, len(grupo) // 2)
+    return [grupo[:corte], grupo[corte:]]
+
+
+def ys_de(n_lineas: int, y: float = Y) -> list[float]:
+    """El centro de cada línea: con dos, una arriba y otra abajo de `y` sin pasar de TOPE_Y."""
+    if n_lineas < 2:
+        return [y]
+    return [y - 40, y + 22]
+
+
+def medidas_linea(grupo: list, dos: bool):
+    """`_medidas` de una línea; en dos líneas, la letra se limita a TAM_DOS."""
+    tams, anchos, esp, emoji = _medidas(grupo)
+    if dos and max(tams) > TAM_DOS:
+        k = TAM_DOS / max(tams)
+        tams, anchos, esp, emoji = [x * k for x in tams], [x * k for x in anchos], esp * k, emoji * k
+    return tams, anchos, esp, emoji
+
+
 def _palabra(texto: str, tam: float, color: str, cx: float, base: float, esc: float, rot: float = 0.0) -> str:
     """Una palabra centrada en `cx`, con la línea de base en `base`: sombra suave (dos copias corridas y
     transparentes), contorno negro grueso y el relleno; escalada desde su centro (el pop)."""
@@ -128,7 +158,12 @@ def subtitulo(grupos: list[list], t: float, y: float = Y) -> str:
     grupo = grupo_en(grupos, t)
     if not grupo:
         return ""
-    tams, anchos, esp, ancho_emoji = _medidas(grupo)
+    lineas = lineas_de(grupo)
+    return "".join(_linea(l, t, yl, len(lineas) > 1) for l, yl in zip(lineas, ys_de(len(lineas), y)))
+
+
+def _linea(grupo: list, t: float, y: float, dos: bool = False) -> str:
+    tams, anchos, esp, ancho_emoji = medidas_linea(grupo, dos)
     total = sum(anchos) + esp * (len(grupo) - 1) + ancho_emoji
     x = (P.ANCHO - total) / 2
     out = []
@@ -263,21 +298,23 @@ def marcar(palabras: list, segmentos: list[dict], golpes: list[float], max_clave
     return palabras
 
 
-def limites(grupos: list[list], y: float = Y) -> tuple[float, float, float, float]:
+def limites(grupos: list[list], y_base: float = Y) -> tuple[float, float, float, float]:
     """(x mínimo, x máximo, y mínimo, y máximo) que puede ocupar el subtítulo más grande (con el pop al
     máximo, el temblor, el contorno y la sombra): para el chequeo de que nada se sale del ancho ni de la franja."""
     x0, x1, y0, y1 = float(P.ANCHO), 0.0, float(P.ALTO), 0.0
-    for gr in grupos:
-        tams, anchos, esp, emoji = _medidas(gr)
-        total = sum(anchos) + esp * (len(gr) - 1) + emoji
-        k = max(tams)
-        borde = max(6.0, k * 0.2) * 0.75
-        temblor = 7.0 if any(getattr(p, "impacto", False) for p in gr) else 0.0
-        mitad = (P.ANCHO - total) / 2
-        x0 = min(x0, mitad - borde - temblor - 0.06 * max(anchos))
-        x1 = max(x1, P.ANCHO - mitad + borde + temblor + 0.06 * max(anchos) + k * 0.1)
-        alto_txt = k * 0.7 * 1.12 / 2 + borde + temblor
-        alto_emo = (k * EMOJI * 1.12 / 2 + 4) if emoji else 0.0
-        y0 = min(y0, y - max(alto_txt, alto_emo))
-        y1 = max(y1, y + max(alto_txt + k * 0.13, alto_emo))
+    for gr0 in grupos:
+        lineas = lineas_de(gr0)
+        for gr, y in zip(lineas, ys_de(len(lineas), y_base)):
+            tams, anchos, esp, emoji = medidas_linea(gr, len(lineas) > 1)
+            total = sum(anchos) + esp * (len(gr) - 1) + emoji
+            k = max(tams)
+            borde = max(6.0, k * 0.2) * 0.75
+            temblor = 7.0 if any(getattr(p, "impacto", False) for p in gr) else 0.0
+            mitad = (P.ANCHO - total) / 2
+            x0 = min(x0, mitad - borde - temblor - 0.06 * max(anchos))
+            x1 = max(x1, P.ANCHO - mitad + borde + temblor + 0.06 * max(anchos) + k * 0.1)
+            alto_txt = k * 0.7 * 1.12 / 2 + borde + temblor
+            alto_emo = (k * EMOJI * 1.12 / 2 + 4) if emoji else 0.0
+            y0 = min(y0, y - max(alto_txt, alto_emo))
+            y1 = max(y1, y + max(alto_txt + k * 0.13, alto_emo))
     return x0, x1, y0, y1

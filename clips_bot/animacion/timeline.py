@@ -242,8 +242,11 @@ class Elemento:
             a, b = float(self.datos.get("de", 2026)), float(self.datos.get("a", 1900))
             u = curva("salida")(recortar(tl / max(0.05, float(self.datos.get("dur", 0.8)))))
             tam = int(self.datos.get("tam", 200))
-            contenido = texto_con_borde(str(int(round(a + (b - a) * u))), 0, tam * 0.35, tam,
-                                        color=self.datos.get("color", P.TEXTO_GANCHO))
+            if self.datos.get("estilo") == "odometro":   # el viaje nuevo (2026-11-15): tipo cuentakilómetros
+                contenido = esc.odometro(a + (b - a) * u, tam)
+            else:
+                contenido = texto_con_borde(str(int(round(a + (b - a) * u))), 0, tam * 0.35, tam,
+                                            color=self.datos.get("color", P.TEXTO_GANCHO))
         else:   # texto suelto
             tam = int(self.datos.get("tam", 96))
             contenido = texto_con_borde(str(self.datos["texto"]), 0, tam * 0.35, tam,
@@ -343,6 +346,13 @@ class Escena:
     # con la cámara de la pausa (sin el gris).
     tono: tuple[float, float] = (0.0, 0.0)
     girar: bool = False
+    remolino: bool = False   # el viaje nuevo (2026-11-15): además del giro, la imagen se retuerce
+
+    def remolino_en(self, t: float) -> float:
+        """La fuerza del remolino a los `t` segundos: crece hasta el final del viaje."""
+        if not self.remolino:
+            return 0.0
+        return round(recortar(t / self.duracion) ** 1.3, 3)
 
     @classmethod
     def desde_dict(cls, d: dict, i: int) -> "Escena":
@@ -382,7 +392,7 @@ class Escena:
         tono = d.get("tono", 0.0)
         tono = (float(tono[0]), float(tono[1])) if isinstance(tono, (list, tuple)) else (float(tono), float(tono))
         return cls(dur, fondo, Pista(d.get("camara", [])), (tr.get("tipo", "corte"), tdur),
-                   elementos, congela, tono, bool(d.get("girar", False)))
+                   elementos, congela, tono, bool(d.get("girar", False)), bool(d.get("remolino", False)))
 
     def tono_en(self, t: float) -> float:
         a, b = self.tono
@@ -407,6 +417,7 @@ class CapaEscena:
     camara: tuple
     frente: str        # SVG (cuerpo, sin <svg>) afectado por la cámara
     fijo: str          # SVG en coordenadas de pantalla
+    color: str = ""    # SVG afectado por la cámara que NO pasa a sepia (el objeto protagonista, 2026-11-15)
 
 
 @dataclass(frozen=True)
@@ -416,6 +427,7 @@ class Cuadro:
     transicion: tuple | None = None    # (tipo, u 0..1)
     encima: str = ""                   # subtítulos
     tono: float = 0.0                  # sepia (0..1) de la imagen, sin tocar los subtítulos
+    remolino: float = 0.0              # viaje en el tiempo (0..1): la escena se retuerce en remolino
 
 
 @dataclass
@@ -498,19 +510,23 @@ class Video:
     def total_cuadros(self) -> int:
         return int(round(self.duracion * self.fps))
 
-    def _capa(self, escena: Escena, t: float, cuadro: int, apertura: float | None = None) -> CapaEscena:
+    def _capa(self, escena: Escena, t: float, cuadro: int, apertura: float | None = None,
+              separar: bool = False) -> CapaEscena:
         ap = (self.envolvente[cuadro] if cuadro < len(self.envolvente) else 0.0)             if apertura is None else apertura
-        frente, fijo = [], []
+        frente, fijo, color = [], [], []
         for el in escena.elementos:
             if el.visible(t):
-                (fijo if el.fijo else frente).append(el.svg(t, ap, cuadro))
-        return CapaEscena(escena.fondo, escena.camara_en(t), "".join(frente), "".join(fijo))
+                # en el pasado (sepia), el objeto protagonista va aparte: queda a todo color
+                destino = fijo if el.fijo else (color if separar and el.datos.get("color") else frente)
+                destino.append(el.svg(t, ap, cuadro))
+        return CapaEscena(escena.fondo, escena.camara_en(t), "".join(frente), "".join(fijo), "".join(color))
 
-    def _capa_k(self, k: int, t: float, cuadro: int, apertura: float | None = None) -> CapaEscena:
+    def _capa_k(self, k: int, t: float, cuadro: int, apertura: float | None = None,
+                separar: bool = False) -> CapaEscena:
         """La capa de la escena `k`; si es una pausa, la anterior congelada y en gris + la suya."""
         e = self.escenas[k]
         if not e.congela or k == 0:
-            return self._capa(e, t, cuadro, apertura)
+            return self._capa(e, t, cuadro, apertura, separar)
         j = k - 1
         while j > 0 and self.escenas[j].congela:
             j -= 1
@@ -533,13 +549,14 @@ class Video:
         for k, e in enumerate(self.escenas):
             if t < inicio + e.duracion or k == len(self.escenas) - 1:
                 tl = t - inicio
-                a = self._capa_k(k, tl, i)
+                tono = e.tono_en(tl)
+                a = self._capa_k(k, tl, i, separar=tono > 0.001)
                 b, trans = None, None
                 tipo, tdur = e.transicion
                 if k > 0 and tdur > 0 and tl < tdur:
                     prev = self.escenas[k - 1]
-                    b = self._capa_k(k - 1, prev.duracion + tl, i)
+                    b = self._capa_k(k - 1, prev.duracion + tl, i, separar=tono > 0.001)
                     trans = (tipo, round(tl / tdur, 4))
-                return Cuadro(a, b, trans, self.encima(t), e.tono_en(tl))
+                return Cuadro(a, b, trans, self.encima(t), tono, e.remolino_en(tl))
             inicio += e.duracion
         raise IndexError(i)

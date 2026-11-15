@@ -66,6 +66,8 @@ _CLAVES_ANGULO = {
 
 CRITERIOS = ("marca_conocida", "dato_sorprendente", "giro", "humor")
 PUNTAJE_MIN = 8.0
+GANCHO_SIN_ACCION = {"objeto_gira", "contador_ventas", "reunion", "estantes_llenan"}
+QUIETAS = {"quieto", "pensar", "senalar"}   # sin acción: nadie hace solo esto (Santi, 2026-11-15)
 PISO_ABSOLUTO = 6.0    # Santi, 2026-11-15: en el último intento del día sale la mejor si tiene 6; si no, el banco
 DIAS_SIN_REPETIR_MARCA = 7
 
@@ -464,7 +466,11 @@ objeto protagonista se MUEVE (gira, se resuelve, avanza en la cinta, vuela al ba
 (actores y objetos como hasta ahora) solo si ninguna sirve, y como mucho en 4 de cada 10 escenas; si la acción
 no está y la vas a necesitar seguido, `nueva` con `accion_nueva` = un nombre corto (se guarda para reusarla).
 `festejar` o `saltar` SOLO cuando la frase habla de un éxito; engranajes, martillo, el taller y la fábrica SOLO
-si la frase habla de una máquina, un taller o una fábrica.
+si la frase habla de una máquina, un taller o una fábrica. NADIE PARADO SIN HACER NADA: cada persona hace algo
+de lo que dice la frase (nada de `quieto`, ni una escena solo con `pensar` o `senalar`). EL GANCHO (escena 1)
+es lo más importante del video (en Facebook se va el 65 % entre el segundo 3 y el 7): el momento MÁS
+SORPRENDENTE de la historia, con ACCIÓN y el objeto protagonista a la vista; nunca objeto_gira, contador_ventas,
+reunion, estantes_llenan ni el fondo `escenario`.
 
 REGLA 10 — PERSONAJES SEGÚN LA HISTORIA Y LA ÉPOCA. Elegí los `rol` que hay en esa historia (obrero, obrera,
 científica, inventora, médico, enfermera, granjero, marinero, cocinero, deportista, empresario, vendedor,
@@ -734,6 +740,24 @@ def errores_accion(d: dict) -> list[str]:
         errores.append(f"demasiadas escenas `libre` ({', '.join(map(str, libres))}): usá la escena de la biblioteca "
                        "que muestra lo que dice cada frase")
     validas = set(_acciones_guion())
+    # El gancho (Santi, 2026-11-15: en Facebook se va el 65 % entre el segundo 3 y el 7): el momento más
+    # sorprendente CON ACCIÓN y el objeto protagonista; nada de escenario vacío, contador ni reunión.
+    if escenas:
+        e1 = escenas[0]
+        if e1.get("accion_escena") in GANCHO_SIN_ACCION or e1.get("fondo") == "escenario":
+            errores.append("el gancho (escena 1) es lo más importante del video: mostrá el momento más sorprendente "
+                           "de la historia CON ACCIÓN (alguien haciendo algo con el objeto protagonista, en su lugar), "
+                           f"no {e1.get('accion_escena') or e1.get('fondo')}")
+    # Nadie parado sin hacer nada (Santi, 2026-11-15).
+    for i, e in enumerate(escenas, 1):
+        if (e.get("accion_escena") or _lib.LIBRE) != _lib.LIBRE:
+            continue
+        quietos = [a.get("persona_real") or a.get("rol") for a in e.get("actores") or []
+                   if a.get("accion") in QUIETAS]
+        if quietos and len(quietos) == len(e.get("actores") or []) or any(
+                a.get("accion") == "quieto" for a in e.get("actores") or []):
+            errores.append(f"escena {i}: {', '.join(map(str, quietos)) or 'alguien'} parado sin hacer nada: que "
+                           "cada persona haga algo de lo que dice la frase (fabricar, vender, usar, probar, caminar…)")
     # Variedad (2026-11-15, la prueba del Rubik: 5 de 10 escenas eran el cubo girando en el escenario).
     for accion, tope in (("objeto_gira", 2), ("contador_ventas", 1)):
         usos = [i for i, e in enumerate(escenas, 1) if e.get("accion_escena") == accion]
@@ -1310,7 +1334,7 @@ def linea_de_tiempo(d: dict, inicios: list[float], fin: float, palabras: list,
         elif e.get("vuelve_al_presente") and pasado:
             destino = presente
         if destino is not None and escenas:
-            dv = min(ac.VIAJE_S, max(0.8, dur - 1.0))
+            dv = min(ac.VIAJE_S, max(1.0, dur - 1.0))
             esc_v, fx = ac.escena_viaje(dv, anio_actual, destino, presente)
             escenas.append(esc_v)
             sfx += [(round(t + x, 3), s) for x, s in fx]
@@ -1546,8 +1570,12 @@ que un espectador notaría:
 - algo fuera de época para el año de esa escena (un monitor moderno en 1974, un celular en 1950).
 Para estos usá `arreglo` = otro y decí en `que` qué escena y qué cambiar.
 - (2026-11-15) LA ACCIÓN QUE SE VE NO ES LA QUE DICE LA FRASE (alguien salta cuando la voz dice que arma algo;
-  gente parada con los brazos abiertos frente a engranajes): `arreglo` = cambiar_accion y en `que` decí qué se
-  ve y qué tendría que verse. Esa escena se rehace.
+  gente parada con los brazos abiertos frente a engranajes) o PERSONAS PARADAS SIN HACER NADA en cualquier
+  escena: `arreglo` = cambiar_accion y en `que` decí qué se ve y qué tendría que verse. Esa escena se rehace.
+- (2026-11-15) EL GANCHO (cuadro 1) repetido de un arranque anterior, genérico, sin acción, con gente parada o
+  sin el objeto protagonista: `arreglo` = rehacer_gancho y en `que` decí cuál sería el momento más sorprendente
+  de ESTA historia con acción. Es lo más importante del video (en Facebook se va el 65 % entre el segundo 3 y
+  el 7): se rehace solo.
 Para cada problema: `cuadro` (el número), `que` (corto) y `arreglo`: mover_objeto (a otro lugar),
 cambiar_soporte (apoyarlo en otro lado), sacar_objeto, separar_personajes, sacar_texto u otro; y
 `objeto` (el nombre del objeto, si es un objeto). Si está todo bien, lista vacía. No inventes problemas."""
@@ -1556,7 +1584,8 @@ SCHEMA_REVISION = {"type": "OBJECT", "properties": {"problemas": {"type": "ARRAY
     "type": "OBJECT", "properties": {
         "cuadro": {"type": "INTEGER"}, "que": {"type": "STRING"},
         "arreglo": {"type": "STRING", "enum": ["mover_objeto", "cambiar_soporte", "sacar_objeto",
-                                               "separar_personajes", "sacar_texto", "cambiar_accion", "otro"]},
+                                               "separar_personajes", "sacar_texto", "cambiar_accion",
+                                               "rehacer_gancho", "otro"]},
         "objeto": {"type": "STRING"}},
     "required": ["cuadro", "que", "arreglo", "objeto"]}}}, "required": ["problemas"]}
 CUADROS_REVISION = 8
@@ -1594,30 +1623,42 @@ def _jpeg_512(png: Path) -> bytes:
     return b.getvalue()
 
 
+GANCHO_REHACER = ("el GANCHO (escena 1) es lo más importante del video (en Facebook se va el 65 % entre el segundo 3 "
+                  "y el 7): mostrá el momento MÁS SORPRENDENTE de esta historia CON ACCIÓN (alguien haciendo algo, en "
+                  "su lugar) y el objeto protagonista a la vista; nada de escenario vacío, gente parada, el objeto "
+                  "girando solo ni un arranque anterior del canal")
+
+
 def corregir_acciones(cliente, d: dict, e: "Elegido", fuente: str, malas: list[tuple[int, str]],
-                      claves: list, datos: dict, avisar=log.info) -> tuple[dict, str]:
-    """La revisión vio una acción que no es la de la frase: se corrige SOLO esa escena (corrección puntual) y se
-    vuelve a validar; si no valida, queda como estaba."""
+                      claves: list, datos: dict, avisar=log.info, ganchos: str = "") -> tuple[dict, str]:
+    """La revisión vio algo que se corrige en el guion (una acción que no es la de la frase, gente parada, el
+    gancho repetido o sin acción): se corrige SOLO esa escena (corrección puntual) y se vuelve a validar; si no
+    valida, queda como estaba. `ganchos`: los arranques anteriores del canal (para no repetirlos)."""
     from clips_bot import correcciones
 
     errores = []
     for n_, que in malas:
         if 0 <= n_ < len(claves):
             k = datos["escenas"][claves[n_][1]].get("frase")
-            if isinstance(k, int):
-                errores.append(f"escena {k + 1}: la acción que se ve no es la que dice la frase ({que[:160]}): "
-                               "elegí la escena de la biblioteca y el plano que la muestran")
+            if not isinstance(k, int):
+                continue
+            if k == 0 or claves[n_][2] == "gancho":
+                errores.append(f"escena 1: {GANCHO_REHACER} (la revisión vio: {que[:200]})"
+                               + (f"\nARRANQUES ANTERIORES (no repetir):\n{ganchos}" if ganchos else ""))
+            else:
+                errores.append(f"escena {k + 1}: lo que se ve no es lo que dice la frase ({que[:200]}): elegí la "
+                               "escena de la biblioteca y el plano que la muestran, con cada persona haciendo algo")
     if not errores or cliente is None:
         return d, ""
     try:
         d2 = correcciones.corregir(cliente, sistema_guion(), f"MARCA: {e.marca.nombre}\nTEXTO:\n{(fuente or '')[:12000]}",
                                    d, errores, SCHEMA_GUION, "escenas", "escena")
     except Exception as err:  # noqa: BLE001
-        avisar(f"no pude corregir las acciones: {str(err)[:120]}")
+        avisar(f"no pude corregir: {str(err)[:120]}")
         return d, ""
     if fuente and validar_guion(d2, e.marca, fuente):
-        return d, "la corrección de la acción no validó: quedó como estaba"
-    return d2, "rehice la acción de " + ", ".join(x.split(":")[0] for x in errores)
+        return d, "la corrección no validó: quedó como estaba"
+    return d2, "rehice " + ", ".join(x.split(":")[0] for x in errores)
 
 
 def aplicar_revision(d: dict, problemas: list[dict], claves: list[tuple[float, int, str]],
@@ -1982,10 +2023,14 @@ def armar_video(conn, settings, carpeta: Path, cliente=None, wiki=None, hoy: dat
             revision.append(f"vuelta {vuelta + 1}: sin problemas" if vuelta else "revisión visual: sin problemas")
             break
         hechos = aplicar_revision(d, problemas, claves, datos)
+        # lo que se corrige en el guion: la acción que no es la de la frase, la gente parada y el gancho
+        # repetido o sin acción (Santi, 2026-11-15: "que lo corrija sola, no solo que lo marque")
         acciones_mal = [(int(pr.get("cuadro") or 0) - 1, str(pr.get("que") or "")) for pr in problemas
-                        if pr.get("arreglo") == "cambiar_accion"]
+                        if pr.get("arreglo") in ("cambiar_accion", "rehacer_gancho")
+                        or (pr.get("arreglo") == "otro" and int(pr.get("cuadro") or 0) == 1)]
         if acciones_mal:
-            d, hecho = corregir_acciones(cliente, d, e, fuente, acciones_mal, claves, datos, avisar)
+            d, hecho = corregir_acciones(cliente, d, e, fuente, acciones_mal, claves, datos, avisar,
+                                         ganchos=texto_ganchos(ganchos_recientes(conn)[:-1]) if conn is not None else "")
             if hecho:
                 hechos.append(hecho)
         revision += [f"vuelta {vuelta + 1}: {h}" for h in hechos]

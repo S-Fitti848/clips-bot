@@ -210,12 +210,15 @@ def _fabrica_produce(plano, spec, dur, i, obj, rnd):
 
 def _reunion(plano, spec, dur, i, obj, rnd):
     e = ac.Escena(dur, semilla=i)
-    for k, (x, accion, defecto) in enumerate(((240, "senalar", "empresario"), (840, "pensar", "inventor"))):
+    # Nada de gente parada (Santi, 2026-11-15): uno le da el objeto al otro, que lo agarra y lo prueba.
+    for k, (x, accion, defecto) in enumerate(((240, "vender", "inventor"), (840, "usar", "empresario"))):
         _actor(e, _rol(spec, k, defecto), accion, x, k, espaldas=(plano == "espaldas" and k == 0))
     els = list(e.elementos)
-    els.append(_el(obj, 540, 1150, escala=1.0, fase=0.0, entrada="rebote", desde=0.3,
-                   keyframes=[{"t": 0.3, "rotacion": 0, "fase": 0.0}, {"t": dur, "rotacion": 40, "fase": 0.6,
-                                                                      "easing": "suave"}]))
+    medio = min(dur * 0.55, dur - 0.3)
+    els.append(_el(obj, 330, 1060, escala=0.9, fase=0.0, desde=0.1,
+                   keyframes=[{"t": 0.1, "x": 330, "y": 1060, "rotacion": 0, "fase": 0.0},
+                              {"t": medio, "x": 760, "y": 1000, "rotacion": 200, "fase": 0.3, "easing": "suave"},
+                              {"t": dur, "x": 760, "y": 1000, "rotacion": 380, "fase": 1.0, "easing": "suave"}]))
     return {"elementos": els, "fondo": "oficina", "camara": None, "sfx": e.sfx + [(0.3, "pop")], "actores": e.actores}
 
 

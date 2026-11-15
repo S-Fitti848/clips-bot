@@ -481,8 +481,11 @@ def test_viaje_en_el_tiempo_gira_cuenta_y_pasa_a_sepia():
     medio = v.cuadro(30 + 18)
     assert medio.tono > 0.2 and medio.a.camara[3] != 0             # gira y se va poniendo sepia
     fin = v.cuadro(30 + 35)
-    assert fin.tono > 0.95 and ">1969<" in fin.a.fijo               # el contador llegó a 1969
+    # el año llegó a 1969 en el cuentakilómetros (una cajita por dígito), con el reloj gigante y el remolino
+    assert fin.tono > 0.95 and all(f">{c}<" in fin.a.fijo for c in "1969") and fin.remolino > 0.9
+    assert "XII" in fin.a.fijo and medio.remolino < fin.remolino
     assert sfx == [(0.0, "viaje")]
+    assert 1.0 <= ac.VIAJE_S <= 1.5
     vuelta, _ = ac.escena_viaje(1.2, 1969, 2026)
     assert vuelta["tono"] == [1.0, 0.0]
 
@@ -1113,3 +1116,66 @@ def test_el_cubo_cierra_sus_tres_caras():
     svg = esc_.prop_cubo_rubik(fase=1.0)
     # la cara de arriba comparte la esquina del medio (0, 0) con las dos de los costados
     assert svg.count("M-86 -50") >= 2 and "M0 0" in svg
+
+
+# ---- 2026-11-15 (tarde): gancho, nadie parado, viaje, sepia con el protagonista en color, manos, textos ----
+
+def test_el_gancho_con_accion_y_nadie_parado():
+    d = guion()
+    d["escenas"][0]["accion_escena"] = "objeto_gira"
+    assert any("gancho (escena 1)" in x for x in mk.errores_accion(d))
+    d = guion()
+    d["escenas"][2]["accion_escena"] = "libre"
+    d["escenas"][2]["actores"] = [{"rol": "inventor", "accion": "pensar", "desde": "izquierda", "hacia": "ninguno",
+                                   "cara": "feliz", "genero": "hombre", "edad": "adulto", "persona_real": ""}]
+    assert any("parado sin hacer nada" in x for x in mk.errores_accion(d))
+
+
+def test_la_revision_rehace_el_gancho_repetido(monkeypatch):
+    from clips_bot import correcciones
+
+    d = guion()
+    segs = mk.segmentos(d)
+    inicios = [i * 3.0 for i in range(len(segs))]
+    datos, _ = mk.linea_de_tiempo(d, inicios, inicios[-1] + 3.0, [], None, presente=2026)
+    claves = mk.cuadros_clave(datos)
+    pedidos = []
+
+    def corregir(cliente, sistema, fuente, d_, errores, *a, **k):
+        pedidos.append(errores)
+        return d_
+
+    monkeypatch.setattr(correcciones, "corregir", corregir)
+    monkeypatch.setattr(mk, "validar_guion", lambda *a, **k: [])
+    e = mk.Elegido(mk.Marca("Havanna", "Argentina", "golosinas", "Havanna", ("origen",)), "origen", {})
+    d2, hecho = mk.corregir_acciones(object(), d, e, "texto", [(0, "repite el escenario de antes")], claves, datos,
+                                     ganchos="- Nerf: living")
+    assert pedidos and "GANCHO" in pedidos[0][0] and "Nerf" in pedidos[0][0] and hecho.startswith("rehice")
+
+
+def test_en_el_pasado_el_protagonista_queda_a_color():
+    a, _ = ac.escena_accion({"fondo": "taller", "accion_escena": "armar_mesa", "plano": "lejos",
+                             "actores": [{"rol": "inventor", "accion": "fabricar", "genero": "hombre", "edad": "adulto"}],
+                             "objetos": []}, 2.0, 3, tono=1.0, protagonista="cubo_rubik", anio=1974)
+    v = Video.desde_dict({"escenas": [a]})
+    c = v.cuadro(30)
+    assert c.tono > 0.9 and c.a.color.strip()                              # el cubo va aparte, a color
+    sin, _ = ac.escena_accion({"fondo": "taller", "accion_escena": "armar_mesa", "plano": "lejos",
+                               "actores": [], "objetos": []}, 2.0, 3, protagonista="cubo_rubik")
+    assert not Video.desde_dict({"escenas": [sin]}).cuadro(30).a.color      # en color, todo junto como siempre
+
+
+def test_las_manos_tienen_dedos_y_unas():
+    svg = esc.prop_mano(forma=1)
+    assert svg.count("A") >= 5 and "stroke-linecap" in svg       # 4 dedos + pulgar redondeados, pliegues
+
+
+def test_los_textos_nunca_se_salen():
+    from clips_bot.animacion import subtitulos_virales as sv
+    from clips_bot.animacion.texto import Palabra as PalabraV
+
+    largo = [PalabraV("VENDIÓ", 1.0, 1.4), PalabraV("CUATROCIENTOS", 1.0, 1.4, clave=True, impacto=True, emoji="plata")]
+    x0, x1, y0, y1 = sv.limites([largo])
+    assert x0 >= 0 and x1 <= 1080 and y1 < ac.BANDA_SUBTITULOS and y0 > 150
+    assert len(sv.lineas_de(largo)) == 2
+    assert esc.tam_que_entra("2.76 SEGUNDOS", 170, 860) < 170

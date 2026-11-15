@@ -1338,6 +1338,10 @@ def escena_accion(spec: dict, dur: float, i: int, primera: bool = False, tono: f
         nuevos, fx_v = elementos_visuales(visual, dur, sorted(t for t, _ in e.golpes), primera)
         elementos += nuevos
         e.sfx += fx_v
+    if protagonista:   # en el pasado (sepia) el objeto protagonista queda a todo color (Santi, 2026-11-15)
+        for el in elementos:
+            if el.get("tipo") == "prop" and el.get("nombre") == protagonista:
+                el["color"] = True
     d = {"duracion": dur, "fondo": {"tipo": fondo, "semilla": semilla,
                                     **({"momento": visual["momento"]} if visual and visual.get("momento") else {})},
          "transicion": {"tipo": "corte" if primera else tr, "duracion": 0.3 if tr == "iris" else 0.25},
@@ -1371,22 +1375,30 @@ def lado_tito(k: int) -> str:
     return "izquierda" if k % 2 == 0 else "derecha"
 
 
-VIAJE_S = 1.25
+VIAJE_S = 1.35
 
 
 def escena_viaje(dur: float, de: int, a: int, presente: int = 2026) -> tuple[dict, list[tuple[float, str]]]:
-    """El VIAJE EN EL TIEMPO (Santi, 2026-11-14): Tito levanta el reloj (las agujas giran a toda
-    velocidad), la escena de atrás se va en remolino, el año cuenta de `de` a `a` y la imagen pasa a
-    sepia (al pasado) o vuelve al color (al presente). Dura `dur` (~1,25 s)."""
+    """El VIAJE EN EL TIEMPO, marca del canal (Santi, 2026-11-15; siempre igual, 1-1,5 s): un reloj gigante de
+    fondo con las agujas girando hacia atrás (hacia adelante al volver), el año bajando rapidísimo como un
+    cuentakilómetros, la escena congelada que se retuerce en remolino, el color que se apaga de a poco hasta
+    sepia (o vuelve) y un whoosh fuerte. Tito, con su reloj, en una esquina."""
     al_pasado = a < de
-    tito = {"tipo": "tito", "x": 830, "y": PISO + 20, "escala": 0.5, "entrada": "derecha",
-            "giro_aguja": 1440, "poses": [{"t": 0, "pose": "reloj"}],
-            "keyframes": [{"t": max(0.5, dur - 0.2), "x": 830}, {"t": dur, "x": 1500, "easing": "entrada"}]}
-    contador = {"tipo": "contador", "de": de, "a": a, "dur": max(0.4, dur - 0.45), "desde": 0.15,
-                "x": 540, "y": 760, "tam": 230, "entrada": "rebote"}
-    giro = -260 if al_pasado else 260
-    camara = [{"t": 0, "zoom": 1.0, "rotacion": 0}, {"t": dur, "zoom": 2.4, "rotacion": giro, "easing": "entrada"}]
-    return ({"duracion": dur, "congela": True, "girar": True, "fondo": {"tipo": "color", "color": "#000000"},
-             "transicion": {"tipo": "corte"}, "camara": camara, "elementos": [contador, tito],
+    sentido = -1 if al_pasado else 1
+    reloj = {"tipo": "prop", "nombre": "reloj_gigante", "forma": sentido, "x": 540, "y": 930, "escala": 1.12,
+             "fase": 0.0, "opacidad": 0.0,
+             "keyframes": [{"t": 0, "opacidad": 0.0, "escala": 0.8, "fase": 0.0},
+                           {"t": 0.22, "opacidad": 0.88, "escala": 1.12, "easing": "salida"},
+                           {"t": dur, "opacidad": 0.88, "escala": 1.22, "fase": 1.0, "easing": "lineal"}]}
+    contador = {"tipo": "contador", "estilo": "odometro", "de": de, "a": a, "dur": max(0.45, dur - 0.4),
+                "desde": 0.12, "x": 540, "y": 930, "tam": 190, "entrada": "rebote"}
+    tito = {"tipo": "tito", "x": 870, "y": PISO + 40, "escala": 0.42, "entrada": "derecha",
+            "giro_aguja": -1440 if al_pasado else 1440, "poses": [{"t": 0, "pose": "reloj"}],
+            "keyframes": [{"t": max(0.5, dur - 0.2), "x": 870}, {"t": dur, "x": 1500, "easing": "entrada"}]}
+    giro = -120 if al_pasado else 120
+    camara = [{"t": 0, "zoom": 1.0, "rotacion": 0}, {"t": dur, "zoom": 1.7, "rotacion": giro, "easing": "entrada"}]
+    return ({"duracion": dur, "congela": True, "girar": True, "remolino": True,
+             "fondo": {"tipo": "color", "color": "#000000"},
+             "transicion": {"tipo": "corte"}, "camara": camara, "elementos": [reloj, contador, tito],
              "tono": [0.0 if de >= presente else 1.0, 0.0 if a >= presente else 1.0]},
             [(0.0, "viaje")])

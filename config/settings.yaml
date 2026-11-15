@@ -616,6 +616,9 @@ animacion:
   # programados en YouTube (@asinacio.oficial) a las 13:00 y 20:00 AR, con ❌ Cancelar; si no se toca nada, salen solos.
   activo: true
   subir: true
+  # Más visual + biblioteca de escenas + viaje nuevo (Santi, 2026-11-15: "prendé el modo nuevo para el video de
+  # mañana a las 07:00"): rótulo, número gigante, cita, cartel, mapa, luz del momento, cámara variada y Tito.
+  visual_plus: true
   hora_publicacion: "19:00"
   # 2 videos por día (Santi, 2026-11-15), de marcas distintas: el primero se arma desde las 07:00 y el
   # segundo apenas termina el primero; cada uno se programa en su horario.

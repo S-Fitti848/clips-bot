@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-11-15 | **Versión:** v1.13.0 (desplegado) | **Modo:** Fase 2: corriendo solo en la Pi. **Rots APAGADO.** Pequeña Historia (3 por día, madrugada desde las 04:00) (publicación sin aprobar: llegan con ❌ Cancelar) y **Así Nació** (2 por día, desde las 07:00, publican 13:00 y 20:00 en YouTube y Facebook con ❌ Cancelar), todo al privado de Santi
+**Snapshot:** 2026-11-15 | **Versión:** v1.14.0 (desplegado) | **Modo:** Fase 2: corriendo solo en la Pi. **Rots APAGADO.** Pequeña Historia (3 por día, madrugada desde las 04:00) (publicación sin aprobar: llegan con ❌ Cancelar) y **Así Nació** (2 por día, desde las 07:00, publican 13:00 y 20:00 en YouTube y Facebook con ❌ Cancelar), todo al privado de Santi
 
 > **SI ESTÁS EMPEZANDO UNA SESIÓN NUEVA, LEÉ §10.** Ahí está qué está hecho, qué quedó a medias,
 > qué falta, y las trampas que ya nos mordieron.
@@ -247,6 +247,19 @@ servicio systemd separado: `clips-bot`).
   Chilena no tiene API: no se usan directo. (4) Aviso en el mensaje del video ("⚠️ salió con puntaje 6,2
   (mínimo 8)", "📦 del banco de reserva", "⚠️ fotos reales 55 %"). (5) A las 20:00, si un canal no tiene nada
   programado ni publicado hoy, aviso a Santi (`_sin_video_tick`).
+- **Así Nació: gancho, viaje, sepia, manos y textos (Santi, 2026-11-15, noche; regla permanente para TODOS los
+  videos):** (1) el GANCHO es lo más importante (en Facebook se va el 65 % entre el segundo 3 y el 7): el momento
+  más sorprendente con ACCIÓN y el objeto protagonista; nunca objeto_gira, contador, reunión, estantes ni el fondo
+  `escenario` (`GANCHO_SIN_ACCION`); si la revisión visual lo ve repetido, genérico o con gente parada
+  (`rehacer_gancho`), lo CORRIGE sola con los arranques anteriores como contexto. (2) Nadie parado sin hacer nada
+  (`QUIETAS`; la reunión de la biblioteca ahora es uno dándole el objeto al otro). (3) VIAJE AL PASADO, marca del
+  canal, siempre igual (1,35 s, `escena_viaje`): reloj gigante con las agujas girando hacia atrás, el año como
+  cuentakilómetros (`esc.odometro`), la imagen que se retuerce en remolino (`render.retorcer`), el color que se
+  apaga hasta sepia y un whoosh fuerte (`sfx.viaje`). (4) En el pasado, todo sepia menos el objeto protagonista
+  (`CapaEscena.color`, el sepia va por capa). (5) Manos con dedos, nudillos, uñas y pulgar (`prop_mano`). (6)
+  Ningún texto se sale: los subtítulos van en dos líneas si achicarlos no alcanza (`lineas_de`, `TAM_DOS`), y el
+  número gigante, el rótulo, la cita, el cartel y el texto del gancho miden con la fuente y se achican
+  (`tam_que_entra`).
 - **Así Nació: lo que se ve = lo que dice la voz (Santi, 2026-11-15; regla permanente para TODOS los videos;
   `escenas_lib.py`, `marcas.errores_accion`):** (1) cada frase muestra la acción concreta que dice la voz;
   festejar solo si la frase habla de un éxito. (2) **Biblioteca de escenas** reutilizables con planos (desde
@@ -1055,6 +1068,11 @@ Problemas abiertos:
 
 ## 9. CHANGELOG
 
+- v1.14.0 (2026-11-15, noche) — **Así Nació: gancho, viaje, sepia, manos y textos** (regla en §1) y
+  **`animacion.visual_plus` PRENDIDO** (biblioteca + más visual) desde el video del 16/11 a las 07:00. Medido en
+  la compu: el remolino usa mapas de OpenCV cacheados por fuerza (solo en los ~40 cuadros del viaje). Los
+  subtítulos: "VENDIÓ CUATROCIENTOS 💰" pasa a dos líneas (x 195-890, y 159-297); "2.76 SEGUNDOS" en el número
+  gigante, de 76 a 1007 px (antes la placa medía 1.450 px). 1505 tests OK.
 - v1.13.0 (2026-11-15, noche) — **Nunca un día sin video** (plan aprobado por Santi con el piso de 6 y los
   bancos; regla en §1). `banco.py` (bot_estado `banco:<canal>`, `banco_llenando:<canal>`, `banco_cursor:<canal>`),
   `_bancos_tick`, `_sin_video_tick`, `_piso_latam`; `ef.proponer(piso, banco)`, `locales.proponer(banco)`
