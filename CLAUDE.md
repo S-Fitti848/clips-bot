@@ -239,9 +239,11 @@ servicio systemd separado: `clips-bot`).
   `efemeride-diaria`) y Telegram (✅) usan la real. Un script que arma un video PARA PUBLICAR (como el Intel del
   15/11) tiene que correr con `CLIPS_VOZ_REAL=1`. En bot-videos lo hace su propia sesión.
 - **ElevenLabs SOLO para Así Nació (Santi, 2026-11-15; plan Starter, 40.000 créditos por ciclo, se renueva el
-  15 de cada mes):** (1) la voz de Tito (`animacion.elevenlabs_voz`, modelo `eleven_v4`); vacía hasta que Santi
-  elija una de las 3 muestras (Abuelo Charlie `Yb8JGzcZyW5YYzenhRCm`, El Faraón abuelo `9TcPbUAhHnAV8mzFDAWU`,
-  Juan argentino `o001ZPc9xjZq4LDUDfYx`); sin voz, sin créditos o con ElevenLabs caído, Gemini como siempre.
+  15 de cada mes):** (1) la voz de Tito (`animacion.elevenlabs_voz`, modelo `eleven_v4`): **Abuelo Charlie**
+  (`Yb8JGzcZyW5YYzenhRCm`), elegida por Santi el 15/11 y FIJA para todos los videos desde el 16/11 07:00; sin
+  créditos o con ElevenLabs caído, Gemini como siempre. **Duración (Santi, 2026-11-15):** si la voz sale de
+  32-38 s, primero ±8 % de velocidad sobre el audio que ya está (atempo, sin cambiar el tono;
+  `marcas.ajuste_velocidad`); recién si no alcanza se reescribe el guion y se paga otra voz.
   `voz_efemeride` usa ElevenLabs solo si quien llama pasa `elevenlabs_cfg` (lo hace únicamente Así Nació).
   (2) **Pequeña Historia y Lo Encontré siguen con Gemini gratis.** (3) **Biblioteca de efectos**
   (`animacion/sfx.py`, `CATALOGO`): generados UNA vez con ElevenLabs (`eleven_text_to_sound_v3`) en
@@ -2867,8 +2869,9 @@ clips" queda sin uso mientras Rots siga apagado.
   de audio), música con tensión y efectos, links de búsqueda de grupos de Facebook.
 - **App de Meta en modo Live** (lo hace Santi, docs/facebook-asi-nacio.md): sin eso el público puede no
   ver los Reels de las dos páginas.
-- **Voz de Tito (ElevenLabs):** elegir 1 de las 3 muestras (Abuelo Charlie, El Faraón, Juan) → poner su id en
-  `animacion.elevenlabs_voz` y `elevenlabs_nombre`. Hasta entonces Así Nació sigue con Gemini.
+- **Fuentes web para las historias** (pedido del 15/11: buscar en diarios, museos, archivos y sitios de las
+  marcas, verificar cada dato con 2 fuentes y guardar los links; contar los usos del banco por semana y canal en
+  /costos con aviso si pasa de 2): esperando que Santi elija entre las opciones de costo antes de programar.
 - **Voz de Pequeña Historia** (v0.88.0): muestras de Fenrir más calmo, Achird, Sadaltager y Charon;
   falta que elija (`efemerides.tts_modelo: gemini-2.5-flash-preview-tts`, `tts_instruccion`, `tts_voz`).
 - **Descripciones de los canales** (propuestas el 2026-11-12): las cambia Santi.

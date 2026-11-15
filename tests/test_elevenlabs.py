@@ -28,11 +28,16 @@ class _Sesion:
         return self.resp
 
 
-def test_preparado_pero_sin_usar(monkeypatch):
+def test_hace_falta_clave_y_voz(monkeypatch):
+    from dataclasses import replace
+
+    an = load_settings().animacion
+    assert an.elevenlabs_voz == "Yb8JGzcZyW5YYzenhRCm"          # Abuelo Charlie, elegida por Santi
     monkeypatch.setattr(elevenlabs, "clave", lambda: "")
-    assert not elevenlabs.lista(load_settings().animacion)
+    assert not elevenlabs.lista(an)                             # sin clave
     monkeypatch.setattr(elevenlabs, "clave", lambda: "k")
-    assert not elevenlabs.lista(load_settings().animacion)      # falta la voz en settings
+    assert elevenlabs.lista(an)
+    assert not elevenlabs.lista(replace(an, elevenlabs_voz=""))  # sin voz
     assert not elevenlabs.lista(None)                           # Pequeña Historia no pasa config
 
 
