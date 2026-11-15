@@ -1062,8 +1062,10 @@ Problemas abiertos:
   `aceptar_relajado`, `consultas_segunda`. Además: el **Intel 4004** del 15/11 (`efe:45a83b`) se armó y quedó
   programado en Pequeña Historia para las 20:00 (`3NyyFp_M3IM`), y el schema del guion de Así Nació pasaba el
   tope de gramática de Claude ("compiled grammar is too large") con los campos de la biblioteca:
-  `accion_escena`, `plano` y `protagonista.prop` van sin enum y los valida el código (probado contra Claude en
-  la Pi). `tests/test_nunca_sin_video.py`.
+  `accion_escena`, `plano` y `protagonista.prop` van sin enum y los valida el código; y el de la corrección
+  puntual (`correcciones.schema_parche`) tenía la escena DOS veces (cambios y agregar) y `campos` con todo
+  opcional: ahora una sola lista `cambios` con `nuevo`, `campos` como lista de {campo, valor JSON} y sin enums
+  (los dos probados contra Claude en la Pi). `cubo_rubik` pasa a DETALLADOS. `tests/test_nunca_sin_video.py`.
 - v1.12.0 (2026-11-15, noche) — **Así Nació: lo que se ve = lo que dice la voz** (regla en §1). Biblioteca de
   escenas (`escenas_lib.py`: 9 acciones con planos, constructores que arman fondo, personajes, objetos, cámara
   y sfx; recetas nuevas guardadas), props nuevos (`mano`, `mostrador`, `fuego`, `cubo_rubik` con `fase`),

@@ -1040,7 +1040,13 @@ def test_correccion_puntual_toca_solo_lo_que_falla():
     assert [x["frase"] for x in out["escenas"]] == ["DOS", "tres", "cuatro"] and out["titulo"] == "nuevo"
     assert d["escenas"][1]["frase"] == "dos"                       # el original no se toca
     sch = co.schema_parche(mk.SCHEMA_GUION, "escenas")
-    assert sch["properties"]["campos"]["required"] == [] and "escenas" not in sch["properties"]["campos"]["properties"]
+    campos = sch["properties"]["campos"]["items"]["properties"]["campo"]["enum"]
+    assert "titulo" in campos and "escenas" not in campos
+    assert "agregar" not in sch["properties"]                     # el item una sola vez (tope de gramática)
+    out2 = co.aplicar(d, {"cambios": [{"indice": 2, "nuevo": False, "item": {"frase": "DOS"}},
+                                      {"indice": 3, "nuevo": True, "item": {"frase": "cuatro"}}],
+                          "sacar": [1], "campos": [{"campo": "titulo", "valor": '"nuevo"'}]}, "escenas")
+    assert [x["frase"] for x in out2["escenas"]] == ["DOS", "tres", "cuatro"] and out2["titulo"] == "nuevo"
 
 
 

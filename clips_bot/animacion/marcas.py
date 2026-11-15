@@ -370,7 +370,8 @@ RANGO_PARTE = {"gancho": 0, "problema": 1, "idea": 2, "que_paso": 3, "giro": 3, 
 # palabra 'Juego'; queda pobre"): se dibuja con detalle y se entiende SIN leer. Nada de rótulos.
 DETALLADOS = {"pelota_espuma", "juego_mesa", "hamburguesa", "chocolate", "galletitas", "auto", "telefono_disco",
               "radio", "consola", "tele", "botella", "lata", "zapatilla", "control", "celular", "lampara",
-              "cohete", "camion", "reloj_bolsillo", "megafono", "trofeo", "pelota", "jarron", "moneda", "billete"}
+              "cohete", "camion", "reloj_bolsillo", "megafono", "trofeo", "pelota", "jarron", "moneda", "billete",
+              "cubo_rubik"}
 ROTULOS = {"caja", "cartel", "calendario"}
 # Lo que se puede romper en la cadena del gancho (cosas de una casa, una oficina o un negocio).
 ROMPIBLES = {"tele", "lampara", "cuadro", "jarron", "ventana", "botella", "lata", "caja", "trofeo", "celular"}
