@@ -1014,6 +1014,15 @@ Problemas abiertos:
   Sonnet puntúa hasta 30 (eran 8 de 20). Piso de 7 para una por día (`PISO_UNA_POR_DIA`). (5) **Presupuesto**
   (§1): más fotos y videos por frase para Sonnet, ELEGIDOS 14, MAX_GUIONES 4, 3 reintentos de guion en
   efemérides, 14 marcas y 4 intentos en Así Nació; aviso de presupuesto mensual y el mes en el informe diario.
+  (6) **Arreglos después de la primera corrida:** el guion de Popeyes falló 8 veces porque "2" y "4" ("dos",
+  "cuatro") no estaban en el artículo: en Así Nació los números hasta 12 no cuentan como cifras
+  (`NUMERO_CHICO`); tope de US$ 2 de Claude por video (`TOPE_USD_VIDEO`: pasado eso no se prueba otra marca);
+  Haiku clasifica con 32.000 tokens (con 130+ candidatas se cortaba). **Medido hoy:** el primero (Kleenex,
+  8,0) salió a las 13:19 (las 13:00 quedaban a menos de 20 min): 915 s en total, render 461 s, pico 85,2 °C,
+  Claude US$ 0,68 (4 intentos de guion). **Conteo de 14 días (16 al 29/11) con las fuentes nuevas:** 55 a 136
+  candidatas con lugar por día; historias de 7 o más: 1,21 por día en promedio (0 a 6), de 8 o más: 0,36;
+  6 de 14 días sin ninguna de 7 y 9 sin ninguna de 8. **Costo del 15/11:** producción US$ 2,78 (US$ 2,20 en
+  guiones de Así Nació, por las fallas de Popeyes), pruebas US$ 0,60 (el conteo); el mes va US$ 9,96.
   1438 tests OK.
 - v1.05.0 (2026-11-15, madrugada) — Tres pedidos de Santi. (1) **Pequeña Historia: `efemerides.estilo_nuevo`
   PRENDIDO** ("ya apruebo el estilo nuevo, con el feedback de La Pola"); `sin_aprobar` sigue apagado. (2)
@@ -2628,6 +2637,12 @@ clips" queda sin uso mientras Rots siga apagado.
 - Así Nació: dibujos propios, sin logos reales; Tito es el locutor fijo y la cara del canal.
 
 ### Esperando respuesta de Santi (NO programar sin su OK)
+
+- **Latinoamérica (conteo del 15/11):** aun con las fuentes nuevas, 6 de 14 días no tienen ninguna historia de
+  7 o más. Opciones para proponerle: bajar el piso a 6,5 en esos días, sumar la página del día en inglés, o
+  dejar que Haiku pase más candidatas a Sonnet (hoy marca "humana" muy pocas: 7-35 de ~100).
+- **Presupuesto:** con todo lo de hoy, la estimación es ~US$ 2,5 por día (≈ US$ 75 por mes), cerca del tope de
+  80. El aviso llega al 75 % (US$ 60) en el mes.
 
 - **Así Nació, estilo visual nuevo (15/11):** el render en la Pi pasó de 134 a 512 s por video (pico 84 °C,
   igual que antes). Si Santi lo quiere más rápido: sacar los degradés de los personajes (−~120 ms por

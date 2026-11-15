@@ -3571,7 +3571,8 @@ def _claude_textos(settings: Settings):
     from . import claude
 
     cfg = settings.historias_fb
-    return claude.cliente(cfg.modelo_texto), claude.cliente(cfg.modelo_simple, esfuerzo="low")
+    # Haiku clasifica TODAS las candidatas en un pedido: con las fuentes nuevas son 100-140 por día (15/11)
+    return claude.cliente(cfg.modelo_texto), claude.cliente(cfg.modelo_simple, esfuerzo="low", max_tokens=32000)
 
 
 PH_LATAM = "ph_latam"   # bot_estado, ph_latam:<día>: [{"texto", "pais"}] de las historias propuestas ese día
