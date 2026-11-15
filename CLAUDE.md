@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-11-15 | **Versión:** v1.07.0 (desplegado) | **Modo:** Fase 2: corriendo solo en la Pi. **Rots APAGADO.** Pequeña Historia (3 por día, madrugada desde las 04:00) (publicación sin aprobar: llegan con ❌ Cancelar) y **Así Nació** (2 por día, desde las 07:00, publican 13:00 y 20:00 en YouTube y Facebook con ❌ Cancelar), todo al privado de Santi
+**Snapshot:** 2026-11-15 | **Versión:** v1.08.0 (desplegado) | **Modo:** Fase 2: corriendo solo en la Pi. **Rots APAGADO.** Pequeña Historia (3 por día, madrugada desde las 04:00) (publicación sin aprobar: llegan con ❌ Cancelar) y **Así Nació** (2 por día, desde las 07:00, publican 13:00 y 20:00 en YouTube y Facebook con ❌ Cancelar), todo al privado de Santi
 
 > **SI ESTÁS EMPEZANDO UNA SESIÓN NUEVA, LEÉ §10.** Ahí está qué está hecho, qué quedó a medias,
 > qué falta, y las trampas que ya nos mordieron.
@@ -183,6 +183,25 @@ servicio systemd separado: `clips-bot`).
 - **Pequeña Historia sin aprobar: PRENDIDO (Santi, 2026-11-15):** los 3 videos llegan ya programados con
   ❌ Cancelar y, si no se toca nada, salen a su hora. Latinoamérica: si ninguna llega a 8, sale la mejor del día
   si tiene 7 o más (una sola por día).
+- **Corregir solo lo que falla (Santi, 2026-11-15):** cuando la validación rechaza una frase o escena (Así Nació
+  y Pequeña Historia), Claude corrige SOLO esa parte con el resto como contexto (`correcciones.py`: cambios por
+  número, agregar, sacar, campos generales) y se vuelve a validar; el guion entero de nuevo recién después de 3
+  correcciones puntuales fallidas. Lo Encontré (otro repo, `bot-videos`) todavía no lo tiene.
+- **Haiku puntúa, Sonnet escribe (Santi, 2026-11-15):** marcas, hechos de tecnología e historias de
+  Latinoamérica los puntúa y elige Haiku (`_puntuador`, `marcas.proponer` con el revisor); Sonnet escribe y
+  corrige guiones, elige las fotos y hace la revisión visual. Meta: US$ 1-1,5 por día.
+- **Historias curiosas (Santi, 2026-11-15):** en las de tipo lugar_curioso, invento, costumbre, record, misterio
+  o dato_sorprendente, "peligro" se puntúa como `sorpresa` ("¿hace decir 'no puede ser'?"); en las de personas
+  sigue "peligro" (`locales.es_curiosa`).
+- **Así Nació: fidelidad (Santi, 2026-11-15; regla permanente, en el guion, la validación y la revisión
+  visual):** el gancho MUESTRA el objeto protagonista o el momento clave de su historia (va en los objetos de
+  la escena 1); acciones específicas (`fabricar` = las manos trabajando sobre el objeto, sin martillo; martillo
+  o engranajes como mucho en 1 escena); personajes fieles (`genero`, `edad`, `persona_real` por actor: el
+  género y la edad mandan sobre el dibujo del rol, `acciones.aspecto`; una persona real siempre igual);
+  `anio_escena` = la época de cada escena (la decoración sale de ahí: nada de monitores en 1974). Si falta un
+  dibujo, el guion pide `dibujo_nuevo` + `dibujos_nuevos` y Sonnet lo dibuja como SVG (`dibujos.py`: solo
+  formas, sin texto ni logos, probado en el rasterizador) y queda guardado en `data/animacion/dibujos/` para
+  los próximos; si no se puede, se reformula la escena (corrección puntual) o se saca el objeto.
 - **Así Nació: guion y escenas (Santi, 2026-11-15; regla permanente para TODOS los videos; en el guion, la
   validación y la revisión visual):** (a) GANCHO PROPIO: los primeros 3 s muestran el momento más
   sorprendente o visual de ESA historia, del texto y en su lugar; la destrucción en cadena del living era SOLO
@@ -1011,6 +1030,10 @@ Problemas abiertos:
 
 ## 9. CHANGELOG
 
+- v1.08.0 (2026-11-15, tarde) — Corrección puntual de guiones, Haiku para puntuar, "sorpresa" en las historias
+  curiosas, y en Así Nació: protagonista en el gancho, fabricar sin martillo, personajes fieles, época por
+  escena y dibujos nuevos con Claude (todo en §1). El inventor de base ya no se parece a una señora (era el
+  dibujo de "abuelo" con rulos canosos: ahora jopo y bigote). 1454 tests OK.
 - v1.07.0 (2026-11-15, tarde) — (1) **Así Nació: gancho propio, escenarios según la escena, acción y
   personajes** (regla en §1). Nuevo en el motor: fondos `laboratorio`, `hospital`, `campo` y `puerto` (con
   su ambiente y su color), acciones `fabricar`, `vender`, `usar` y `probar`, `multitud` (5-7 personas chicas
