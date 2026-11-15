@@ -498,7 +498,113 @@ def fondo_taller(semilla: int = 9) -> str:
     return "".join(p)
 
 
-FONDOS = {"casa": fondo_casa, "taller": fondo_taller, "cielo": fondo_cielo, "ciudad": fondo_ciudad, "oficina": fondo_oficina,
+def fondo_laboratorio(semilla: int = 10) -> str:
+    """Un laboratorio: mesadas con frascos de colores, un microscopio, pizarrón con fórmulas, estantes."""
+    decada, _ = epoca_de(semilla)
+    p = [rect(0, 0, W, H, "#dfe9ee", borde=False), rect(0, H * 0.72, W, H * 0.28, "#b8c4cc", borde=False),
+         f'<path d="M0 {n(H * 0.72)} L{W} {n(H * 0.72)}" {trazo()}/>']
+    p.append(rect(100, 260, 560, 380, "#2f4f4f" if decada and decada < 197 else "#f4f7f8", r=8))   # pizarrón
+    tiza = "#e8f0e8" if decada and decada < 197 else "#3a86ff"
+    for k, y in enumerate((330, 410, 490, 570)):
+        p.append(f'<path d="M150 {y} Q{260 + k * 30} {y - 25} {360 + k * 40} {y} T{580 - k * 20} {y}" '
+                 f'fill="none" stroke="{tiza}" stroke-width="7" stroke-linecap="round"/>')
+    p.append(rect(730, 300, 270, 22, P.MADERA, ancho=5) + rect(730, 480, 270, 22, P.MADERA, ancho=5))
+    colores = (P.VERDE, P.ROJO, P.AZUL, P.AMARILLO, P.VIOLETA, P.TURQUESA)
+    for k in range(5):
+        for fila, yb in enumerate((300, 480)):
+            c = colores[(k + fila * 2) % len(colores)]
+            x = 750 + k * 50
+            p.append(camino(f"M{x} {yb - 70} L{x + 30} {yb - 70} L{x + 30} {yb - 40} L{x + 40} {yb} L{x - 10} {yb} "
+                            f"L{x} {yb - 40} Z", "#e8f6ff", ancho=4) +
+                     camino(f"M{x - 6} {yb - 14} L{x + 36} {yb - 14} L{x + 40} {yb} L{x - 10} {yb} Z", c,
+                            borde=False))
+    p.append(rect(40, H * 0.6, 1000, 60, "#8a9aa5", r=8))                       # mesada
+    p.append(rect(80, H * 0.6 + 56, 940, 300, "#c9d3d9", r=6, ancho=6))
+    p.append(rect(330, H * 0.6 - 200, 40, 200, P.GRIS_OSCURO, r=10) + circulo(350, H * 0.6 - 210, 34, P.GRIS_OSCURO)
+             + rect(300, H * 0.6 - 30, 130, 30, P.GRIS_OSCURO, r=8))           # microscopio
+    p.append(circulo(700, H * 0.6 - 60, 60, "#e8f6ff", ancho=5) + rect(685, H * 0.6 - 170, 30, 60, "#e8f6ff", ancho=5)
+             + circulo(700, H * 0.6 - 45, 40, P.VERDE, borde=False))           # balón con líquido
+    return "".join(p)
+
+
+def fondo_hospital(semilla: int = 11) -> str:
+    """Un hospital: cama con sábanas, cortina, cruz en la pared, ventana, carrito con frascos."""
+    p = [rect(0, 0, W, H, "#e9f3f1", borde=False), rect(0, H * 0.72, W, H * 0.28, "#cfd8d6", borde=False),
+         f'<path d="M0 {n(H * 0.72)} L{W} {n(H * 0.72)}" {trazo()}/>']
+    p.append(rect(0, 820, W, 30, "#9fd8d0", borde=False))
+    p.append(rect(120, 300, 180, 180, P.BLANCO, r=10) + rect(185, 325, 50, 130, P.ROJO, borde=False)
+             + rect(145, 365, 130, 50, P.ROJO, borde=False))                    # cruz
+    p.append(rect(560, 260, 380, 360, "#bfe9ff", r=8) +
+             f'<path d="M750 260 L750 620 M560 440 L940 440" {trazo()}/>')
+    p.append(rect(470, 220, 70, 620, "#7fc8b8", r=10, ancho=5))                # cortina
+    for x in (490, 515):
+        p.append(f'<path d="M{x} 240 L{x} 830" stroke="#000" stroke-opacity="0.12" stroke-width="5"/>')
+    p.append(rect(560, 1150, 440, 70, P.BLANCO, r=20) + rect(560, 1100, 120, 70, P.BLANCO, r=24, ancho=6)
+             + rect(560, 1215, 440, 30, P.GRIS, r=6) + rect(580, 1240, 20, 140, P.GRIS) + rect(960, 1240, 20, 140, P.GRIS)
+             + rect(700, 1140, 300, 50, "#9fd8d0", r=14, ancho=5))              # cama
+    p.append(rect(100, 1150, 200, 20, P.GRIS, ancho=5) + rect(100, 1270, 200, 20, P.GRIS, ancho=5)
+             + rect(110, 1170, 12, 230, P.GRIS, borde=False) + rect(278, 1170, 12, 230, P.GRIS, borde=False)
+             + rect(130, 1100, 36, 50, "#e8f6ff", r=6, ancho=4) + rect(190, 1110, 36, 40, "#ffd6e0", r=6, ancho=4))
+    return "".join(p)
+
+
+def fondo_campo(semilla: int = 12) -> str:
+    """El campo: cielo, sol, sierras, surcos de cultivo, un granero y una cerca."""
+    rnd = random.Random(semilla)
+    p = [rect(0, 0, W, H, P.CIELO, borde=False), rect(0, H * 0.5, W, H * 0.5, P.CIELO_BAJO, borde=False),
+         circulo(820, 300, 100, P.AMARILLO)]
+    for i in range(3):
+        p.append(g(nube(), rnd.uniform(100, W - 100), 200 + i * 170, escala=rnd.uniform(0.6, 1.0)))
+    p.append(_colinas(H * 0.62, "#a7c4a0", 140, semilla + 1))
+    p.append(rect(-20, H * 0.66, W + 40, H * 0.34 + 20, "#c9a66b", borde=False))
+    for k in range(9):        # surcos en perspectiva
+        x = -400 + k * 240
+        p.append(f'<path d="M540 {n(H * 0.66)} L{x} {H}" stroke="#a5824e" stroke-width="10"/>')
+    for k in range(14):       # plantitas
+        y = H * 0.7 + (k // 7) * 120
+        x = 60 + (k % 7) * 160 + (k // 7) * 60
+        p.append(g(camino("M0 0 Q-20 -50 0 -80 Q20 -50 0 0 Z", P.VERDE, ancho=4), x, y))
+    p.append(rect(700, H * 0.5, 280, 230, "#b5442c", r=4) + camino(f"M680 {n(H * 0.5)} L840 {n(H * 0.5 - 130)} "
+             f"L1000 {n(H * 0.5)} Z", "#8e3322") + rect(800, H * 0.5 + 110, 80, 120, "#7a2a1c", ancho=6))   # granero
+    for x in range(0, W, 120):  # cerca
+        p.append(rect(x, H * 0.64 - 80, 18, 100, "#e9d8a6", ancho=4))
+    p.append(rect(0, H * 0.64 - 60, W, 14, "#e9d8a6", ancho=4))
+    return "".join(p)
+
+
+def fondo_puerto(semilla: int = 13) -> str:
+    """Un puerto: mar, un barco de la época en el muelle, grúa, cajones y gaviotas."""
+    decada, _ = epoca_de(semilla)
+    p = [rect(0, 0, W, H, "#ffd9a8", borde=False), rect(0, 0, W, H * 0.35, "#ffbf91", borde=False),
+         circulo(300, 420, 110, "#ffe08a", borde=False), rect(0, H * 0.45, W, H * 0.3, P.OCEANO, borde=False)]
+    for k in range(6):
+        y = H * 0.48 + k * 70
+        p.append(f'<path d="M0 {n(y)} Q135 {n(y - 18)} 270 {n(y)} T540 {n(y)} T810 {n(y)} T1080 {n(y)}" '
+                 f'fill="none" stroke="#ffffff" stroke-opacity="0.35" stroke-width="6"/>')
+    # el barco: a vapor con chimenea antes de 1960; de contenedores después
+    if decada and decada < 196:
+        p.append(camino(f"M180 {n(H * 0.5)} L900 {n(H * 0.5)} L840 {n(H * 0.58)} L240 {n(H * 0.58)} Z", "#2b2b33")
+                 + rect(320, H * 0.5 - 120, 380, 120, P.BLANCO, r=8) + rect(480, H * 0.5 - 260, 70, 150, P.ROJO)
+                 + rect(480, H * 0.5 - 270, 70, 30, "#2b2b33"))
+        for x in range(360, 680, 70):
+            p.append(circulo(x, H * 0.5 - 60, 16, "#bfe9ff", ancho=4))
+    else:
+        p.append(camino(f"M120 {n(H * 0.5)} L960 {n(H * 0.5)} L900 {n(H * 0.58)} L180 {n(H * 0.58)} Z", "#2b4a7a"))
+        for k, c in enumerate((P.ROJO, P.AZUL, P.AMARILLO, P.VERDE, P.NARANJA, P.TURQUESA)):
+            p.append(rect(220 + k * 110, H * 0.5 - 90, 100, 90, c, r=4, ancho=5))
+    p.append(rect(-20, H * 0.72, W + 40, H * 0.28 + 20, "#8d6e63"))                 # muelle de tablas
+    for y in range(int(H * 0.75), H, 60):
+        p.append(f'<path d="M0 {y} L{W} {y}" stroke="#6d4c41" stroke-width="5"/>')
+    p.append(linea_gruesa([(960, H * 0.72), (960, 380), (700, 330)], P.AMARILLO, 30))  # grúa
+    p.append(f'<path d="M760 340 L760 600" {trazo(ancho=5)}/>' + rect(730, 600, 60, 50, P.MADERA, ancho=5))
+    for x, y in ((150, 260), (240, 320), (620, 220)):  # gaviotas
+        p.append(f'<path d="M{x - 30} {y} Q{x - 15} {y - 18} {x} {y} Q{x + 15} {y - 18} {x + 30} {y}" '
+                 f'fill="none" {trazo(ancho=6)}/>')
+    return "".join(p)
+
+
+FONDOS = {"laboratorio": fondo_laboratorio, "hospital": fondo_hospital, "campo": fondo_campo,
+          "puerto": fondo_puerto, "casa": fondo_casa, "taller": fondo_taller, "cielo": fondo_cielo, "ciudad": fondo_ciudad, "oficina": fondo_oficina,
           "globo": fondo_globo, "mapa": fondo_globo, "fabrica": fondo_fabrica,
           "tienda": fondo_tienda, "escenario": fondo_escenario}
 
@@ -509,10 +615,12 @@ FONDOS = {"casa": fondo_casa, "taller": fondo_taller, "cielo": fondo_cielo, "ciu
 # del piso, la luz que entra por la ventana y cae al piso, la sombra donde la pared toca el piso y debajo
 # de los muebles, y una bruma suave arriba (lo lejano, más claro). La línea del piso y la ventana de cada
 # lugar están acá; si un fondo cambia de lugar la ventana, se cambia esta tabla.
-PISO_Y = {"casa": 0.72, "oficina": 0.72, "taller": 0.72, "fabrica": 0.70, "tienda": 0.74, "escenario": 0.72}
-VENTANA = {"casa": (640, 250, 300, 330), "oficina": (560, 260, 400, 480), "fabrica": (80, 200, 920, 420)}
+PISO_Y = {"casa": 0.72, "oficina": 0.72, "taller": 0.72, "fabrica": 0.70, "tienda": 0.74, "escenario": 0.72,
+          "laboratorio": 0.72, "hospital": 0.72}
+VENTANA = {"casa": (640, 250, 300, 330), "oficina": (560, 260, 400, 480), "fabrica": (80, 200, 920, 420),
+           "hospital": (560, 260, 380, 360)}
 PARED_TEXTURA = {"casa": "empapelado", "oficina": "empapelado", "taller": "ladrillo", "fabrica": "ladrillo",
-                 "tienda": "azulejo"}
+                 "tienda": "azulejo", "laboratorio": "azulejo", "hospital": "azulejo"}
 MUEBLES_SOMBRA = {"casa": [(790, 1385, 270, 26), (130, 1385, 110, 18)], "oficina": [(390, 1520, 330, 30),
                   (920, 1408, 80, 16)], "taller": [(540, 1540, 470, 30)], "fabrica": [(540, 1330, 560, 26)],
                   "tienda": [(190, 1425, 160, 22)]}
@@ -581,7 +689,7 @@ def ambiente(tipo: str) -> str:
     elif tipo == "ciudad":
         out.append(f'<rect x="0" y="0" width="{W}" height="{n(H * 0.6)}" fill="url(#amb_bruma)"/>')
         out.append(f'<rect x="0" y="{n(H * 0.8)}" width="{W}" height="120" fill="url(#amb_piso)"/>')
-    elif tipo == "cielo":
+    elif tipo in ("cielo", "campo", "puerto"):
         out.append(f'<rect x="0" y="0" width="{W}" height="{n(H * 0.5)}" fill="url(#amb_bruma)"/>')
     return (_patrones() + "".join(out)) if out else ""
 
@@ -590,7 +698,8 @@ def ambiente(tipo: str) -> str:
 # Encima de TODO (personajes incluidos) y debajo de los subtítulos: un tinte suave del color de la luz de
 # ese lugar y una viñeta que oscurece los bordes (el ojo va al centro). Así cada lugar tiene su paleta y
 # los personajes "están" en esa luz. Cuesta un rectángulo con degradé por cuadro.
-TINTE = {"casa": ("#ffb36b", 0.07), "oficina": ("#ffd59a", 0.06), "taller": ("#ffad5c", 0.07),
+TINTE = {"laboratorio": ("#bfe3ff", 0.05), "hospital": ("#d8fff4", 0.05), "campo": ("#ffcf6b", 0.08),
+         "puerto": ("#ff9f6b", 0.08), "casa": ("#ffb36b", 0.07), "oficina": ("#ffd59a", 0.06), "taller": ("#ffad5c", 0.07),
          "fabrica": ("#ff9a5c", 0.06), "tienda": ("#ffd28a", 0.05), "ciudad": ("#ff8f5c", 0.08),
          "cielo": ("#ffd08a", 0.05), "escenario": ("#ff6b8a", 0.06), "globo": ("#7c6bff", 0.05),
          "mapa": ("#7c6bff", 0.05)}

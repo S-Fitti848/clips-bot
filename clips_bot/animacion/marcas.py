@@ -88,9 +88,12 @@ _ARRANQUES_PROHIBIDOS = re.compile(r"^\s*(¿?\s*sab[ií]as|un d[ií]a como hoy|h
                                    r"hola\b|bienvenid)", re.I)
 
 # Escenas: lo que puede pedir el guion (la base de animación + lo del canal de marcas).
-FONDOS = ("casa", "taller", "fabrica", "tienda", "oficina", "ciudad", "escenario", "cielo", "globo")
+FONDOS = ("casa", "taller", "fabrica", "tienda", "oficina", "ciudad", "escenario", "cielo", "globo",
+          "laboratorio", "hospital", "campo", "puerto")
 # mesa y estante no son objetos de la historia: son el APOYO (`soporte`) y el render los pone contra la pared
-PROPS = tuple(sorted(n for n in esc.PROPS if n not in ("pedazo", "microfono", "mesa", "estante")))
+# Los efectos que agrega el render (polvo, líneas de movimiento, destellos, primer plano) NO los elige el guion.
+EFECTOS_RENDER = ("polvo", "lineas_mov", "destello", "primer_plano")
+PROPS = tuple(sorted(n for n in esc.PROPS if n not in ("pedazo", "microfono", "mesa", "estante") + EFECTOS_RENDER))
 TRANSICIONES = ("corte", "fundido", "zoom", "barrido")
 
 
@@ -326,13 +329,11 @@ El canal se llama "Así Nació". Su locutor y mascota es el ABUELO TITO: un inve
 antiparras de soldador, bigote blanco y un reloj de bolsillo dorado con el que viaja en el tiempo.
 
 REGLA 1 — MOSTRAR, NO CONTAR. Cada frase de la voz en off es UNA escena donde PASA algo que muestra lo
-que dice la frase: personajes que caminan, corren, saltan, se caen, retan, martillan, tiran cosas;
-objetos que rebotan, vuelan, caen y se rompen. NADA de personajes parados hablando. La voz en off
-cuenta y la escena lo muestra.
-Ejemplo (Nerf): GANCHO = un nene tira una pelota adentro de su casa: rompe la tele, rebota, tira la
-lámpara y se cae un cuadro (efecto dominó) mientras la mamá lo reta. Después: el inventor pensando la
-solución (lamparita), martillando en su taller la pelota de espuma, y los chicos jugando adentro sin
-romper nada.
+que dice la frase. La MAYORÍA de las escenas son ACCIÓN de la historia: gente fabricando (`fabricar`),
+inventando (`martillar`, `pensar` con la idea), vendiendo (`vender`), usando o probando el producto (`usar`,
+`probar`), corriendo, festejando; máquinas, multitudes (`multitud`: true pone gente atrás festejando o
+caminando, para un lanzamiento, una cola, una fábrica llena, un estadio). NADA de dos personas paradas
+hablando: un diálogo solo si la historia lo pide, corto, y como mucho en 2 escenas.
 
 REGLA 2 — TITO, EL LOCUTOR. Tito interrumpe 1 a 3 veces: la escena se congela en gris, él aparece al
 costado y comenta algo con humor o aclara un dato (`locutor`: después de qué frase y su texto, 5 a 20
@@ -350,9 +351,12 @@ jarrón en un estante, una botella sobre la mesa. NADA aparece de la nada ni cae
 cae de su mesa o su estante; "aparece" y "crece" solo para íconos (pregunta, exclamación, lamparita de
 idea, gráfico, cartel, calendario); "llueve" solo billetes o monedas.
 
-REGLA 5 — DESTRUCCIÓN EN CADENA EN EL GANCHO. La escena 1 tiene una `cadena` de 2 a 4 cosas que se
-rompen o se caen una detrás de otra (tele → lámpara → cuadro), cada una en su lugar; exagerado y
-gracioso, pero que se entienda cada golpe. Un actor que "tira" la empieza.
+REGLA 5 — GANCHO PROPIO DE ESTA MARCA (Santi, 2026-11-15). La escena 1 muestra EL momento más
+sorprendente o visual de ESTA historia, sacado del texto, en el lugar donde pasó (en Kleenex: algo de su
+origen real, no un chico tirando una botella). NADA de "un chico rompe cosas en un living" (eso fue el
+gancho de Nerf, porque Nerf era justo eso): la `cadena` va VACÍA salvo que la historia sea de algo que rompe
+cosas. Nunca repetir el arranque de un video anterior (te paso los últimos: otro lugar, otra acción, otro
+objeto).
 
 REGLA 6 — VIAJE EN EL TIEMPO. Cada vez que la historia va a otra época (ej. 1969), en ESA frase (o
 antes) marcá `viaje_a_anio` con el año: Tito levanta el reloj, la escena gira en remolino, el año
@@ -366,10 +370,16 @@ necesita) es el `protagonista`: elegí el prop que lo DIBUJA ({_lista(sorted(DET
 cadena). NADA de una caja o un cartel con un rótulo ("Juego") en lugar del objeto: si no hay prop
 para algo, elegí otro que se entienda sin leer.
 
-REGLA 8 — MOVIMIENTO Y LUGARES. Los personajes reaccionan con el cuerpo (caminan, corren, saltan,
-festejan, se asustan) y la cara (`cara`). Nunca dos en el mismo lugar: si hay 2 o 3, cada uno en su
-`desde` (izquierda, centro, derecha) y sin cruzarse. Variá los lugares (casa, taller, fábrica,
-oficina, ciudad, tienda); el render decora cada lugar según la época del viaje en el tiempo.
+REGLA 8 — ESCENARIOS SEGÚN LA ESCENA. Cada momento pasa DONDE corresponde a la historia (`fondo`):
+fábrica, laboratorio, oficina de época, calle, tienda, hospital, campo, puerto, escenario, casa…; la casa
+y el taller solo si la historia pasa ahí. Cuando cambia el momento, cambia el lugar: al menos 3 lugares
+distintos en el video y nunca más de 2 escenas seguidas en el mismo. Muy visual. Los personajes reaccionan
+con el cuerpo y la cara (`cara`); nunca dos en el mismo lugar (cada uno en su `desde`, sin cruzarse).
+
+REGLA 10 — PERSONAJES SEGÚN LA HISTORIA Y LA ÉPOCA. Elegí los `rol` que hay en esa historia (obrero, obrera,
+científica, inventora, médico, enfermera, granjero, marinero, cocinero, deportista, empresario, vendedor,
+cliente, estudiante…): al menos 3 roles distintos en el video. Los chicos (nene, nena) solo si la historia
+tiene chicos.
 
 REGLA 9 — SUBTÍTULOS CON GANCHO. En cada frase y en cada comentario de Tito marcá `claves`: 0 a 2
 palabras COPIADAS TAL CUAL del texto que más importan (un nombre, un número o año, la palabra del giro o
@@ -397,8 +407,9 @@ ESCENA de cada frase:
   centro, derecha), `soporte` ({_lista(ac.SOPORTES)}) y `texto` (etiqueta, máx. 12 letras, o vacío).
   Un "tirar" + un objeto que "vuela" o "rebota" sale de la mano; si además hay uno que "se_rompe",
   lo que vuela le pega y lo rompe.
-- `cadena` (solo en el gancho, 2 a 4; vacía en las demás): las cosas que se rompen una tras otra, cada
-  una con `prop`, `soporte` y `donde`.
+- `cadena` (casi siempre VACÍA; solo en el gancho y solo si la historia es de algo que rompe cosas, 2 a
+  4): las cosas que se rompen una tras otra, cada una con `prop`, `soporte` y `donde`.
+- `multitud`: true si en esa escena hay mucha gente (un lanzamiento, una cola, una fábrica llena).
 - `viaje_a_anio` (0 si no) y `vuelve_al_presente` (true/false).
 - `camara`: {_lista(ac.CAMARAS)} (en los golpes la cámara se sacude sola).
 - `texto_pantalla`: 1 a 4 palabras grandes (un año, una cifra, "NA, MENTIRA") o vacío.
@@ -447,10 +458,11 @@ SCHEMA_GUION = {
                 "cadena": {"type": "ARRAY", "items": _CADENA},
                 "viaje_a_anio": {"type": "INTEGER"},
                 "vuelve_al_presente": {"type": "BOOLEAN"},
-                "claves": _CLAVES, "emoji": _EMOJI,
+                "claves": _CLAVES, "emoji": _EMOJI, "multitud": {"type": "BOOLEAN"},
             },
             "required": ["frase", "parte", "fondo", "actores", "objetos", "camara", "texto_pantalla",
-                         "transicion", "cadena", "viaje_a_anio", "vuelve_al_presente", "claves", "emoji"]}},
+                         "transicion", "cadena", "viaje_a_anio", "vuelve_al_presente", "claves", "emoji",
+                         "multitud"]}},
         "locutor": {"type": "ARRAY", "items": {"type": "OBJECT", "properties": {
             "despues_de_frase": {"type": "INTEGER"}, "texto": {"type": "STRING"},
             "claves": _CLAVES, "emoji": _EMOJI},
@@ -585,9 +597,8 @@ def errores_escenas_con_sentido(escenas: list[dict]) -> list[str]:
             if prop in ac.SOPORTE_OBLIGADO and sop and sop not in ac.SOPORTE_OBLIGADO[prop]:
                 errores.append(f"escena {i}: {prop} va en {' o '.join(sorted(ac.SOPORTE_OBLIGADO[prop]))}, no en {sop}")
         cadena = e.get("cadena") or []
-        if i == 1 and not CADENA_MIN <= len(cadena) <= CADENA_MAX:
-            errores.append(f"el gancho necesita una destrucción en cadena (`cadena`) de {CADENA_MIN} a "
-                           f"{CADENA_MAX} cosas que se rompen una tras otra (tiene {len(cadena)})")
+        if i > 1 and cadena:
+            errores.append(f"escena {i}: la `cadena` va solo en el gancho (y casi siempre vacía)")
         if len(cadena) > CADENA_MAX:
             errores.append(f"escena {i}: la cadena va de {CADENA_MAX} cosas como mucho (que se entienda cada golpe)")
         for c in cadena:
@@ -659,7 +670,106 @@ def errores_viajes(d: dict, presente: int | None = None) -> list[str]:
     return errores
 
 
-def validar_guion(d: dict, m: Marca, fuente: str) -> list[str]:
+# ---- gancho propio, lugares, acción y personajes (Santi, 2026-11-15; regla permanente) -------------------
+LUGARES_MIN = 3
+MISMO_LUGAR_SEGUIDO = 2
+SOLO_SI_PASA_AHI = {"casa": 2, "taller": 2}      # como mucho estas escenas en estos lugares
+DIALOGOS_MAX = 2
+ROLES_MIN = 3
+GANCHOS_RECIENTES = "animacion_ganchos"          # bot_estado: los arranques de los últimos videos
+GANCHOS_GUARDADOS = 12
+# El arranque de Nerf (el ejemplo con el que se armó el canal) cuenta siempre como "ya usado".
+GANCHO_NERF = {"marca": "Nerf", "fondo": "casa", "cadena": True, "props": ["pelota_espuma", "tele", "lampara", "cuadro"],
+               "acciones": ["tirar", "retar"], "frase": "¡Una pelota destrozó el living entero!"}
+
+
+def firma_gancho(d: dict, marca: str = "") -> dict:
+    e = (d.get("escenas") or [{}])[0]
+    props = [o.get("prop") for o in e.get("objetos") or []] + [c.get("prop") for c in e.get("cadena") or []]
+    return {"marca": marca, "fondo": e.get("fondo"), "cadena": bool(e.get("cadena")),
+            "props": sorted({x for x in props if x}), "acciones": sorted({a.get("accion") for a in e.get("actores") or []
+                                                                         if a.get("accion")}),
+            "frase": str(e.get("frase") or "")[:120]}
+
+
+def ganchos_recientes(conn) -> list[dict]:
+    try:
+        guardados = json.loads(_get_valor(conn, GANCHOS_RECIENTES) or "[]")
+    except ValueError:
+        guardados = []
+    return [GANCHO_NERF] + guardados
+
+
+def anotar_gancho(conn, d: dict, marca: str) -> None:
+    from clips_bot import db
+
+    guardados = ganchos_recientes(conn)[1:]
+    guardados.append(firma_gancho(d, marca))
+    db.set_valor(conn, GANCHOS_RECIENTES, json.dumps(guardados[-GANCHOS_GUARDADOS:], ensure_ascii=False))
+
+
+def _get_valor(conn, clave: str):
+    from clips_bot import db
+
+    return db.get_valor(conn, clave) if conn is not None else None
+
+
+def texto_ganchos(previos: list[dict]) -> str:
+    return "\n".join(f"- {g.get('marca') or '?'}: {g.get('frase')} (lugar {g.get('fondo')}, acciones "
+                     f"{', '.join(g.get('acciones') or []) or '-'}, objetos {', '.join(g.get('props') or []) or '-'}"
+                     + (", destrucción en cadena" if g.get("cadena") else "") + ")" for g in previos)
+
+
+def errores_gancho_repetido(escenas: list[dict], previos: list[dict]) -> list[str]:
+    """El arranque no puede parecerse al de un video anterior: otra destrucción en cadena, o el mismo lugar
+    con la misma acción o el mismo objeto."""
+    if not escenas:
+        return []
+    f = firma_gancho({"escenas": escenas})
+    for g in previos:
+        if f["cadena"] and g.get("cadena"):
+            return [f"el gancho repite la destrucción en cadena de {g.get('marca')}: mostrá el momento más "
+                    "sorprendente de ESTA historia (vaciá `cadena`)"]
+        if f["fondo"] == g.get("fondo") and (set(f["acciones"]) & set(g.get("acciones") or [])
+                                              or set(f["props"]) & set(g.get("props") or [])):
+            return [f"el gancho se parece al de {g.get('marca')} ({g.get('fondo')}, "
+                    f"{', '.join(g.get('acciones') or [])}): cambiá el lugar y la acción del arranque"]
+    return []
+
+
+def errores_lugares_y_personajes(escenas: list[dict]) -> list[str]:
+    errores = []
+    fondos = [e.get("fondo") for e in escenas]
+    if len(escenas) >= 5 and len(set(fondos)) < LUGARES_MIN:
+        errores.append(f"usá al menos {LUGARES_MIN} lugares distintos (`fondo`): cada momento donde pasó "
+                       f"(hay {', '.join(sorted(set(f for f in fondos if f)))})")
+    seguidas = 1
+    for a, b in zip(fondos, fondos[1:]):
+        seguidas = seguidas + 1 if a == b else 1
+        if seguidas > MISMO_LUGAR_SEGUIDO:
+            errores.append(f"más de {MISMO_LUGAR_SEGUIDO} escenas seguidas en {b}: cuando cambia el momento, "
+                           "cambia el lugar")
+            break
+    for lugar, tope in SOLO_SI_PASA_AHI.items():
+        if fondos.count(lugar) > tope:
+            errores.append(f"{fondos.count(lugar)} escenas en {lugar}: como mucho {tope} (solo si la historia "
+                           "pasa ahí)")
+    dialogos = [str(i) for i, e in enumerate(escenas, 1) if e.get("actores") and not e.get("multitud")
+                and all(a.get("accion") in ("quieto", "senalar", "pensar", "retar") for a in e["actores"])
+                and not any(o.get("efecto") in ac.DINAMICOS for o in e.get("objetos") or [])]
+    if len(dialogos) > DIALOGOS_MAX:
+        errores.append(f"demasiadas escenas de gente hablando ({', '.join(dialogos)}): como mucho {DIALOGOS_MAX}; "
+                       "el resto, acción (fabricar, vender, usar, probar, multitud…)")
+    roles = [a.get("rol") for e in escenas for a in e.get("actores") or []]
+    if len(escenas) >= 5 and len(set(roles)) < ROLES_MIN:
+        errores.append(f"usá al menos {ROLES_MIN} personajes distintos (`rol`) según la historia y la época")
+    con_chicos = sum(1 for e in escenas if any(a.get("rol") in ac.NINOS for a in e.get("actores") or []))
+    if con_chicos > max(2, len(escenas) // 3):
+        errores.append(f"los chicos (nene, nena) están en {con_chicos} escenas: solo si la historia tiene chicos")
+    return errores
+
+
+def validar_guion(d: dict, m: Marca, fuente: str, ganchos_previos: list[dict] | None = None) -> list[str]:
     """Los errores del guion (vacío = sirve): datos contra el artículo (como Pequeña Historia),
     estructura, escenas con acción, locutor y presentación de cada empresa o persona."""
     from clips_bot.efemerides import no_respaldados
@@ -717,6 +827,8 @@ def validar_guion(d: dict, m: Marca, fuente: str) -> list[str]:
     if not str(d.get("pregunta_gancho") or "").strip():
         errores.append("falta `pregunta_gancho`")
     errores += errores_escenas_con_sentido(escenas)
+    errores += errores_lugares_y_personajes(escenas)
+    errores += errores_gancho_repetido(escenas, ganchos_previos or [])
     errores += errores_protagonista(d)
     errores += errores_viajes(d)
     # El locutor (Tito).
@@ -842,12 +954,14 @@ def chequear_calidad(cliente, d: dict, m: Marca) -> list[str]:
 
 
 def escribir_guion(cliente, e: Elegido, fuente: str, reintentos: int = 6, avisar=log.info,
-                   revisor=None, extra: str = "") -> dict:
+                   revisor=None, extra: str = "", ganchos_previos: list[dict] | None = None) -> dict:
     """El guion validado (dict del schema). Primero el chequeo del código; si pasa, el de Haiku
     (`revisor`). Si no valida, reintenta con los errores; si nunca valida, GuionInvalido."""
     pedido = (f"MARCA: {e.marca.nombre} ({e.marca.pais})\nÁNGULO: {e.angulo} — {ANGULOS[e.angulo]}\n"
               f"Dato para el gancho (sugerido): {e.dato}\n\nTEXTO (Wikipedia; los datos salen SOLO de "
-              f"acá):\n{fuente[:20000]}" + (f"\n\n{extra}" if extra else ""))
+              f"acá):\n{fuente[:20000]}" + (f"\n\n{extra}" if extra else "")
+              + ("\n\nARRANQUES DE LOS VIDEOS ANTERIORES (el tuyo tiene que ser distinto: otro lugar, otra "
+                 "acción, otro objeto):\n" + texto_ganchos(ganchos_previos) if ganchos_previos else ""))
     from clips_bot.gemini import GeminiError
 
     correccion, ultimo = "", []
@@ -863,7 +977,7 @@ def escribir_guion(cliente, e: Elegido, fuente: str, reintentos: int = 6, avisar
         except ValueError as err:     # JSON roto: otro intento
             ultimo = [f"respuesta que no es JSON: {str(err)[:120]}"]
             continue
-        ultimo = validar_guion(d, e.marca, fuente)
+        ultimo = validar_guion(d, e.marca, fuente, ganchos_previos)
         if not ultimo:
             ultimo = chequear_calidad(revisor, d, e.marca)
         if not ultimo:
@@ -1093,7 +1207,13 @@ que un espectador notaría:
 - un brazo o un objeto que atraviesa la cara de alguien;
 - un personaje tapado por un mueble u otro personaje;
 - un objeto donde no va (una pelota sobre un sombrero, una tele en el piso de la calle);
-- un texto ilegible o cortado; un subtítulo tapando algo importante.
+- un texto ilegible o cortado; un subtítulo tapando algo importante;
+- (Santi, 2026-11-15) el GANCHO (cuadro 1) no muestra algo de la historia de ESTA marca, o es genérico ("un
+  chico rompiendo cosas en un living") o se parece a los arranques anteriores que te paso;
+- un LUGAR que no tiene sentido para lo que dice la frase (una fábrica contada en un living), o el mismo
+  lugar repetido cuando la historia ya cambió de momento;
+- dos personas paradas hablando cuando la frase cuenta una acción.
+Para estos tres usá `arreglo` = otro y decí en `que` qué escena y qué cambiar.
 Para cada problema: `cuadro` (el número), `que` (corto) y `arreglo`: mover_objeto (a otro lugar),
 cambiar_soporte (apoyarlo en otro lado), sacar_objeto, separar_personajes, sacar_texto u otro; y
 `objeto` (el nombre del objeto, si es un objeto). Si está todo bien, lista vacía. No inventes problemas."""
@@ -1176,7 +1296,8 @@ def aplicar_revision(d: dict, problemas: list[dict], claves: list[tuple[float, i
     return hechos
 
 
-def revisar_visual(cliente, d: dict, datos: dict, carpeta: Path, capturar=None, avisar=log.info) -> tuple[list, list]:
+def revisar_visual(cliente, d: dict, datos: dict, carpeta: Path, capturar=None, avisar=log.info,
+                   conn=None) -> tuple[list, list]:
     """Claude mira los cuadros clave (JPEG de ~512 px) y dice qué está mal. Devuelve (problemas, claves).
     `capturar(datos, segundo, png)` dibuja un cuadro (por defecto, render.cuadro_png)."""
     from . import render as rd
@@ -1194,7 +1315,15 @@ def revisar_visual(cliente, d: dict, datos: dict, carpeta: Path, capturar=None, 
         else:
             rd.cuadro_png(video, min(video.total_cuadros - 1, int(t * video.fps)), png, escala=0.5)
         imagenes.append(_jpeg_512(png))
-    lista = "\n".join(f"Cuadro {n + 1}: {q}" for n, (_t, _i, q) in enumerate(claves))
+    frases = frases_de(d)
+    def qd(i, q):
+        k = datos["escenas"][i].get("frase")
+        extra = (f" — dice: «{frases[k]}» (lugar: {(d.get('escenas') or [])[k].get('fondo')})"
+                 if isinstance(k, int) and k < len(frases) else "")
+        return q + extra
+    lista = "\n".join(f"Cuadro {n + 1}: {qd(i, q)}" for n, (_t, i, q) in enumerate(claves))
+    lista += ("\n\nARRANQUES ANTERIORES DEL CANAL:\n" + texto_ganchos(ganchos_recientes(conn)[:-1])
+              if conn is not None else "")
     try:
         r_ = json.loads(cliente.json(SISTEMA_REVISION, f"Los cuadros, en orden:\n{lista}", SCHEMA_REVISION, 0.2,
                                      imagenes=imagenes))
@@ -1260,7 +1389,7 @@ def proponer(conn, cliente, wiki, hoy: date, catalogo: list[Marca] | None = None
         fuente = fuente_de(wiki, forzar.marca)
         try:
             return forzar, escribir_guion(cliente, forzar, fuente, reintentos_guion, avisar=avisar,
-                                          revisor=revisor), fuente
+                                          revisor=revisor, ganchos_previos=ganchos_recientes(conn)), fuente
         except GuionInvalido as err:
             raise SinCandidato(f"el guion no pasó la validación: {err}") from err
     catalogo = catalogo if catalogo is not None else cargar_catalogo()
@@ -1286,7 +1415,8 @@ def proponer(conn, cliente, wiki, hoy: date, catalogo: list[Marca] | None = None
             break
         fuente = fuente_de(wiki, e.marca)
         try:
-            return e, escribir_guion(cliente, e, fuente, reintentos_guion, avisar=avisar, revisor=revisor), fuente
+            return e, escribir_guion(cliente, e, fuente, reintentos_guion, avisar=avisar, revisor=revisor,
+                                     ganchos_previos=ganchos_recientes(conn)), fuente
         except GuionInvalido as err:
             errores.append(str(err))
     raise SinCandidato("ningún guion pasó la validación: " + " | ".join(errores)[:600])
@@ -1341,6 +1471,10 @@ def armar_video(conn, settings, carpeta: Path, cliente=None, wiki=None, hoy: dat
             marcar_claves(revisor, d)
         except Exception as err:   # sin marcas el video sale igual (sin claves ni emojis)
             avisar(f"no pude marcar las claves de los subtítulos: {str(err)[:150]}")
+    try:
+        anotar_gancho(conn, d, e.marca.nombre)
+    except Exception as err:  # noqa: BLE001 — anotar nunca frena el video
+        avisar(f"no pude anotar el gancho: {err}")
     (carpeta / "guion.json").write_text(json.dumps({"marca": e.marca.nombre, "angulo": e.angulo,
                                                     "notas": e.notas, "guion": d}, ensure_ascii=False,
                                                    indent=1), encoding="utf-8")
@@ -1370,6 +1504,7 @@ def armar_video(conn, settings, carpeta: Path, cliente=None, wiki=None, hoy: dat
             fuente = fuente_de(wiki, e.marca)
         try:
             d = escribir_guion(cliente, e, fuente, avisar=avisar, revisor=revisor,
+                               ganchos_previos=ganchos_recientes(conn)[:-1],
                                extra=(f"OJO: tu guion anterior, leído en voz alta, duró {fin:.0f} segundos y tiene "
                                       f"que durar entre {MIN_S:g} y {MAX_S:g}. Escribilo con unas {objetivo} palabras "
                                       "en total (frases + Tito), con la misma historia:\n" + describir(d)))
@@ -1392,7 +1527,7 @@ def armar_video(conn, settings, carpeta: Path, cliente=None, wiki=None, hoy: dat
     revision: list[str] = []
     t0 = time.time()
     for vuelta in range(2):
-        problemas, claves = revisar_visual(cliente, d, datos, carpeta, avisar=avisar)
+        problemas, claves = revisar_visual(cliente, d, datos, carpeta, avisar=avisar, conn=conn)
         if not problemas:
             revision.append(f"vuelta {vuelta + 1}: sin problemas" if vuelta else "revisión visual: sin problemas")
             break

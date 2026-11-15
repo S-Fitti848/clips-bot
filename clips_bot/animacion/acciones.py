@@ -51,13 +51,34 @@ ROLES = {
     "joven": ("pibe", {}, 0.76),
     "vendedor": ("pibe", {"ropa": P.TURQUESA, "sombrero": "ninguno"}, 0.76),
     "publicista": ("vecina", {"ropa": P.VIOLETA, "anteojos": True, "peinado": "largo"}, 0.72),
+    # Variedad según la historia y la época (Santi, 2026-11-15: "no siempre los mismos dos chicos")
+    "obrero": ("narrador", {"ropa": "#3d6fb6", "pantalon": "#2c3e66", "sombrero": "gorra",
+                            "color_sombrero": P.AMARILLO, "anteojos": False, "peinado": "corto"}, 0.74),
+    "obrera": ("vecina", {"ropa": "#3d6fb6", "pantalon": "#2c3e66", "peinado": "largo"}, 0.72),
+    "cientifica": ("mama", {"ropa": P.BLANCO, "anteojos": True, "peinado": "rulos", "pelo": P.PELO[3]}, 0.74),
+    "medico": ("narrador", {"ropa": P.BLANCO, "anteojos": True, "bigote": False, "peinado": "corto",
+                            "pantalon": "#5b6170"}, 0.74),
+    "enfermera": ("mama", {"ropa": "#9fd8d0", "pantalon": "#9fd8d0", "peinado": "largo", "pelo": P.PELO[0]}, 0.74),
+    "granjero": ("narrador", {"ropa": "#c0603b", "pantalon": "#3a5a8c", "sombrero": "gorra",
+                              "color_sombrero": "#c9a24a", "anteojos": False, "bigote": True}, 0.74),
+    "marinero": ("pibe", {"ropa": "#1d3557", "sombrero": "gorra", "color_sombrero": P.BLANCO}, 0.76),
+    "cocinero": ("narrador", {"ropa": P.BLANCO, "sombrero": "galera", "color_sombrero": P.BLANCO,
+                              "anteojos": False, "bigote": True}, 0.74),
+    "deportista": ("pibe", {"ropa": P.ROJO, "sombrero": "ninguno", "pantalon": P.BLANCO}, 0.76),
+    "estudiante": ("pibe", {"ropa": P.VERDE, "sombrero": "ninguno", "anteojos": True}, 0.76),
+    "inventora": ("mama", {"ropa": P.BLANCO, "anteojos": True, "peinado": "rulos", "pelo": P.PELO[4]}, 0.74),
 }
+NINOS = {"nene", "nena"}
 
 # Acciones de un personaje. Las de MOVIMIENTO son las que hacen que una escena no sea "estática".
 ACCIONES = ("caminar", "correr", "saltar", "caerse", "retar", "martillar", "tirar", "atrapar",
-            "festejar", "asustarse", "pensar", "entrar", "salir", "senalar", "quieto")
+            "festejar", "asustarse", "pensar", "entrar", "salir", "senalar", "quieto",
+            "fabricar", "vender", "usar", "probar")
 MOVIMIENTO = {"caminar", "correr", "saltar", "caerse", "retar", "martillar", "tirar", "atrapar",
-              "festejar", "asustarse", "entrar", "salir"}
+              "festejar", "asustarse", "entrar", "salir", "fabricar", "vender", "usar", "probar"}
+# Acciones de trabajo (2026-11-15: "fabricando, inventando, vendiendo, gente usando el producto"): se
+# dibujan con los gestos de otra acción que ya tiene movimiento con peso.
+ALIAS_ACCION = {"fabricar": "martillar", "usar": "atrapar", "probar": "saltar"}
 CARAS = ("feliz", "enojado", "sorprendido", "triste", "normal")
 
 # Efectos de un objeto. Los DINÁMICOS cuentan como acción.
@@ -278,6 +299,7 @@ class Escena:
         squash & stretch en saltos y golpes, la cabeza que se inclina y la cara que cambia con la acción.
         `x0`/`x1` (numéricos) los pone el plan de la escena para que nadie se pise."""
         nombre, cambios, escala = ROLES.get(rol, ROLES["joven"])
+        accion = ALIAS_ACCION.get(accion, accion)
         x0 = _x(desde) if x0 is None else x0
         x1 = (_x(hacia, desde) if hacia and hacia in POS else x0) if x1 is None else x1
         t0 = round(0.05 + 0.18 * k, 2)
@@ -417,6 +439,14 @@ class Escena:
             self.elementos.append({"tipo": "prop", "nombre": "lamparita", "x": x0,
                                    "y": PISO - alto - 130, "escala": 0.65, "entrada": "rebote", "desde": ding})
             self.sfx.append((ding, "ding"))
+        elif accion == "vender":   # ofrece con entusiasmo: señala y muestra, rebotando sobre los pies
+            caras.append({"t": t0, "cara": "feliz"})
+            gestos += _alternar("senalar" if x0 < 540 else "senalar_izq", "explicar", t0, fin, 0.45)
+            t, s_ = t0, 1
+            while t < fin:
+                kf.append({"t": round(t, 3), "estirar": 1.0 + 0.04 * s_, "cabeza": 5 * s_, "easing": "suave"})
+                t += 0.3
+                s_ = -s_
         elif accion == "senalar":
             gestos += [{"t": t0, "gesto": "senalar" if x0 < 540 else "senalar_izq"}]
             kf += [{"t": t0, "estirar": 1.0}, {"t": t0 + 0.15, "estirar": 1.05, "easing": "salida"},
@@ -431,6 +461,28 @@ class Escena:
         if caras:
             el["caras"] = [c for c in caras if c["cara"] != "normal"] or caras
         self.elementos.append(el)
+
+    def multitud(self, n: int = 6) -> None:
+        """Gente atrás (2026-11-15: "multitudes"): una fila de personas chicas que festejan, caminan o
+        saltan, detrás de los personajes principales y más oscuras (lejos de la luz)."""
+        roles = [r for r in ROLES if r not in NINOS]
+        for k in range(n):
+            rol = roles[self.rnd.randrange(len(roles))]
+            nombre, cambios, escala = ROLES[rol]
+            x = 90 + k * (900 / max(1, n - 1)) + self.rnd.uniform(-25, 25)
+            accion = ("festejar", "saltar", "caminar")[k % 3]
+            gestos, kf = [{"t": 0, "gesto": "reposo"}], []
+            t0, t = 0.1 + 0.07 * k, 0.1 + 0.07 * k
+            if accion == "festejar":
+                gestos += _alternar("festejar", "sorpresa", t0, self.dur, 0.35)
+            while t < self.dur:
+                dy = -26 if (accion == "saltar" and int((t - t0) / 0.3) % 2 == 0) else 0
+                kf.append({"t": round(t, 3), "y": PISO - 150 + dy, "cabeza": 4 if int(t / 0.35) % 2 else -4,
+                           "easing": "suave"})
+                t += 0.3
+            self.fondo_el.append({"tipo": "personaje", "nombre": nombre, "cambios": cambios, "x": round(x, 1),
+                                  "y": PISO - 150, "escala": round(escala * 0.5, 3), "gestos": gestos,
+                                  "keyframes": kf, "multitud": True, "opacidad": 0.92})
 
     # ---- objetos --------------------------------------------------------------------------
     def _apoyo(self, soporte: str, x: float) -> None:
@@ -833,7 +885,7 @@ def superposiciones(esc_d: dict, paso: float = 0.1, margen: float = 0.0) -> list
 
     personas = []
     for k, d in enumerate(esc_d.get("elementos") or []):
-        if d.get("tipo") in ("personaje", "tito"):
+        if d.get("tipo") in ("personaje", "tito") and not d.get("multitud"):
             el = Elemento.desde_dict(d, f"elemento {k}", esc_d["duracion"])
             hw = (ANCHO_MEDIO_TITO / ESCALA_TITO if d["tipo"] == "tito" else ANCHO_MEDIO) * float(d.get("escala", 1))
             personas.append((k, el, hw))
@@ -905,7 +957,7 @@ def composicion(esc_d: dict, paso: float = 0.1) -> list[tuple[float, str, int, i
     dur = esc_d["duracion"]
     personas, cosas = [], []
     for k, d in enumerate(esc_d.get("elementos") or []):
-        if d.get("tipo") == "personaje":
+        if d.get("tipo") == "personaje" and not d.get("multitud"):
             personas.append((k, Elemento.desde_dict(d, f"elemento {k}", dur)))
         elif d.get("tipo") == "prop":
             cosas.append((k, d, Elemento.desde_dict(d, f"elemento {k}", dur)))
@@ -1021,7 +1073,7 @@ def per_alto(nombre: str, cambios: dict) -> float:
 
 def es_dinamica(spec: dict) -> bool:
     """¿La escena muestra algo que pasa? (no "dos personajes hablando")."""
-    return bool(spec.get("cadena")) or \
+    return bool(spec.get("cadena")) or bool(spec.get("multitud")) or \
         any(a.get("accion") in MOVIMIENTO for a in spec.get("actores") or []) or \
         any(o.get("efecto") in DINAMICOS for o in spec.get("objetos") or [])
 
@@ -1050,6 +1102,8 @@ def escena_accion(spec: dict, dur: float, i: int, primera: bool = False, tono: f
     fondo = spec.get("fondo") or "ciudad"
     semilla = semilla_fondo(anio, variante)
     e = Escena(dur, semilla=i + 1, fondo=fondo, espejo=_esc.espejado(semilla))
+    if spec.get("multitud"):
+        e.multitud()
     for k, a in enumerate(planear(spec.get("actores") or [], reservar)):
         e.actor(a.get("rol") or "joven", a.get("accion") or "quieto", a["carril"], a.get("hacia"),
                 a.get("cara") or "normal", k, x0=a["x0"], x1=a["x1"])
@@ -1118,7 +1172,8 @@ def escena_accion(spec: dict, dur: float, i: int, primera: bool = False, tono: f
                 el["y"] = round(max(BANDA_SUBTITULOS + 120, centro[1] + math.sin(ang) * dist * 0.9), 1)
             elementos.append(el)
         e.sfx.append((round(t_d, 3), "ding"))
-    if fondo in ("casa", "oficina", "taller", "fabrica", "tienda", "ciudad") and i % 2 == 0:
+    if fondo in ("casa", "oficina", "taller", "fabrica", "tienda", "ciudad", "laboratorio", "hospital",
+                 "campo", "puerto") and i % 2 == 0:
         # profundidad: algo cerca de la cámara en una esquina de abajo, con parallax (se corre al revés)
         lado = -1 if (i // 2) % 2 == 0 else 1
         elementos.append({"tipo": "prop", "nombre": "primer_plano", "texto": fondo, "forma": lado * (1 + 2 * (i // 4 % 2)),

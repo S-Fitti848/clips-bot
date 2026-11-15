@@ -245,10 +245,14 @@ def test_escenas_con_sentido():
     assert "¿de dónde?" in err and "de la nada" in err and "solo llueven" in err and "lampara va en" in err
 
 
-def test_el_gancho_es_una_destruccion_en_cadena():
+def test_la_cadena_es_opcional_y_si_va_se_entiende():
+    # Santi, 2026-11-15: la destrucción en cadena era SOLO para Nerf; cada marca, su propio gancho.
     d = guion()
-    d["escenas"][0]["cadena"] = [_c("tele", "mesa", "izquierda")]
-    assert any("en cadena" in e for e in mk.validar_guion(d, marca(), FUENTE))
+    d["escenas"][0]["cadena"] = []
+    assert not any("cadena" in e for e in mk.validar_guion(d, marca(), FUENTE))
+    d["escenas"][1]["cadena"] = [_c("tele", "mesa", "izquierda")] * 2
+    assert any("solo en el gancho" in e for e in mk.validar_guion(d, marca(), FUENTE))
+    d = guion()
     d["escenas"][0]["cadena"] = [_c("tele", "mesa", "izquierda")] * 2
     assert any("mismo lugar" in e for e in mk.validar_guion(d, marca(), FUENTE))
     d["escenas"][0]["cadena"] = [_c("cuadro", "mesa", "izquierda"), _c("tele", "mesa", "derecha")]
@@ -963,3 +967,39 @@ def test_mensaje_con_marca_angulo_y_puntaje():
     t = mk.texto_mensaje(r, "🔧 Claude Code: ejemplo")
     assert "Havanna" in t and "casi quiebra" in t and "Puntaje 9" in t and "humor 9" in t
     assert "#Havanna" in t and "No quedó programado" in t
+
+
+def test_el_gancho_no_repite_el_de_otro_video():
+    d = guion()
+    previos = mk.ganchos_recientes(None)          # siempre está el de Nerf
+    assert any("destrucción en cadena de Nerf" in e for e in mk.validar_guion(d, marca(), FUENTE, previos))
+    d["escenas"][0]["cadena"] = []
+    otro = dict(mk.firma_gancho(d, "Otra"), cadena=False)
+    assert any("se parece al de Otra" in e for e in mk.validar_guion(d, marca(), FUENTE, [otro]))
+
+
+def test_lugares_dialogos_y_personajes():
+    d = guion()
+    for e in d["escenas"]:
+        e["fondo"] = "casa"
+    err = " ".join(mk.validar_guion(d, marca(), FUENTE))
+    assert "lugares distintos" in err and "seguidas en casa" in err and "como mucho 2" in err
+    d = guion()
+    for e in d["escenas"]:
+        e["actores"] = [{"rol": "nene", "accion": "quieto", "desde": "izquierda", "hacia": "ninguno", "cara": "normal"}]
+        e["objetos"], e["cadena"] = [], []
+    err = " ".join(mk.validar_guion(d, marca(), FUENTE))
+    assert "personajes distintos" in err and "chicos" in err and "gente hablando" in err
+
+
+def test_lugares_nuevos_y_multitud():
+    from clips_bot.animacion import acciones as ac, escenas as esc
+
+    for f in ("laboratorio", "hospital", "campo", "puerto"):
+        assert f in mk.FONDOS and esc.fondo(f, 19600).startswith("<")
+    spec = {"parte": "que_paso", "fondo": "fabrica", "multitud": True, "actores": [
+        {"rol": "obrero", "accion": "fabricar", "desde": "izquierda"}, {"rol": "vendedor", "accion": "vender",
+                                                                         "desde": "derecha"}], "objetos": []}
+    d, _ = ac.escena_accion(spec, 3.0, 2)
+    gente = [el for el in d["elementos"] if el.get("multitud")]
+    assert len(gente) >= 5 and ac.es_dinamica(spec) and not ac.superposiciones(d)

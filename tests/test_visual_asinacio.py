@@ -78,3 +78,9 @@ def test_transicion_iris_se_dibuja():
     a, b = Image.new("RGBA", (108, 192), (255, 0, 0, 255)), Image.new("RGBA", (108, 192), (0, 0, 255, 255))
     medio = rd._transicion(a, b, "iris", 0.5)
     assert medio.getpixel((54, 96))[:3] == (0, 0, 255) and medio.getpixel((1, 1))[:3] == (255, 0, 0)
+
+
+def test_los_efectos_del_render_no_los_elige_el_guion():
+    from clips_bot.animacion import marcas as mk
+
+    assert not set(mk.EFECTOS_RENDER) & set(mk.PROPS)
