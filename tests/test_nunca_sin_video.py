@@ -323,3 +323,12 @@ def test_solo_banco_no_busca_en_el_dia(monkeypatch, tmp_path):
         locales.proponer(None, None, None, None, __import__("datetime").date(2026, 11, 15), tmp_path,
                          banco=[], solo_banco=True)
     assert "banco" in str(e.value)
+
+
+def test_foto_de_europeana_sin_fuente():
+    """Europeana llamada directo no trae "fuente" (2026-11-15: KeyError en la historia del banco)."""
+    from clips_bot import efemerides as ef
+
+    f = ef._foto_de({"archivo": "a.jpg", "url": "https://x/a.jpg", "ancho": 1200, "alto": 800,
+                     "licencia": "CC0", "autor": "", "epigrafe": "x", "pagina": "", "anio": None}, "Zaragoza")
+    assert f.articulo == "otra fuente: Zaragoza" and f.autor == "autor desconocido"

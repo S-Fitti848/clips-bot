@@ -1439,10 +1439,12 @@ POOL_MAX_ORDEN = 56
 
 def _foto_de(h: dict, busqueda: str) -> "Foto":
     """Una foto de las otras fuentes (fuentes_fotos) como Foto."""
+    # la fuente la pone el despachador (Fuentes.buscar); una fuente llamada directo (Europeana en la segunda
+    # búsqueda) no la trae (2026-11-15: KeyError en la historia del banco)
     return Foto(archivo=h["archivo"], url=h["url"], ancho=h["ancho"], alto=h["alto"],
-                licencia=h["licencia"], autor=h["autor"] or "autor desconocido",
-                epigrafe=h["epigrafe"][:160], pagina=h["pagina"],
-                articulo=f"{h['fuente']}: {busqueda}", anio=h["anio"])
+                licencia=h["licencia"], autor=h.get("autor") or "autor desconocido",
+                epigrafe=(h.get("epigrafe") or "")[:160], pagina=h.get("pagina") or h["url"],
+                articulo=f"{h.get('fuente') or 'otra fuente'}: {busqueda}", anio=h.get("anio"))
 
 
 def es_central(g: "Guion", i: int) -> bool:
@@ -1964,7 +1966,8 @@ def fotos_para_guion(wiki: Wiki, cliente, e: Evento, g: Guion, fotos_articulo: l
             except Exception as err:   # una fuente caída no frena la búsqueda
                 avisar(f"    fotos: Europeana «{titulo}» falló ({str(err)[:80]})")
                 continue
-            nuevas = [_foto_de(h, titulo) for h in halladas if h.get("url") and h.get("licencia")]
+            nuevas = [_foto_de({"fuente": "europeana", **h}, titulo) for h in halladas
+                      if h.get("url") and h.get("licencia")]
             del_hecho += [i for i in sumar(nuevas, FOTOS_BUSQUEDA_MAX)
                           if i not in descartadas and i not in del_hecho]
     propias, descartes = [], {}
