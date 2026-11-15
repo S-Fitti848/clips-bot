@@ -2658,7 +2658,10 @@ def proponer(wiki: Wiki, cliente, dia: date, carpeta: Path, avisar=log.info,
     `tope_fotos_s`: el tope de la búsqueda de fotos de cada hecho (efemerides.tope_fotos_min)."""
     from . import fuentes_fotos
 
+    from . import bitacora
+
     fuentes_fotos.nueva_corrida()   # las fuentes caídas se cuentan en toda la propuesta
+    bitacora.paso("busqueda")
     todos = wiki.eventos("es", dia) + wiki.eventos("en", dia)
     candidatos, motivos = [], {}
     for e in todos:
@@ -2708,10 +2711,12 @@ def proponer(wiki: Wiki, cliente, dia: date, carpeta: Path, avisar=log.info,
         fuente = texto_fuente(wiki, e)
         guiones += 1
         try:
+            bitacora.paso("guion")
             g = escribir_guion(escritor, e, fuente, correccion, hablado=hablado and not corto,
                                sistema=SISTEMA_GUION_CORTO if corto else None, corto=corto)
             g.imagen_frase = imagen_frase or corto      # efemerides.imagen_frase (2026-11-10)
             g.mas_video = mas_video                     # efemerides.estilo_nuevo (2026-11-14)
+            bitacora.paso("fotos")
             pool, g = fotos_con_control(wiki, cliente, e, g, fotos, carpeta, avisar, videos=videos,
                                         elector=elector, elector_reintento=elector_reintento,
                                         tope_s=tope_fotos_s)
@@ -3421,6 +3426,9 @@ def hacer_video(p: Propuesta, settings, carpeta: Path, avisar=log.info, conn=Non
     # Estilo nuevo (Santi, 2026-11-14): arranque con montaje y golpe de zoom (o un clip real), el
     # mapa acercándose al lugar en la de Latinoamérica, gancho y subtítulos animados.
     nuevo = bool(getattr(cfg_v, "estilo_nuevo", False))
+    from . import bitacora
+
+    bitacora.paso("voz")
     wav, duraciones, motor = voz_efemeride(g.frases, settings, carpeta, avisar, segunda_primero=fb)
     # Duración (2026-10-04): atempo hasta ×1,1 y nada más. Si no entra ni así, se acorta el GUION
     # (`cliente`: Gemini) y se vuelve a sintetizar; la voz nunca se acelera más ni cambia de tono.
@@ -3448,12 +3456,14 @@ def hacer_video(p: Propuesta, settings, carpeta: Path, avisar=log.info, conn=Non
     avisar(f"voz ({motor}): {fin:.1f} s en {time.time() - t0:.0f} s")
     t0 = time.time()
     # Whisper da los tiempos; el texto de los subtítulos es el del guion aprobado.
+    bitacora.paso("whisper")
     oidas = narrar.palabras_de_voz(wav, settings.subtitulos)
     oidas, recortado = narrar.recortar_inicio(wav, oidas, g.frases)
     if recortado:
         fin = narrar.duracion_wav(wav)
         avisar(f"la voz dijo {recortado:.1f} s de algo antes del guion: recortado")
     palabras, inicios = narrar.alinear_a_guion(oidas, g.frases, fin)
+    bitacora.paso("render")
     if cfg_v.voz_natural:
         # Pausas variables entre frases (sin pasarse del tope de duración) y EQ de locutor.
         palabras, inicios, extra = pausas_variables(wav, palabras, inicios, g.frases, max(0.0, tope - fin))

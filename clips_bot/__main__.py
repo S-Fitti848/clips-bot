@@ -34,6 +34,7 @@ import requests
 
 from . import __version__, db, metricas
 from . import gemini as gemini_mod
+from . import bitacora
 from .idioma import L
 from .candidates import (MOTIVO_COSTREAM, Resultado, buscar_candidatos, buscar_catalogo, buscar_kick,
                          consolidar_evento)
@@ -2715,6 +2716,7 @@ def escuchar_telegram(settings: Settings, timeout_poll: int = 50) -> int:
                     _auto(_medicion_ph_tick), conn, tg, settings)
             _seguro(tg, str(chat_ultimo or ""), "el aviso de las voces", _voces_tick, conn, tg, settings)
             _seguro(tg, str(chat_ultimo or ""), "el costo de Claude", _costo_claude_tick, conn, tg, settings)
+            _seguro(tg, str(chat_ultimo or ""), "el resumen semanal de costos", _costos_semana_tick, conn, tg, settings)
             _seguro(tg, str(chat_ultimo or ""), "el reintento de los clips",
                     _auto(_clips_reintento_tick), conn, settings)
             _seguro(tg, str(chat_ultimo or ""), "la búsqueda de lo que pegó",
@@ -3021,6 +3023,9 @@ def _despachar(conn, tg: TelegramClient, c: dict, settings: Settings, cola: list
             _seguro(tg, c["chat_id"], "/metricas refresh", actualizar_metricas)
         respuesta = _seguro(tg, c["chat_id"], c["comando"], _texto_metricas, conn,
                             int(c["args"][0]) if c["args"] and c["args"][0].isdigit() else 10)
+    elif c["comando"] == "/costos":
+        respuesta = _seguro(tg, c["chat_id"], c["comando"], _texto_costos, conn,
+                            int(c["args"][0]) if c["args"] and c["args"][0].isdigit() else 7)
     elif c["comando"] == "/gemini":
         respuesta = _seguro(tg, c["chat_id"], c["comando"], _texto_uso_gemini, conn,
                             int(c["args"][0]) if c["args"] and c["args"][0].isdigit() else 3)
@@ -3499,6 +3504,7 @@ def _efe_proponer(conn, tg: TelegramClient, chats: list[str], dia, settings: Set
 
     token = secrets.token_hex(3)
     carpeta = OUTPUT_DIR / "efemerides" / f"{dia:%m%d}_{token}"
+    bitacora.abrir(conn, token, "pequena_historia", ("efemeride" if hecho else settings.efemerides.tema) or "efemeride")
     try:
         p = ef.proponer(ef.Wiki(), gemini, dia, carpeta, avisar=log.info, hecho=hecho,
                         videos=settings.efemerides.videos,
@@ -3511,13 +3517,17 @@ def _efe_proponer(conn, tg: TelegramClient, chats: list[str], dia, settings: Set
                         corto=settings.efemerides.corto, texto=_texto_efemeride(settings, gemini),
                         mas_video=settings.efemerides.estilo_nuevo, puntuador=_puntuador(settings))
     except (NarrarError, ef.WikiError, GeminiError) as e:
+        bitacora.fallo("", str(e))
+        bitacora.cerrar(conn, "fallido")
         error = f"No salió la efeméride: {html.escape(str(e)[:400])}"
         if isinstance(e, (ef.SinFotosReales, ef.SinTema)):
             return ErrorDefinitivo(error)
         return ErrorPasajero(error) if getattr(e, "pasajero", False) else error
     estado = {"propuesta": p.__dict__, "carpeta": str(carpeta), "chat_id": chats[0]}
+    bitacora.dato(titulo=(p.guion or {}).get("titulo", ""))
     if auto:
         return _efe_auto(conn, tg, chats, token, estado, settings)
+    bitacora.cerrar(conn, "propuesto")
     for chat in chats:
         _efe_mostrar(conn, tg, chat, token, estado)   # el mismo token: se aprueba desde cualquiera
     return None
@@ -3608,6 +3618,7 @@ def _fb_proponer(conn, tg: TelegramClient, chats: list[str], dia, settings: Sett
         return "Sin GEMINI_API_KEY no puedo elegir las fotos."
     token = secrets.token_hex(3)
     carpeta = OUTPUT_DIR / "efemerides" / f"fb_{dia:%m%d}_{token}"
+    bitacora.abrir(conn, token, "pequena_historia", "latinoamerica")
     try:
         p = locales.proponer(ef.Wiki(), sonnet, haiku, gemini, dia, carpeta, avisar=log.info,
                              hecho=hecho, videos=settings.efemerides.videos,
@@ -3625,14 +3636,18 @@ def _fb_proponer(conn, tg: TelegramClient, chats: list[str], dia, settings: Sett
                                                           for x in _latam_del_dia(conn, dia))
                              else locales.PISO_UNA_POR_DIA)
     except (NarrarError, ef.WikiError, GeminiError) as e:
+        bitacora.fallo("", str(e))
+        bitacora.cerrar(conn, "fallido")
         return f"No salió la historia de Latinoamérica: {html.escape(str(e)[:400])}"
     ya = _latam_del_dia(conn, dia)
     ya.append({"texto": p.evento.get("texto"), "pais": (p.local or {}).get("pais"),
                "articulo": (p.evento.get("paginas") or [""])[0], "puntaje": (p.local or {}).get("puntaje")})
     db.set_valor(conn, f"{PH_LATAM}:{dia.isoformat()}", json.dumps(ya, ensure_ascii=False))
     estado = {"propuesta": p.__dict__, "carpeta": str(carpeta), "chat_id": chats[0]}
+    bitacora.dato(titulo=(p.guion or {}).get("titulo", ""))
     if auto:
         return _efe_auto(conn, tg, chats, token, estado, settings)
+    bitacora.cerrar(conn, "propuesto")
     for chat in chats:
         _efe_mostrar(conn, tg, chat, token, estado)
     return None
@@ -3859,6 +3874,34 @@ def _costo_claude_tick(conn, tg: TelegramClient, settings: Settings, ahora=None)
         tg.send_message(DUENO, claude.texto_costo(conn, ayer))
 
 
+def _texto_costos(conn, dias: int = 7, settings: Settings | None = None) -> str:
+    """/costos: la bitácora de los últimos `dias` días (este bot y Lo Encontré, mismo formato)."""
+    settings = settings or load_settings()
+    desde = (datetime.now(AR).date() - timedelta(days=max(1, dias) - 1)).isoformat()
+    filas = bitacora.leer(conn, desde, [settings.efemerides.lo_encontre_db])
+    return bitacora.texto(filas, dias)
+
+
+COSTOS_SEMANA = "costos_semana_enviado"   # bot_estado: el lunes (AR) cuyo resumen semanal ya salió
+COSTOS_SEMANA_HORA = 9                    # los lunes, desde las 09:00 AR
+
+
+def _costos_semana_tick(conn, tg: TelegramClient, settings: Settings, ahora=None) -> None:
+    """Los lunes a la mañana (Santi, 2026-11-15): la semana anterior (lunes a domingo) por canal, las etapas
+    más caras y más lentas, y 2 o 3 ideas concretas para bajar costo o tiempo."""
+    ahora = ahora or datetime.now(AR)
+    lunes = ahora.date().isoformat()
+    if ahora.weekday() != 0 or ahora.hour < COSTOS_SEMANA_HORA or db.get_valor(conn, COSTOS_SEMANA) == lunes:
+        return
+    db.set_valor(conn, COSTOS_SEMANA, lunes)
+    desde = (ahora.date() - timedelta(days=7)).isoformat()
+    filas = [f for f in bitacora.leer(conn, desde, [settings.efemerides.lo_encontre_db]) if f["dia"] < lunes]
+    texto = bitacora.texto(filas, 7).replace("Costos y tiempos, últimos 7 días", "Resumen de la semana")
+    if filas:
+        texto += "\n\n<b>Ideas para bajar costo o tiempo</b>:\n" + "\n".join(f"• {i}" for i in bitacora.ideas(filas))
+    tg.send_message(DUENO, texto)
+
+
 def _voces_tick(conn, tg: TelegramClient, settings: Settings, ahora=None) -> None:
     """En cada vuelta de la escucha: si las voces de Gemini de hoy (con Lo Encontré) llegan a
     efemerides.tts_aviso, le avisa a Santi (una vez por día y clave)."""
@@ -3954,7 +3997,10 @@ def _animacion_armar(conn, tg: TelegramClient, chats: list[str], settings: Setti
     carpeta = DATA_DIR.parent / "output" / "animacion" / (hoy.strftime("%Y%m%d") + (f"_{k + 1}" if k else ""))
     r = marcas.armar_video(conn, settings, carpeta, hoy=hoy, avisar=log.info,
                            procesos=settings.animacion.procesos)
+    bitacora.dato(clip_id=clip_asinacio(hoy, k), titulo=r.titulo)
+    bitacora.paso("subida")
     avisos = _animacion_subir(conn, settings, r, carpeta, hoy, k) if settings.animacion.subir else []
+    bitacora.paso(None)
     clip_id = clip_asinacio(hoy, k)
     programado = any(a.startswith(("📤", "📘")) for a in avisos)
     encabezado = (("🤖 <b>Se publica sola</b>: si no tocás nada sale a su hora; ❌ Cancelar la frena.\n"
@@ -4076,8 +4122,12 @@ def _animacion_tick(conn, tg: TelegramClient, settings: Settings, ahora=None, ar
         return
     chats = [c.strip() for c in cfg.chat.split(",") if c.strip()] or [DUENO]
     error, sin_candidato = "", False
+    vid = clip_asinacio(ahora.date(), k)
+    intento = (fallas.get(str(k), 0) + 1)
+    bitacora.abrir(conn, vid if intento == 1 else f"{vid}#{intento}", "asinacio", "marcas")
     try:
         (armar or _animacion_armar)(conn, tg, chats, settings, ahora.date(), k)
+        bitacora.cerrar(conn, "programado" if cfg.subir else "entregado")
     except Exception as e:
         from .animacion.marcas import SinCandidato
 
@@ -4085,6 +4135,8 @@ def _animacion_tick(conn, tg: TelegramClient, settings: Settings, ahora=None, ar
         if not sin_candidato:
             log.exception("el video de marcas %d falló", k + 1)
         error = html.escape(str(e)[:500])
+        bitacora.fallo("", str(e))
+        bitacora.cerrar(conn, "fallido")
     finally:
         db.soltar_turno(conn, db.RECURSO_PESADO, turno, VENCIMIENTO_PESADO_S)
     cual = f" ({k + 1} de {n})" if n > 1 else ""
@@ -4391,19 +4443,29 @@ def _efe_armar(conn, tg: TelegramClient, chat_id, token: str, settings: Settings
         return "Esa efeméride venció. Mandá /efemeride de nuevo."
     prop = ef.Propuesta(**estado["propuesta"])
     fb = getattr(prop, "destino", "") == "facebook"
+    if bitacora.activa() != token:
+        bitacora.retomar(conn, token) or bitacora.abrir(conn, token, "pequena_historia",
+                                                        "latinoamerica" if fb else "tecnologia")
     try:
         meta = ef.hacer_video(prop, settings, Path(estado["carpeta"]), avisar=log.info, conn=conn,
                               cliente=(_claude_textos(settings)[0] if fb else
                                        _texto_efemeride(settings, _gemini(settings))))
-    except NarrarError as e:
+    except Exception as e:
+        bitacora.fallo("", str(e))
+        bitacora.cerrar(conn, "fallido")
+        if not isinstance(e, NarrarError):
+            raise
         return f"No pude armar el video: {html.escape(str(e)[:300])}"
+    bitacora.dato(clip_id=meta.get("clip_id", ""), titulo=(meta.get("textos") or {}).get("titulo", ""))
     motor = meta.get("efemeride", {}).get("voz", "")
     # Con Piper (Gemini sin cuota o sin respuesta): el botón para rehacerla con Laomedeia
     # cuando vuelva la cuota. Por eso la propuesta se guarda hasta que salga con Laomedeia.
     extra = ([[{"text": "🔁 Rehacer con Laomedeia", "callback_data": f"efe:voz:{token}"}]]
              if ef.es_piper(motor) and not auto else [])
     if auto:
+        bitacora.paso("subida")
         avisos = _subir(conn, settings, meta, "pequena_historia")
+        bitacora.paso(None)
         titulo = (_encabezado_fb(prop.local) if fb else
                   _encabezado_tec(prop.local or {}) if (prop.local or {}).get("puntaje") is not None
                   else "📅 <b>Pequeña Historia</b>")
@@ -4416,6 +4478,7 @@ def _efe_armar(conn, tg: TelegramClient, chat_id, token: str, settings: Settings
                       "📅 <b>Pequeña Historia</b> — subilo al canal de efemérides")
     enviar_clip(tg, chat_id, conn, meta["clip_id"], meta, 1, None,
                 encabezado=f"{encabezado}\n🎙 {html.escape(ef.texto_voz(motor))}", extra_filas=extra)
+    bitacora.cerrar(conn, "programado" if auto else "entregado")
     if not extra:
         db.borrar_valor(conn, f"efe:{token}")
     # El ✅ arma el video; subirlo es aparte, con "📤 Subir" debajo del video (2026-09-30).
@@ -5521,6 +5584,10 @@ SECCIONES = [
          "vistas y retención (% visto, % que llega al final, duración vista) de tus últimos Shorts "
          "de Rots (default 10). Se actualizan solas a las 05:00.",
          "/metricas 20"),
+        ("/costos [días]",
+         "costo de Claude y tiempo por video y por canal (también Lo Encontré), las 3 etapas más caras y las 3 "
+         "más lentas (default 7 días).",
+         "/costos 7"),
         ("/gemini [días]",
          "cuántas llamadas a Gemini hizo cada función por día y cuántos tokens gastó (default 3 días).",
          "/gemini 7"),

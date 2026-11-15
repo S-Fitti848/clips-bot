@@ -751,7 +751,10 @@ def proponer(wiki: ef.Wiki, sonnet, haiku, gemini, dia: date, carpeta: Path, avi
     con otra fuente de hechos y Claude para el texto."""
     from . import fuentes_fotos
 
+    from . import bitacora
+
     fuentes_fotos.nueva_corrida()
+    bitacora.paso("busqueda")
     todos, conmemoraciones, homenajeados = leer_todo(wiki, dia, avisar)
     cands, motivos = filtrar(todos, date.today(), homenajeados)
     if hecho:
@@ -836,12 +839,14 @@ def proponer(wiki: ef.Wiki, sonnet, haiku, gemini, dia: date, carpeta: Path, avi
         lugar = str(c.clasif.get("lugar") or "").strip()
         avisar(f"{e.anio} {lugar}: {len(fotos)} fotos del hecho y del lugar")
         try:
+            bitacora.paso("guion")
             g = ef.escribir_guion(sonnet, e, fuente, sistema=SISTEMA_GUION_CORTO if corto else SISTEMA_GUION_LOCAL,
                                   validar_extra=validar_lugar(lugar, corto), contexto=contexto_de(c),
                                   corto=corto, rango=ef.LATAM_PALABRAS if corto else None,
                                   max_s=ef.LATAM_MAX_S if corto else 0.0)
             g.imagen_frase = imagen_frase or corto
             g.mas_video = mas_video
+            bitacora.paso("fotos")
             pool, g = ef.fotos_con_control(wiki, gemini, e, g, fotos, carpeta, avisar, videos=videos,
                                            tope_s=tope_fotos_s, elector=elector,
                                            elector_reintento=elector_reintento)

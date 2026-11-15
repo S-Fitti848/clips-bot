@@ -1558,7 +1558,11 @@ def proponer(conn, cliente, wiki, hoy: date, catalogo: list[Marca] | None = None
              reintentos_guion: int = 6) -> tuple[Elegido, dict, str]:
     """(elegido, guion validado, fuente). SinCandidato si ninguno llega al puntaje o ningún guion valida.
     `forzar`: una marca y ángulo elegidos a mano (para rehacer un ejemplo): sin rotación ni puntaje."""
+    from clips_bot import bitacora
+
+    bitacora.paso("busqueda")
     if forzar is not None:
+        bitacora.paso("guion")
         fuente = fuente_de(wiki, forzar.marca)
         try:
             return forzar, escribir_guion(cliente, forzar, fuente, reintentos_guion, avisar=avisar,
@@ -1585,6 +1589,7 @@ def proponer(conn, cliente, wiki, hoy: date, catalogo: list[Marca] | None = None
         raise GuionesFallidos(f"ninguno de los {len(textos)} candidatos llegó a {minimo:g} de promedio; "
                               "pruebo con otros en un rato")
     errores = []
+    bitacora.paso("guion")
     fila0 = ultima_fila_uso(conn) if conn is not None else 0
     for e in elegidos[:max_intentos]:
         if conn is not None and errores and costo_desde(conn, fila0) > TOPE_USD_VIDEO:
@@ -1650,6 +1655,10 @@ def armar_video(conn, settings, carpeta: Path, cliente=None, wiki=None, hoy: dat
             marcar_claves(revisor, d)
         except Exception as err:   # sin marcas el video sale igual (sin claves ni emojis)
             avisar(f"no pude marcar las claves de los subtítulos: {str(err)[:150]}")
+    from clips_bot import bitacora
+
+    bitacora.dato(titulo=str(d.get("titulo") or ""), marca=e.marca.nombre, angulo=e.angulo)
+    bitacora.paso("dibujos")
     d = asegurar_dibujos(cliente, d, e, fuente or "", avisar)
     try:
         anotar_gancho(conn, d, e.marca.nombre)
@@ -1663,6 +1672,7 @@ def armar_video(conn, settings, carpeta: Path, cliente=None, wiki=None, hoy: dat
     # sin cambiar el tono y los silencios entre frases a 0,22 s; si queda fuera de 32-38 s, se REESCRIBE el
     # guion (no se acelera más).
     t0 = time.time()
+    bitacora.paso("voz")
     for intento in range(3):
         segs = segmentos(d)
         hablado = [t for _, _, t in segs]
@@ -1693,6 +1703,7 @@ def armar_video(conn, settings, carpeta: Path, cliente=None, wiki=None, hoy: dat
             break
     tiempos["voz_s"] = round(time.time() - t0, 1)
     t0 = time.time()
+    bitacora.paso("whisper")
     oidas = narrar.palabras_de_voz(wav, settings.subtitulos)
     oidas, recortado = narrar.recortar_inicio(wav, oidas, hablado)
     if recortado:
@@ -1706,6 +1717,7 @@ def armar_video(conn, settings, carpeta: Path, cliente=None, wiki=None, hoy: dat
     # absurdo, se corrige el guion de esa escena y se vuelve a armar; como mucho 2 vueltas.
     revision: list[str] = []
     t0 = time.time()
+    bitacora.paso("revision")
     for vuelta in range(2):
         problemas, claves = revisar_visual(cliente, d, datos, carpeta, avisar=avisar, conn=conn)
         if not problemas:
@@ -1757,6 +1769,7 @@ def armar_video(conn, settings, carpeta: Path, cliente=None, wiki=None, hoy: dat
     avisar(f"niveles: {niv}")
     salida = carpeta / f"marca_{re.sub(r'[^a-z0-9]+', '_', e.marca.nombre.lower())}_{e.angulo}.mp4"
     t0 = time.time()
+    bitacora.paso("render")
     r = rd.renderizar(video, salida, "auto", procesos, crf=22, preset="medium",
                       hilos_x264=rd.hilos_x264_defecto())
     tiempos["render_s"] = round(time.time() - t0, 1)

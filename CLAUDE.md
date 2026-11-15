@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-11-15 | **Versión:** v1.08.0 (desplegado) | **Modo:** Fase 2: corriendo solo en la Pi. **Rots APAGADO.** Pequeña Historia (3 por día, madrugada desde las 04:00) (publicación sin aprobar: llegan con ❌ Cancelar) y **Así Nació** (2 por día, desde las 07:00, publican 13:00 y 20:00 en YouTube y Facebook con ❌ Cancelar), todo al privado de Santi
+**Snapshot:** 2026-11-15 | **Versión:** v1.09.0 (desplegado) | **Modo:** Fase 2: corriendo solo en la Pi. **Rots APAGADO.** Pequeña Historia (3 por día, madrugada desde las 04:00) (publicación sin aprobar: llegan con ❌ Cancelar) y **Así Nació** (2 por día, desde las 07:00, publican 13:00 y 20:00 en YouTube y Facebook con ❌ Cancelar), todo al privado de Santi
 
 > **SI ESTÁS EMPEZANDO UNA SESIÓN NUEVA, LEÉ §10.** Ahí está qué está hecho, qué quedó a medias,
 > qué falta, y las trampas que ya nos mordieron.
@@ -1030,6 +1030,20 @@ Problemas abiertos:
 
 ## 9. CHANGELOG
 
+- v1.09.0 (2026-11-15, tarde) — **Bitácora de cada video** (Santi: "para después mejorar costos y tiempos";
+  `bitacora.py`, tabla `videos_registro`, formato común en `docs/registro-videos.md`). Por video: canal y
+  formato, costo de Claude por paso (elegir, guion, corrección, fotos, revisión visual, final, dibujos) con
+  modelo e intentos, voces de Gemini y reintentos, segundos por etapa (búsqueda, guion, fotos, dibujos, voz,
+  whisper, revisión, render, subida) y total, temperatura máxima y si se frenó por calor en el render, falla
+  (paso y motivo) y estado (publicado/cancelado salen de `subidas`). Claude y las voces salen de `gemini_uso`
+  por rango de filas del tramo; un video aprobado más tarde suma su tramo (`retomar`). Así Nació, la de
+  tecnología y las de Latinoamérica ya registran; **Lo Encontré todavía no** (otro repo: tiene que escribir la
+  misma tabla en su base; `/costos` ya la lee de `efemerides.lo_encontre_db`). **`/costos [días]`** (7 por
+  defecto): por canal y formato, costo y tiempo promedio por video, fallas, cancelados, frenadas y temperatura;
+  las 3 etapas más caras y las 3 más lentas. **Resumen semanal** los lunes desde las 09:00 al privado de
+  Santi (`_costos_semana_tick`): lo mismo de la semana (lunes a domingo) y 2-3 ideas concretas sacadas de los
+  números (sin gastar un modelo: guiones con muchos intentos, fotos > 30 % del costo, frenadas por calor,
+  voces de más, etapas lentas). 1460 tests OK.
 - v1.08.0 (2026-11-15, tarde) — Corrección puntual de guiones, Haiku para puntuar, "sorpresa" en las historias
   curiosas, y en Así Nació: protagonista en el gancho, fabricar sin martillo, personajes fieles, época por
   escena y dibujos nuevos con Claude (todo en §1). El inventor de base ya no se parece a una señora (era el
