@@ -1315,7 +1315,7 @@ def prop_cubo_rubik(fase: float = 1.0, **_) -> str:
     rnd = _r.Random(7)
     fase = max(0.0, min(1.0, float(fase or 0)))
     out = []
-    caras = [((0, -100), (86, -50), (-86, -50), 0),       # arriba: origen, eje u, eje v, color resuelto
+    caras = [((-86, -50), (86, -50), (86, 50), 0),       # arriba: origen, eje u, eje v, color resuelto
              ((-86, -50), (86, 50), (0, 100), 2),        # izquierda
              ((0, 0), (86, -50), (0, 100), 4)]           # derecha
     for (ox, oy), (ux, uy), (vx, vy), resuelto in caras:

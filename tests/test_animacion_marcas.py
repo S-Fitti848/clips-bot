@@ -1088,3 +1088,28 @@ def test_receta_nueva_queda_guardada(tmp_path, monkeypatch):
     mk.guardar_acciones_nuevas(d)
     assert "regalar_cajas" in lib.recetas() and d["escenas"][6]["accion_escena"] == "regalar_cajas"
     assert "regalar_cajas" in lib.todas_las_acciones()
+
+
+def test_el_contador_usa_el_numero_de_la_frase_y_nunca_inventa():
+    from clips_bot.animacion import escenas_lib as lib
+
+    assert lib.numero_de_ventas("vendió 100.000 cubos en 1980") == 100000
+    assert lib.numero_de_ventas("más de 350 millones de cubos") == 350_000_000
+    assert lib.numero_de_ventas("En 1974 lo inventó") is None          # un año no es una venta
+    hecha = lib.construir("contador_ventas", "frente", {"frase": "lo inventó en 1974"}, 2.0, 3, "cubo_rubik")
+    assert not any(el.get("tipo") == "contador" for el in hecha["elementos"])
+
+
+def test_objeto_gira_como_mucho_en_dos_escenas():
+    d = guion()
+    for e in d["escenas"][:4]:
+        e["accion_escena"] = "objeto_gira"
+    assert any("objeto_gira" in x and "como mucho 2" in x for x in mk.errores_accion(d))
+
+
+def test_el_cubo_cierra_sus_tres_caras():
+    from clips_bot.animacion import escenas as esc_
+
+    svg = esc_.prop_cubo_rubik(fase=1.0)
+    # la cara de arriba comparte la esquina del medio (0, 0) con las dos de los costados
+    assert svg.count("M-86 -50") >= 2 and "M0 0" in svg

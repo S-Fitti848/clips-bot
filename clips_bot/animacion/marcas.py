@@ -734,6 +734,12 @@ def errores_accion(d: dict) -> list[str]:
         errores.append(f"demasiadas escenas `libre` ({', '.join(map(str, libres))}): usá la escena de la biblioteca "
                        "que muestra lo que dice cada frase")
     validas = set(_acciones_guion())
+    # Variedad (2026-11-15, la prueba del Rubik: 5 de 10 escenas eran el cubo girando en el escenario).
+    for accion, tope in (("objeto_gira", 2), ("contador_ventas", 1)):
+        usos = [i for i, e in enumerate(escenas, 1) if e.get("accion_escena") == accion]
+        if len(usos) > tope:
+            errores.append(f"`{accion}` en {len(usos)} escenas ({', '.join(map(str, usos))}): como mucho {tope}; "
+                           "en las otras mostrá la acción que dice la frase (quién hace qué y dónde)")
     for i, e in enumerate(escenas, 1):
         frase = str(e.get("frase") or "")
         if (e.get("accion_escena") or _lib.LIBRE) not in validas:

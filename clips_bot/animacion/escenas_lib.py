@@ -240,13 +240,30 @@ def _cargar_barco(plano, spec, dur, i, obj, rnd):
             "sfx": sfx + e.sfx, "actores": e.actores}
 
 
+def numero_de_ventas(frase: str) -> int | None:
+    """El número más grande de la frase que no es un año ("vendió 100.000" → 100000); None si no hay."""
+    import re as _re
+
+    nums = []
+    for m in _re.finditer(r"(\d{1,3}(?:[.\s]\d{3})+|\d+)(?:\s+(millones|millón|mil)\b)?", frase):
+        txt = m.group(1)
+        v = int(_re.sub(r"\D", "", txt))
+        if m.group(2):
+            v *= 1000 if m.group(2) == "mil" else 10 ** 6
+            txt += " " + m.group(2)
+        es_anio = len(txt) == 4 and txt.isdigit() and 1500 <= v <= 2100
+        if not es_anio and 0 < v < 10 ** 10:
+            nums.append(v)
+    return max(nums) if nums else None
+
+
 def _contador_ventas(plano, spec, dur, i, obj, rnd):
     import re as _re
 
-    num = _re.sub(r"\D", "", str(spec.get("frase") or ""))
-    hasta = int(num) if num and len(num) <= 9 else 1000000
-    els = [{"tipo": "contador", "de": 0, "a": hasta, "dur": max(0.6, dur - 0.6), "desde": 0.15, "x": 540, "y": 640,
-            "tam": 170 if hasta < 10 ** 7 else 130, "entrada": "rebote"}]
+    hasta = numero_de_ventas(str(spec.get("frase") or ""))
+    # Sin un número en la frase no hay contador (nada de cifras inventadas): solo la pila que crece.
+    els = ([{"tipo": "contador", "de": 0, "a": hasta, "dur": max(0.6, dur - 0.6), "desde": 0.15, "x": 540, "y": 640,
+             "tam": 170 if hasta < 10 ** 7 else 130, "entrada": "rebote"}] if hasta else [])
     for k in range(12):          # la pila del objeto que crece
         t0 = round(0.2 + k * (dur - 0.5) / 12, 2)
         x = 540 + ((k % 4) - 1.5) * 120
