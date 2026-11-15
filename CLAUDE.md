@@ -1019,7 +1019,16 @@ Problemas abiertos:
   objetos del guion y Sonnet los ponía (`EFECTOS_RENDER`). El Kleenex de hoy ya estaba publicado a las 13:19
   (su arranque era el de siempre); el de las 20:00 se rearmó con las reglas nuevas (se cortó el que se
   estaba armando con las viejas). (2) **Latinoamérica: historias curiosas y reales** (`SISTEMA_CLASIFICAR`,
-  `SISTEMA_ELEGIR`, tipos nuevos, 18 búsquedas por fecha). 1450 tests OK.
+  `SISTEMA_ELEGIR`, tipos nuevos, 18 búsquedas por fecha). **Conteo de 14 días (16 al 29/11) con el tema
+  ampliado:** 58 a 138 candidatas con lugar por día, 12 a 31 "buenas" (antes 7 a 35); de 7 o más, 1,21 por
+  día (igual que antes), de 8 o más, 0,29; 5 de 14 días sin ninguna de 7 (antes 6) y 10 sin ninguna de 8.
+  Ampliar el tema no subió los puntajes: los cuatro criterios (persona, peligro, giro, emoción) castigan a
+  las curiosidades sin protagonista ni peligro. (3) **El de las 20:00 de hoy:** Popeyes (la única de 8 en la
+  primera tanda) falló 8 veces más; después, ninguna de otras 20 marcas llegó a 8 y quedaba "hoy no sale".
+  Ahora: una marca cuyo guion no valida, o las de una tanda donde ninguna llega a 8, quedan afuera ese día
+  (`animacion_fallidos:<día>`) y se reintenta en 1 h con otras (la semilla cambia con lo excluido); "no sale"
+  solo si no queda ninguna en la rotación. 20 marcas puntuadas por tanda. Arreglado: el chequeo de subidas
+  consultaba en YouTube el Reel de Facebook de Así Nació (aviso repetido en el log). 1451 tests OK.
 - v1.06.0 (2026-11-15, mediodía) — (1) **Así Nació no salió hoy a las 07:00**: el tercer intento de guion
   pidió 16.000 tokens de salida (casi todo pensamiento) y se cortó (`max_tokens`); los dos primeros fueron de
   14.538 y 7.188. Ahora: `animacion.max_tokens` 32.000; `ClaudeClient` reintenta solo con el doble (hasta
@@ -2662,6 +2671,8 @@ clips" queda sin uso mientras Rots siga apagado.
 
 ### Esperando respuesta de Santi (NO programar sin su OK)
 
+- **Latinoamérica con el tema ampliado (15/11):** sigue en 1,21 de 7+ por día. Proponer: un criterio de
+  "sorpresa" en lugar de "peligro" para las curiosidades (cambia el puntaje: decisión de Santi).
 - **Latinoamérica (conteo del 15/11):** aun con las fuentes nuevas, 6 de 14 días no tienen ninguna historia de
   7 o más. Opciones para proponerle: bajar el piso a 6,5 en esos días, sumar la página del día en inglés, o
   dejar que Haiku pase más candidatas a Sonnet (hoy marca "humana" muy pocas: 7-35 de ~100).
