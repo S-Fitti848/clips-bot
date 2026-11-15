@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-11-15 | **Versión:** v1.10.0 (desplegado) | **Modo:** Fase 2: corriendo solo en la Pi. **Rots APAGADO.** Pequeña Historia (3 por día, madrugada desde las 04:00) (publicación sin aprobar: llegan con ❌ Cancelar) y **Así Nació** (2 por día, desde las 07:00, publican 13:00 y 20:00 en YouTube y Facebook con ❌ Cancelar), todo al privado de Santi
+**Snapshot:** 2026-11-15 | **Versión:** v1.11.0 (desplegado) | **Modo:** Fase 2: corriendo solo en la Pi. **Rots APAGADO.** Pequeña Historia (3 por día, madrugada desde las 04:00) (publicación sin aprobar: llegan con ❌ Cancelar) y **Así Nació** (2 por día, desde las 07:00, publican 13:00 y 20:00 en YouTube y Facebook con ❌ Cancelar), todo al privado de Santi
 
 > **SI ESTÁS EMPEZANDO UNA SESIÓN NUEVA, LEÉ §10.** Ahí está qué está hecho, qué quedó a medias,
 > qué falta, y las trampas que ya nos mordieron.
@@ -1030,6 +1030,20 @@ Problemas abiertos:
 
 ## 9. CHANGELOG
 
+- v1.11.0 (2026-11-15, tarde) — (1) **Diagnóstico del 15/11 sin Pequeña Historia** (sin cambios de código,
+  esperando el OK del plan "nunca un día sin video"): la de tecnología (Intel 4004, 8,5) se propuso a las 04:2x
+  CON aprobación (`sin_aprobar` se prendió recién a las ~12:00) y nadie tocó ✅: quedó guardada (`efe:45a83b`),
+  armable hoy; Latinoamérica: ninguna de 23 llegó a 8 (la mejor, 5,2): no hubo video ni Reel. (2) **Facebook de
+  Así Nació**: las claves de la compu y de la Pi son las mismas (huellas iguales), el token es de PÁGINA y no
+  vence (pages_manage_posts); el Reel de Kleenex se publicó a las 13:19 y el del Cubo de Rubik quedó
+  programado para las 20:00 (link mandado a Santi). Ya estaba prendido (`animacion.facebook`). (3) **Así Nació
+  más visual** (`visuales.py`, `animacion.visual_plus`, APAGADO): Haiku propone por escena rótulo de noticiero
+  (año · lugar), número gigante, tarjeta de cita (solo si está literal en el artículo), cartel de cómic y el
+  momento del día; el código lo valida contra el texto. Render: mapa con pin que hace zoom (escena de 1,4 s con
+  NASA Blue Marble, la primera vez que aparece un lugar con coordenadas), la luz del momento (atardecer, noche),
+  cámara de cerca / de lejos / desde abajo rotando entre escenas, y Tito en una ventanita reaccionando cada ~9 s.
+  **Prueba con el Cubo de Rubik** (mismo guion y voz, en la Pi): render 550 s contra 558 s del de hoy, pico
+  84,7 °C contra 85,2: no suma tiempo ni calor; Haiku ~13 s y < US$ 0,01. Mandado a Santi para aprobar.
 - v1.10.0 (2026-11-15, tarde) — **Candidatos descartados en la bitácora** (Santi; Lo Encontré lo hace él en su
   chat). Tabla `candidatos_descartados`: cada marca o historia que se cae antes de armar el video, con el paso
   (puntaje, fotos, guion, voz, render, otro), el motivo concreto, lo que costó en Claude hasta ahí (en el
