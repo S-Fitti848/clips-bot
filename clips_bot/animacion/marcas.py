@@ -105,6 +105,14 @@ class GuionInvalido(RuntimeError):
     pass
 
 
+class GuionesFallidos(RuntimeError):
+    """Hubo marcas de 8 pero ningún guion validó: NO es "no hay candidato" (2026-11-15: Popeyes falló 16
+    veces en el día). Esas marcas quedan afuera hoy y quien llama reintenta más tarde con otras."""
+
+
+FALLIDOS = "animacion_fallidos"   # bot_estado, animacion_fallidos:<día>: marcas cuyo guion no validó hoy
+
+
 # ---- 1. catálogo ------------------------------------------------------------------------------
 
 @dataclass(frozen=True)
@@ -184,14 +192,34 @@ def registrar(conn, marca: str, angulo: str, dia: date, puntaje: float = 0.0, ti
     conn.commit()
 
 
+def fallidos_de(conn, hoy: date) -> set[str]:
+    try:
+        return set(json.loads(_get_valor(conn, f"{FALLIDOS}:{hoy.isoformat()}") or "[]"))
+    except ValueError:
+        return set()
+
+
+def anotar_fallidos(conn, hoy: date, marcas_: list[str]) -> None:
+    from clips_bot import db
+
+    if conn is None:
+        return
+    db.set_valor(conn, f"{FALLIDOS}:{hoy.isoformat()}", json.dumps(sorted(fallidos_de(conn, hoy) | set(marcas_)),
+                                                                   ensure_ascii=False))
+
+
 def candidatos(conn, catalogo: list[Marca], hoy: date, n: int = 8, azar=None,
-               dias: int = DIAS_SIN_REPETIR_MARCA) -> list[tuple[Marca, str]]:
+               dias: int = DIAS_SIN_REPETIR_MARCA, excluir: set | None = None) -> list[tuple[Marca, str]]:
     """`n` candidatos que pasan la rotación, de marcas DISTINTAS. El ángulo de cada marca sale al azar
     con más peso para los que no son "origen" (casi todas lo tienen: así no son todos iguales)."""
-    azar = azar or random.Random(hoy.toordinal())
+    excluir = excluir or set()
+    # la semilla cambia con lo ya excluido: el segundo video del día (o un reintento) ve otras marcas
+    azar = azar or random.Random(hoy.toordinal() * 1000 + len(excluir))
     por_marca: dict[str, list[str]] = {}
     marcas = {}
     for m, a in disponibles(conn, catalogo, hoy, dias):
+        if m.nombre in excluir:
+            continue
         por_marca.setdefault(m.nombre, []).append(a)
         marcas[m.nombre] = m
     nombres = list(por_marca)
@@ -1393,7 +1421,8 @@ def proponer(conn, cliente, wiki, hoy: date, catalogo: list[Marca] | None = None
         except GuionInvalido as err:
             raise SinCandidato(f"el guion no pasó la validación: {err}") from err
     catalogo = catalogo if catalogo is not None else cargar_catalogo()
-    cands = candidatos(conn, catalogo, hoy, n)
+    fallidas = fallidos_de(conn, hoy) if conn is not None else set()
+    cands = candidatos(conn, catalogo, hoy, n, excluir=fallidas)
     if not cands:
         raise SinCandidato("no queda ninguna marca/ángulo que pase la rotación")
     textos = []
@@ -1419,7 +1448,9 @@ def proponer(conn, cliente, wiki, hoy: date, catalogo: list[Marca] | None = None
                                      ganchos_previos=ganchos_recientes(conn)), fuente
         except GuionInvalido as err:
             errores.append(str(err))
-    raise SinCandidato("ningún guion pasó la validación: " + " | ".join(errores)[:600])
+    anotar_fallidos(conn, hoy, [e.marca.nombre for e in elegidos[:max_intentos]])
+    raise GuionesFallidos("ningún guion pasó la validación (esas marcas quedan afuera hoy): "
+                          + " | ".join(errores)[:600])
 
 
 VOLUMEN_SFX = 0.32

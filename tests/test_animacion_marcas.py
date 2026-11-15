@@ -1003,3 +1003,16 @@ def test_lugares_nuevos_y_multitud():
     d, _ = ac.escena_accion(spec, 3.0, 2)
     gente = [el for el in d["elementos"] if el.get("multitud")]
     assert len(gente) >= 5 and ac.es_dinamica(spec) and not ac.superposiciones(d)
+
+
+def test_marca_con_guion_fallido_queda_afuera_ese_dia(conn):
+    from datetime import date as _d
+
+    cat = mk.cargar_catalogo()
+    hoy = _d(2026, 11, 15)
+    antes = {m.nombre for m, _ in mk.candidatos(conn, cat, hoy, 20)}
+    una = sorted(antes)[0]
+    mk.anotar_fallidos(conn, hoy, [una])
+    despues = {m.nombre for m, _ in mk.candidatos(conn, cat, hoy, 20, excluir=mk.fallidos_de(conn, hoy))}
+    assert una not in despues and despues != antes
+    assert not issubclass(mk.GuionesFallidos, mk.SinCandidato)     # se reintenta en 1 h

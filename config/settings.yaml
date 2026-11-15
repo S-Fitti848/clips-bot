@@ -629,7 +629,7 @@ animacion:
   hora: "07:00"              # AR: desde cuándo la escucha arma el del día
   chat: ""                   # vacío = el privado de Santi
   modelo_texto: "claude-sonnet-5-5"
-  candidatos: 14             # marcas que puntúa Sonnet por video (8 → 14 el 2026-11-15: presupuesto)
+  candidatos: 20             # marcas que puntúa Sonnet por video (8 → 20 el 2026-11-15: con 14 pasaba 1 de 8)
   puntaje_min: 8.0
   max_intentos: 4
   musica: true

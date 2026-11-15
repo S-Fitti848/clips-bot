@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-11-15 | **Versión:** v1.06.0 (desplegado) | **Modo:** Fase 2: corriendo solo en la Pi. **Rots APAGADO.** Pequeña Historia (3 por día, madrugada desde las 04:00) (publicación sin aprobar: llegan con ❌ Cancelar) y **Así Nació** (2 por día, desde las 07:00, publican 13:00 y 20:00 en YouTube y Facebook con ❌ Cancelar), todo al privado de Santi
+**Snapshot:** 2026-11-15 | **Versión:** v1.07.0 (desplegado) | **Modo:** Fase 2: corriendo solo en la Pi. **Rots APAGADO.** Pequeña Historia (3 por día, madrugada desde las 04:00) (publicación sin aprobar: llegan con ❌ Cancelar) y **Así Nació** (2 por día, desde las 07:00, publican 13:00 y 20:00 en YouTube y Facebook con ❌ Cancelar), todo al privado de Santi
 
 > **SI ESTÁS EMPEZANDO UNA SESIÓN NUEVA, LEÉ §10.** Ahí está qué está hecho, qué quedó a medias,
 > qué falta, y las trampas que ya nos mordieron.
@@ -183,6 +183,21 @@ servicio systemd separado: `clips-bot`).
 - **Pequeña Historia sin aprobar: PRENDIDO (Santi, 2026-11-15):** los 3 videos llegan ya programados con
   ❌ Cancelar y, si no se toca nada, salen a su hora. Latinoamérica: si ninguna llega a 8, sale la mejor del día
   si tiene 7 o más (una sola por día).
+- **Así Nació: guion y escenas (Santi, 2026-11-15; regla permanente para TODOS los videos; en el guion, la
+  validación y la revisión visual):** (a) GANCHO PROPIO: los primeros 3 s muestran el momento más
+  sorprendente o visual de ESA historia, del texto y en su lugar; la destrucción en cadena del living era SOLO
+  de Nerf (`cadena` casi siempre vacía); nunca repetir un arranque (`animacion_ganchos` en bot_estado, los 12
+  últimos + el de Nerf: otra cadena, o el mismo lugar con la misma acción u objeto, no valida). (b)
+  ESCENARIOS SEGÚN LA ESCENA: al menos 3 lugares, nunca 3 escenas seguidas en el mismo, casa y taller como
+  mucho 2 escenas (solo si la historia pasa ahí); lugares nuevos: laboratorio, hospital, campo, puerto. (c)
+  ACCIÓN: fabricar, vender, usar, probar, multitudes (`multitud`); escenas de gente hablando, como mucho 2.
+  (d) PERSONAJES según la historia y la época: 12 roles nuevos (obrero/a, científica, inventora, médico,
+  enfermera, granjero, marinero, cocinero, deportista, estudiante…), al menos 3 distintos, chicos solo si la
+  historia los tiene. La revisión visual marca un gancho genérico o repetido, un lugar sin sentido y dos
+  personas hablando cuando la frase cuenta una acción.
+- **Pequeña Historia Latinoamérica = historias curiosas y reales (Santi, 2026-11-15):** héroes y gente común, y
+  también lugares insólitos, inventos, costumbres, récords, misterios y datos sorprendentes de ciudades y
+  países (el lugar puede ser el país), siempre un hecho real con fecha; mismo puntaje (8, o 7 para una por día).
 - **Así Nació: estilo visual (Santi, 2026-11-15; regla para TODOS los videos, motor actual;
   `tests/test_visual_asinacio.py`):** (a) volumen: toda forma con contorno lleva un degradé radial con la
   luz arriba a la izquierda y la sombra violeta abajo a la derecha, y el contorno es más grueso del lado de
@@ -996,6 +1011,15 @@ Problemas abiertos:
 
 ## 9. CHANGELOG
 
+- v1.07.0 (2026-11-15, tarde) — (1) **Así Nació: gancho propio, escenarios según la escena, acción y
+  personajes** (regla en §1). Nuevo en el motor: fondos `laboratorio`, `hospital`, `campo` y `puerto` (con
+  su ambiente y su color), acciones `fabricar`, `vender`, `usar` y `probar`, `multitud` (5-7 personas chicas
+  atrás que festejan, saltan o caminan; no cuentan para "nadie encima de nadie"), 12 roles nuevos. Arreglado:
+  los efectos del render (polvo, líneas de movimiento, destellos, primer plano) aparecían en la lista de
+  objetos del guion y Sonnet los ponía (`EFECTOS_RENDER`). El Kleenex de hoy ya estaba publicado a las 13:19
+  (su arranque era el de siempre); el de las 20:00 se rearmó con las reglas nuevas (se cortó el que se
+  estaba armando con las viejas). (2) **Latinoamérica: historias curiosas y reales** (`SISTEMA_CLASIFICAR`,
+  `SISTEMA_ELEGIR`, tipos nuevos, 18 búsquedas por fecha). 1450 tests OK.
 - v1.06.0 (2026-11-15, mediodía) — (1) **Así Nació no salió hoy a las 07:00**: el tercer intento de guion
   pidió 16.000 tokens de salida (casi todo pensamiento) y se cortó (`max_tokens`); los dos primeros fueron de
   14.538 y 7.188. Ahora: `animacion.max_tokens` 32.000; `ClaudeClient` reintenta solo con el doble (hasta
