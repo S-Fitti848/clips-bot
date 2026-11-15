@@ -1072,7 +1072,12 @@ Problemas abiertos:
   fondo `mesa_arriba`, personajes de espaldas, `fase` animable, `dejar_lugar_a_tito` (los personajes de una
   escena de la biblioteca se corren enteros para no quedar debajo de Tito), `errores_accion` en la validación
   y `cambiar_accion` en la revisión visual con corrección puntual. `visual_plus` sigue APAGADO hasta el OK de
-  Santi. Prueba: Cubo de Rubik rehecho desde el guion en la Pi (ver §10). 1477 tests OK.
+  Santi. **Prueba: Cubo de Rubik rehecho desde el guion en la Pi** (con `visual_plus` en memoria): render
+  544 s (antes 550-558), pico 85,7 °C, Claude US$ 0,54, 34,4 s; mandado a Santi. Arreglado con la prueba: el
+  cubo se dibujaba con la cara de arriba separada, el contador sumaba todos los dígitos de la frase (o inventaba
+  1.000.000: ahora el número más grande que no es un año, o ninguno) y `objeto_gira` salía en 5 de 10 escenas
+  (ahora como mucho 2). Sigue flojo: el gancho cae en el escenario (la revisión visual lo marca como repetido
+  y no lo arregla sola) y "2.76 SEGUNDOS" se corta a la izquierda. 1499 tests OK.
 - v1.11.0 (2026-11-15, tarde) — (1) **Diagnóstico del 15/11 sin Pequeña Historia** (sin cambios de código,
   esperando el OK del plan "nunca un día sin video"): la de tecnología (Intel 4004, 8,5) se propuso a las 04:2x
   CON aprobación (`sin_aprobar` se prendió recién a las ~12:00) y nadie tocó ✅: quedó guardada (`efe:45a83b`),
