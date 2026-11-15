@@ -1965,8 +1965,8 @@ def armar_video(conn, settings, carpeta: Path, cliente=None, wiki=None, hoy: dat
     (carpeta / "guion.json").write_text(json.dumps({"marca": e.marca.nombre, "angulo": e.angulo,
                                                     "notas": e.notas, "guion": d}, ensure_ascii=False,
                                                    indent=1), encoding="utf-8")
-    # Voz: la misma cadena que Pequeña Historia (ElevenLabs si está, Gemini TTS, Piper de respaldo).
-    # Tito es la misma voz: la mascota ES el que narra. Ritmo (Santi, 2026-11-14): ×1,065
+    # Voz: la de Tito con ElevenLabs (Santi, 2026-11-15; `animacion.elevenlabs_voz`), y si no está o falla, la
+    # cadena de Pequeña Historia (Gemini TTS, Piper de respaldo). La mascota ES el que narra. Ritmo (Santi, 2026-11-14): ×1,065
     # sin cambiar el tono y los silencios entre frases a 0,22 s; si queda fuera de 32-38 s, se REESCRIBE el
     # guion (no se acelera más).
     t0 = time.time()
@@ -1974,7 +1974,8 @@ def armar_video(conn, settings, carpeta: Path, cliente=None, wiki=None, hoy: dat
     for intento in range(3):
         segs = segmentos(d)
         hablado = [t for _, _, t in segs]
-        wav, _duraciones, motor = ef.voz_efemeride(hablado, settings, carpeta, avisar)
+        wav, _duraciones, motor = ef.voz_efemeride(hablado, settings, carpeta, avisar,
+                                                   elevenlabs_cfg=settings.animacion)
         narrar.a_48k(wav)
         ef.acelerar(wav, VELOCIDAD_VOZ)
         sacado = acortar_pausas(wav)

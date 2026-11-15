@@ -1,4 +1,4 @@
-"""ElevenLabs preparado (2026-11-14): sin clave o sin voz elegida, sigue la voz de siempre."""
+"""ElevenLabs (2026-11-15): solo la voz de Tito (Así Nació); sin clave o sin voz elegida, sigue la de siempre."""
 
 import pytest
 
@@ -30,14 +30,15 @@ class _Sesion:
 
 def test_preparado_pero_sin_usar(monkeypatch):
     monkeypatch.setattr(elevenlabs, "clave", lambda: "")
-    assert not elevenlabs.lista(load_settings().efemerides)
+    assert not elevenlabs.lista(load_settings().animacion)
     monkeypatch.setattr(elevenlabs, "clave", lambda: "k")
-    assert not elevenlabs.lista(load_settings().efemerides)      # falta la voz en settings
+    assert not elevenlabs.lista(load_settings().animacion)      # falta la voz en settings
+    assert not elevenlabs.lista(None)                           # Pequeña Historia no pasa config
 
 
 def test_hablar_pide_pcm_en_castellano():
     s = _Sesion(_Resp(200, b"\x00\x01" * 24000))
-    pcm, sr = elevenlabs.hablar("Hola", "voz1", "eleven_multilingual_v2", api_key="k", sesion=s)
+    pcm, sr = elevenlabs.hablar("Hola", "voz1", "eleven_v4", api_key="k", sesion=s)
     url, k = s.pedidos[0]
     assert url.endswith("/text-to-speech/voz1") and k["params"]["output_format"] == "pcm_24000"
     assert k["headers"]["xi-api-key"] == "k" and k["json"]["language_code"] == "es"
@@ -65,13 +66,14 @@ def test_si_falla_sigue_la_voz_de_siempre(monkeypatch, tmp_path):
     modelo = tmp_path / "voz.onnx"
     modelo.write_bytes(b"x")
     s = load_settings()
-    s = replace(s, efemerides=replace(s.efemerides, elevenlabs_voz="voz1", voz_motor="piper"),
+    s = replace(s, efemerides=replace(s.efemerides, voz_motor="piper"),
+                animacion=replace(s.animacion, elevenlabs_voz="voz1"),
                 voz=replace(s.voz, modelo=str(modelo)))
     monkeypatch.setattr(elevenlabs, "clave", lambda: "k")
     monkeypatch.setattr(elevenlabs, "hablar", lambda *a, **k: (_ for _ in ()).throw(
         elevenlabs.ElevenLabsError("caída")))
     monkeypatch.setattr(narrar, "sintetizar_frases", lambda frases, m, out, ajustes=None: (out, [1.0]))
     avisos = []
-    _, _, motor = ef.voz_efemeride(["Hola."], s, tmp_path, avisar=avisos.append)
+    _, _, motor = ef.voz_efemeride(["Hola."], s, tmp_path, avisar=avisos.append, elevenlabs_cfg=s.animacion)
     assert motor.startswith("piper:") and any("ElevenLabs no anduvo" in a for a in avisos)
     assert ef.texto_voz("elevenlabs:Lucía") == "Voz: Lucía (ElevenLabs)"

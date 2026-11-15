@@ -78,6 +78,23 @@ def anotar_gemini(conn: sqlite3.Connection, funcion: str, modelo: str, clave: st
     conn.commit()
 
 
+def anotar_elevenlabs(conn: sqlite3.Connection, tipo: str, creditos: int, detalle: str = "",
+                      origen: str = "") -> None:
+    from datetime import timedelta, timezone
+
+    ahora = datetime.now(timezone.utc)
+    dia = (ahora + timedelta(hours=-3)).date().isoformat()
+    conn.execute("INSERT INTO elevenlabs_uso (ts, dia, tipo, creditos, detalle, origen) VALUES (?, ?, ?, ?, ?, ?)",
+                 (ahora.isoformat(), dia, tipo, int(creditos), detalle, origen))
+    conn.commit()
+
+
+def uso_elevenlabs_mes(conn: sqlite3.Connection, mes: str) -> list[tuple]:
+    """(tipo, origen, pedidos, créditos) del mes AAAA-MM."""
+    return conn.execute("SELECT tipo, origen, COUNT(*), SUM(creditos) FROM elevenlabs_uso WHERE dia LIKE ? "
+                        "GROUP BY tipo, origen ORDER BY SUM(creditos) DESC", (f"{mes}-%",)).fetchall()
+
+
 def uso_gemini(conn: sqlite3.Connection, dias: int = 7) -> list[tuple]:
     """(día, función, llamadas, tokens de entrada, tokens de salida, de la caché) por día y función."""
     return conn.execute(
@@ -265,6 +282,15 @@ CREATE TABLE IF NOT EXISTS gemini_uso (
     entrada  INTEGER NOT NULL DEFAULT 0, -- tokens
     salida   INTEGER NOT NULL DEFAULT 0,
     cache    INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS elevenlabs_uso (
+    ts        TEXT NOT NULL,             -- UTC
+    dia       TEXT NOT NULL,             -- AR (AAAA-MM-DD); el mes sale de acá
+    tipo      TEXT NOT NULL,             -- voz | efecto
+    creditos  INTEGER NOT NULL DEFAULT 0,
+    detalle   TEXT NOT NULL DEFAULT '',  -- la voz o el nombre del efecto
+    origen    TEXT NOT NULL DEFAULT ''   -- produccion | a_mano | prueba (como gemini_uso)
 );
 
 CREATE TABLE IF NOT EXISTS apodos (

@@ -1,0 +1,114 @@
+{
+ "viaje": {
+  "descripcion": "Powerful cinematic time-travel whoosh: a huge swirling rewind sweep with fast backwards clock ticking, rising pitch and a deep sub boom at the end, cartoon style",
+  "duracion": 1.4,
+  "influencia": 0.6,
+  "motor": "elevenlabs",
+  "modelo": "eleven_text_to_sound_v3",
+  "fecha": "2026-11-15"
+ },
+ "whoosh": {
+  "descripcion": "Fast cartoon swoosh of an object flying past the camera",
+  "duracion": 0.6,
+  "influencia": 0.6,
+  "motor": "elevenlabs",
+  "modelo": "eleven_text_to_sound_v3",
+  "fecha": "2026-11-15"
+ },
+ "golpe": {
+  "descripcion": "Comedic cartoon bonk, a solid punchy hit on an object, short and dry",
+  "duracion": 0.5,
+  "influencia": 0.6,
+  "motor": "elevenlabs",
+  "modelo": "eleven_text_to_sound_v3",
+  "fecha": "2026-11-15"
+ },
+ "vidrio": {
+  "descripcion": "Short cartoon glass crash, a vase shattering, no reverb tail",
+  "duracion": 0.8,
+  "influencia": 0.6,
+  "motor": "elevenlabs",
+  "modelo": "eleven_text_to_sound_v3",
+  "fecha": "2026-11-15"
+ },
+ "boing": {
+  "descripcion": "Cartoon spring boing, bouncy and funny",
+  "duracion": 0.6,
+  "influencia": 0.6,
+  "motor": "elevenlabs",
+  "modelo": "eleven_text_to_sound_v3",
+  "fecha": "2026-11-15"
+ },
+ "pop": {
+  "descripcion": "Tiny bubbly cartoon pop, short UI-like",
+  "duracion": 0.5,
+  "influencia": 0.7,
+  "motor": "elevenlabs",
+  "modelo": "eleven_text_to_sound_v3",
+  "fecha": "2026-11-15"
+ },
+ "tac": {
+  "descripcion": "Single short wooden tick click",
+  "duracion": 0.5,
+  "influencia": 0.7,
+  "motor": "elevenlabs",
+  "modelo": "eleven_text_to_sound_v3",
+  "fecha": "2026-11-15"
+ },
+ "ding": {
+  "descripcion": "Bright magical sparkle ding chime, cheerful",
+  "duracion": 1.0,
+  "influencia": 0.6,
+  "motor": "elevenlabs",
+  "modelo": "eleven_text_to_sound_v3",
+  "fecha": "2026-11-15"
+ },
+ "aplausos": {
+  "descripcion": "Enthusiastic small crowd applause with a few cheers and whistles",
+  "duracion": 2.5,
+  "influencia": 0.5,
+  "motor": "elevenlabs",
+  "modelo": "eleven_text_to_sound_v3",
+  "fecha": "2026-11-15"
+ },
+ "caja_registradora": {
+  "descripcion": "Old mechanical cash register ka-ching with drawer opening and bell",
+  "duracion": 1.2,
+  "influencia": 0.6,
+  "motor": "elevenlabs",
+  "modelo": "eleven_text_to_sound_v3",
+  "fecha": "2026-11-15"
+ },
+ "explosion": {
+  "descripcion": "Cartoon comic explosion, a funny poof with debris, not scary",
+  "duracion": 1.2,
+  "influencia": 0.5,
+  "motor": "elevenlabs",
+  "modelo": "eleven_text_to_sound_v3",
+  "fecha": "2026-11-15"
+ },
+ "cohete": {
+  "descripcion": "Cartoon rocket launch: ignition whoosh and rumble taking off upwards",
+  "duracion": 2.0,
+  "influencia": 0.5,
+  "motor": "elevenlabs",
+  "modelo": "eleven_text_to_sound_v3",
+  "fecha": "2026-11-15"
+ },
+ "maquina": {
+  "descripcion": "Retro factory machine clanking and whirring in a steady rhythm, cartoon",
+  "duracion": 2.0,
+  "influencia": 0.5,
+  "motor": "elevenlabs",
+  "modelo": "eleven_text_to_sound_v3",
+  "fecha": "2026-11-15"
+ },
+ "asombro": {
+  "descripcion": "Small crowd going 'ooooh' in amazement",
+  "duracion": 1.5,
+  "influencia": 0.5,
+  "motor": "elevenlabs",
+  "modelo": "eleven_text_to_sound_v3",
+  "fecha": "2026-11-15"
+ }
+}

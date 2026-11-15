@@ -185,7 +185,7 @@ def _vender_tienda(plano, spec, dur, i, obj, rnd):
                                   {"t": t0 + 0.6, "x": x_dest, "y": ac.PISO - 420, "easing": "entrada"}]))
         els.append(_el("moneda", 840, ac.PISO - 520, escala=0.5, desde=t0, hasta=round(t0 + 0.5, 2),
                        keyframes=[{"t": t0, "y": ac.PISO - 520}, {"t": t0 + 0.5, "y": ac.PISO - 640, "opacidad": 0.0}]))
-        sfx.append((t0, "ding"))
+        sfx.append((t0, "caja_registradora" if k == 0 else "pop"))
     cam = [{"t": 0, "zoom": 1.0 if plano == "lejos" else 1.25}, {"t": dur, "zoom": 1.08 if plano == "lejos" else 1.32,
                                                               "easing": "suave"}]
     return {"elementos": els, "fondo": "tienda", "camara": cam, "sfx": sfx, "actores": e.actores, "multitud": True}
@@ -202,7 +202,7 @@ def _fabrica_produce(plano, spec, dur, i, obj, rnd):
         t0 = round(k * dur / n_, 2)
         els.append(_el(obj, -120, y, escala=0.55, fase=1.0, desde=t0,
                        keyframes=[{"t": t0, "x": -120}, {"t": t0 + dur * 0.85, "x": 1200, "easing": "lineal"}]))
-    sfx = [(round(k * dur / n_ + 0.1, 2), "tac") for k in range(n_)]
+    sfx = [(0.0, "maquina")] + [(round(k * dur / n_ + 0.1, 2), "tac") for k in range(n_)]
     cam = [{"t": 0, "zoom": 1.0 if plano == "lejos" else 1.3}, {"t": dur, "zoom": 1.06 if plano == "lejos" else 1.36,
                                                               "x": 40, "easing": "suave"}]
     return {"elementos": els, "fondo": "fabrica", "camara": cam, "sfx": e.sfx + sfx, "actores": e.actores}
@@ -318,4 +318,4 @@ def _despega(plano, spec, dur, i, obj, rnd):
     if lin:
         els.insert(0, lin)
     return {"elementos": els, "fondo": "cielo", "camara": [{"t": 0, "zoom": 1.0}, {"t": dur, "zoom": 1.1, "easing": "suave"}],
-            "sfx": [(t0, "whoosh"), (t0 + 0.1, "golpe")], "actores": []}
+            "sfx": [(t0, "cohete")], "actores": []}

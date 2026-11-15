@@ -510,6 +510,7 @@ class Escena:
         """Gente atrás (2026-11-15: "multitudes"): una fila de personas chicas que festejan, caminan o
         saltan, detrás de los personajes principales y más oscuras (lejos de la luz)."""
         roles = [r for r in ROLES if r not in NINOS]
+        self.sfx.append((0.15, "aplausos"))     # la gente que festeja se oye (biblioteca de efectos)
         for k in range(n):
             rol = roles[self.rnd.randrange(len(roles))]
             nombre, cambios, escala = ROLES[rol]

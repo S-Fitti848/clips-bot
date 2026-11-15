@@ -1,16 +1,117 @@
-"""Efectos de sonido SINTETIZADOS (numpy): golpe, vidrio, whoosh, boing, pop, tac, ding.
+"""Efectos de sonido de Así Nació.
 
-Se generan acá, así no hay ningún archivo de terceros ni licencia que verificar (Santi: "nada sin
-licencia"). Determinista: el mismo nombre suena siempre igual. `mezclar` los suma a la mezcla de voz +
-música en el segundo exacto de cada acción, con un limitador suave para que nada clipee."""
+BIBLIOTECA (Santi, 2026-11-15): los efectos se generan UNA vez con ElevenLabs (licencia comercial del plan
+pago), se guardan como wav de 48 kHz y se reusan en todos los videos; uno nuevo se genera solo cuando no está
+en la biblioteca. `assets/sfx/` (en git, generados una vez en la compu) y `data/animacion/sfx/` (los que se
+generan después en la Pi), con sus descripciones en `biblioteca.json`. Si un nombre no tiene archivo ni se
+puede generar (sin clave, sin créditos, en los tests), va el SINTETIZADO de siempre (numpy, determinista) o,
+si no hay, nada. `mezclar` los suma a la mezcla de voz + música en el segundo exacto de cada acción, con un
+limitador suave para que nada clipee."""
 from __future__ import annotations
 
+import json
+import logging
+import subprocess
+import tempfile
 import wave
+from datetime import datetime, timezone
 from pathlib import Path
 
 import numpy as np
 
+log = logging.getLogger(__name__)
+
 SR = 48000
+_RAIZ = Path(__file__).resolve().parent.parent.parent
+BIBLIOTECA = _RAIZ / "assets" / "sfx"                     # en git: los que ya se generaron
+NUEVOS = _RAIZ / "data" / "animacion" / "sfx"             # generados en la Pi después (fuera de git)
+
+# nombre → (descripción para ElevenLabs, duración en s, influencia del texto). Cortos y secos donde marcan
+# un golpe (el sonido tiene que caer en el cuadro de la acción); el del viaje, la marca del canal.
+CATALOGO = {
+    "viaje": ("Powerful cinematic time-travel whoosh: a huge swirling rewind sweep with fast backwards "
+              "clock ticking, rising pitch and a deep sub boom at the end, cartoon style", 1.4, 0.6),
+    "whoosh": ("Fast cartoon swoosh of an object flying past the camera", 0.6, 0.6),
+    "golpe": ("Comedic cartoon bonk, a solid punchy hit on an object, short and dry", 0.5, 0.6),
+    "vidrio": ("Short cartoon glass crash, a vase shattering, no reverb tail", 0.8, 0.6),
+    "boing": ("Cartoon spring boing, bouncy and funny", 0.6, 0.6),
+    "pop": ("Tiny bubbly cartoon pop, short UI-like", 0.5, 0.7),
+    "tac": ("Single short wooden tick click", 0.5, 0.7),
+    "ding": ("Bright magical sparkle ding chime, cheerful", 1.0, 0.6),
+    "aplausos": ("Enthusiastic small crowd applause with a few cheers and whistles", 2.5, 0.5),
+    "caja_registradora": ("Old mechanical cash register ka-ching with drawer opening and bell", 1.2, 0.6),
+    "explosion": ("Cartoon comic explosion, a funny poof with debris, not scary", 1.2, 0.5),
+    "cohete": ("Cartoon rocket launch: ignition whoosh and rumble taking off upwards", 2.0, 0.5),
+    "maquina": ("Retro factory machine clanking and whirring in a steady rhythm, cartoon", 2.0, 0.5),
+    "asombro": ("Small crowd going 'ooooh' in amazement", 1.5, 0.5),
+}
+
+
+def _ruta(nombre: str) -> Path | None:
+    for carpeta in (BIBLIOTECA, NUEVOS):
+        p = carpeta / f"{nombre}.wav"
+        if p.exists():
+            return p
+    return None
+
+
+def _a_wav(mp3: bytes, salida: Path) -> None:
+    """mp3 → wav mono 48 kHz, sin el silencio del principio (el golpe tiene que caer en su cuadro), con el
+    pico normalizado."""
+    from ..media import find_bin
+
+    with tempfile.TemporaryDirectory() as tmp:
+        ent = Path(tmp) / "e.mp3"
+        ent.write_bytes(mp3)
+        sal = Path(tmp) / "s.wav"
+        subprocess.run([find_bin("ffmpeg"), "-v", "error", "-y", "-i", str(ent), "-ac", "1", "-ar", str(SR),
+                        "-af", "silenceremove=start_periods=1:start_threshold=-45dB", "-c:a", "pcm_s16le",
+                        str(sal)], check=True, capture_output=True, timeout=60)
+        x, _ = _leer(sal)
+    pico = float(np.max(np.abs(x))) if len(x) else 0.0
+    if pico < 1e-4:
+        raise ValueError("efecto en silencio")
+    x = x / pico * 0.98
+    n_fin = min(len(x), int(0.02 * SR))               # sin clic al final
+    x[len(x) - n_fin:] *= np.linspace(1, 0, n_fin)
+    salida.parent.mkdir(parents=True, exist_ok=True)
+    with wave.open(str(salida), "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(SR)
+        w.writeframes((np.clip(x, -1, 1) * 32767).astype("<i2").tobytes())
+
+
+def generar(nombre: str, carpeta: Path | None = None, forzar: bool = False) -> Path | None:
+    """El efecto `nombre` del CATALOGO en la biblioteca: si ya está, no hace nada (no se paga dos veces); si
+    no, lo genera con ElevenLabs y lo guarda. None si no se pudo (y queda el sintetizado)."""
+    from .. import elevenlabs
+
+    ya = _ruta(nombre)
+    if ya and not forzar:
+        return ya
+    if nombre not in CATALOGO or not elevenlabs.clave():
+        return None
+    texto, dur, influencia = CATALOGO[nombre]
+    carpeta = carpeta or NUEVOS
+    try:
+        mp3 = elevenlabs.efecto(texto, dur, influencia, nombre=nombre)
+        salida = carpeta / f"{nombre}.wav"
+        _a_wav(mp3, salida)
+    except Exception as e:     # noqa: BLE001 — un efecto que no sale no frena el video
+        log.warning("efecto %s: no pude generarlo con ElevenLabs (%s): va el sintetizado", nombre, str(e)[:150])
+        return None
+    indice = carpeta / "biblioteca.json"
+    try:
+        datos = json.loads(indice.read_text(encoding="utf-8")) if indice.exists() else {}
+    except ValueError:
+        datos = {}
+    datos[nombre] = {"descripcion": texto, "duracion": dur, "influencia": influencia, "motor": "elevenlabs",
+                     "modelo": elevenlabs.MODELO_EFECTOS,
+                     "fecha": datetime.now(timezone.utc).date().isoformat()}
+    indice.write_text(json.dumps(datos, ensure_ascii=False, indent=1), encoding="utf-8")
+    log.info("efecto %s generado con ElevenLabs y guardado en la biblioteca", nombre)
+    return salida
 
 
 def _t(dur: float) -> np.ndarray:
@@ -123,12 +224,29 @@ def viaje() -> np.ndarray:
 SONIDOS = {"viaje": viaje, "golpe": golpe, "vidrio": vidrio, "whoosh": whoosh, "boing": boing, "pop": pop,
            "tac": tac, "ding": ding}
 _CACHE: dict[str, np.ndarray] = {}
+GENERAR = True     # los tests lo apagan (conftest): nunca se llama a ElevenLabs desde una prueba
+
+
+def conocido(nombre: str) -> bool:
+    return nombre in SONIDOS or nombre in CATALOGO
 
 
 def sonido(nombre: str) -> np.ndarray:
+    """La biblioteca primero (ElevenLabs); si falta, se genera una vez; si no se puede, el sintetizado; si
+    tampoco hay, nada (un arreglo vacío)."""
     if nombre not in _CACHE:
-        x = SONIDOS[nombre]().astype(np.float32)
-        _CACHE[nombre] = x / max(1e-6, float(np.max(np.abs(x))))
+        ruta = _ruta(nombre) or (generar(nombre) if GENERAR else None)
+        if ruta:
+            x, sr = _leer(ruta)
+            if sr != SR:
+                raise ValueError(f"{ruta} no está a {SR} Hz")
+        elif nombre in SONIDOS:
+            x = SONIDOS[nombre]().astype(np.float32)
+        else:
+            x = np.zeros(0, dtype=np.float32)
+        if len(x):
+            x = x / max(1e-6, float(np.max(np.abs(x))))
+        _CACHE[nombre] = x.astype(np.float32)
     return _CACHE[nombre]
 
 
@@ -136,7 +254,7 @@ def pista(eventos: list[tuple[float, str]], duracion: float, volumen: float = 0.
     """Todos los SFX en una pista mono de `duracion` s (los que se superponen se suman)."""
     out = np.zeros(int(duracion * SR) + 1, dtype=np.float32)
     for t, nombre in eventos:
-        if nombre not in SONIDOS or t < 0 or t >= duracion:
+        if not conocido(nombre) or t < 0 or t >= duracion:
             continue
         x = sonido(nombre) * volumen
         a = int(t * SR)

@@ -346,10 +346,6 @@ class EfemeridesCfg:
     # Estilo nuevo (Santi, 2026-11-14): arranque que se mueve (clip real, mapa con zoom en
     # Latinoamérica o montaje de 3 imágenes con golpe de zoom), gancho y subtítulos animados, más video.
     estilo_nuevo: bool = False
-    # ElevenLabs (2026-11-14): se usa solo con ELEVENLABS_API_KEY en el .env y la voz elegida acá.
-    elevenlabs_voz: str = ""            # voice_id (python -m clips_bot voces-elevenlabs las lista)
-    elevenlabs_nombre: str = ""         # cómo se llama, para el mensaje ("Voz: …")
-    elevenlabs_modelo: str = "eleven_multilingual_v2"
     # Los 3 videos del día en YouTube (2 de Latinoamérica + 1 de tecnología): estos horarios (AR),
     # siempre a separacion_youtube_h o más entre sí.
     horas_youtube: tuple = ("11:00", "15:30", "20:00")
@@ -477,6 +473,11 @@ class Animacion:
     facebook: bool = False
     # Subtítulos estilo Shorts virales (2026-11-14): APAGADOS hasta que Santi apruebe el Nerf de ejemplo.
     subtitulos_virales: bool = False
+    # La voz de Tito con ElevenLabs (Santi, 2026-11-15; Pequeña Historia y Lo Encontré siguen con Gemini).
+    elevenlabs_voz: str = ""            # voice_id (python -m clips_bot voces-elevenlabs las lista)
+    elevenlabs_nombre: str = ""         # cómo se llama, para el mensaje ("Voz: …")
+    elevenlabs_modelo: str = "eleven_v4"
+    elevenlabs_estabilidad: float = 0.4
 
 
 @dataclass(frozen=True)

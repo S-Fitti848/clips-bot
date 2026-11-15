@@ -3482,7 +3482,8 @@ def voz_de_prueba(frases: list[str], settings, carpeta: Path,
 
 
 def voz_efemeride(frases: list[str], settings, carpeta: Path, avisar=log.info,
-                  tts=None, segunda_primero: bool = False) -> tuple[Path, list[float] | None, str]:
+                  tts=None, segunda_primero: bool = False,
+                  elevenlabs_cfg=None) -> tuple[Path, list[float] | None, str]:
     """La voz del guion: (wav, duración de cada frase o None, motor que se usó).
 
     Gemini TTS da un solo audio para todo el guion, así que no sabe dónde empieza cada frase:
@@ -3501,12 +3502,15 @@ def voz_efemeride(frases: list[str], settings, carpeta: Path, avisar=log.info,
     if voz_falsa():
         # Una prueba (Santi, 2026-11-15: "las voces de Gemini no alcanzan"): nada de Gemini ni ElevenLabs.
         return voz_de_prueba(frases, settings, carpeta, avisar)
-    if elevenlabs.lista(cfg):
-        # ElevenLabs (2026-11-14): solo con la clave en el .env y la voz elegida; si falla, la de siempre.
+    el = elevenlabs_cfg
+    if elevenlabs.lista(el):
+        # ElevenLabs SOLO para Así Nació (Santi, 2026-11-15: la voz de Tito; Pequeña Historia y Lo Encontré
+        # siguen con Gemini gratis): va únicamente si quien llama pasa su config. Si falla, la de siempre.
         try:
-            pcm, sr = elevenlabs.hablar(" ".join(frases), cfg.elevenlabs_voz, cfg.elevenlabs_modelo)
+            pcm, sr = elevenlabs.hablar(" ".join(frases), el.elevenlabs_voz, el.elevenlabs_modelo,
+                                        estabilidad=getattr(el, "elevenlabs_estabilidad", 0.45))
             wav = narrar.a_48k(_escribir_wav(pcm, sr, carpeta / "voz.wav"))
-            return wav, None, f"elevenlabs:{cfg.elevenlabs_nombre or cfg.elevenlabs_voz}"
+            return wav, None, f"elevenlabs:{el.elevenlabs_nombre or el.elevenlabs_voz}"
         except elevenlabs.ElevenLabsError as e:
             avisar(f"ElevenLabs no anduvo ({str(e)[:120]}): sigo con la voz de siempre")
     if cfg.voz_motor == "gemini":

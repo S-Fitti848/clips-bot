@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-11-15 | **Versión:** v1.14.0 (desplegado) | **Modo:** Fase 2: corriendo solo en la Pi. **Rots APAGADO.** Pequeña Historia (3 por día, madrugada desde las 04:00) (publicación sin aprobar: llegan con ❌ Cancelar) y **Así Nació** (2 por día, desde las 07:00, publican 13:00 y 20:00 en YouTube y Facebook con ❌ Cancelar), todo al privado de Santi
+**Snapshot:** 2026-11-15 | **Versión:** v1.15.0 (desplegado) | **Modo:** Fase 2: corriendo solo en la Pi. **Rots APAGADO.** Pequeña Historia (3 por día, madrugada desde las 04:00) (publicación sin aprobar: llegan con ❌ Cancelar) y **Así Nació** (2 por día, desde las 07:00, publican 13:00 y 20:00 en YouTube y Facebook con ❌ Cancelar), todo al privado de Santi
 
 > **SI ESTÁS EMPEZANDO UNA SESIÓN NUEVA, LEÉ §10.** Ahí está qué está hecho, qué quedó a medias,
 > qué falta, y las trampas que ya nos mordieron.
@@ -238,6 +238,17 @@ servicio systemd separado: `clips-bot`).
   Piper o silencio con la duración estimada (`voz_de_prueba`, motor `falsa:…`); producción (ticks, `diario`,
   `efemeride-diaria`) y Telegram (✅) usan la real. Un script que arma un video PARA PUBLICAR (como el Intel del
   15/11) tiene que correr con `CLIPS_VOZ_REAL=1`. En bot-videos lo hace su propia sesión.
+- **ElevenLabs SOLO para Así Nació (Santi, 2026-11-15; plan Starter, 40.000 créditos por ciclo, se renueva el
+  15 de cada mes):** (1) la voz de Tito (`animacion.elevenlabs_voz`, modelo `eleven_v4`); vacía hasta que Santi
+  elija una de las 3 muestras (Abuelo Charlie `Yb8JGzcZyW5YYzenhRCm`, El Faraón abuelo `9TcPbUAhHnAV8mzFDAWU`,
+  Juan argentino `o001ZPc9xjZq4LDUDfYx`); sin voz, sin créditos o con ElevenLabs caído, Gemini como siempre.
+  `voz_efemeride` usa ElevenLabs solo si quien llama pasa `elevenlabs_cfg` (lo hace únicamente Así Nació).
+  (2) **Pequeña Historia y Lo Encontré siguen con Gemini gratis.** (3) **Biblioteca de efectos**
+  (`animacion/sfx.py`, `CATALOGO`): generados UNA vez con ElevenLabs (`eleven_text_to_sound_v3`) en
+  `assets/sfx/` (en git, con `biblioteca.json`) y reusados en todos los videos; uno nuevo solo si no existe
+  (se genera en la Pi a `data/animacion/sfx/`); sin archivo ni clave, el sintetizado. (4) Créditos: cada pedido en
+  `elevenlabs_uso`; `/costos` muestra el ciclo de la cuenta y el mes por tipo y origen; aviso al 75 % y al
+  100 % (`_elevenlabs_tick`, la cuenta se mira cada 30 min). Las pruebas no gastan (voz falsa primero).
 - **Nunca un día sin video (Santi, 2026-11-15; `banco.py`):** (1) si nadie llega al mínimo, sale la mejor
   del día con **piso absoluto de 6** (tecnología siempre; Latinoamérica solo la PRIMERA del día, la segunda
   sigue pidiendo 8, o 7 si hoy no salió ninguna de menos de 8; Así Nació en el último intento del día). (2)
@@ -866,7 +877,8 @@ clips_bot/metricas.py    §4b: métricas de los Shorts del canal y pesos por str
 clips_bot/claude.py      texto con Claude (SDK oficial `anthropic`, ANTHROPIC_API_KEY): misma forma
                          que GeminiClient.json; schema de Gemini → JSON Schema; uso en gemini_uso
                          con clave "claude"; Sonnet con fallbacks "default"
-clips_bot/elevenlabs.py  voz de ElevenLabs (preparada; solo con ELEVENLABS_API_KEY y efemerides.elevenlabs_voz)
+clips_bot/elevenlabs.py  ElevenLabs para Así Nació: voz de Tito, efectos, créditos (suscripción + elevenlabs_uso)
+assets/sfx/              biblioteca de efectos de Así Nació generada una vez con ElevenLabs (+ biblioteca.json)
 clips_bot/animacion/     canal Así Nació (prendido): personajes/escenas SVG, línea de tiempo en JSON, render
                          cairosvg → ffmpeg; marcas.py (catálogo, rotación, guion, revisión visual, video),
                          tito.py (locutor), acciones.py, sfx.py, subtitulos_virales.py + letra.py
@@ -880,7 +892,7 @@ clips_bot/voces.py       voces de Gemini de hoy por clave (con Lo Encontré) y e
 clips_bot/prueba_manual.py prueba manual vs API (§1): el clip del día a mano, registro e informe del feed
 clips_bot/envivo.py      modo en vivo (§3b): quién está al aire, momentos por creadores distintos,
                          alertas en la DB (no repetir, tope, vencer) y el resumen de tiempos
-tests/                   1411 tests sin red ni video (conftest.py: nada sale a YouTube) (test_reglas_fijas.py: las 3 reglas de §1)
+tests/                   1520 tests sin red ni video (conftest.py: nada sale a YouTube, Facebook ni ElevenLabs) (test_reglas_fijas.py: las 3 reglas de §1)
 ```
 
 Comandos:
@@ -1073,6 +1085,16 @@ Problemas abiertos:
 
 ## 9. CHANGELOG
 
+- v1.15.0 (2026-11-15, noche) — **ElevenLabs en Así Nació** (regla en §1). Cuenta conectada con
+  `npx @elevenlabs/cli onboard` (clave nueva, terminada en 5094, en el .env de la compu; copiada a la Pi, huellas
+  iguales `47fff12ec9c8`). Se habla con la API directo con `requests` (como el resto del bot), sin el SDK: el
+  `onboard check` del CLI sigue pidiendo el SDK por eso. 3 muestras de voz para Tito mandadas a Santi (eleven_v4,
+  mismo texto de Kleenex, ~22 s cada una). Biblioteca de 14 efectos generada (viaje, whoosh, golpe, vidrio, boing,
+  pop, tac, ding, aplausos, caja registradora, explosión, cohete, máquina, asombro): **163 créditos en total**,
+  1,6 MB; los 6 principales mandados a Santi. Usados en las escenas: caja registradora en la primera venta,
+  aplausos con la multitud, cohete en el despegue, máquina en la fábrica. Cálculo: ~60 videos × ~550 caracteres ≈
+  33.000 créditos por ciclo (de 40.000) si la voz sale a la primera; cada reescritura por duración suma otra voz.
+  1520 tests OK.
 - v1.14.0 (2026-11-15, noche) — **Así Nació: gancho, viaje, sepia, manos y textos** (regla en §1) y
   **`animacion.visual_plus` PRENDIDO** (biblioteca + más visual) desde el video del 16/11 a las 07:00. Medido en
   la compu: el remolino usa mapas de OpenCV cacheados por fuerza (solo en los ~40 cuadros del viaje). Los
@@ -2761,7 +2783,7 @@ clips" queda sin uso mientras Rots siga apagado.
 | timers y escucha | `clips-bot.timer`, `clips-bot-efemeride.timer`, `clips-bot-telegram` activos |
 | Así Nació | `animacion_dia` = 2026-11-14 (marcado a mano): el primer video real sale el **15/11** (arma 07:00, publica 19:00) |
 | pedidos pendientes en `bot_estado` | `analisis_video_pedido` = `UH4XoZ0rMuE` (el Short de Intel: el análisis le llega a Santi apenas Analytics tenga sus datos); `mezcla_propuesta` sin setear (se manda una vez cuando tecnología ≥ 1,3× Latinoamérica con ≥ 4 y ≥ 6 videos de 3 días) |
-| claves (.env de compu y Pi) | `ANTHROPIC_API_KEY` (solo Pi); `FACEBOOK_PAGE_TOKEN` (Pequeña Historia, huella ab2e94551f81); `ASINACIO_FACEBOOK_PAGE_ID` / `_TOKEN` (página «Asinacio.oficial» `1533484406504022`, huella 16d7443e4bb0, no vence); `GEMINI_API_KEY_2`; `FB_APP_ID` / `FB_APP_SECRET` |
+| claves (.env de compu y Pi) | `ANTHROPIC_API_KEY` (solo Pi); `FACEBOOK_PAGE_TOKEN` (Pequeña Historia, huella ab2e94551f81); `ASINACIO_FACEBOOK_PAGE_ID` / `_TOKEN` (página «Asinacio.oficial» `1533484406504022`, huella 16d7443e4bb0, no vence); `GEMINI_API_KEY_2`; `FB_APP_ID` / `FB_APP_SECRET`; `ELEVENLABS_API_KEY` (huella 47fff12ec9c8, compu y Pi) |
 | tokens de YouTube | `config/youtube_token_{rots,pequena_historia,animacion}.json` (compu y Pi, fuera de git). Así Nació = canal «Asinacio.oficial» `UCPUKDAf5NJbdINUC2Rka69A` |
 | Remotion | Node 24 del sistema en la Pi; el prototipo se probó en `~/remotion_prueba` (fuera de `~/clips`); en el repo, `remotion/` (sin `node_modules`) y `clips_bot/animacion_remotion/` |
 | chats | Santi (`8668060171`, `DUENO`): todo; grupo "Rots clips" (`-5453399767`): sin uso con Rots apagado |
@@ -2845,7 +2867,8 @@ clips" queda sin uso mientras Rots siga apagado.
   de audio), música con tensión y efectos, links de búsqueda de grupos de Facebook.
 - **App de Meta en modo Live** (lo hace Santi, docs/facebook-asi-nacio.md): sin eso el público puede no
   ver los Reels de las dos páginas.
-- **ElevenLabs:** cuando ponga `ELEVENLABS_API_KEY`, `voces-elevenlabs` y `--muestra <id>`.
+- **Voz de Tito (ElevenLabs):** elegir 1 de las 3 muestras (Abuelo Charlie, El Faraón, Juan) → poner su id en
+  `animacion.elevenlabs_voz` y `elevenlabs_nombre`. Hasta entonces Así Nació sigue con Gemini.
 - **Voz de Pequeña Historia** (v0.88.0): muestras de Fenrir más calmo, Achird, Sadaltager y Charon;
   falta que elija (`efemerides.tts_modelo: gemini-2.5-flash-preview-tts`, `tts_instruccion`, `tts_voz`).
 - **Descripciones de los canales** (propuestas el 2026-11-12): las cambia Santi.

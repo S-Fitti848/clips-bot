@@ -348,12 +348,8 @@ efemerides:
   # rebote, subtítulos más grandes de 2-3 palabras con la activa dando un saltito, y hasta 6 frases
   # con video (archivo libre para lo central; Pexels para lo que se nombra al pasar).
   estilo_nuevo: true
-  # Voz con ElevenLabs (2026-11-14): PREPARADA, sin usar. Va solo si ELEVENLABS_API_KEY está en el .env
-  # Y acá hay una voz (el id; `python -m clips_bot voces-elevenlabs` lista las de la cuenta). Si falta
-  # algo o falla, sigue la de siempre (Gemini, Piper de respaldo).
-  elevenlabs_voz: ""
-  elevenlabs_nombre: ""
-  elevenlabs_modelo: eleven_multilingual_v2
+  # Pequeña Historia sigue con la voz de Gemini gratis (Santi, 2026-11-15): ElevenLabs es solo para Así Nació
+  # (animacion.elevenlabs_voz).
   horas_youtube: ["11:00", "15:30", "20:00"]
   separacion_youtube_h: 4
   # Voces de Gemini por día (plan gratis, por proyecto; la clave principal la comparte Lo Encontré):
@@ -629,6 +625,12 @@ animacion:
   reintento_hasta: "22:00"
   facebook: true             # el Reel en la página de Facebook de Así Nació (conectada el 2026-11-14)
   subtitulos_virales: true   # subtítulos estilo Shorts virales (aprobados por Santi el 2026-11-14)
+  # La voz de Tito con ElevenLabs (Santi, 2026-11-15). Vacía = la de siempre (Gemini) hasta que Santi elija una
+  # de las 3 muestras; si ElevenLabs falla o se queda sin créditos, también la de siempre.
+  elevenlabs_voz: ""
+  elevenlabs_nombre: ""
+  elevenlabs_modelo: eleven_v4
+  elevenlabs_estabilidad: 0.4
   hora: "07:00"              # AR: desde cuándo la escucha arma el del día
   chat: ""                   # vacío = el privado de Santi
   modelo_texto: "claude-sonnet-5-5"

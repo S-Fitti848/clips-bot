@@ -2718,6 +2718,7 @@ def escuchar_telegram(settings: Settings, timeout_poll: int = 50) -> int:
                     _auto(_medicion_ph_tick), conn, tg, settings)
             _seguro(tg, str(chat_ultimo or ""), "el aviso de las voces", _voces_tick, conn, tg, settings)
             _seguro(tg, str(chat_ultimo or ""), "el costo de Claude", _costo_claude_tick, conn, tg, settings)
+            _seguro(tg, str(chat_ultimo or ""), "los créditos de ElevenLabs", _elevenlabs_tick, conn, tg, settings)
             _seguro(tg, str(chat_ultimo or ""), "el resumen semanal de costos", _costos_semana_tick, conn, tg, settings)
             _seguro(tg, str(chat_ultimo or ""), "el reintento de los clips",
                     _auto(_clips_reintento_tick), conn, settings)
@@ -3902,7 +3903,58 @@ def _texto_costos(conn, dias: int = 7, settings: Settings | None = None) -> str:
     desde = (datetime.now(AR).date() - timedelta(days=max(1, dias) - 1)).isoformat()
     otras = [settings.efemerides.lo_encontre_db]
     filas = bitacora.leer(conn, desde, otras)
-    return bitacora.texto(filas, dias, bitacora.leer_descartes(conn, desde, otras))
+    texto = bitacora.texto(filas, dias, bitacora.leer_descartes(conn, desde, otras))
+    from . import elevenlabs
+
+    if elevenlabs.clave():
+        # Créditos de ElevenLabs del mes (Santi, 2026-11-15): el ciclo de la cuenta y lo anotado por tipo.
+        try:
+            sub = elevenlabs.suscripcion()
+        except elevenlabs.ElevenLabsError:
+            sub = None
+        texto += "\n" + elevenlabs.texto_creditos(conn, datetime.now(AR).strftime("%Y-%m"), sub)
+    return texto
+
+
+ELEVEN_REVISADO = "elevenlabs_revisado"   # bot_estado: cuándo se leyó la suscripción por última vez (UTC)
+ELEVEN_ALERTA = "elevenlabs_alerta"       # bot_estado, elevenlabs_alerta:<reinicio>: los umbrales ya avisados
+ELEVEN_CADA_S = 1800                      # la cuenta se mira cada 30 min como mucho
+
+
+def _elevenlabs_tick(conn, tg: TelegramClient, settings: Settings, ahora=None, sub=None) -> None:
+    """Créditos de ElevenLabs (Santi, 2026-11-15: "avisame al llegar al 75 %"): cada 30 min se lee el ciclo de
+    la cuenta y, al pasar el 75 % y al llegar al 100 %, un aviso (una vez cada uno por ciclo). Al 100 % la voz
+    de Tito vuelve sola a Gemini y los efectos que falten van sintetizados."""
+    from . import elevenlabs
+
+    if not elevenlabs.clave():
+        return
+    ahora = ahora or datetime.now(timezone.utc)
+    ultimo = db.get_valor(conn, ELEVEN_REVISADO)
+    if sub is None:
+        if ultimo and (ahora - datetime.fromisoformat(ultimo)).total_seconds() < ELEVEN_CADA_S:
+            return
+        db.set_valor(conn, ELEVEN_REVISADO, ahora.isoformat())
+        try:
+            sub = elevenlabs.suscripcion()
+        except elevenlabs.ElevenLabsError as e:
+            log.warning("ElevenLabs: no pude leer la cuenta: %s", e)
+            return
+    if not sub.get("limite"):
+        return
+    pct = sub["usados"] / sub["limite"]
+    ciclo = sub["reinicio"].date().isoformat() if sub.get("reinicio") else "?"
+    avisados = json.loads(db.get_valor(conn, f"{ELEVEN_ALERTA}:{ciclo}") or "[]")
+    for umbral in elevenlabs.AVISO_CICLO:
+        if pct >= umbral and umbral not in avisados:
+            avisados.append(umbral)
+            db.set_valor(conn, f"{ELEVEN_ALERTA}:{ciclo}", json.dumps(avisados))
+            hasta = sub["reinicio"].astimezone(AR).strftime("%d/%m") if sub.get("reinicio") else "?"
+            extra = (" Se acabaron: la voz de Tito vuelve sola a la de Gemini hasta que se renueven."
+                     if umbral >= 1 else "")
+            tg.send_message(DUENO, f"🔧 Claude Code: ⚠️ <b>ElevenLabs: {pct:.0%} de los créditos</b> "
+                                   f"({elevenlabs.miles(sub['usados'])} de {elevenlabs.miles(sub['limite'])}; "
+                                   f"se renuevan el {hasta}).{extra}")
 
 
 COSTOS_SEMANA = "costos_semana_enviado"   # bot_estado: el lunes (AR) cuyo resumen semanal ya salió
@@ -4748,7 +4800,7 @@ def cmd_voces_elevenlabs(args: argparse.Namespace) -> int:
 
     try:
         if args.muestra:
-            cfg = load_settings().efemerides
+            cfg = load_settings().animacion
             pcm, sr = elevenlabs.hablar(args.texto, args.muestra, cfg.elevenlabs_modelo)
             carpeta = OUTPUT_DIR / "voces_elevenlabs"
             carpeta.mkdir(parents=True, exist_ok=True)

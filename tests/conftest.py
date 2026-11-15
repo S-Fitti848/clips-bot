@@ -19,7 +19,8 @@ def _sin_busquedas_de_youtube(monkeypatch):
 # Ningún test sale nunca a YouTube ni a Facebook ni usa un token real, esté como esté
 # `youtube_upload_enabled` (2026-10-30: con la subida prendida, la suite se colgó en el 27 %). Un
 # pedido real a estos hosts falla AL INSTANTE con un error que dice qué test lo intentó.
-HOSTS_PROHIBIDOS = ("googleapis.com", "youtube.com", "accounts.google.com", "facebook.com")
+HOSTS_PROHIBIDOS = ("googleapis.com", "youtube.com", "accounts.google.com", "facebook.com",
+                    "elevenlabs.io")
 
 
 class SalidaProhibida(RuntimeError):
@@ -127,3 +128,15 @@ def _voz_real_en_los_tests(monkeypatch):
     """Los tests corren con origen "prueba", que en el bot significa voz FALSA (Santi, 2026-11-15). Los que
     prueban el camino de la voz real pasan su `tts` falso; los de la voz falsa sacan esta variable."""
     monkeypatch.setenv("CLIPS_VOZ_REAL", "1")
+
+
+@pytest.fixture(autouse=True)
+def _sin_elevenlabs(monkeypatch):
+    """Ningún test gasta créditos de ElevenLabs ni escribe en la base real: sin clave, los efectos no se
+    generan (va la biblioteca o el sintetizado) y el uso no se anota."""
+    from clips_bot import elevenlabs
+    from clips_bot.animacion import sfx
+
+    monkeypatch.setattr(elevenlabs, "clave", lambda: "")
+    monkeypatch.setattr(elevenlabs, "anotar", lambda *a, **k: None)
+    monkeypatch.setattr(sfx, "GENERAR", False)
