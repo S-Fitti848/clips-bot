@@ -20,7 +20,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .config import Render, Subtitulos
-from .media import audio_con_crossfade, cola_audio, find_bin, run
+from .media import audio_con_crossfade, cola_audio, find_bin, run, X264
 from .subtitles import _escapar_ass, _t_ass
 
 log = logging.getLogger(__name__)
@@ -350,7 +350,7 @@ def armar(angulos: list[Angulo], salida: Path, work: Path, render: Render, cfg_s
     args += [
         "-filter_complex", filtro_concat(angulos, render, con_carteles=True),
         "-map", "[vout]", "-map", "[aout]",
-        "-c:v", "libx264", "-preset", render.x264_preset, "-crf", str(render.crf), "-pix_fmt", "yuv420p",
+        *X264, "-preset", render.x264_preset, "-crf", str(render.crf), "-pix_fmt", "yuv420p",
         "-maxrate", f"{render.maxrate_kbps}k", "-bufsize", f"{2 * render.maxrate_kbps}k",
         "-c:a", "aac", "-b:a", "160k", "-ar", "48000", "-movflags", "+faststart",
         str(salida.resolve()),

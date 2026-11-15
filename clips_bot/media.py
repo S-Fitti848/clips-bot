@@ -11,6 +11,11 @@ import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
+# Hilos de x264 (Santi, 2026-11-14): con los 4 núcleos la Pi pasa los 85 °C y se frena un tercio del
+# tiempo; con 3 calienta menos y casi no pierde velocidad. CLIPS_FFMPEG_HILOS lo cambia (0 = todos).
+HILOS_X264 = int(os.environ.get("CLIPS_FFMPEG_HILOS", "3"))
+X264 = ["-c:v", "libx264"] + (["-threads", str(HILOS_X264)] if HILOS_X264 > 0 else [])
+
 log = logging.getLogger(__name__)
 
 

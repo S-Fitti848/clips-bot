@@ -618,6 +618,7 @@ animacion:
   subir: true
   hora_publicacion: "19:00"
   facebook: true             # el Reel en la página de Facebook de Así Nació (conectada el 2026-11-14)
+  subtitulos_virales: false  # los subtítulos estilo Shorts virales: APAGADOS hasta el OK de Santi
   hora: "07:00"              # AR: desde cuándo la escucha arma el del día
   chat: ""                   # vacío = el privado de Santi
   modelo_texto: "claude-sonnet-5-5"

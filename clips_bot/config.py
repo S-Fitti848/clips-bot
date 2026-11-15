@@ -465,6 +465,8 @@ class Animacion:
     # El Reel en la página de Facebook de Así Nació, cuando esté conectada (ASINACIO_FACEBOOK_PAGE_ID y
     # ASINACIO_FACEBOOK_PAGE_TOKEN en el .env; otra página que la de Pequeña Historia).
     facebook: bool = False
+    # Subtítulos estilo Shorts virales (2026-11-14): APAGADOS hasta que Santi apruebe el Nerf de ejemplo.
+    subtitulos_virales: bool = False
 
 
 @dataclass(frozen=True)

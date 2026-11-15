@@ -24,7 +24,7 @@ import wave
 from dataclasses import dataclass
 from pathlib import Path
 
-from .media import audio_con_crossfade, cola_audio, find_bin, run
+from .media import audio_con_crossfade, cola_audio, find_bin, run, X264
 from .reglas import REGLAS_CLARIDAD
 
 log = logging.getLogger(__name__)
@@ -691,7 +691,7 @@ def armar_resumen(video: Path, tramos: list[tuple[float, float]], salida: Path) 
     mapeo = ["-map", "[v]"] + (["-map", "[a]", "-c:a", "aac", "-b:a", "160k"] if audio else [])
     run([find_bin("ffmpeg"), "-hide_banner", "-loglevel", "error", "-y", "-i", str(video.resolve()),
          "-filter_complex", ";".join(partes), *mapeo,
-         "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p",
+         *X264, "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p",
          str(salida.resolve())])
     return salida
 

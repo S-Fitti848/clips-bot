@@ -30,7 +30,7 @@ from pathlib import Path
 import numpy as np
 
 from . import audio_huella as ah
-from .media import find_bin
+from .media import find_bin, X264
 
 log = logging.getLogger(__name__)
 
@@ -159,7 +159,7 @@ def cortar(v: Vod, inicio: float, duracion: float, destino: Path) -> Path:
     r = subprocess.run(base + ["-c", "copy", "-bsf:a", "aac_adtstoasc", "-movflags", "+faststart", str(destino)],
                        capture_output=True, text=True)
     if r.returncode != 0 or not destino.exists() or destino.stat().st_size < 10_000:
-        subprocess.run(base + ["-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-c:a", "aac",
+        subprocess.run(base + [*X264, "-preset", "veryfast", "-crf", "20", "-c:a", "aac",
                                "-movflags", "+faststart", str(destino)], check=True, capture_output=True)
     return destino
 

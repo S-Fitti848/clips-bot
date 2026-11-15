@@ -83,3 +83,11 @@ def test_con_facebook_prendido_tambien_va_el_reel(conn, tmp_path, monkeypatch):
     monkeypatch.setattr(m, "_subir_facebook_asinacio", lambda c, st, meta: "📘 Programado en Facebook.")
     avisos = m._animacion_subir(conn, s, R(), tmp_path, date(2026, 11, 15))
     assert avisos == ["📤 Programado en YouTube.", "📘 Programado en Facebook."]
+
+
+def test_subtitulos_virales_apagados_hasta_el_ok():
+    assert load_settings().animacion.subtitulos_virales is False
+    import inspect
+    from clips_bot.animacion import marcas
+
+    assert 'subtitulos="viral" if settings.animacion.subtitulos_virales else "clasico"' in inspect.getsource(marcas.armar_video)

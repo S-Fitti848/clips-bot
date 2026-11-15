@@ -21,7 +21,7 @@ from pathlib import Path
 
 import numpy as np
 
-from .media import find_bin
+from .media import find_bin, X264
 
 log = logging.getLogger(__name__)
 
@@ -203,7 +203,7 @@ def renderizar(foto: Path, dur: float, salida: Path, W: int, H: int, blur: float
     salida.parent.mkdir(parents=True, exist_ok=True)
     p = subprocess.Popen([find_bin("ffmpeg"), "-hide_banner", "-loglevel", "error", "-y",
                           "-f", "rawvideo", "-pix_fmt", "bgr24", "-s", f"{W}x{H}", "-r", str(fps),
-                          "-i", "-", "-frames:v", str(frames), "-c:v", "libx264", "-preset", preset,
+                          "-i", "-", "-frames:v", str(frames), *X264, "-preset", preset,
                           "-crf", str(crf), "-pix_fmt", "yuv420p", str(salida)], stdin=subprocess.PIPE)
     try:
         for n in range(frames):

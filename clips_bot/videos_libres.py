@@ -33,7 +33,7 @@ from pathlib import Path
 import requests
 
 from .config import env, user_agent
-from .media import find_bin
+from .media import find_bin, X264
 
 log = logging.getLogger(__name__)
 
@@ -468,7 +468,7 @@ def bajar_tramo(v: Video, dur: float, salida: Path) -> Path:
     # Al archivo local, con tope y un reintento; si no baja, RuntimeError y esa frase vuelve a su foto.
     r = _ejecutar([find_bin("ffmpeg"), "-hide_banner", "-loglevel", "error", "-y",
                    "-ss", f"{inicio:.2f}", *_ffmpeg_url(v.url), "-i", v.url, "-t", f"{largo:.2f}",
-                   "-an", "-c:v", "libx264", "-preset", "veryfast", "-crf", "18",
+                   "-an", *X264, "-preset", "veryfast", "-crf", "18",
                    "-pix_fmt", "yuv420p", str(salida)], TOPE_TRAMO_S)
     if r is None:
         salida.unlink(missing_ok=True)

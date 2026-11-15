@@ -33,7 +33,7 @@ from pathlib import Path
 import requests
 
 from .config import DATA_DIR, user_agent
-from .media import chequear_audio, find_bin, preparar_audio, run
+from .media import chequear_audio, find_bin, preparar_audio, run, X264
 from . import ilustrar
 from .narrar import NarrarError
 from .reglas import REGLAS_CLARIDAD
@@ -2360,7 +2360,7 @@ def armar_video(tramos: list[tuple[Path, float]], voz: Path, dir_subs: Path, sal
                  "-filter_complex", filtro_video(W, H, render.blur_sigma, fps,
                                                  *(encuadres or {}).get(str(foto), (0.5, False))),
                  "-map", "[v]", "-an",
-                 "-frames:v", str(frames), "-c:v", "libx264", "-preset", render.x264_preset,
+                 "-frames:v", str(frames), *X264, "-preset", render.x264_preset,
                  "-crf", "18", "-pix_fmt", "yuv420p", str(parte.resolve())])
             partes.append(parte)
             continue
@@ -2381,7 +2381,7 @@ def armar_video(tramos: list[tuple[Path, float]], voz: Path, dir_subs: Path, sal
             run([find_bin("ffmpeg"), "-hide_banner", "-loglevel", "error", "-y",
                  "-i", str(grande.resolve()),
                  "-vf", filtro_movimiento(frames, fx, fy, mov, W, H, fps),
-                 "-frames:v", str(frames), "-c:v", "libx264", "-preset", render.x264_preset,
+                 "-frames:v", str(frames), *X264, "-preset", render.x264_preset,
                  "-crf", "18", "-pix_fmt", "yuv420p", str(parte.resolve())])
             partes.append(parte)
             continue
@@ -2395,7 +2395,7 @@ def armar_video(tramos: list[tuple[Path, float]], voz: Path, dir_subs: Path, sal
             cv2.imwrite(str(fija), px.cuadro_fijo(Path(foto).resolve(), W, H, render.blur_sigma, (fx, fy)))
             run([find_bin("ffmpeg"), "-hide_banner", "-loglevel", "error", "-y",
                  "-loop", "1", "-framerate", str(fps), "-i", str(fija.resolve()),
-                 "-frames:v", str(frames), "-c:v", "libx264", "-preset", render.x264_preset,
+                 "-frames:v", str(frames), *X264, "-preset", render.x264_preset,
                  "-tune", "stillimage", "-crf", "18", "-pix_fmt", "yuv420p", str(parte.resolve())])
             partes.append(parte)
             continue
@@ -2416,7 +2416,7 @@ def armar_video(tramos: list[tuple[Path, float]], voz: Path, dir_subs: Path, sal
              "-i", str(foto.resolve()),
              "-filter_complex", filtro_tramo(ancho, alto, W, H, frames, fx, fy, render.blur_sigma,
                                              fps=fps),
-             "-map", "[v]", "-frames:v", str(frames), "-c:v", "libx264", "-preset",
+             "-map", "[v]", "-frames:v", str(frames), *X264, "-preset",
              render.x264_preset, "-crf", "18", "-pix_fmt", "yuv420p", str(parte.resolve())])
         partes.append(parte)
     lista = dir_subs / "tramos.txt"
@@ -2438,7 +2438,7 @@ def armar_video(tramos: list[tuple[Path, float]], voz: Path, dir_subs: Path, sal
     run([find_bin("ffmpeg"), "-hide_banner", "-loglevel", "error", "-y",
          "-f", "concat", "-safe", "0", "-i", "tramos.txt", "-i", str(audio.resolve()), *entrada_mapa,
          "-filter_complex", filtro, "-map", "[v]", "-map", "1:a",
-         "-c:v", "libx264", "-preset", render.x264_preset, "-crf", str(render.crf),
+         *X264, "-preset", render.x264_preset, "-crf", str(render.crf),
          "-pix_fmt", "yuv420p", "-maxrate", f"{render.maxrate_kbps}k",
          "-bufsize", f"{2 * render.maxrate_kbps}k", "-c:a", "aac", "-b:a", "160k", "-ar", "48000",
          "-movflags", "+faststart", str(salida.resolve())], cwd=dir_subs)

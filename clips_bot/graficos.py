@@ -19,7 +19,7 @@ import subprocess
 import unicodedata
 from pathlib import Path
 
-from .media import find_bin
+from .media import find_bin, X264
 
 log = logging.getLogger(__name__)
 
@@ -130,7 +130,7 @@ def mapa_zoom(base: Path, lat: float, lon: float, salida: Path, segundos: float 
     salida.parent.mkdir(parents=True, exist_ok=True)
     ff = subprocess.Popen([find_bin("ffmpeg"), "-hide_banner", "-loglevel", "error", "-y",
                            "-f", "rawvideo", "-pix_fmt", "rgb24", "-s", f"{W}x{H}", "-r", str(fps),
-                           "-i", "-", "-c:v", "libx264", "-preset", "veryfast", "-crf", "18",
+                           "-i", "-", *X264, "-preset", "veryfast", "-crf", "18",
                            "-pix_fmt", "yuv420p", str(salida)], stdin=subprocess.PIPE)
     try:
         for k in range(n):

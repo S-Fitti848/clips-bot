@@ -492,7 +492,7 @@ class Resultado:
 
 def comando_ffmpeg(video: Video, salida: Path, w: int, h: int, crf: int, preset: str,
                    hilos: int | None, pix_fmt: str = "rgb24") -> list[str]:
-    from clips_bot.media import cola_audio, find_bin
+    from clips_bot.media import X264, cola_audio, find_bin
 
     args = [find_bin("ffmpeg"), "-hide_banner", "-loglevel", "error", "-y",
             "-f", "rawvideo", "-pix_fmt", pix_fmt, "-s", f"{w}x{h}", "-r", str(video.fps),
@@ -501,7 +501,7 @@ def comando_ffmpeg(video: Video, salida: Path, w: int, h: int, crf: int, preset:
         args += ["-i", video.audio, "-map", "0:v", "-map", "1:a",
                  "-af", cola_audio(video.total_cuadros / video.fps),
                  "-c:a", "aac", "-b:a", "160k", "-ar", "48000"]
-    args += ["-c:v", "libx264", "-preset", preset, "-tune", "animation", "-crf", str(crf),
+    args += [*X264, "-preset", preset, "-tune", "animation", "-crf", str(crf),
              "-pix_fmt", "yuv420p", "-maxrate", "3500k", "-bufsize", "7000k",
              "-movflags", "+faststart"]
     if hilos:

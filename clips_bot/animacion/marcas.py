@@ -876,7 +876,8 @@ def cortes(inicios: list[float], fin: float, cola_s: float = 0.8) -> list[float]
 
 
 def linea_de_tiempo(d: dict, inicios: list[float], fin: float, palabras: list,
-                    voz: Path | None, presente: int | None = None) -> tuple[dict, list[tuple[float, str]]]:
+                    voz: Path | None, presente: int | None = None,
+                    subtitulos: str = "viral") -> tuple[dict, list[tuple[float, str]]]:
     """El guion + los tiempos reales de la voz (un inicio por SEGMENTO: frases y comentarios de Tito,
     en orden) → (dict de `timeline.Video`, SFX con su segundo global).
 
@@ -933,7 +934,7 @@ def linea_de_tiempo(d: dict, inicios: list[float], fin: float, palabras: list,
         sfx += [(round(t + x, 3), s) for x, s in fx]
         t += dur
     out = {"fps": P.FPS, "escenas": escenas, "subtitulos_y": SUBTITULOS_Y, "subtitulos_tam": SUBTITULOS_TAM,
-           "subtitulos_estilo": "viral"}
+           "subtitulos_estilo": subtitulos}
     if voz is not None:
         out["audio"] = str(voz)
     if palabras:
@@ -1359,7 +1360,8 @@ def armar_video(conn, settings, carpeta: Path, cliente=None, wiki=None, hoy: dat
     palabras, inicios = narrar.alinear_a_guion(oidas, hablado, fin)
     tiempos["whisper_s"] = round(time.time() - t0, 1)
     avisar(f"voz ({motor}): {fin:.1f} s")
-    datos, eventos = linea_de_tiempo(d, inicios, fin, palabras, wav)
+    datos, eventos = linea_de_tiempo(d, inicios, fin, palabras, wav,
+                                         subtitulos="viral" if settings.animacion.subtitulos_virales else "clasico")
     # Revisión visual (Santi, 2026-11-14): Claude mira los cuadros clave ANTES del render y, si ve algo
     # absurdo, se corrige el guion de esa escena y se vuelve a armar; como mucho 2 vueltas.
     revision: list[str] = []
@@ -1372,7 +1374,8 @@ def armar_video(conn, settings, carpeta: Path, cliente=None, wiki=None, hoy: dat
         hechos = aplicar_revision(d, problemas, claves, datos)
         revision += [f"vuelta {vuelta + 1}: {h}" for h in hechos]
         avisar("revisión visual: " + "; ".join(hechos)[:300])
-        datos, eventos = linea_de_tiempo(d, inicios, fin, palabras, wav)
+        datos, eventos = linea_de_tiempo(d, inicios, fin, palabras, wav,
+                                         subtitulos="viral" if settings.animacion.subtitulos_virales else "clasico")
     tiempos["revision_s"] = round(time.time() - t0, 1)
     (carpeta / "linea_de_tiempo.json").write_text(json.dumps({"video": datos, "sfx": eventos},
                                                              ensure_ascii=False, indent=1), encoding="utf-8")

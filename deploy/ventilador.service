@@ -1,0 +1,19 @@
+# Control del ventilador Pimoroni Fan SHIM (GPIO 18): prende desde 55 °C, apaga debajo de 48 °C y
+# queda prendido durante los renders. Servicio de USUARIO (no pide sudo): arranca solo con la Pi
+# gracias a `loginctl enable-linger santi`.
+#   Instalar:  mkdir -p ~/.config/systemd/user && cp ~/clips/deploy/ventilador.service ~/.config/systemd/user/
+#              systemctl --user daemon-reload && systemctl --user enable --now ventilador
+#   Ver:       systemctl --user status ventilador ; journalctl --user -u ventilador -f
+[Unit]
+Description=Ventilador Fan SHIM (clips-bot)
+
+[Service]
+WorkingDirectory=/home/santi/clips
+ExecStart=/home/santi/clips/.venv/bin/python -m clips_bot.ventilador
+# Si el control se cae o se detiene, el ventilador queda PRENDIDO (ante la duda, mejor prendido).
+ExecStopPost=/usr/bin/pinctrl set 18 op dh
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target

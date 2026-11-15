@@ -376,6 +376,20 @@ def turnos_activos(conn: sqlite3.Connection, recurso: str,
     return [(str(t), float(ts)) for t, ts in activos if ahora - float(ts) < vencimiento_s]
 
 
+TEMP_ARRANQUE_C = float(__import__("os").environ.get("CLIPS_TEMP_ARRANQUE", "65"))
+PAUSA_MAX_S = 10 * 60          # la pausa para enfriar nunca dura más que esto después de un render
+FIN_PESADO = "fin_trabajo_pesado"   # bot_estado: cuándo terminó el último render (epoch)
+TERMICO = Path("/sys/class/thermal/thermal_zone0/temp")
+
+
+def temperatura_cpu() -> float | None:
+    """°C de la CPU (en la Pi); None donde no hay sensor (Windows, los tests)."""
+    try:
+        return int(TERMICO.read_text().strip()) / 1000
+    except (OSError, ValueError):
+        return None
+
+
 def tomar_turno(conn: sqlite3.Connection, recurso: str, token: str, maximo: int = 1,
                 vencimiento_s: float = 3600) -> bool:
     """Reserva un lugar. False si ya hay `maximo` tomados (los vencidos no cuentan)."""
@@ -386,6 +400,15 @@ def tomar_turno(conn: sqlite3.Connection, recurso: str, token: str, maximo: int 
     if len(activos) >= maximo:
         set_valor(conn, _clave_turno(recurso), json.dumps(activos))  # deja limpios los vencidos
         return False
+    # Pausa entre renders (Santi, 2026-11-14): uno nuevo no arranca hasta que la Pi baje de
+    # TEMP_ARRANQUE_C; quien lo pide lo trata como "ocupado" y reintenta, igual que con otro render.
+    # Solo en los PAUSA_MAX_S que siguen al fin del último render: si la Pi está caliente por otra cosa
+    # (un día de calor, el ventilador roto), nunca bloquea los renders para siempre.
+    if recurso == RECURSO_PESADO and not activos:
+        t = temperatura_cpu()
+        fin = float(get_valor(conn, FIN_PESADO) or 0)
+        if t is not None and t > TEMP_ARRANQUE_C and time.time() - fin < PAUSA_MAX_S:
+            return False
     activos.append((token, time.time()))
     set_valor(conn, _clave_turno(recurso), json.dumps(activos))
     return True
@@ -395,8 +418,12 @@ def soltar_turno(conn: sqlite3.Connection, recurso: str, token: str,
                  vencimiento_s: float = 3600) -> None:
     import json
 
+    import time
+
     activos = [(t, ts) for t, ts in turnos_activos(conn, recurso, vencimiento_s) if t != token]
     set_valor(conn, _clave_turno(recurso), json.dumps(activos))
+    if recurso == RECURSO_PESADO:
+        set_valor(conn, FIN_PESADO, str(time.time()))   # desde acá cuenta la pausa para enfriar
 
 
 def hay_trabajo_pesado(conn: sqlite3.Connection, vencimiento_s: float = 3600) -> str | None:

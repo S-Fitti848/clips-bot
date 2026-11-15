@@ -19,7 +19,7 @@ import re
 import statistics
 from pathlib import Path
 
-from .media import CROSSFADE_S, audio_con_crossfade, find_bin, run
+from .media import CROSSFADE_S, audio_con_crossfade, find_bin, run, X264
 from .subtitles import Palabra
 
 PAUSA_MAX_S = 0.6        # una pausa más larga que esto se corta
@@ -163,6 +163,6 @@ def cortar(entrada: Path, tramos: list[tuple[float, float]], duracion: float, sa
                                            CROSSFADE_S)
         mapa += ["-map", "[a]"]
     run([find_bin("ffmpeg"), "-hide_banner", "-loglevel", "error", "-y", "-i", str(Path(entrada).resolve()),
-         "-filter_complex", grafo, *mapa, "-c:v", "libx264", "-preset", preset, "-crf", "16",
+         "-filter_complex", grafo, *mapa, *X264, "-preset", preset, "-crf", "16",
          "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "192k", "-ar", "48000", str(salida.resolve())])
     return salida

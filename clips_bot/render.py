@@ -17,7 +17,7 @@ from pathlib import Path
 from . import zooms
 from .config import Render
 from .layout import Layout
-from .media import cola_audio, find_bin, probe, run
+from .media import cola_audio, find_bin, probe, run, X264
 
 SUBS_ARCHIVO = "subs.ass"
 TITULO_ARCHIVO = "titulo.ass"
@@ -92,7 +92,7 @@ def renderizar(entrada: Path, salida: Path, layout: Layout, render: Render, dir_
         "-t", str(render.duracion_max_s),
         "-filter_complex", grafo,
         "-map", "[v]", *audio,
-        "-c:v", "libx264", "-preset", render.x264_preset, "-crf", str(render.crf), "-pix_fmt", "yuv420p",
+        *X264, "-preset", render.x264_preset, "-crf", str(render.crf), "-pix_fmt", "yuv420p",
         "-maxrate", f"{render.maxrate_kbps}k", "-bufsize", f"{2 * render.maxrate_kbps}k",
         "-c:a", "aac", "-b:a", "160k", "-ar", "48000",
         "-movflags", "+faststart",

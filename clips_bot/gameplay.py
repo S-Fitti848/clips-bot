@@ -13,7 +13,7 @@ from __future__ import annotations
 import random
 from pathlib import Path
 
-from .media import cola_audio, find_bin, probe, run
+from .media import cola_audio, find_bin, probe, run, X264
 
 CARPETA = Path("gameplay")
 EXTENSIONES = (".mp4", ".mov", ".mkv", ".webm")
@@ -81,7 +81,7 @@ def renderizar(clip: Path, juego: Path, inicio_juego: float, salida: Path, rende
          "-i", str(clip.resolve()),
          "-ss", f"{inicio_juego:.2f}", "-i", str(juego.resolve()),
          "-t", f"{dur:.2f}", "-filter_complex", grafo, "-map", "[v]", *audio,
-         "-c:v", "libx264", "-preset", render.x264_preset, "-crf", str(render.crf), "-pix_fmt", "yuv420p",
+         *X264, "-preset", render.x264_preset, "-crf", str(render.crf), "-pix_fmt", "yuv420p",
          "-maxrate", f"{render.maxrate_kbps}k", "-bufsize", f"{2 * render.maxrate_kbps}k",
          "-c:a", "aac", "-b:a", "160k", "-ar", "48000", "-movflags", "+faststart", str(salida.resolve())],
         cwd=dir_trabajo if (con_subs or con_titulo) else None)

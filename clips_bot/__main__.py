@@ -41,7 +41,7 @@ from .config import DATA_DIR, DB_PATH, ConfigError, Settings, env, load_settings
 from .download import DescargaError
 from .gemini import GeminiClient, GeminiError
 from .kick import KickClient
-from .media import MediaError, chequear_audio, miniatura, probe
+from .media import MediaError, chequear_audio, miniatura, probe, X264
 from .narrar import NarrarError
 from .seleccion import score_reciente
 from .telegram import TelegramClient, TelegramError
@@ -4792,7 +4792,7 @@ Dialogue: 0,0:00:00.00,0:00:{segundos:05.2f},D,,0,0,0,,Clips Bot\\NYouTube API d
          "-f", "lavfi", "-i", f"testsrc2=s={render.ancho}x{render.alto}:r={render.fps}:d={segundos}",
          "-f", "lavfi", "-i", f"sine=frequency=440:sample_rate=48000:duration={segundos}",
          "-filter_complex", f"[0:v]ass={ass.name}[v];[1:a]volume=0.15,{cola_audio(segundos)}[a]",
-         "-map", "[v]", "-map", "[a]", "-c:v", "libx264", "-preset", "veryfast", "-pix_fmt", "yuv420p",
+         "-map", "[v]", "-map", "[a]", *X264, "-preset", "veryfast", "-pix_fmt", "yuv420p",
          "-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart", salida.name], cwd=salida.parent)
     return salida
 
