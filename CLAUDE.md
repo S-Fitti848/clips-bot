@@ -1033,7 +1033,14 @@ Problemas abiertos:
 - v1.08.0 (2026-11-15, tarde) — Corrección puntual de guiones, Haiku para puntuar, "sorpresa" en las historias
   curiosas, y en Así Nació: protagonista en el gancho, fabricar sin martillo, personajes fieles, época por
   escena y dibujos nuevos con Claude (todo en §1). El inventor de base ya no se parece a una señora (era el
-  dibujo de "abuelo" con rulos canosos: ahora jopo y bigote). 1454 tests OK.
+  dibujo de "abuelo" con rulos canosos: ahora jopo y bigote). **Conteo de 14 días (16 al 29/11) puntuando con
+  Haiku y con "sorpresa" en las curiosas:** de 7 o más, 1,14 por día (antes 1,21 con Sonnet), de 8 o más, 0,29;
+  5 de 14 días sin ninguna de 7; las curiosas de 7+ son 5 en total (3 el 26/11). **Costo del 15/11:** producción
+  US$ 5,19, de los que US$ 4,24 fueron 31 guiones enteros de Así Nació (Popeyes y las tandas sin marca de 8):
+  justo lo que evita la corrección puntual. Estimado desde hoy: Así Nació ~US$ 0,33 por video (borrador
+  US$ 0,13 + ~2 correcciones de US$ 0,07 + revisión), Pequeña Historia ~US$ 0,27 la de tecnología y ~US$ 0,29
+  cada una de Latinoamérica (≈1,1 por día) → ~US$ 1,3 por día (≈ US$ 40 por mes). Render de Así Nació: 460-560 s,
+  ~15 min por video en total, pico ~85 °C. 1454 tests OK.
 - v1.07.0 (2026-11-15, tarde) — (1) **Así Nació: gancho propio, escenarios según la escena, acción y
   personajes** (regla en §1). Nuevo en el motor: fondos `laboratorio`, `hospital`, `campo` y `puerto` (con
   su ambiente y su color), acciones `fabricar`, `vender`, `usar` y `probar`, `multitud` (5-7 personas chicas
