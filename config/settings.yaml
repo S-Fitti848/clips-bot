@@ -627,6 +627,6 @@ animacion:
   max_intentos: 3
   musica: true
   musica_volumen: 0.10
-  procesos: 2
+  procesos: 1
   franja_libre_desde: "03:45"
   franja_libre_hasta: "06:00"

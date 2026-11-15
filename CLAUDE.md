@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-11-14 | **Versión:** v1.03.0 (desplegado) | **Modo:** Fase 2: corriendo solo en la Pi. **Rots APAGADO.** Pequeña Historia (3 por día, madrugada desde las 04:00) y **Así Nació** (1 por día, arma 07:00, publica 19:00 en YouTube y Facebook con ❌ Cancelar), todo al privado de Santi
+**Snapshot:** 2026-11-14 | **Versión:** v1.04.0 (desplegado) | **Modo:** Fase 2: corriendo solo en la Pi. **Rots APAGADO.** Pequeña Historia (3 por día, madrugada desde las 04:00) y **Así Nació** (1 por día, arma 07:00, publica 19:00 en YouTube y Facebook con ❌ Cancelar), todo al privado de Santi
 
 > **SI ESTÁS EMPEZANDO UNA SESIÓN NUEVA, LEÉ §10.** Ahí está qué está hecho, qué quedó a medias,
 > qué falta, y las trampas que ya nos mordieron.
@@ -969,6 +969,10 @@ Problemas abiertos:
 
 ## 9. CHANGELOG
 
+- v1.04.0 (2026-11-14, noche) — Así Nació dibuja con **1 proceso de cairosvg** (`animacion.procesos: 1`,
+  antes 2; pedido de Santi: "dejalo si tarda casi lo mismo"). Medido en la Pi con el demo de 35 s
+  (x264 con 3 hilos, arrancando debajo de 62 °C): 2 procesos 157 s y pico 84,2 °C, 1 proceso **134 s**
+  y pico 83,7 °C (0,123 s por cuadro); mismo mp4. Con 2, los procesos de dibujo le peleaban la CPU a ffmpeg.
 - v1.03.0 (2026-11-14, noche) — Santi aprobó los subtítulos virales de Así Nació
   (`animacion.subtitulos_virales: true`, la regla va en §1). Pendientes anotados: medir de nuevo cuando
   ponga disipadores en el chip, y que Lo Encontré respete la pausa para enfriar (en su propio chat).
@@ -2503,7 +2507,7 @@ clips" queda sin uso mientras Rots siga apagado.
 
 | | |
 |---|---|
-| commit | v1.03.0, desplegado. Subtítulos virales de Así Nació PRENDIDOS (`animacion.subtitulos_virales: true`, aprobados el 14/11). |
+| commit | v1.04.0, desplegado (Así Nació con 1 proceso de dibujo: 134 s contra 157 con 2). Subtítulos virales de Así Nació PRENDIDOS (`animacion.subtitulos_virales: true`, aprobados el 14/11). |
 | ventilador | Fan SHIM (GPIO 18) controlado por `ventilador.service` de usuario (55/48 °C, siempre en renders); x264 con 3 hilos; pausa para enfriar entre renders (65 °C, máx. 10 min) |
 | timers y escucha | `clips-bot.timer`, `clips-bot-efemeride.timer`, `clips-bot-telegram` activos |
 | Así Nació | `animacion_dia` = 2026-11-14 (marcado a mano): el primer video real sale el **15/11** (arma 07:00, publica 19:00) |
