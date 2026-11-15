@@ -1279,8 +1279,7 @@ def prop_tito_reaccion(forma: int = 0, **_) -> str:
     icono = (texto_con_borde("!", 108, -60, 110, color=P.AMARILLO, ancho_borde=12) if forma == 0 else
              texto_con_borde("JA", 112, -70, 64, color=P.AMARILLO, ancho_borde=10) if forma == 1 else
              f'<path d="M80 40 L170 40 L150 15 M170 40 L150 65" fill="none" {trazo(ancho=14)}/>')
-    return (circulo(0, 0, 118, "#7cc6ee", ancho=10) + f'<clipPath id="tito_v"><circle r="112"/></clipPath>'
-            + g(cara, 0, 26, escala=0.62) + icono)
+    return circulo(0, 0, 118, "#7cc6ee", ancho=10) + g(cara, 0, 26, escala=0.62) + icono
 
 
 def icono_pausa() -> str:

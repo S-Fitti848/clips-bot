@@ -1152,6 +1152,7 @@ def elementos_visuales(vis: dict, dur: float, golpes: list[float], primera: bool
     if vis.get("rotulo"):
         t0 = 0.15
         els.append({"tipo": "prop", "nombre": "rotulo", "texto": vis["rotulo"], "fijo": True, "x": 40, "y": 330,
+                    "escala": 1.3,
                     "desde": t0, "hasta": round(min(dur, t0 + 2.4), 2),
                     "keyframes": [{"t": t0, "x": -700}, {"t": t0 + 0.3, "x": 40, "easing": "salida"},
                                   {"t": min(dur, t0 + 2.1), "x": 40}, {"t": min(dur, t0 + 2.4), "x": -700, "easing": "entrada"}]})
@@ -1166,10 +1167,10 @@ def elementos_visuales(vis: dict, dur: float, golpes: list[float], primera: bool
         sfx.append((t0, "pop"))
     if vis.get("cartel"):
         tc = round(golpes[0] if golpes else min(dur * 0.4, max(0.2, dur - 1.0)), 2)
-        els.append({"tipo": "prop", "nombre": "cartel_comic", "texto": vis["cartel"], "fijo": True, "x": 540, "y": 900,
+        els.append({"tipo": "prop", "nombre": "cartel_comic", "texto": vis["cartel"], "fijo": True, "x": 760, "y": 640,
                     "rotacion": -8, "desde": tc, "hasta": round(min(dur, tc + 0.9), 2),
-                    "keyframes": [{"t": tc, "escala": 0.1}, {"t": tc + 0.18, "escala": 0.85, "easing": "rebote"},
-                                  {"t": tc + 0.8, "escala": 0.9}, {"t": tc + 0.9, "escala": 0.05, "easing": "entrada"}]})
+                    "keyframes": [{"t": tc, "escala": 0.1}, {"t": tc + 0.18, "escala": 0.7, "easing": "rebote"},
+                                  {"t": tc + 0.8, "escala": 0.75}, {"t": tc + 0.9, "escala": 0.05, "easing": "entrada"}]})
         sfx.append((tc, "golpe"))
     return els, sfx
 
@@ -1268,6 +1269,8 @@ def escena_accion(spec: dict, dur: float, i: int, primera: bool = False, tono: f
     tr = spec.get("transicion") if spec.get("transicion") in TRANSICIONES_OK else "barrido"
     if not primera and parte in ("giro", "final") and tr in ("corte", "barrido"):
         tr = "iris"            # transición con estilo hacia el remate
+    if visual is not None and visual.get("rotulo"):   # el rótulo ya dice el año: sin el año suelto en grande
+        elementos = [el for el in elementos if not (el.get("tipo") == "gancho" and str(el.get("texto", "")).strip().isdigit())]
     if visual is not None:   # Así Nació más visual (2026-11-15): rótulo, dato, cita, cartel y la luz del momento
         nuevos, fx_v = elementos_visuales(visual, dur, sorted(t for t, _ in e.golpes), primera)
         elementos += nuevos

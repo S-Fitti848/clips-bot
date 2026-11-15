@@ -1287,7 +1287,7 @@ def reacciones_tito(escenas: list[dict]) -> None:
             tl = round(proxima - t, 2)
             x = 150 if k % 2 == 0 else 930
             e["elementos"].append({"tipo": "prop", "nombre": "tito_reaccion", "forma": k % 3, "fijo": True,
-                                   "x": x, "y": 470, "escala": 0.8, "desde": tl, "hasta": round(tl + 1.6, 2),
+                                   "x": x, "y": 640, "escala": 0.8, "desde": tl, "hasta": round(tl + 1.6, 2),
                                    "keyframes": [{"t": tl, "escala": 0.05}, {"t": tl + 0.25, "escala": 0.8,
                                                                             "easing": "rebote"},
                                                  {"t": tl + 1.35, "escala": 0.8}, {"t": tl + 1.6, "escala": 0.05,
