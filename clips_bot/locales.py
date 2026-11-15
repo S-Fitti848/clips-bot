@@ -764,8 +764,9 @@ def proponer(wiki: ef.Wiki, sonnet, haiku, gemini, dia: date, carpeta: Path, avi
              elector_reintento=None, excluir: set | None = None,
              evitar_paises: set | None = None, mas_video: bool = False,
              piso_alternativo: float | None = None, puntuador=None,
-             banco: list[dict] | None = None) -> ef.Propuesta:
-    """`excluir`: hechos (su texto) que ya salieron hoy; `evitar_paises`: los países de esos (Santi,
+             banco: list[dict] | None = None, solo_banco: bool = False) -> ef.Propuesta:
+    """`solo_banco`: directo del banco de reserva, sin buscar en el día (a mano, cuando un día quedó sin
+    video: Santi, 2026-11-15). `excluir`: hechos (su texto) que ya salieron hoy; `evitar_paises`: los países de esos (Santi,
     2026-11-12: 2 historias por día, sin repetir país si se puede: van al final, no afuera).
 
     La propuesta del día para Facebook. Mismo armado que la efeméride (fotos, hoja, aprobación),
@@ -854,6 +855,8 @@ def proponer(wiki: ef.Wiki, sonnet, haiku, gemini, dia: date, carpeta: Path, avi
         return elegidos
 
     try:
+        if solo_banco:
+            raise ef.NarrarError("pedido a mano: directo del banco")
         elegidos = seleccionar()
     except ef.NarrarError as err:
         # Nunca un día sin video (Santi, 2026-11-15): debajo del piso (6) o sin candidatas, una historia

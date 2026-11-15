@@ -312,3 +312,14 @@ def test_la_voz_de_prueba_no_llama_a_gemini(monkeypatch, tmp_path):
     assert motor == "falsa:silencio" and len(dur) == 2 and "PRUEBA" in ef.texto_voz(motor)
     with wave.open(str(wav)) as w:
         assert abs(w.getnframes() / w.getframerate() - sum(dur)) < 0.01
+
+
+def test_solo_banco_no_busca_en_el_dia(monkeypatch, tmp_path):
+    """A mano, cuando un día quedó sin video (Santi, 2026-11-15): directo del banco, sin leer Wikipedia."""
+    from clips_bot import locales
+
+    monkeypatch.setattr(locales, "leer_todo", lambda *a, **k: pytest.fail("buscó en el día"))
+    with pytest.raises(Exception) as e:
+        locales.proponer(None, None, None, None, __import__("datetime").date(2026, 11, 15), tmp_path,
+                         banco=[], solo_banco=True)
+    assert "banco" in str(e.value)

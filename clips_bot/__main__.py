@@ -3625,7 +3625,7 @@ def _piso_latam(conn, dia, hecho: str = "") -> dict:
 
 
 def _fb_proponer(conn, tg: TelegramClient, chats: list[str], dia, settings: Settings,
-                 hecho: str = "", auto: bool = False) -> str | None:
+                 hecho: str = "", auto: bool = False, solo_banco: bool = False) -> str | None:
     """Propone una historia de Latinoamérica (va a YouTube y a Facebook desde el 2026-11-12) y manda
     la aprobación (la misma de la efeméride: ✅ ✏️ 🔁), sin repetir un hecho ya propuesto hoy y con
     otro país si se puede. NO toma el turno pesado: lo toma quien llama. Devuelve el error, o None."""
@@ -3656,7 +3656,8 @@ def _fb_proponer(conn, tg: TelegramClient, chats: list[str], dia, settings: Sett
                              evitar_paises={x["pais"] for x in _latam_del_dia(conn, dia) if x.get("pais")},
                              mas_video=settings.efemerides.estilo_nuevo,
                              puntuador=_puntuador(settings),
-                             **_piso_latam(conn, dia, hecho))
+                             **(dict(banco=banco_mod.leer(conn, "latam"), solo_banco=True) if solo_banco
+                                else _piso_latam(conn, dia, hecho)))
     except (NarrarError, ef.WikiError, GeminiError) as e:
         bitacora.fallo("", str(e))
         bitacora.cerrar(conn, "fallido")
