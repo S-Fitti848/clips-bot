@@ -1175,7 +1175,7 @@ def cortes(inicios: list[float], fin: float, cola_s: float = 0.8) -> list[float]
 
 def linea_de_tiempo(d: dict, inicios: list[float], fin: float, palabras: list,
                     voz: Path | None, presente: int | None = None,
-                    subtitulos: str = "viral") -> tuple[dict, list[tuple[float, str]]]:
+                    subtitulos: str = "viral", visual: bool = False) -> tuple[dict, list[tuple[float, str]]]:
     """El guion + los tiempos reales de la voz (un inicio por SEGMENTO: frases y comentarios de Tito,
     en orden) → (dict de `timeline.Video`, SFX con su segundo global).
 
@@ -1192,6 +1192,7 @@ def linea_de_tiempo(d: dict, inicios: list[float], fin: float, palabras: list,
     prota = prop_real(d.get("protagonista") or {})
     proyectil = prota if prota in ac.LANZABLES else "pelota"
     vistas: dict[tuple, int] = {}     # (fondo, década) → cuántas veces: la variante, para no repetir igual
+    mapa_hecho = False
     for n_seg, ((tipo, k, _), dur) in enumerate(zip(segs, durs)):
         if tipo == "locutor":
             esc_d, fx = ac.escena_locutor(dur, k)
@@ -1219,11 +1220,22 @@ def linea_de_tiempo(d: dict, inicios: list[float], fin: float, palabras: list,
         clave = (e.get("fondo"), anio_actual // 10)
         variante = vistas.get(clave, 0)
         vistas[clave] = variante + 1
+        vis = (d.get("visual") or [])[k] if visual and k < len(d.get("visual") or []) else ({} if visual else None)
+        if vis and vis.get("coords") and not mapa_hecho and dur >= 2.6:
+            # el mapa con el pin que hace zoom al lugar, la primera vez que aparece (visuales, 2026-11-15)
+            from . import visuales
+
+            mapa_hecho = True
+            esc_m, fx = escena_mapa(visuales.MAPA_S, *vis["coords"])
+            escenas.append(esc_m)
+            sfx += [(round(t + x, 3), s_) for x, s_ in fx]
+            t += visuales.MAPA_S
+            dur = round(dur - visuales.MAPA_S, 3)
         anio_esc = int(e.get("anio_escena") or 0)
         e = {**e, "objetos": [{**o, "prop": prop_real(o)} for o in e.get("objetos") or [] if prop_real(o)]}
         esc_d, fx = ac.escena_accion(e, dur, k, primera=(k == 0), tono=1.0 if pasado else 0.0,
                                      anio=anio_esc if 1800 <= anio_esc < presente else anio_actual,
-                                     variante=variante, reservar=reservar, proyectil=proyectil)
+                                     variante=variante, reservar=reservar, proyectil=proyectil, visual=vis)
         esc_d["frase"] = k          # para la revisión visual: qué frase del guion es esta escena
         pisados = ac.superposiciones(esc_d)
         if pisados:
@@ -1233,6 +1245,8 @@ def linea_de_tiempo(d: dict, inicios: list[float], fin: float, palabras: list,
         escenas.append(esc_d)
         sfx += [(round(t + x, 3), s) for x, s in fx]
         t += dur
+    if visual:
+        reacciones_tito(escenas)
     out = {"fps": P.FPS, "escenas": escenas, "subtitulos_y": SUBTITULOS_Y, "subtitulos_tam": SUBTITULOS_TAM,
            "subtitulos_estilo": subtitulos}
     if voz is not None:
@@ -1245,6 +1259,44 @@ def linea_de_tiempo(d: dict, inicios: list[float], fin: float, palabras: list,
                                             "fin": round(p.fin, 3), "clave": p.clave, "impacto": p.impacto,
                                             "emoji": p.emoji} for p in marcadas]}]
     return out, sorted(sfx)
+
+
+def escena_mapa(dur: float, lat: float, lon: float) -> tuple[dict, list[tuple[float, str]]]:
+    """El mapa del mundo que hace zoom hasta el pin del lugar (fondo cacheado: el pin está en el dibujo)."""
+    from . import visuales
+
+    (_, _, _, _), (px, py) = visuales.recorte(lat, lon)
+    dx, dy = px - P.ANCHO / 2, py - P.ALTO / 2
+    camara = [{"t": 0, "zoom": 1.0, "x": 0, "y": 0}, {"t": dur, "zoom": 2.6, "x": round(dx, 1), "y": round(dy, 1),
+                                                     "easing": "suave"}]
+    return ({"duracion": dur, "fondo": {"tipo": "mapa_geo", "semilla": visuales.codificar(lat, lon)},
+             "transicion": {"tipo": "zoom", "duracion": 0.25}, "camara": camara, "elementos": []},
+            [(0.0, "whoosh"), (round(dur * 0.7, 2), "pop")])
+
+
+def reacciones_tito(escenas: list[dict]) -> None:
+    """Tito en una ventanita, en una esquina de arriba, cada ~9 s (sorprendido, riéndose, señalando), solo en
+    las escenas de acción (no en sus pausas, el viaje ni el mapa). Esquinas alternadas."""
+    from . import visuales
+
+    t, proxima, k = 0.0, visuales.TITO_CADA_S, 0
+    for e in escenas:
+        dur = float(e["duracion"])
+        accion = not e.get("congela") and e.get("fondo", {}).get("tipo") not in ("mapa_geo", "color")
+        while accion and t <= proxima < t + dur - 1.2:
+            tl = round(proxima - t, 2)
+            x = 150 if k % 2 == 0 else 930
+            e["elementos"].append({"tipo": "prop", "nombre": "tito_reaccion", "forma": k % 3, "fijo": True,
+                                   "x": x, "y": 470, "escala": 0.8, "desde": tl, "hasta": round(tl + 1.6, 2),
+                                   "keyframes": [{"t": tl, "escala": 0.05}, {"t": tl + 0.25, "escala": 0.8,
+                                                                            "easing": "rebote"},
+                                                 {"t": tl + 1.35, "escala": 0.8}, {"t": tl + 1.6, "escala": 0.05,
+                                                                                   "easing": "entrada"}]})
+            k += 1
+            proxima += visuales.TITO_CADA_S
+        t += dur
+        if not accion and proxima < t:
+            proxima = t + 1.0
 
 
 def segmentos_subtitulos(d: dict) -> list[dict]:
@@ -1682,6 +1734,10 @@ def armar_video(conn, settings, carpeta: Path, cliente=None, wiki=None, hoy: dat
     bitacora.dato(titulo=str(d.get("titulo") or ""), marca=e.marca.nombre, angulo=e.angulo)
     bitacora.paso("dibujos")
     d = asegurar_dibujos(cliente, d, e, fuente or "", avisar)
+    if getattr(cfg, "visual_plus", False):
+        from . import visuales
+
+        visuales.enriquecer(revisor, d, fuente or fuente_de(wiki, e.marca), wiki, avisar)
     try:
         anotar_gancho(conn, d, e.marca.nombre)
     except Exception as err:  # noqa: BLE001 — anotar nunca frena el video
@@ -1734,7 +1790,8 @@ def armar_video(conn, settings, carpeta: Path, cliente=None, wiki=None, hoy: dat
     tiempos["whisper_s"] = round(time.time() - t0, 1)
     avisar(f"voz ({motor}): {fin:.1f} s")
     datos, eventos = linea_de_tiempo(d, inicios, fin, palabras, wav,
-                                         subtitulos="viral" if settings.animacion.subtitulos_virales else "clasico")
+                                         subtitulos="viral" if settings.animacion.subtitulos_virales else "clasico",
+                                         visual=getattr(cfg, "visual_plus", False))
     # Revisión visual (Santi, 2026-11-14): Claude mira los cuadros clave ANTES del render y, si ve algo
     # absurdo, se corrige el guion de esa escena y se vuelve a armar; como mucho 2 vueltas.
     revision: list[str] = []
@@ -1749,7 +1806,8 @@ def armar_video(conn, settings, carpeta: Path, cliente=None, wiki=None, hoy: dat
         revision += [f"vuelta {vuelta + 1}: {h}" for h in hechos]
         avisar("revisión visual: " + "; ".join(hechos)[:300])
         datos, eventos = linea_de_tiempo(d, inicios, fin, palabras, wav,
-                                         subtitulos="viral" if settings.animacion.subtitulos_virales else "clasico")
+                                         subtitulos="viral" if settings.animacion.subtitulos_virales else "clasico",
+                                         visual=getattr(cfg, "visual_plus", False))
     tiempos["revision_s"] = round(time.time() - t0, 1)
     (carpeta / "linea_de_tiempo.json").write_text(json.dumps({"video": datos, "sfx": eventos},
                                                              ensure_ascii=False, indent=1), encoding="utf-8")

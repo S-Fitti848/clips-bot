@@ -467,6 +467,9 @@ class Animacion:
     # El guion de animación es largo (escenas, cámara, efectos): el 15/11 no entró en 16.000 tokens.
     max_tokens: int = 32000
     reintentos_guion: int = 8          # vueltas de corrección del guion antes de pasar a otra marca
+    # Más visual (Santi, 2026-11-15; APAGADO hasta que apruebe la prueba): rótulos de noticiero, mapa con pin,
+    # números gigantes, citas, carteles de cómic, la luz del momento, más cámara y Tito reaccionando.
+    visual_plus: bool = False
     reintento_min: int = 60            # si falla (no por falta de candidatos), otro intento en 1 h
     reintento_hasta: str = "22:00"     # y ninguno después de esta hora
     # El Reel en la página de Facebook de Así Nació, cuando esté conectada (ASINACIO_FACEBOOK_PAGE_ID y

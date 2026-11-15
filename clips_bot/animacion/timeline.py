@@ -353,6 +353,8 @@ class Escena:
             fondo = ("color", f.get("color", P.BLANCO))
         elif f.get("tipo") in esc.FONDOS:
             fondo = (f["tipo"], int(f.get("semilla", 1)))
+            if f.get("momento"):      # la luz del momento (visuales, 2026-11-15)
+                fondo = fondo + (str(f["momento"]),)
         else:
             raise ErrorGuion(f"{donde}: fondo {f.get('tipo')!r} desconocido "
                              f"(hay color, {', '.join(sorted(esc.FONDOS))})")

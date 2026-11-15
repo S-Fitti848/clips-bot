@@ -188,14 +188,14 @@ def _grade(fondo: tuple) -> str:
     """El tinte y la viñeta del lugar (escenas.grade), encima de la escena y debajo de los subtítulos."""
     if not P.VOLUMEN:
         return ""
-    return esc.grade(fondo[0] if fondo[0] != "color" else "")
+    return esc.grade(fondo[0] if fondo[0] != "color" else "", fondo[2] if len(fondo) > 2 else "")
 
 
 def _grade_img(fondo: tuple):
     """El mismo tinte y viñeta, rasterizado UNA vez por lugar (como SVG costaba ~30 % de cada cuadro)."""
     if not P.VOLUMEN:
         return None
-    clave = fondo[0]
+    clave = fondo[0] + (f":{fondo[2]}" if len(fondo) > 2 else "")
     img = _W["grades"].get(clave)
     if img is None:
         r = _W["r"]

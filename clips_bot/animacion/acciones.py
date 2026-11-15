@@ -763,7 +763,7 @@ class Escena:
         _cx, cy, _r = pj.cara()
         return x, PISO + float(el.get("escala", 1)) * cy
 
-    def camara(self, tipo: str, fuerte: bool = False) -> list[dict]:
+    def camara(self, tipo: str, fuerte: bool = False, plano: str | None = None) -> list[dict]:
         """Zoom suave siempre (nada queda quieto), paneo, temblor en los golpes, cambio de plano a la mitad
         y, en los momentos FUERTES (el gancho, el giro, el final, una cara de sorpresa o enojo), un
         PRIMER PLANO de la cara del protagonista justo después del golpe (Santi, 2026-11-15)."""
@@ -773,7 +773,15 @@ class Escena:
                   "sacudon": (1.08, 1.12)}.get(tipo, (1.02, 1.09))
         if golpes:
             z0, z1 = max(z0, 1.06), max(z1, 1.06)
+        # más movimiento (visuales, 2026-11-15): de cerca, de lejos o desde abajo, rotando entre escenas
+        if plano == "cerca":
+            z0, z1 = 1.12, 1.38
+        elif plano == "lejos":
+            z0, z1 = 1.32, 1.02
         kf = [{"t": 0, "zoom": z0}, {"t": d, "zoom": z1, "easing": "suave"}]
+        if plano == "contrapicado":   # desde abajo: cerca del piso, mirando hacia arriba, con un leve giro
+            kf = [{"t": 0, "zoom": 1.26, "y": 90, "rotacion": -2.5}, {"t": d, "zoom": 1.18, "y": 30, "rotacion": 1.5,
+                                                                      "easing": "suave"}]
         if tipo == "paneo":
             kf += [{"t": 0, "x": -70}, {"t": d, "x": 70, "easing": "suave"}]
         # cambio de plano (Santi: "medio lento"): en las escenas de más de 2,6 s, a la mitad la cámara
@@ -970,7 +978,7 @@ CAJAS = {"mesa": (150, 0, 226), "estante": (140, 0, 70), "lampara": (110, -150, 
          "martillo": (70, -90, 160), "lamparita": (90, -200, 140), "grafico_sube": (190, -170, 150),
          "grafico_baja": (190, -170, 150), "cartel": (190, -140, 230), "calendario": (130, -144, 130)}
 NO_CHOCAN = {"pedazo", "lamparita", "gancho", "nube", "martillo", "pregunta", "exclamacion", "flecha", "idea_fallida",
-             "polvo", "lineas_mov", "destello", "primer_plano"}
+             "polvo", "lineas_mov", "destello", "primer_plano", "rotulo", "dato", "cita", "cartel_comic", "tito_reaccion"}
 
 
 def _en_mundo(el, t: float):
@@ -1135,9 +1143,40 @@ def semilla_fondo(anio: int, variante: int) -> int:
 TRANSICIONES_OK = ("corte", "fundido", "zoom", "barrido", "iris")
 
 
+PLANOS = ("cerca", "lejos", "contrapicado")
+
+
+def elementos_visuales(vis: dict, dur: float, golpes: list[float], primera: bool) -> tuple[list[dict], list]:
+    """Los elementos de "más visual" de una escena (fijos, en coordenadas de pantalla) y sus sonidos."""
+    els, sfx = [], []
+    if vis.get("rotulo"):
+        t0 = 0.15
+        els.append({"tipo": "prop", "nombre": "rotulo", "texto": vis["rotulo"], "fijo": True, "x": 40, "y": 330,
+                    "desde": t0, "hasta": round(min(dur, t0 + 2.4), 2),
+                    "keyframes": [{"t": t0, "x": -700}, {"t": t0 + 0.3, "x": 40, "easing": "salida"},
+                                  {"t": min(dur, t0 + 2.1), "x": 40}, {"t": min(dur, t0 + 2.4), "x": -700, "easing": "entrada"}]})
+        sfx.append((t0, "whoosh"))
+    centro = [x for x in ("dato", "cita") if vis.get(x)]
+    if centro:
+        k = centro[0]
+        t0 = round(min(dur * 0.35, max(0.3, dur - 1.6)), 2)
+        y = 760 if k == "dato" else 380
+        els.append({"tipo": "prop", "nombre": k, "texto": vis[k], "fijo": True, "x": 540, "y": y, "entrada": "rebote",
+                    "desde": t0, "hasta": round(min(dur, t0 + 1.9), 2)})
+        sfx.append((t0, "pop"))
+    if vis.get("cartel"):
+        tc = round(golpes[0] if golpes else min(dur * 0.4, max(0.2, dur - 1.0)), 2)
+        els.append({"tipo": "prop", "nombre": "cartel_comic", "texto": vis["cartel"], "fijo": True, "x": 540, "y": 900,
+                    "rotacion": -8, "desde": tc, "hasta": round(min(dur, tc + 0.9), 2),
+                    "keyframes": [{"t": tc, "escala": 0.1}, {"t": tc + 0.18, "escala": 0.85, "easing": "rebote"},
+                                  {"t": tc + 0.8, "escala": 0.9}, {"t": tc + 0.9, "escala": 0.05, "easing": "entrada"}]})
+        sfx.append((tc, "golpe"))
+    return els, sfx
+
+
 def escena_accion(spec: dict, dur: float, i: int, primera: bool = False, tono: float = 0.0,
                   anio: int = 2026, variante: int = 0, reservar: str | None = None,
-                  proyectil: str = "pelota") -> tuple[dict, list[tuple[float, str]]]:
+                  proyectil: str = "pelota", visual: dict | None = None) -> tuple[dict, list[tuple[float, str]]]:
     """Una escena del guion → (dict de timeline.Escena, [(segundo local, sfx)]). `anio` y `variante`
     eligen la decoración del fondo; `reservar` deja libre el costado de Tito si después viene la pausa;
     `proyectil` es lo que se tira en la cadena (el protagonista, si se puede tirar)."""
@@ -1205,7 +1244,7 @@ def escena_accion(spec: dict, dur: float, i: int, primera: bool = False, tono: f
     remate = parte in ("giro", "final")
     fuerte = parte in ("gancho", "giro", "final") or bool(cadena) or \
         any((a.get("cara") or "") in ("sorprendido", "enojado") for a in spec.get("actores") or [])
-    camara = e.camara(spec.get("camara") or "fija", fuerte)
+    camara = e.camara(spec.get("camara") or "fija", fuerte, PLANOS[i % 3] if visual is not None else None)
     if remate:   # el remate brilla (Santi, 2026-11-15): alrededor de la cara del primer plano, si lo hay
         pp = getattr(e, "primer_plano_en", None)
         t_d, centro = ((pp[0] + 0.1, (pp[1], pp[2])) if pp else (min(dur * 0.45, max(0.3, dur - 1.0)), (540, 1050)))
@@ -1229,7 +1268,12 @@ def escena_accion(spec: dict, dur: float, i: int, primera: bool = False, tono: f
     tr = spec.get("transicion") if spec.get("transicion") in TRANSICIONES_OK else "barrido"
     if not primera and parte in ("giro", "final") and tr in ("corte", "barrido"):
         tr = "iris"            # transición con estilo hacia el remate
-    d = {"duracion": dur, "fondo": {"tipo": fondo, "semilla": semilla},
+    if visual is not None:   # Así Nació más visual (2026-11-15): rótulo, dato, cita, cartel y la luz del momento
+        nuevos, fx_v = elementos_visuales(visual, dur, sorted(t for t, _ in e.golpes), primera)
+        elementos += nuevos
+        e.sfx += fx_v
+    d = {"duracion": dur, "fondo": {"tipo": fondo, "semilla": semilla,
+                                    **({"momento": visual["momento"]} if visual and visual.get("momento") else {})},
          "transicion": {"tipo": "corte" if primera else tr, "duracion": 0.3 if tr == "iris" else 0.25},
          "camara": camara, "elementos": elementos, "tono": tono}
     sfx = sorted((round(t, 3), s) for t, s in e.sfx if 0 <= t < dur)

@@ -603,7 +603,7 @@ def fondo_puerto(semilla: int = 13) -> str:
     return "".join(p)
 
 
-FONDOS = {"laboratorio": fondo_laboratorio, "hospital": fondo_hospital, "campo": fondo_campo,
+FONDOS = {"mapa_geo": None, "laboratorio": fondo_laboratorio, "hospital": fondo_hospital, "campo": fondo_campo,
           "puerto": fondo_puerto, "casa": fondo_casa, "taller": fondo_taller, "cielo": fondo_cielo, "ciudad": fondo_ciudad, "oficina": fondo_oficina,
           "globo": fondo_globo, "mapa": fondo_globo, "fabrica": fondo_fabrica,
           "tienda": fondo_tienda, "escenario": fondo_escenario}
@@ -706,8 +706,20 @@ TINTE = {"laboratorio": ("#bfe3ff", 0.05), "hospital": ("#d8fff4", 0.05), "campo
 VINETA = 0.34
 
 
-def grade(tipo: str) -> str:
-    """El tinte y la viñeta de ese lugar (SVG en coordenadas de pantalla)."""
+# La luz según el momento (Santi, 2026-11-15): encima del tinte del lugar.
+MOMENTO_LUZ = {"atardecer": ("#ff7a3d", 0.17), "noche": ("#0d1a40", 0.36), "interior": ("#ffcf8a", 0.05)}
+
+
+def grade(tipo: str, momento: str = "") -> str:
+    """El tinte y la viñeta de ese lugar, y la luz del momento (SVG en coordenadas de pantalla)."""
+    luz = ""
+    if momento in MOMENTO_LUZ:
+        c_, op_ = MOMENTO_LUZ[momento]
+        luz = f'<rect width="{W}" height="{H}" fill="{c_}" opacity="{op_}"/>'
+    return _grade_base(tipo) + luz
+
+
+def _grade_base(tipo: str) -> str:
     color, op = TINTE.get(tipo, ("#ffc08a", 0.05))
     borde = mezcla(oscurecer(color, 0.75), P.SOMBRA_TINTE, 0.5)
     return (f'<defs><radialGradient id="vineta" cx="0.5" cy="0.48" r="0.75">'
@@ -744,6 +756,10 @@ def fondo(tipo: str, semilla: int | None = None) -> str:
     """El fondo. Con la semilla nueva (década*100 + variante) las variantes impares salen ESPEJADAS
     (otro "ángulo" del mismo lugar: dos escenas seguidas en la casa no se ven idénticas). Encima va el
     ambiente (texturas, luz, sombras), espejado junto con el lugar."""
+    if tipo == "mapa_geo":     # el mapa con el pin (visuales.py): nunca espejado
+        from . import visuales
+
+        return visuales.svg_mapa(int(semilla or 0))
     f = FONDOS.get(tipo)
     if f is None:
         raise ValueError(f"Fondo desconocido: {tipo!r} (hay {', '.join(sorted(FONDOS))})")
@@ -1187,6 +1203,86 @@ def prop_destello(color: str = P.AMARILLO, **_) -> str:
             f'<path d="M0 -50 Q5 -5 50 0 Q5 5 0 50 Q-5 5 -50 0 Q-5 -5 0 -50 Z" fill="#ffffff"/>')
 
 
+def _partes(texto: str) -> tuple[str, str]:
+    a, _, b = str(texto or "").partition("|")
+    return a.strip(), b.strip()
+
+
+def prop_rotulo(texto: str = "1974 · Budapest", **_) -> str:
+    """Rótulo tipo noticiero (año · lugar), arriba a la izquierda (coordenadas de pantalla: va fijo)."""
+    anio, _, lugar = str(texto).partition(" · ")
+    if not lugar and not anio.strip().isdigit():
+        anio, lugar = "", anio
+    w_a = 30 + 34 * len(anio) if anio else 0
+    w_l = 40 + 30 * len(lugar)
+    out = ""
+    if anio:
+        out += rect(0, 0, w_a, 76, P.ROJO, r=6, ancho=5) + texto_con_borde(anio, w_a / 2, 54, 56, ancho_borde=6)
+    if lugar:
+        out += (rect(w_a, 0, w_l, 76, "#1d3557", r=6, ancho=5)
+                + texto_con_borde(lugar.upper(), w_a + w_l / 2, 52, 46, ancho_borde=6))
+    return out
+
+
+def prop_dato(texto: str = "4 MILLONES|cubos vendidos", **_) -> str:
+    """Un número gigante con qué es abajo, en una placa (fijo, arriba al centro)."""
+    num, que = _partes(texto)
+    tam = 170 if len(num) <= 8 else 120
+    w = max(560, 0.62 * tam * len(num) + 80)
+    return (rect(-w / 2, -tam * 0.95, w, tam * 1.6 + (60 if que else 0), "#fff6dc", r=28)
+            + texto_con_borde(num, 0, tam * 0.35, tam, color=P.AMARILLO, ancho_borde=tam * 0.12)
+            + (texto_con_borde(que.upper(), 0, tam * 0.35 + 78, 48, color=P.BLANCO, ancho_borde=8) if que else ""))
+
+
+def prop_cita(texto: str = "«La cita»|Nombre, cargo", **_) -> str:
+    """Tarjeta de cita: el texto en 2-4 líneas y abajo nombre y cargo (fijo, arriba al centro)."""
+    cita, quien = _partes(texto)
+    palabras, lineas, actual = cita.split(), [], ""
+    for p_ in palabras:
+        if len(actual) + len(p_) + 1 > 24 and actual:
+            lineas.append(actual)
+            actual = p_
+        else:
+            actual = (actual + " " + p_).strip()
+    if actual:
+        lineas.append(actual)
+    lineas = lineas[:4]
+    alto = 90 + 62 * len(lineas) + (70 if quien else 0)
+    out = rect(-470, 0, 940, alto, "#fffdf6", r=26) + rect(-470, 0, 22, alto, P.ROJO, borde=False)
+    for k, l in enumerate(lineas):
+        out += texto_con_borde(l, 0, 86 + 62 * k, 50, color="#1f1a24", borde="#fffdf6", ancho_borde=2)
+    if quien:
+        out += texto_con_borde("— " + quien.upper(), 0, 86 + 62 * len(lineas) + 30, 34, color=P.ROJO,
+                               borde="#fffdf6", ancho_borde=2)
+    return out
+
+
+def prop_cartel_comic(texto: str = "¡BOOM!", **_) -> str:
+    """Estallido tipo cómic con una palabra (en el golpe)."""
+    import math as _m
+
+    puntas = []
+    for k in range(24):
+        r_ = 230 if k % 2 == 0 else 160
+        a = _m.radians(k * 15)
+        puntas.append(f"{n(_m.cos(a) * r_ * 1.25)} {n(_m.sin(a) * r_ * 0.8)}")
+    tam = 92 if len(texto) <= 8 else 70
+    return (f'<path d="M{" L".join(puntas)} Z" fill="{P.AMARILLO}" stroke="{P.CONTORNO}" stroke-width="10" '
+            f'stroke-linejoin="round"/>' + texto_con_borde(texto, 0, tam * 0.35, tam, color=P.ROJO, ancho_borde=12))
+
+
+def prop_tito_reaccion(forma: int = 0, **_) -> str:
+    """Tito en una ventanita redonda reaccionando (0 sorprendido, 1 riéndose, 2 señalando)."""
+    from . import tito as _tito
+
+    cara = _tito.tito_cara_svg()
+    icono = (texto_con_borde("!", 108, -60, 110, color=P.AMARILLO, ancho_borde=12) if forma == 0 else
+             texto_con_borde("JA", 112, -70, 64, color=P.AMARILLO, ancho_borde=10) if forma == 1 else
+             f'<path d="M80 40 L170 40 L150 15 M170 40 L150 65" fill="none" {trazo(ancho=14)}/>')
+    return (circulo(0, 0, 118, "#7cc6ee", ancho=10) + f'<clipPath id="tito_v"><circle r="112"/></clipPath>'
+            + g(cara, 0, 26, escala=0.62) + icono)
+
+
 def icono_pausa() -> str:
     """El "⏸" de la pausa del locutor (dos barras), centrado en (0, 0)."""
     return (circulo(0, 0, 70, "#ffffff", ancho=P.TRAZO_FINO)
@@ -1194,7 +1290,8 @@ def icono_pausa() -> str:
             + rect(10, -36, 20, 72, P.CONTORNO, r=4, borde=False))
 
 
-PROPS = {"primer_plano": prop_primer_plano, "polvo": prop_polvo, "lineas_mov": prop_lineas_mov,
+PROPS = {"rotulo": prop_rotulo, "dato": prop_dato, "cita": prop_cita, "cartel_comic": prop_cartel_comic,
+         "tito_reaccion": prop_tito_reaccion, "primer_plano": prop_primer_plano, "polvo": prop_polvo, "lineas_mov": prop_lineas_mov,
          "destello": prop_destello, "pelota_espuma": prop_pelota_espuma, "juego_mesa": prop_juego_mesa, "hamburguesa": prop_hamburguesa,
          "chocolate": prop_chocolate, "galletitas": prop_galletitas, "auto": prop_auto,
          "telefono_disco": prop_telefono_disco, "radio": prop_radio, "consola": prop_consola,
