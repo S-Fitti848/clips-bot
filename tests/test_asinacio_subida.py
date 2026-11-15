@@ -85,8 +85,8 @@ def test_con_facebook_prendido_tambien_va_el_reel(conn, tmp_path, monkeypatch):
     assert avisos == ["📤 Programado en YouTube.", "📘 Programado en Facebook."]
 
 
-def test_subtitulos_virales_apagados_hasta_el_ok():
-    assert load_settings().animacion.subtitulos_virales is False
+def test_subtitulos_virales_prendidos():
+    assert load_settings().animacion.subtitulos_virales is True     # aprobados por Santi el 2026-11-14
     import inspect
     from clips_bot.animacion import marcas
 

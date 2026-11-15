@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-11-14 | **Versión:** v1.02.0 (desplegado; los subtítulos virales de Así Nació están en la Pi pero APAGADOS: `animacion.subtitulos_virales`) | **Modo:** Fase 2: corriendo solo en la Pi. **Rots APAGADO.** Pequeña Historia (3 por día, madrugada desde las 04:00) y **Así Nació** (1 por día, arma 07:00, publica 19:00 en YouTube y Facebook con ❌ Cancelar), todo al privado de Santi
+**Snapshot:** 2026-11-14 | **Versión:** v1.03.0 (desplegado) | **Modo:** Fase 2: corriendo solo en la Pi. **Rots APAGADO.** Pequeña Historia (3 por día, madrugada desde las 04:00) y **Así Nació** (1 por día, arma 07:00, publica 19:00 en YouTube y Facebook con ❌ Cancelar), todo al privado de Santi
 
 > **SI ESTÁS EMPEZANDO UNA SESIÓN NUEVA, LEÉ §10.** Ahí está qué está hecho, qué quedó a medias,
 > qué falta, y las trampas que ya nos mordieron.
@@ -166,6 +166,12 @@ servicio systemd separado: `clips-bot`).
   (lo que le pasa a un personaje en un episodio, juego o película). Cultura pop sí, solo desde la vida
   real: estreno, lanzamiento, quién lo creó, cómo se hizo, impacto, récords. Nunca la trama. Vale para
   la efeméride y la historia de Facebook, y está en el chequeo del guion.
+- **Así Nació: subtítulos estilo Shorts virales (aprobados por Santi, 2026-11-14; `animacion.subtitulos_virales`):**
+  grupos de 1 a 3 palabras; Montserrat Black (OFL) dibujada como trazos, con contorno negro grueso y
+  sombra suave; cada palabra entra con un "pop" justo cuando la voz la dice (Whisper); las claves (las
+  marca el guion: nombres, números, el giro o el chiste; ≤ 2 por frase) más grandes y amarillas, rojas y
+  temblando cerca de un golpe o en el remate; un emoji dibujado (💥💰😱🤣) como mucho cada 4,5 s, al lado
+  de una clave; en la franja de arriba (y 168-294) sin tapar personajes ni acción.
 - **Videos largos: NO por ahora (decisión de Santi, 2026-09-28).** No quiere videos largos con voz
   de IA. Si más adelante se hacen, van con SU voz grabada, no con Gemini TTS ni Piper.
 - **Sin música agregada en los clips.** Cualquier música es riesgo de Content ID. Si el clip trae
@@ -963,6 +969,9 @@ Problemas abiertos:
 
 ## 9. CHANGELOG
 
+- v1.03.0 (2026-11-14, noche) — Santi aprobó los subtítulos virales de Así Nació
+  (`animacion.subtitulos_virales: true`, la regla va en §1). Pendientes anotados: medir de nuevo cuando
+  ponga disipadores en el chip, y que Lo Encontré respete la pausa para enfriar (en su propio chat).
 - v1.02.0 (2026-11-14, noche) — **Calor de la Pi.** Diagnóstico (solo medir): nunca hubo falta de corriente
   (bit 16 de `get_throttled` en 0), sí frenadas por calor; sin overclock (1,8 GHz de fábrica); ningún
   proceso consume de más en reposo; Lo Encontré y clips comparten el turno pesado (no se superponen).
@@ -2494,7 +2503,7 @@ clips" queda sin uso mientras Rots siga apagado.
 
 | | |
 |---|---|
-| commit | v1.02.0 (`8f64627` o posterior), desplegado. Los subtítulos virales están en la Pi pero APAGADOS (`animacion.subtitulos_virales: false`): con el OK de Santi, ponerlo en true, push, pull y reiniciar la escucha. |
+| commit | v1.03.0, desplegado. Subtítulos virales de Así Nació PRENDIDOS (`animacion.subtitulos_virales: true`, aprobados el 14/11). |
 | ventilador | Fan SHIM (GPIO 18) controlado por `ventilador.service` de usuario (55/48 °C, siempre en renders); x264 con 3 hilos; pausa para enfriar entre renders (65 °C, máx. 10 min) |
 | timers y escucha | `clips-bot.timer`, `clips-bot-efemeride.timer`, `clips-bot-telegram` activos |
 | Así Nació | `animacion_dia` = 2026-11-14 (marcado a mano): el primer video real sale el **15/11** (arma 07:00, publica 19:00) |
@@ -2542,15 +2551,15 @@ clips" queda sin uso mientras Rots siga apagado.
 
 ### Esperando respuesta de Santi (NO programar sin su OK)
 
-- **Calor:** el Fan SHIM solo no alcanza (pico ~86 °C igual, frenadas de ffmpeg 35 → 17 %). Opciones
-  pendientes de su OK: 1 proceso de cairosvg en la animación (`animacion.procesos: 1`, ~misma velocidad
-  según la medición del 14/11), `arm_boost=0` (1,5 GHz, necesita su sudo y reiniciar), disipadores en el
-  chip debajo del Fan SHIM, o una caja/disipador mejor.
-- **Subtítulos virales de Así Nació:** mandados los dos Nerf (motor actual y Remotion). Con su OK:
-  `animacion.subtitulos_virales: true` + deploy + reiniciar la escucha, y sumar las reglas al §1 ("1-3 palabras, Montserrat Black
-  como trazos, pop con Whisper, arriba y=168-294; claves del guion (`claves`/`emoji`, Haiku si faltan)
-  ≤ 2 por frase, amarillas y rojas con temblor en impactos/remate; emojis dibujados ≤ 1 cada 4,5 s al
-  lado de una clave; si no entra, se achica la clave y después el grupo").
+- **Calor:** Santi va a comprar **disipadores para el chip** (debajo del Fan SHIM). **Cuando avise que los
+  puso, medir de nuevo** con el mismo render de prueba del 14/11 (antes: ffmpeg pico 86,2 °C, 1.434 MHz de
+  media, frenada 17 %; animación pico 86,2 °C, frenada 33 %) y comparar. Otra opción si no alcanza:
+  `arm_boost=0` (1,5 GHz; necesita su sudo y reiniciar).
+- **Lo Encontré no respeta la pausa para enfriar entre renders** (usa su propio `src/bot/turno.py`, que
+  lee y escribe el mismo turno pero sin mirar la temperatura ni `fin_trabajo_pesado`). Pendiente para
+  **arreglarlo en el chat de bot-videos** (este repo no lo toca): que antes de tomar el turno espere si
+  la CPU está arriba de 65 °C en los 10 min que siguen al último render, igual que `db.tomar_turno` de
+  clips, y que al soltarlo anote `fin_trabajo_pesado`.
 - **Remotion sí o no** para Así Nació. Si sí: conectar `marcas.armar_video` a Remotion detrás de un
   interruptor (motor actual de respaldo), revisión visual sobre sus cuadros, `npm ci` en
   `~/clips/remotion`, render de 10-12 min (cabe desde las 07:00), redibujar `juego_mesa`,
