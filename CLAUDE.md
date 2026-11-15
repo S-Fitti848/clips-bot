@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-11-14 | **Versión:** v1.01.0 (la Pi en v1.00.0 `17ac748`: los subtítulos virales `8a7e7b1` esperan el OK de Santi) | **Modo:** Fase 2: corriendo solo en la Pi. **Rots APAGADO.** Pequeña Historia (3 por día, madrugada desde las 04:00) y **Así Nació** (1 por día, arma 07:00, publica 19:00 en YouTube y Facebook con ❌ Cancelar), todo al privado de Santi
+**Snapshot:** 2026-11-14 | **Versión:** v1.02.0 (desplegado; los subtítulos virales de Así Nació están en la Pi pero APAGADOS: `animacion.subtitulos_virales`) | **Modo:** Fase 2: corriendo solo en la Pi. **Rots APAGADO.** Pequeña Historia (3 por día, madrugada desde las 04:00) y **Así Nació** (1 por día, arma 07:00, publica 19:00 en YouTube y Facebook con ❌ Cancelar), todo al privado de Santi
 
 > **SI ESTÁS EMPEZANDO UNA SESIÓN NUEVA, LEÉ §10.** Ahí está qué está hecho, qué quedó a medias,
 > qué falta, y las trampas que ya nos mordieron.
@@ -963,6 +963,20 @@ Problemas abiertos:
 
 ## 9. CHANGELOG
 
+- v1.02.0 (2026-11-14, noche) — **Calor de la Pi.** Diagnóstico (solo medir): nunca hubo falta de corriente
+  (bit 16 de `get_throttled` en 0), sí frenadas por calor; sin overclock (1,8 GHz de fábrica); ningún
+  proceso consume de más en reposo; Lo Encontré y clips comparten el turno pesado (no se superponen).
+  El ventilador es un **Pimoroni Fan SHIM** (GPIO 18) y nadie lo controlaba. Ahora: (1) `ventilador.py`
+  + servicio de USUARIO `ventilador.service` (`loginctl enable-linger santi`, arranca solo con la Pi;
+  `systemctl --user status ventilador`, log en `journalctl _SYSTEMD_USER_UNIT=ventilador.service`): prende
+  desde 55 °C, apaga debajo de 48 °C, siempre prendido con el turno pesado tomado, pin en alto si el
+  servicio se cae (`pinctrl`, sin sudo); (2) pausa para enfriar: el turno pesado no arranca un render nuevo
+  arriba de 65 °C en los 10 min que siguen al anterior (`db.TEMP_ARRANQUE_C`, `PAUSA_MAX_S`); (3) x264 con
+  3 hilos en todos los encodes (`media.X264`, `CLIPS_FFMPEG_HILOS`). Medido con el mismo render sintético
+  (antes → después): ffmpeg 1.252 → 1.434 MHz de media y frenada 35 % → 17 % del tiempo, pero el pico sigue
+  en ~86 °C y tarda 755 → 840 s; la animación (2 procesos de cairosvg + ffmpeg) no mejoró (31 → 33 %).
+  Conclusión: el Fan SHIM solo no alcanza a carga completa. Los subtítulos virales de Así Nació quedaron
+  detrás de `animacion.subtitulos_virales: false` (así se pudo desplegar). 1417 tests OK.
 - v1.01.0 (2026-11-14, noche) — **Subtítulos estilo Shorts virales en Así Nació** (commit `8a7e7b1`,
   en los dos motores, **NO desplegado en la Pi** hasta el OK de Santi): grupos de 1-3 palabras,
   Montserrat Black (SIL OFL 1.1, `assets/fuentes/` con su OFL.txt) dibujada como trazos (`letra.py`,
@@ -2480,7 +2494,8 @@ clips" queda sin uso mientras Rots siga apagado.
 
 | | |
 |---|---|
-| commit | **`17ac748`** (v1.00.0). **OJO: GitHub tiene uno más nuevo, `8a7e7b1` (subtítulos virales de Así Nació), que la Pi NO tiene a propósito**: espera el OK de Santi. Cuando lo dé: `git pull` en la Pi y reiniciar la escucha (sin trabajo pesado andando). Cualquier otro deploy antes de eso también lo traería: si hay que desplegar otra cosa, avisar o esperar el OK. |
+| commit | v1.02.0 (`8f64627` o posterior), desplegado. Los subtítulos virales están en la Pi pero APAGADOS (`animacion.subtitulos_virales: false`): con el OK de Santi, ponerlo en true, push, pull y reiniciar la escucha. |
+| ventilador | Fan SHIM (GPIO 18) controlado por `ventilador.service` de usuario (55/48 °C, siempre en renders); x264 con 3 hilos; pausa para enfriar entre renders (65 °C, máx. 10 min) |
 | timers y escucha | `clips-bot.timer`, `clips-bot-efemeride.timer`, `clips-bot-telegram` activos |
 | Así Nació | `animacion_dia` = 2026-11-14 (marcado a mano): el primer video real sale el **15/11** (arma 07:00, publica 19:00) |
 | pedidos pendientes en `bot_estado` | `analisis_video_pedido` = `UH4XoZ0rMuE` (el Short de Intel: el análisis le llega a Santi apenas Analytics tenga sus datos); `mezcla_propuesta` sin setear (se manda una vez cuando tecnología ≥ 1,3× Latinoamérica con ≥ 4 y ≥ 6 videos de 3 días) |
@@ -2527,8 +2542,12 @@ clips" queda sin uso mientras Rots siga apagado.
 
 ### Esperando respuesta de Santi (NO programar sin su OK)
 
+- **Calor:** el Fan SHIM solo no alcanza (pico ~86 °C igual, frenadas de ffmpeg 35 → 17 %). Opciones
+  pendientes de su OK: 1 proceso de cairosvg en la animación (`animacion.procesos: 1`, ~misma velocidad
+  según la medición del 14/11), `arm_boost=0` (1,5 GHz, necesita su sudo y reiniciar), disipadores en el
+  chip debajo del Fan SHIM, o una caja/disipador mejor.
 - **Subtítulos virales de Así Nació:** mandados los dos Nerf (motor actual y Remotion). Con su OK:
-  `git pull` en la Pi + reiniciar la escucha, y sumar las reglas al §1 ("1-3 palabras, Montserrat Black
+  `animacion.subtitulos_virales: true` + deploy + reiniciar la escucha, y sumar las reglas al §1 ("1-3 palabras, Montserrat Black
   como trazos, pop con Whisper, arriba y=168-294; claves del guion (`claves`/`emoji`, Haiku si faltan)
   ≤ 2 por frase, amarillas y rojas con temblor en impactos/remate; emojis dibujados ≤ 1 cada 4,5 s al
   lado de una clave; si no entra, se achica la clave y después el grupo").
