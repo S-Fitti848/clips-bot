@@ -4770,6 +4770,8 @@ def _chequeo_subidas_tick(conn, tg, cliente_de=None) -> int:
     cliente_de = cliente_de or youtube.Cliente
     hechos = 0
     for s in db.subidas_sin_chequear(conn, minutos=2):
+        if str(s["canal"]).startswith("facebook"):     # los Reels no se chequean con YouTube
+            continue
         try:
             e = cliente_de(s["canal"]).estado_video(s["video_id"])
         except Exception as err:      # sin red o sin token: se reintenta en la vuelta siguiente

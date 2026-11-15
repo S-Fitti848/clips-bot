@@ -133,7 +133,11 @@ def test_ninguno_llega_a_8_no_sale(conn):
             return "texto"
 
     cliente = ClienteFalso({"candidatos": [_nota(0, 7)]})
-    with pytest.raises(mk.SinCandidato, match="8"):
+    # 2026-11-15: no es "no sale": esas marcas quedan afuera hoy y se reintenta con otras en 1 h
+    with pytest.raises(mk.GuionesFallidos, match="8"):
+        mk.proponer(conn, cliente, Wiki(), HOY, [marca()], n=1)
+    assert marca().nombre in mk.fallidos_de(conn, HOY)
+    with pytest.raises(mk.SinCandidato):                      # ya no queda ninguna: ahí sí, no sale
         mk.proponer(conn, cliente, Wiki(), HOY, [marca()], n=1)
 
 

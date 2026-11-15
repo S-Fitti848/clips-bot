@@ -1435,7 +1435,10 @@ def proponer(conn, cliente, wiki, hoy: date, catalogo: list[Marca] | None = None
     avisar("candidatos: " + ", ".join(f"{m.nombre}/{a}" for m, a, _ in textos) +
            f" → pasan {len(elegidos)}: " + ", ".join(f"{e.marca.nombre}/{e.angulo} {e.promedio}" for e in elegidos))
     if not elegidos:
-        raise SinCandidato(f"ninguno de los {len(textos)} candidatos de hoy llegó a {minimo:g} de promedio")
+        # quedan afuera hoy y el reintento (en 1 h) prueba con otras: no se pierde el día (2026-11-15)
+        anotar_fallidos(conn, hoy, [m.nombre for m, _, _ in textos])
+        raise GuionesFallidos(f"ninguno de los {len(textos)} candidatos llegó a {minimo:g} de promedio; "
+                              "pruebo con otros en un rato")
     errores = []
     fila0 = ultima_fila_uso(conn) if conn is not None else 0
     for e in elegidos[:max_intentos]:
