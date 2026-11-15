@@ -130,3 +130,53 @@ def test_paso_de_cada_funcion():
     assert bitacora.paso_de("locales.clasificar") == "elegir"
     assert bitacora.paso_de("marcas.revisar_visual") == "revision_visual"
     assert bitacora.paso_de("efemerides.final_que_paga") == "final"
+
+
+def test_descartados_con_paso_motivo_costo_y_fotos(conn, monkeypatch):
+    monkeypatch.setattr(bitacora._Muestreo, "run", lambda self: None)
+    bitacora.abrir(conn, "tok", "pequena_historia", "latinoamerica")
+    bitacora.descarte("1907 Nacozari", "puntaje 6.50 < 8", "puntaje", costo=0.004)
+    desde = bitacora.fila_actual()
+    _uso(conn, "efemerides.escribir_guion", claude.SONNET, 8000, 4000)
+    _uso(conn, "efemerides.pedir", claude.SONNET, 15000, 4000)
+    bitacora.paso("fotos")
+    bitacora.descarte("1911 Puebla", "solo 3 fotos de época", desde_fila=desde,
+                      buscado=["1911 Puebla house", "1911 revolutionaries"], encontrado="3 fotos de época que sirven")
+    bitacora.paso("voz")
+    bitacora.fallo("", "Gemini TTS sin cuota")                        # el elegido que se cae en la voz
+    bitacora.cerrar(conn, "fallido")
+    d = bitacora.leer_descartes(conn, "2000-01-01")
+    assert [x["paso"] for x in d] == ["puntaje", "fotos", "voz"]
+    assert d[1]["costo_usd"] == pytest.approx(0.08 + 0.038 + 0.008 * 0, rel=0.2)
+    assert d[1]["detalle"]["buscado"][0] == "1911 Puebla house"
+    texto = bitacora.texto(bitacora.leer(conn, "2000-01-01"), 7, d)
+    assert "Candidatos descartados</b>: 3" in texto and "ej. fotos" in texto
+
+
+def test_sin_bitacora_activa_no_anota_nada(conn):
+    bitacora.descarte("x", "y", "puntaje")
+    bitacora.asegurar_tabla(conn)
+    assert bitacora.leer_descartes(conn, "2000-01-01") == []
+
+
+def test_marcas_que_no_llegan_al_puntaje_quedan_anotadas(conn, monkeypatch):
+    from clips_bot.animacion import marcas as mk
+
+    monkeypatch.setattr(bitacora._Muestreo, "run", lambda self: None)
+
+    class Wiki:
+        def texto(self, lang, titulo):
+            return "texto"
+
+    class Cliente:
+        def json(self, *a, **k):
+            return json.dumps({"candidatos": [{"indice": 0, "sensible": False, "dato": "",
+                                               **{c: 5 for c in mk.CRITERIOS}}]})
+
+    m = mk.cargar_catalogo()[0]
+    bitacora.abrir(conn, "asinacio_x", "asinacio", "marcas")
+    with pytest.raises(mk.GuionesFallidos):
+        mk.proponer(conn, Cliente(), Wiki(), datetime(2026, 11, 20).date(), [m], n=1)
+    bitacora.cerrar(conn, "fallido")
+    d = bitacora.leer_descartes(conn, "2000-01-01")
+    assert d and d[0]["paso"] == "puntaje" and "promedio 5.00 < 8" in d[0]["motivo"]

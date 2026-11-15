@@ -2676,6 +2676,7 @@ def proponer(wiki: Wiki, cliente, dia: date, carpeta: Path, avisar=log.info,
                           + (f" (con «{hecho}»)" if hecho else "") + ".")
     escritor = texto or cliente     # 2026-11-12: el texto con Claude; `cliente` (Gemini) para las fotos
     notas: dict = {}
+    fila_elegir = bitacora.fila_actual()
     # Puntuar y elegir con Haiku (Santi, 2026-11-15: "Sonnet solo para escribir y corregir guiones").
     elegidos = elegir(puntuador or escritor, candidatos, tema=tema, notas=notas)
     if tema and not elegidos:
@@ -2687,6 +2688,12 @@ def proponer(wiki: Wiki, cliente, dia: date, carpeta: Path, avisar=log.info,
             n = notas.get(i, {})
             avisar(f"  {n.get('puntaje', 0):.2f} {candidatos[i].anio} {candidatos[i].texto[:60]} {n}")
         flojos = [i for i, _ in elegidos if notas.get(i, {}).get("puntaje", 0) < PUNTAJE_TEC_MIN]
+        if flojos:   # a la bitácora: los que no llegan, con su parte del pedido de puntaje
+            parte = bitacora.costo_entre_activa(fila_elegir) / max(1, len(elegidos))
+            for i in flojos:
+                bitacora.descarte(f"{candidatos[i].anio} {candidatos[i].texto[:90]}",
+                                  f"puntaje {notas.get(i, {}).get('puntaje', 0):.2f} < {PUNTAJE_TEC_MIN:g}",
+                                  "puntaje", costo=parte)
         elegidos = sorted([x for x in elegidos if x[0] not in flojos],
                           key=lambda x: -notas.get(x[0], {}).get("puntaje", 0))
         if not elegidos:
@@ -2710,6 +2717,7 @@ def proponer(wiki: Wiki, cliente, dia: date, carpeta: Path, avisar=log.info,
         avisar(f"{e.anio} {e.texto[:60]}: {len(fotos)} fotos del artículo pasan las reglas {desc}")
         fuente = texto_fuente(wiki, e)
         guiones += 1
+        fila_h, g = bitacora.fila_actual(), None
         try:
             bitacora.paso("guion")
             g = escribir_guion(escritor, e, fuente, correccion, hablado=hablado and not corto,
@@ -2724,12 +2732,19 @@ def proponer(wiki: Wiki, cliente, dia: date, carpeta: Path, avisar=log.info,
             # Menos de 4 fotos de época: al siguiente. Se guarda el que más tenga, por si ninguno llega.
             avisar(f"  {pocas}")
             fallas.append(f"{e.anio}: {pocas}")
+            bitacora.descarte(f"{e.anio} {e.texto[:90]}", str(pocas), "fotos", desde_fila=fila_h,
+                              buscado=list(getattr(pocas.guion, "mostrar", []) or []),
+                              encontrado=f"{pocas.disponibles} fotos de época que sirven ({len(pocas.pool)} en el pool)")
             if respaldo_sirve(pocas) and (respaldo is None or pocas.disponibles > respaldo[3]):
                 respaldo = (e, fuente, pocas, pocas.disponibles)
             continue
         except NarrarError as err:
             avisar(f"  no salió: {err}")
             fallas.append(f"{e.anio}: {err}")
+            en_fotos = g is not None
+            bitacora.descarte(f"{e.anio} {e.texto[:90]}", str(err), "fotos" if en_fotos else "guion", desde_fila=fila_h,
+                              buscado=list(g.mostrar) if en_fotos else None,
+                              encontrado=f"{len(fotos)} fotos del artículo; {str(err)[:150]}" if en_fotos else "")
             continue
         for k in g.descartadas:        # para poder juzgar si el descarte visual es razonable
             if 0 <= k < len(pool):

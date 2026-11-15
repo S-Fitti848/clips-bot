@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-11-15 | **Versión:** v1.09.0 (desplegado) | **Modo:** Fase 2: corriendo solo en la Pi. **Rots APAGADO.** Pequeña Historia (3 por día, madrugada desde las 04:00) (publicación sin aprobar: llegan con ❌ Cancelar) y **Así Nació** (2 por día, desde las 07:00, publican 13:00 y 20:00 en YouTube y Facebook con ❌ Cancelar), todo al privado de Santi
+**Snapshot:** 2026-11-15 | **Versión:** v1.10.0 (desplegado) | **Modo:** Fase 2: corriendo solo en la Pi. **Rots APAGADO.** Pequeña Historia (3 por día, madrugada desde las 04:00) (publicación sin aprobar: llegan con ❌ Cancelar) y **Así Nació** (2 por día, desde las 07:00, publican 13:00 y 20:00 en YouTube y Facebook con ❌ Cancelar), todo al privado de Santi
 
 > **SI ESTÁS EMPEZANDO UNA SESIÓN NUEVA, LEÉ §10.** Ahí está qué está hecho, qué quedó a medias,
 > qué falta, y las trampas que ya nos mordieron.
@@ -1030,6 +1030,15 @@ Problemas abiertos:
 
 ## 9. CHANGELOG
 
+- v1.10.0 (2026-11-15, tarde) — **Candidatos descartados en la bitácora** (Santi; Lo Encontré lo hace él en su
+  chat). Tabla `candidatos_descartados`: cada marca o historia que se cae antes de armar el video, con el paso
+  (puntaje, fotos, guion, voz, render, otro), el motivo concreto, lo que costó en Claude hasta ahí (en el
+  puntaje, su parte del pedido; en guion y fotos, lo gastado desde que se empezó con ese candidato) y, en
+  fotos, qué se buscó (`mostrar` de cada frase) y qué se encontró. Se anotan: marcas debajo de 8 o sensibles y
+  guiones que no validan (Así Nació); hechos de tecnología debajo de 7,5; historias de Latinoamérica debajo del
+  puntaje; guion o fotos que fallan en los dos; y el video ya elegido que falla en la voz o el render. Sale en
+  `/costos` y en el resumen de los lunes (por paso: cuántos, cuánto costaron, motivos más repetidos y un
+  ejemplo de fotos). Nada más cambió. 1463 tests OK.
 - v1.09.0 (2026-11-15, tarde) — **Bitácora de cada video** (Santi: "para después mejorar costos y tiempos";
   `bitacora.py`, tabla `videos_registro`, formato común en `docs/registro-videos.md`). Por video: canal y
   formato, costo de Claude por paso (elegir, guion, corrección, fotos, revisión visual, final, dibujos) con

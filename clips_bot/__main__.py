@@ -3878,8 +3878,9 @@ def _texto_costos(conn, dias: int = 7, settings: Settings | None = None) -> str:
     """/costos: la bitácora de los últimos `dias` días (este bot y Lo Encontré, mismo formato)."""
     settings = settings or load_settings()
     desde = (datetime.now(AR).date() - timedelta(days=max(1, dias) - 1)).isoformat()
-    filas = bitacora.leer(conn, desde, [settings.efemerides.lo_encontre_db])
-    return bitacora.texto(filas, dias)
+    otras = [settings.efemerides.lo_encontre_db]
+    filas = bitacora.leer(conn, desde, otras)
+    return bitacora.texto(filas, dias, bitacora.leer_descartes(conn, desde, otras))
 
 
 COSTOS_SEMANA = "costos_semana_enviado"   # bot_estado: el lunes (AR) cuyo resumen semanal ya salió
@@ -3895,8 +3896,10 @@ def _costos_semana_tick(conn, tg: TelegramClient, settings: Settings, ahora=None
         return
     db.set_valor(conn, COSTOS_SEMANA, lunes)
     desde = (ahora.date() - timedelta(days=7)).isoformat()
-    filas = [f for f in bitacora.leer(conn, desde, [settings.efemerides.lo_encontre_db]) if f["dia"] < lunes]
-    texto = bitacora.texto(filas, 7).replace("Costos y tiempos, últimos 7 días", "Resumen de la semana")
+    otras = [settings.efemerides.lo_encontre_db]
+    filas = [f for f in bitacora.leer(conn, desde, otras) if f["dia"] < lunes]
+    descartes = [d for d in bitacora.leer_descartes(conn, desde, otras) if d["dia"] < lunes]
+    texto = bitacora.texto(filas, 7, descartes).replace("Costos y tiempos, últimos 7 días", "Resumen de la semana")
     if filas:
         texto += "\n\n<b>Ideas para bajar costo o tiempo</b>:\n" + "\n".join(f"• {i}" for i in bitacora.ideas(filas))
     tg.send_message(DUENO, texto)

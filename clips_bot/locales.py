@@ -788,7 +788,9 @@ def proponer(wiki: ef.Wiki, sonnet, haiku, gemini, dia: date, carpeta: Path, avi
                              + (" (sin contar las que ya salieron hoy)" if excluir else ""))
     lista = otro_pais_primero(lista, evitar_paises)
     # Puntúa Haiku (Santi, 2026-11-15: Sonnet solo para escribir y corregir guiones).
+    fila_elegir = bitacora.fila_actual()
     elegidos = elegir(puntuador or sonnet, lista[:A_PUNTUAR], cuantos=A_PUNTUAR)
+    parte_puntaje = bitacora.costo_entre_activa(fila_elegir) / max(1, len(lista[:A_PUNTUAR]))
     # Ni el mismo hecho ni la misma historia contada desde otra línea del día (2026-11-13: el 14/11 La
     # Pola aparece como nacimiento y como fusilamiento, con el mismo artículo).
     elegidos = [x for x in elegidos if x[0].texto not in (excluir or set()) and x[1] not in (excluir or set())]
@@ -809,6 +811,13 @@ def proponer(wiki: ef.Wiki, sonnet, haiku, gemini, dia: date, carpeta: Path, avi
                 avisar(f"ninguna de {PUNTAJE_MIN:g}: sale la mejor ({mejor[0].clasif.get('puntaje'):.2f}, "
                        f"piso {piso_alternativo:g})")
                 elegidos = [mejor]
+        # a la bitácora: las que no pasan el puntaje, con su parte del pedido (Santi, 2026-11-15)
+        quedan = {id(c) for c, _, _ in elegidos}
+        for c, _, _ in todos_ok:
+            if id(c) not in quedan:
+                bitacora.descarte(f"{c.anio} {c.clasif.get('lugar') or ''}: {c.texto[:80]}",
+                                  f"puntaje {c.clasif.get('puntaje', 0):.2f} < {PUNTAJE_MIN:g}", "puntaje",
+                                  costo=parte_puntaje)
         # Las mejores primero (el calendario igual manda).
         elegidos.sort(key=lambda x: (not en_calendario(x[0]), -x[0].clasif.get("puntaje", 0)))
         if not elegidos:
@@ -838,6 +847,8 @@ def proponer(wiki: ef.Wiki, sonnet, haiku, gemini, dia: date, carpeta: Path, avi
             fuente += "\n" + wiki.texto("es", art_lugar)[:6000]
         lugar = str(c.clasif.get("lugar") or "").strip()
         avisar(f"{e.anio} {lugar}: {len(fotos)} fotos del hecho y del lugar")
+        fila_h, g = bitacora.fila_actual(), None
+        nombre_c = f"{c.anio} {lugar}: {c.texto[:80]}"
         try:
             bitacora.paso("guion")
             g = ef.escribir_guion(sonnet, e, fuente, sistema=SISTEMA_GUION_CORTO if corto else SISTEMA_GUION_LOCAL,
@@ -853,12 +864,19 @@ def proponer(wiki: ef.Wiki, sonnet, haiku, gemini, dia: date, carpeta: Path, avi
         except ef.PocasFotos as pocas:
             avisar(f"  {pocas}")
             fallas.append(f"{e.anio}: {pocas}")
+            bitacora.descarte(nombre_c, str(pocas), "fotos", desde_fila=fila_h,
+                              buscado=list(getattr(pocas.guion, "mostrar", []) or []),
+                              encontrado=f"{pocas.disponibles} fotos de época que sirven ({len(pocas.pool)} en el pool)")
             if ef.respaldo_sirve(pocas) and (respaldo is None or pocas.disponibles > respaldo[3]):
                 respaldo = (e, fuente, pocas, pocas.disponibles, c)
             continue
         except ef.NarrarError as err:
             avisar(f"  no salió: {err}")
             fallas.append(f"{e.anio}: {err}")
+            en_fotos = g is not None
+            bitacora.descarte(nombre_c, str(err), "fotos" if en_fotos else "guion", desde_fila=fila_h,
+                              buscado=list(g.mostrar) if en_fotos else None,
+                              encontrado=f"{len(fotos)} fotos del hecho y del lugar; {str(err)[:150]}" if en_fotos else "")
             continue
         return ef.Propuesta(fecha=dia.isoformat(), evento=e.a_dict(), fotos=[f.a_dict() for f in pool],
                             reserva=[], guion=g.a_dict(), fuente=fuente[:20000], descartes=descartes,

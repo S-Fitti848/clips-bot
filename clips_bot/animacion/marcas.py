@@ -314,7 +314,8 @@ class Elegido:
         return round(sum(self.notas[c] for c in CRITERIOS) / len(CRITERIOS), 2)
 
 
-def elegir(cliente, cands: list[tuple[Marca, str, str]], minimo: float = PUNTAJE_MIN) -> list[Elegido]:
+def elegir(cliente, cands: list[tuple[Marca, str, str]], minimo: float = PUNTAJE_MIN,
+           todos: dict | None = None) -> list[Elegido]:
     """Los candidatos (marca, ángulo, extracto) puntuados por el modelo; quedan los de promedio ≥
     `minimo` que no son sensibles, de mejor a peor. Lista vacía = ninguno llega."""
     if not cands:
@@ -325,10 +326,16 @@ def elegir(cliente, cands: list[tuple[Marca, str, str]], minimo: float = PUNTAJE
     out = []
     for c in d.get("candidatos") or []:
         i = c.get("indice")
-        if not isinstance(i, int) or not 0 <= i < len(cands) or c.get("sensible"):
+        if not isinstance(i, int) or not 0 <= i < len(cands):
+            continue
+        if c.get("sensible"):
+            if todos is not None:
+                todos[i] = "tema sensible"
             continue
         notas = {k: max(1, min(10, int(c.get(k) or 1))) for k in CRITERIOS}
         e = Elegido(cands[i][0], cands[i][1], notas, str(c.get("dato") or ""))
+        if todos is not None:
+            todos[i] = e.promedio
         if e.promedio >= minimo and all(x.marca.nombre != e.marca.nombre for x in out):
             out.append(e)
     return sorted(out, key=lambda e: -e.promedio)
@@ -1580,7 +1587,20 @@ def proponer(conn, cliente, wiki, hoy: date, catalogo: list[Marca] | None = None
             textos.append((m, a, extracto(wiki.texto("es", m.wiki_es), a)))
         except Exception as e:
             avisar(f"no pude leer el artículo de {m.nombre}: {str(e)[:120]}")
-    elegidos = elegir(revisor or cliente, textos, minimo)   # puntúa Haiku (2026-11-15); Sonnet escribe
+    fila_elegir = bitacora.fila_actual()
+    notas_todas: dict = {}
+    elegidos = elegir(revisor or cliente, textos, minimo, notas_todas)   # puntúa Haiku (2026-11-15); Sonnet escribe
+    # los que no llegan al puntaje: a la bitácora, con su parte del pedido (Santi, 2026-11-15)
+    if conn is not None and textos:
+        parte = bitacora.costo_entre(conn, fila_elegir, bitacora.fila_actual()) / len(textos) if fila_elegir else 0.0
+        pasan = {(x.marca.nombre, x.angulo) for x in elegidos}
+        for i_, (m_, a_, _) in enumerate(textos):
+            if (m_.nombre, a_) in pasan:
+                continue
+            nota = notas_todas.get(i_)
+            motivo = (nota if isinstance(nota, str) else
+                      f"promedio {nota:.2f} < {minimo:g}" if isinstance(nota, (int, float)) else "no lo puntuó")
+            bitacora.descarte(f"{m_.nombre}/{a_}", motivo, "puntaje", costo=parte)
     avisar("candidatos: " + ", ".join(f"{m.nombre}/{a}" for m, a, _ in textos) +
            f" → pasan {len(elegidos)}: " + ", ".join(f"{e.marca.nombre}/{e.angulo} {e.promedio}" for e in elegidos))
     if not elegidos:
@@ -1596,11 +1616,13 @@ def proponer(conn, cliente, wiki, hoy: date, catalogo: list[Marca] | None = None
             errores.append(f"corté: este video ya gastó más de US$ {TOPE_USD_VIDEO:g} de Claude")
             break
         fuente = fuente_de(wiki, e.marca)
+        fila_g = bitacora.fila_actual()
         try:
             return e, escribir_guion(cliente, e, fuente, reintentos_guion, avisar=avisar, revisor=revisor,
                                      ganchos_previos=ganchos_recientes(conn)), fuente
         except GuionInvalido as err:
             errores.append(str(err))
+            bitacora.descarte(f"{e.marca.nombre}/{e.angulo}", str(err).split(": ", 1)[-1], "guion", desde_fila=fila_g)
     anotar_fallidos(conn, hoy, [e.marca.nombre for e in elegidos[:max_intentos]])
     raise GuionesFallidos("ningún guion pasó la validación (esas marcas quedan afuera hoy): "
                           + " | ".join(errores)[:600])

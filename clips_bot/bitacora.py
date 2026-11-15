@@ -46,6 +46,27 @@ TABLA = """CREATE TABLE IF NOT EXISTS videos_registro (
     detalle      TEXT DEFAULT '{}'   -- JSON: etapas, claude por paso, voces, tramos
 )"""
 
+# Candidatos descartados antes de armar el video (Santi, 2026-11-15): cada historia o marca que se cae, con
+# el paso (puntaje, fotos, guion, voz, render, otro), el motivo concreto, lo que costó en Claude hasta ahí y,
+# si fue por fotos, qué se buscó y qué se encontró.
+TABLA_DESCARTES = """CREATE TABLE IF NOT EXISTS candidatos_descartados (
+    n          INTEGER PRIMARY KEY AUTOINCREMENT,
+    video_id   TEXT DEFAULT '',     -- la fila de videos_registro de esa corrida
+    bot        TEXT NOT NULL,
+    canal      TEXT NOT NULL,
+    formato    TEXT NOT NULL,
+    dia        TEXT NOT NULL,       -- AR
+    ts         TEXT NOT NULL,       -- UTC ISO
+    candidato  TEXT NOT NULL,       -- la marca/ángulo o el hecho
+    paso       TEXT NOT NULL,       -- puntaje | fotos | guion | voz | render | otro
+    motivo     TEXT DEFAULT '',
+    costo_usd  REAL DEFAULT 0,      -- Claude gastado en ESE candidato hasta que se cayó
+    detalle    TEXT DEFAULT '{}'    -- JSON: en fotos, {"buscado": [...], "encontrado": "..."}
+)"""
+PASOS_DESCARTE = ("puntaje", "fotos", "guion", "voz", "render", "otro")
+ETAPA_A_PASO = {"busqueda": "puntaje", "guion": "guion", "fotos": "fotos", "dibujos": "otro", "voz": "voz",
+                "whisper": "voz", "revision": "render", "render": "render", "subida": "otro"}
+
 # Paso de cada función que llama a un modelo (el resto cuenta como "otros").
 PASOS = (
     ("correccion", ("correcciones.",)),
@@ -77,6 +98,7 @@ def ahora_utc() -> datetime:
 
 def asegurar_tabla(conn) -> None:
     conn.execute(TABLA)
+    conn.execute(TABLA_DESCARTES)
     conn.commit()
 
 
@@ -133,6 +155,7 @@ class Bitacora:
         self.fallo_paso = previo.get("fallo_paso", "")
         self.fallo_motivo = previo.get("fallo_motivo", "")
         self.extra: dict = dict(det.get("extra") or {})
+        self.conn = None                 # la base del tramo (para anotar los descartes al momento)
         self._muestreo = _Muestreo(self)
         self._muestreo.start()
 
@@ -153,6 +176,7 @@ def abrir(conn, vid: str, canal: str, formato: str, titulo: str = "") -> None:
         if _ACTIVA is not None:
             cerrar(conn, "")
         _ACTIVA = Bitacora(vid, canal, formato, _ultima_fila(conn))
+        _ACTIVA.conn = conn
         _ACTIVA.titulo = titulo
         _guardar(conn, _ACTIVA, "armando")
     except Exception as err:  # noqa: BLE001 — la bitácora nunca frena un video
@@ -172,6 +196,7 @@ def retomar(conn, vid: str) -> bool:
         if _ACTIVA is not None:
             cerrar(conn, "")
         _ACTIVA = Bitacora(vid, previo["canal"], previo["formato"], _ultima_fila(conn), previo)
+        _ACTIVA.conn = conn
         return True
     except Exception as err:  # noqa: BLE001
         log.warning("bitácora: no pude retomar %s: %s", vid, err)
@@ -200,6 +225,57 @@ def fallo(paso_: str, motivo: str) -> None:
     if _ACTIVA is not None:
         _ACTIVA.fallo_paso = paso_ or (_ACTIVA.etapa or "")
         _ACTIVA.fallo_motivo = str(motivo)[:500]
+        # el video ya elegido que se cae en la voz, el render u otro paso también es un candidato descartado
+        if _ACTIVA.fallo_paso not in ("busqueda", "guion", "fotos"):
+            descarte(_ACTIVA.titulo or _ACTIVA.id, motivo, paso_=ETAPA_A_PASO.get(_ACTIVA.fallo_paso, "otro"),
+                     desde_fila=_ACTIVA.fila0)
+
+
+def fila_actual() -> int:
+    """La última fila de gemini_uso (para medir lo que gasta un candidato desde acá)."""
+    if _ACTIVA is None or _ACTIVA.conn is None:
+        return 0
+    return _ultima_fila(_ACTIVA.conn)
+
+
+def costo_entre_activa(desde: int) -> float:
+    """Lo gastado en Claude desde la fila `desde` hasta ahora, en la base de la bitácora activa (0 sin bitácora)."""
+    if _ACTIVA is None or _ACTIVA.conn is None or not desde:
+        return 0.0
+    return costo_entre(_ACTIVA.conn, desde, _ultima_fila(_ACTIVA.conn))
+
+
+def costo_entre(conn, desde: int, hasta: int) -> float:
+    from . import claude
+
+    return round(sum(claude.costo(m, e or 0, s_ or 0) for m, e, s_ in conn.execute(
+        "SELECT modelo, entrada, salida FROM gemini_uso WHERE clave = 'claude' AND rowid > ? AND rowid <= ?",
+        (desde, hasta))), 4)
+
+
+def descarte(candidato: str, motivo: str, paso_: str | None = None, desde_fila: int | None = None,
+             costo: float | None = None, buscado: list | None = None, encontrado: str = "") -> None:
+    """Un candidato que se cae antes de armar el video. `paso_`: si no viene, sale de la etapa en curso.
+    El costo: `costo` (una parte de un pedido compartido) o lo gastado desde `desde_fila` hasta ahora."""
+    bit = _ACTIVA
+    if bit is None or bit.conn is None:
+        return
+    try:
+        conn = bit.conn
+        paso_ = paso_ if paso_ in PASOS_DESCARTE else ETAPA_A_PASO.get(bit.etapa or "", "otro")
+        if costo is None:
+            costo = costo_entre(conn, desde_fila, _ultima_fila(conn)) if desde_fila is not None else 0.0
+        det = {}
+        if buscado is not None or encontrado:
+            det = {"buscado": [str(x) for x in (buscado or [])][:15], "encontrado": str(encontrado)[:300]}
+        conn.execute("INSERT INTO candidatos_descartados (video_id, bot, canal, formato, dia, ts, candidato, paso, "
+                     "motivo, costo_usd, detalle) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                     (bit.id, BOT, bit.canal, bit.formato, (ahora_utc() - timedelta(hours=3)).date().isoformat(),
+                      ahora_utc().isoformat(timespec="seconds"), str(candidato)[:200], paso_, str(motivo)[:400],
+                      round(float(costo or 0), 4), json.dumps(det, ensure_ascii=False)))
+        conn.commit()
+    except Exception as err:  # noqa: BLE001 — anotar nunca frena el video
+        log.warning("bitácora: no pude anotar el descarte de %s: %s", candidato, err)
 
 
 def activa() -> str | None:
@@ -320,6 +396,55 @@ def leer(conn, desde: str, otras_db: list | None = None) -> list[dict]:
     return filas
 
 
+def leer_descartes(conn, desde: str, otras_db: list | None = None) -> list[dict]:
+    """Los candidatos descartados desde `desde` (AR), de esta base y de las otras (mismo formato)."""
+    import sqlite3
+    from pathlib import Path
+
+    out = []
+    bases = [(conn, False)] + [(sqlite3.connect(f"file:{r}?mode=ro", uri=True, timeout=10), True)
+                               for r in otras_db or [] if r and Path(r).exists()]
+    for c, ajena in bases:
+        try:
+            cur = c.execute("SELECT * FROM candidatos_descartados WHERE dia >= ? ORDER BY ts", (desde,))
+            cols = [x[0] for x in cur.description]
+            for f in cur.fetchall():
+                d = dict(zip(cols, f))
+                d["detalle"] = json.loads(d.get("detalle") or "{}")
+                out.append(d)
+        except Exception:  # noqa: BLE001 — base sin la tabla
+            pass
+        finally:
+            if ajena:
+                c.close()
+    return out
+
+
+def texto_descartes(desc: list[dict]) -> str:
+    """Cuántos se cayeron en cada paso, lo que costaron, los motivos más repetidos y un ejemplo de fotos."""
+    if not desc:
+        return ""
+    por: dict[str, list] = {}
+    for d in desc:
+        por.setdefault(d["paso"], []).append(d)
+    total = sum(d.get("costo_usd") or 0 for d in desc)
+    lineas = ["", f"<b>Candidatos descartados</b>: {len(desc)} (Claude gastado en ellos: US$ {total:.2f})"]
+    for paso_, lista in sorted(por.items(), key=lambda kv: -sum(x.get("costo_usd") or 0 for x in kv[1])):
+        usd = sum(x.get("costo_usd") or 0 for x in lista)
+        motivos: dict[str, int] = {}
+        for x in lista:
+            m = (x.get("motivo") or "").split(":")[0][:70]
+            motivos[m] = motivos.get(m, 0) + 1
+        top = "; ".join(f"{m} ({n})" for m, n in sorted(motivos.items(), key=lambda kv: -kv[1])[:2])
+        lineas.append(f"• {paso_}: {len(lista)} · US$ {usd:.2f} — {top}")
+    fotos = [d for d in desc if d["paso"] == "fotos" and (d.get("detalle") or {}).get("buscado")]
+    if fotos:
+        f = fotos[-1]
+        lineas.append(f"  ej. fotos: «{f['candidato'][:60]}» buscó {', '.join(f['detalle']['buscado'][:3])}… "
+                      f"→ {f['detalle'].get('encontrado') or '?'}")
+    return "\n".join(lineas)
+
+
 def resumen(filas: list[dict]) -> dict:
     """Por canal/formato: videos, costo y tiempo promedio; las etapas más caras y más lentas; fallas."""
     grupos: dict[str, dict] = {}
@@ -356,10 +481,11 @@ def _mmss(s: float) -> str:
     return f"{s // 60}:{s % 60:02d}"
 
 
-def texto(filas: list[dict], dias: int = 7) -> str:
+def texto(filas: list[dict], dias: int = 7, descartes: list[dict] | None = None) -> str:
     r = resumen(filas)
     if not r["n"]:
-        return f"🔧 Claude Code: <b>Costos de los últimos {dias} días</b>: todavía no hay videos registrados."
+        return (f"🔧 Claude Code: <b>Costos de los últimos {dias} días</b>: todavía no hay videos registrados."
+                + texto_descartes(descartes or []))
     lineas = [f"🔧 Claude Code: <b>Costos y tiempos, últimos {dias} días</b> — {r['n']} videos, Claude US$ {r['usd']:.2f}",
               ""]
     for clave, g in sorted(r["grupos"].items()):
@@ -376,7 +502,7 @@ def texto(filas: list[dict], dias: int = 7) -> str:
     if r["fallas"]:
         lineas += ["", "<b>Fallas</b>:"]
         lineas += [f"• {NOMBRES_CANAL.get(c, c)} · {f}: en {p or '?'} — {(m or '')[:90]}" for c, f, p, m in r["fallas"][:5]]
-    return "\n".join(lineas)
+    return "\n".join(lineas) + texto_descartes(descartes or [])
 
 
 def ideas(filas: list[dict]) -> list[str]:
