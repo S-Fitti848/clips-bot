@@ -158,3 +158,28 @@ def test_informe_diario_de_ayer_desde_las_9(conn):
     m._costo_claude_tick(conn, tg, load_settings(), ahora=datetime(2026, 11, 15, 9, 5, tzinfo=m.AR))
     m._costo_claude_tick(conn, tg, load_settings(), ahora=datetime(2026, 11, 15, 12, 0, tzinfo=m.AR))
     assert len(tg.m) == 1 and "14/11" in tg.m[0]
+
+
+def test_videos_quedan_los_2_mejores_por_frase(tmp_path, monkeypatch):
+    monkeypatch.setattr(ef, "CACHE_DESCRIPCIONES", tmp_path / "desc")
+    from PIL import Image
+
+    vids = []
+    for k in range(4):
+        fr = tmp_path / f"v{k}.jpg"
+        Image.new("RGB", (32, 24), (k * 50, 10, 10)).save(fr)
+        vids.append(type("V", (), {"frames": [str(fr)] * 3, "titulo": f"video {k}", "de_archivo": k == 3,
+                                   "etiqueta": lambda self: "Pexels"})())
+
+    class H(_Haiku):
+        def json(self, sistema, prompt, schema, *a, imagenes=None, **k):
+            if sistema == ef.SISTEMA_DESCRIBIR:
+                return super().json(sistema, prompt, schema, imagenes=imagenes)
+            assert "frase 1, V4" in prompt
+            return json.dumps({"frases": [{"fotos": [], "videos": [4, 2]}, {"fotos": [], "videos": []}]})
+
+    videos = {0: list(vids)}
+    pool = [_foto(tmp_path, n) for n in range(20)]
+    ef.prefiltrar_fotos(H(), ["frase 1", "frase 2"], pool, [b"x%d" % n for n in range(20)],
+                        [list(range(10)), list(range(10, 20))], None, 1950, lambda *_: None, videos=videos)
+    assert [v.titulo for v in videos[0]] == ["video 3", "video 1"]

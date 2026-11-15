@@ -1482,6 +1482,7 @@ def rankings_de(d: dict, candidatas: list[list[int]],
 # vuelve a pagar) y, solo con texto, ordena las candidatas de cada frase; Sonnet mira las mejores
 # PREFILTRO_POR_FRASE de cada una (la frase 1, una más: la del gancho) y decide como siempre.
 PREFILTRO_POR_FRASE = 3
+VIDEOS_POR_FRASE = 2          # con el estilo nuevo eran hasta 4 videos × 3 cuadros por frase: lo más caro
 PREFILTRO_MIN = 14            # con menos fotos que esto, Sonnet las mira todas (no hay nada que ahorrar)
 CACHE_DESCRIPCIONES = DATA_DIR / "cache_claude" / "fotos"
 
@@ -1512,13 +1513,16 @@ LA FRASE (no solo el tema en general). Preferí: la foto del hecho o del lugar; 
 fotos de esa época; para una frase CENTRAL, una foto real del hecho o, si no hay, una escena que ilustre
 la situación; para una AL PASAR, una foto clara de la cosa que se nombra. Nada de mapas, logos,
 capturas, gráficos ni documentos salvo que la frase hable de eso. Si dudás entre dos, poné las dos:
-después alguien mira las imágenes y decide. Respondé solo con el JSON pedido."""
+después alguien mira las imágenes y decide. Si una frase tiene VIDEOS candidatos (V1, V2…), en `videos`
+ordená de mejor a peor hasta {v} que muestren lo que dice la frase (preferí la filmación de archivo de la
+época; vacío si ninguno sirve). Respondé solo con el JSON pedido."""
 
 SCHEMA_PREFILTRO = {
     "type": "OBJECT",
     "properties": {"frases": {"type": "ARRAY", "items": {
-        "type": "OBJECT", "properties": {"fotos": {"type": "ARRAY", "items": {"type": "INTEGER"}}},
-        "required": ["fotos"]}}},
+        "type": "OBJECT", "properties": {"fotos": {"type": "ARRAY", "items": {"type": "INTEGER"}},
+                                        "videos": {"type": "ARRAY", "items": {"type": "INTEGER"}}},
+        "required": ["fotos", "videos"]}}},
     "required": ["frases"],
 }
 
@@ -1564,20 +1568,34 @@ def describir_fotos(haiku, imagenes: list[bytes], carpeta: Path | None = None,
 
 def prefiltrar_fotos(haiku, lineas: list[str], pool: list[Foto], imagenes: list[bytes],
                      candidatas: list[list[int]], propias: list[list[int]] | None,
-                     anio: int | None, avisar=log.info, carpeta: Path | None = None) -> set[int]:
+                     anio: int | None, avisar=log.info, carpeta: Path | None = None,
+                     videos: dict | None = None) -> set[int]:
     """Las fotos (índices del pool) que va a mirar Sonnet: por frase, las mejores PREFILTRO_POR_FRASE de
     sus candidatas según Haiku (la frase 1, una más), completando con las de su búsqueda si Haiku
-    devuelve menos. Lo que Haiku ve como duro (muertos, heridos) no pasa."""
-    desc = describir_fotos(haiku, imagenes, carpeta, avisar)
+    devuelve menos. Lo que Haiku ve como duro (muertos, heridos) no pasa. `videos` ({frase: [Video]}) se
+    recorta EN EL LUGAR a los VIDEOS_POR_FRASE mejores de cada frase (Haiku mira el cuadro del medio)."""
+    videos = {i: vs for i, vs in (videos or {}).items() if len(vs) > VIDEOS_POR_FRASE}
+    medios = [(i, k, v) for i, vs in sorted(videos.items()) for k, v in enumerate(vs) if v.frames]
+    imgs_v = [_jpeg_chico(Path(v.frames[len(v.frames) // 2]), 384) for _, _, v in medios]
+    desc_todas = describir_fotos(haiku, imagenes + imgs_v, carpeta, avisar)
+    desc, desc_v = desc_todas[:len(imagenes)], desc_todas[len(imagenes):]
     duras = {k for k, x in enumerate(desc) if x.get("dura")}
     fotos = "\n".join(f"foto {k} ({f.anio or 'sin fecha'}): {f.epigrafe[:100]} — se ve: "
                       f"{desc[k - 1].get('se_ve') or '?'} [{desc[k - 1].get('tipo') or '?'}]"
                       for k, f in enumerate(pool, 1))
+    vids = "\n".join(f"frase {i + 1}, V{k + 1}: {v.titulo[:80]} ({'de archivo' if v.de_archivo else 'stock'}, "
+                     f"{v.etiqueta()}) — se ve: {dv.get('se_ve') or '?'}"
+                     for (i, k, v), dv in zip(medios, desc_v))
     prompt = ((f"EL HECHO ES DE {anio}.\n\n" if anio else "") + "FRASES:\n" + "\n".join(lineas)
-              + "\n\nFOTOS:\n" + fotos)
-    d = json.loads(haiku.json(SISTEMA_PREFILTRO.replace("{k}", str(PREFILTRO_POR_FRASE)), prompt,
-                              SCHEMA_PREFILTRO))
+              + "\n\nFOTOS:\n" + fotos + (f"\n\nVIDEOS:\n{vids}" if vids else ""))
+    d = json.loads(haiku.json(SISTEMA_PREFILTRO.replace("{k}", str(PREFILTRO_POR_FRASE))
+                              .replace("{v}", str(VIDEOS_POR_FRASE)), prompt, SCHEMA_PREFILTRO))
     frases = d.get("frases") or []
+    for i, vs in videos.items():
+        dichos = ((frases[i] or {}).get("videos") if i < len(frases) else None) or []
+        orden = [x - 1 for x in dichos if isinstance(x, int) and 1 <= x <= len(vs)]
+        orden += [k for k in range(len(vs)) if k not in orden]
+        vs[:] = [vs[k] for k in orden[:VIDEOS_POR_FRASE]]
     keep: set[int] = set()
     for i, cands in enumerate(candidatas):
         tope = PREFILTRO_POR_FRASE + (1 if i == 0 else 0)
@@ -1593,7 +1611,8 @@ def prefiltrar_fotos(haiku, lineas: list[str], pool: list[Foto], imagenes: list[
             if len(vistas) >= tope:
                 break
         keep.update(vistas)
-    avisar(f"    primer filtro (Haiku): Sonnet mira {len(keep)} de {len(pool)} fotos")
+    avisar(f"    primer filtro (Haiku): Sonnet mira {len(keep)} de {len(pool)} fotos"
+           + (f" y {VIDEOS_POR_FRASE} videos por frase" if videos else ""))
     return keep
 
 
@@ -1633,7 +1652,7 @@ def elegir_fotos(cliente, g: Guion, pool: list[Foto], candidatas: list[list[int]
     if haiku is not None and not prefiltrado and len(pool) >= PREFILTRO_MIN:
         try:
             keep = prefiltrar_fotos(haiku, lineas, pool, [_jpeg_chico(Path(f.ruta), 384) for f in pool],
-                                    candidatas, propias, anio, avisar)
+                                    candidatas, propias, anio, avisar, videos=videos)
         except Exception as e:    # el filtro solo ahorra: si falla, Sonnet mira todas, como antes
             avisar(f"    primer filtro: falló ({str(e)[:80]}), Sonnet mira todas")
             keep = None
