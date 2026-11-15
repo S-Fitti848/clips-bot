@@ -102,11 +102,11 @@ def test_dibujo_nuevo_se_limpia_y_se_guarda(tmp_path, monkeypatch):
             return _json.dumps({"svg": '<rect x="-60" y="-60" width="120" height="120" fill="#e63946" stroke="#1f1a24" '
                                        'stroke-width="8"/><circle cx="-20" cy="-20" r="12" fill="#ffffff"/>'})
 
-    dibujos.dibujar(C(), "cubo_rubik", "un cubo de colores")
-    assert dibujos.svg_de("cubo_rubik") and dibujos.biblioteca() == {"cubo_rubik": "un cubo de colores"}
+    dibujos.dibujar(C(), "lupa_detective", "una lupa")
+    assert dibujos.svg_de("lupa_detective") and dibujos.biblioteca() == {"lupa_detective": "una lupa"}
     from clips_bot.animacion import escenas as esc
 
-    assert esc.es_prop("cubo_rubik") and "<rect" in esc.prop("cubo_rubik")
+    assert esc.es_prop("lupa_detective") and "<rect" in esc.prop("lupa_detective")
 
 
 def test_personaje_fiel_genero_y_edad():

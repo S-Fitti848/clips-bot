@@ -1282,6 +1282,75 @@ def prop_tito_reaccion(forma: int = 0, **_) -> str:
     return circulo(0, 0, 118, "#7cc6ee", ancho=10) + g(cara, 0, 26, escala=0.62) + icono
 
 
+def prop_mano(forma: int = 1, color: str = "", **_) -> str:
+    """Una mano vista desde arriba con la manga (plano de manos de la biblioteca de escenas): entra desde abajo;
+    `forma` -1 = la izquierda, 1 = la derecha."""
+    s_ = -1 if int(forma or 1) < 0 else 1
+    piel, manga = P.PIEL[0], color or P.AZUL
+    dedos = "".join(elipse(s_ * dx, -150 + dy, 16, 34, piel) for dx, dy in ((-36, 10), (-12, -4), (12, -2), (36, 12)))
+    return (rect(-58, -40, 116, 230, manga, r=30) + dedos + elipse(0, -95, 66, 70, piel)
+            + elipse(s_ * 68, -88, 18, 38, piel) + rect(-62, -40, 124, 26, aclarar(manga, 0.3), r=10, ancho=5))
+
+
+def prop_mostrador(**_) -> str:
+    """El mostrador de la tienda (el vendedor queda detrás)."""
+    return (rect(-200, -120, 400, 240, "#8a5a2b", r=10) + rect(-215, -140, 430, 34, "#a8714a", r=8)
+            + rect(-150, -70, 300, 120, "#9c6a3d", r=6, ancho=4))
+
+
+def prop_fuego(**_) -> str:
+    """Llamas del despegue (debajo del objeto que sube)."""
+    return (camino("M-70 -20 Q-90 90 0 220 Q90 90 70 -20 Q40 40 0 -10 Q-40 40 -70 -20 Z", P.NARANJA)
+            + camino("M-40 -10 Q-50 70 0 150 Q50 70 40 -10 Q20 30 0 0 Q-20 30 -40 -10 Z", P.AMARILLO, ancho=5))
+
+
+COLORES_CUBO = ("#ffffff", "#ffd23f", "#e63946", "#f59a3a", "#3a86ff", "#2a9d48")
+
+
+def prop_cubo_rubik(fase: float = 1.0, **_) -> str:
+    """El cubo de Rubik en perspectiva (3 caras de 3×3). `fase` 0 = mezclado, 1 = resuelto: cada cuadradito
+    pasa a su color a medida que sube la fase (se resuelve solo)."""
+    import random as _r
+
+    rnd = _r.Random(7)
+    fase = max(0.0, min(1.0, float(fase or 0)))
+    out = []
+    caras = [((0, -100), (86, -50), (-86, -50), 0),       # arriba: origen, eje u, eje v, color resuelto
+             ((-86, -50), (86, 50), (0, 100), 2),        # izquierda
+             ((0, 0), (86, -50), (0, 100), 4)]           # derecha
+    for (ox, oy), (ux, uy), (vx, vy), resuelto in caras:
+        for a in range(3):
+            for b in range(3):
+                mezcla = rnd.choice([c for c in range(6) if c != resuelto])
+                umbral = rnd.random()
+                color = COLORES_CUBO[resuelto if fase >= umbral else mezcla]
+                x0, y0 = ox + ux * a / 3 + vx * b / 3, oy + uy * a / 3 + vy * b / 3
+                pts = [(x0, y0), (x0 + ux / 3, y0 + uy / 3), (x0 + ux / 3 + vx / 3, y0 + uy / 3 + vy / 3),
+                       (x0 + vx / 3, y0 + vy / 3)]
+                d = "M" + " L".join(f"{n(x)} {n(y)}" for x, y in pts) + " Z"
+                out.append(f'<path d="{d}" fill="{color}" stroke="{P.CONTORNO}" stroke-width="7" stroke-linejoin="round"/>')
+    return "".join(out)
+
+
+def fondo_mesa_arriba(semilla: int = 14) -> str:
+    """Una mesa de madera vista desde arriba que llena el cuadro (plano cenital de las manos trabajando)."""
+    p = [rect(0, 0, W, H, "#b07a4a", borde=False)]
+    for k in range(0, W, 180):
+        p.append(f'<path d="M{k} 0 L{k} {H}" stroke="#8a5a32" stroke-width="6"/>')
+    rnd = random.Random(semilla)
+    for _ in range(40):
+        x, y = rnd.uniform(0, W), rnd.uniform(0, H)
+        p.append(f'<path d="M{n(x)} {n(y)} q 30 -8 60 0" fill="none" stroke="#7a4e2a" stroke-opacity="0.35" stroke-width="3"/>')
+    for x, y, r_ in ((150, 520, 18), (930, 1500, 14), (870, 420, 10)):     # piezas sueltas y un tornillo
+        p.append(circulo(x, y, r_, P.GRIS, ancho=4))
+    p.append(rect(80, 1650, 260, 180, "#f4ecd6", r=8, ancho=5) + f'<path d="M110 1700 L300 1700 M110 1740 L280 1740 M110 1780 '
+             f'L250 1780" stroke="#9aa0ab" stroke-width="5"/>')     # un papel con notas
+    return "".join(p)
+
+
+FONDOS["mesa_arriba"] = fondo_mesa_arriba
+
+
 def icono_pausa() -> str:
     """El "⏸" de la pausa del locutor (dos barras), centrado en (0, 0)."""
     return (circulo(0, 0, 70, "#ffffff", ancho=P.TRAZO_FINO)
@@ -1289,7 +1358,8 @@ def icono_pausa() -> str:
             + rect(10, -36, 20, 72, P.CONTORNO, r=4, borde=False))
 
 
-PROPS = {"rotulo": prop_rotulo, "dato": prop_dato, "cita": prop_cita, "cartel_comic": prop_cartel_comic,
+PROPS = {"mano": prop_mano, "mostrador": prop_mostrador, "fuego": prop_fuego, "cubo_rubik": prop_cubo_rubik,
+         "rotulo": prop_rotulo, "dato": prop_dato, "cita": prop_cita, "cartel_comic": prop_cartel_comic,
          "tito_reaccion": prop_tito_reaccion, "primer_plano": prop_primer_plano, "polvo": prop_polvo, "lineas_mov": prop_lineas_mov,
          "destello": prop_destello, "pelota_espuma": prop_pelota_espuma, "juego_mesa": prop_juego_mesa, "hamburguesa": prop_hamburguesa,
          "chocolate": prop_chocolate, "galletitas": prop_galletitas, "auto": prop_auto,

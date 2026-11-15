@@ -959,7 +959,7 @@ def posiciones_finales(esc_d: dict) -> list[tuple[float, float]]:
 
     out = []
     for k, d in enumerate(esc_d.get("elementos") or []):
-        if d.get("tipo") == "personaje":
+        if d.get("tipo") == "personaje" and not d.get("multitud"):     # la gente del fondo no cuenta
             el = Elemento.desde_dict(d, f"elemento {k}", esc_d["duracion"])
             out.append((el.pista.valor("x", esc_d["duracion"], el.base["x"]), ANCHO_MEDIO * float(d.get("escala", 1))))
     return out
@@ -978,7 +978,8 @@ CAJAS = {"mesa": (150, 0, 226), "estante": (140, 0, 70), "lampara": (110, -150, 
          "martillo": (70, -90, 160), "lamparita": (90, -200, 140), "grafico_sube": (190, -170, 150),
          "grafico_baja": (190, -170, 150), "cartel": (190, -140, 230), "calendario": (130, -144, 130)}
 NO_CHOCAN = {"pedazo", "lamparita", "gancho", "nube", "martillo", "pregunta", "exclamacion", "flecha", "idea_fallida",
-             "polvo", "lineas_mov", "destello", "primer_plano", "rotulo", "dato", "cita", "cartel_comic", "tito_reaccion"}
+             "polvo", "lineas_mov", "destello", "primer_plano", "rotulo", "dato", "cita", "cartel_comic", "tito_reaccion",
+             "mano", "mostrador", "fuego"}
 
 
 def _en_mundo(el, t: float):
@@ -1011,7 +1012,7 @@ def composicion(esc_d: dict, paso: float = 0.1) -> list[tuple[float, str, int, i
     for k, d in enumerate(esc_d.get("elementos") or []):
         if d.get("tipo") == "personaje" and not d.get("multitud"):
             personas.append((k, Elemento.desde_dict(d, f"elemento {k}", dur)))
-        elif d.get("tipo") == "prop":
+        elif d.get("tipo") == "prop" and not d.get("lib"):
             cosas.append((k, d, Elemento.desde_dict(d, f"elemento {k}", dur)))
         if d.get("tipo") == "prop" and d.get("nombre") in ("mesa", "estante") and 330 < float(d.get("x", 0)) < 750:
             return [(0.0, "mueble_en_medio", k, -1)]
@@ -1125,6 +1126,10 @@ def per_alto(nombre: str, cambios: dict) -> float:
 
 def es_dinamica(spec: dict) -> bool:
     """¿La escena muestra algo que pasa? (no "dos personajes hablando")."""
+    from . import escenas_lib as _lib
+
+    if (spec.get("accion_escena") or "") in _lib.ACCIONES:     # las de la biblioteca ya traen su acción
+        return True
     return bool(spec.get("cadena")) or bool(spec.get("multitud")) or \
         any(a.get("accion") in MOVIMIENTO for a in spec.get("actores") or []) or \
         any(o.get("efecto") in DINAMICOS for o in spec.get("objetos") or [])
@@ -1175,26 +1180,83 @@ def elementos_visuales(vis: dict, dur: float, golpes: list[float], primera: bool
     return els, sfx
 
 
+def dejar_lugar_a_tito(elementos: list[dict], lado: str) -> None:
+    """En una escena de la biblioteca que sigue con la pausa de Tito: los personajes terminan (en orden, sin
+    pisarse) en la parte de la pantalla que Tito no ocupa; si no entran todos, se van los del lado de Tito.
+    Cada uno se corre entero (su caminata también), así no cambia cómo se mueve."""
+    pj = [el for el in elementos if el.get("tipo") == "personaje" and not el.get("multitud")]
+    if not pj:
+        return
+
+    def final(el: dict) -> float:
+        xs = [float(k["x"]) for k in sorted(el.get("keyframes", []), key=lambda k: float(k["t"])) if "x" in k]
+        return xs[-1] if xs else float(el["x"])
+
+    hw = max(ANCHO_MEDIO * float(el.get("escala", 1)) for el in pj)
+    margen = ANCHO_MEDIO_TITO + hw + MARGEN
+    lo, hi = (X_TITO["izquierda"] + margen, 1000.0) if lado == "izquierda" else (80.0, X_TITO["derecha"] - margen)
+    paso = 2 * hw + MARGEN
+    entran = max(1, int((hi - lo) // paso) + 1)
+    pj.sort(key=final)
+    if len(pj) > entran:
+        sacar = pj[:len(pj) - entran] if lado == "izquierda" else pj[entran:]
+        ids = {id(el) for el in sacar}
+        elementos[:] = [el for el in elementos if id(el) not in ids]
+        pj = [el for el in pj if id(el) not in ids]
+    finales = [final(el) for el in pj]
+    if all(lo <= x <= hi for x in finales) and all(b - a >= paso for a, b in zip(finales, finales[1:])):
+        return
+    ancho = paso * (len(pj) - 1)
+    inicio = lo + max(0.0, (hi - lo - ancho) / 2)
+    for k, el in enumerate(pj):
+        delta = inicio + k * paso - finales[k]
+        el["x"] = round(float(el["x"]) + delta, 1)
+        for kf in el.get("keyframes", []):
+            if "x" in kf:
+                kf["x"] = round(float(kf["x"]) + delta, 1)
+
+
 def escena_accion(spec: dict, dur: float, i: int, primera: bool = False, tono: float = 0.0,
                   anio: int = 2026, variante: int = 0, reservar: str | None = None,
-                  proyectil: str = "pelota", visual: dict | None = None) -> tuple[dict, list[tuple[float, str]]]:
+                  proyectil: str = "pelota", visual: dict | None = None,
+                  protagonista: str = "") -> tuple[dict, list[tuple[float, str]]]:
     """Una escena del guion → (dict de timeline.Escena, [(segundo local, sfx)]). `anio` y `variante`
     eligen la decoración del fondo; `reservar` deja libre el costado de Tito si después viene la pausa;
     `proyectil` es lo que se tira en la cadena (el protagonista, si se puede tirar)."""
     from . import escenas as _esc
 
+    from . import escenas_lib as lib_
+
     fondo = spec.get("fondo") or "ciudad"
     semilla = semilla_fondo(anio, variante)
+    # Biblioteca de escenas (Santi, 2026-11-15: "cada frase muestra la acción concreta que dice la voz"): la
+    # acción de la escena con su plano; las recetas guardadas se arman como una escena del guion.
+    accion_ = str(spec.get("accion_escena") or "")
+    if accion_ in lib_.recetas() and accion_ not in lib_.ACCIONES:
+        spec = lib_.aplicar_receta(accion_, spec, protagonista)
+    hecha = lib_.construir(accion_, str(spec.get("plano") or ""), spec, dur, i, protagonista) \
+        if accion_ in lib_.ACCIONES else None
+    if hecha and hecha.get("fondo"):
+        fondo = hecha["fondo"]
     e = Escena(dur, semilla=i + 1, fondo=fondo, espejo=_esc.espejado(semilla))
-    if spec.get("multitud"):
+    if spec.get("multitud") or (hecha and hecha.get("multitud")):
         e.multitud()
-    for k, a in enumerate(planear(spec.get("actores") or [], reservar)):
+    if hecha:
+        for el in hecha["elementos"]:
+            if el.get("tipo") == "prop":
+                el["lib"] = True
+        if reservar in X_TITO:
+            dejar_lugar_a_tito(hecha["elementos"], reservar)
+        e.elementos += hecha["elementos"]
+        e.sfx += hecha["sfx"]
+        e.actores += hecha["actores"]
+    for k, a in enumerate(planear([] if hecha else (spec.get("actores") or []), reservar)):
         e.actor(a.get("rol") or "joven", a.get("accion") or "quieto", a["carril"], a.get("hacia"),
                 a.get("cara") or "normal", k, x0=a["x0"], x1=a["x1"], genero=a.get("genero") or "",
                 edad=a.get("edad") or "")
     colores = (P.NARANJA, P.AZUL, P.ROJO, P.VERDE, P.VIOLETA)
-    objetos = list(spec.get("objetos") or [])[:3]
-    cadena = [o for o in (spec.get("cadena") or []) if o.get("prop")][:4]
+    objetos = [] if hecha else list(spec.get("objetos") or [])[:3]
+    cadena = [] if hecha else [o for o in (spec.get("cadena") or []) if o.get("prop")][:4]
     if cadena:
         proy = next((o for o in objetos if o.get("efecto") in ("vuela", "rebota")), None)
         e.cadena(cadena, (proy or {}).get("prop") or proyectil, colores[i % len(colores)])
@@ -1245,7 +1307,8 @@ def escena_accion(spec: dict, dur: float, i: int, primera: bool = False, tono: f
     remate = parte in ("giro", "final")
     fuerte = parte in ("gancho", "giro", "final") or bool(cadena) or \
         any((a.get("cara") or "") in ("sorprendido", "enojado") for a in spec.get("actores") or [])
-    camara = e.camara(spec.get("camara") or "fija", fuerte, PLANOS[i % 3] if visual is not None else None)
+    camara = (hecha["camara"] if hecha and hecha.get("camara") else
+              e.camara(spec.get("camara") or "fija", fuerte, PLANOS[i % 3] if visual is not None and not hecha else None))
     if remate:   # el remate brilla (Santi, 2026-11-15): alrededor de la cara del primer plano, si lo hay
         pp = getattr(e, "primer_plano_en", None)
         t_d, centro = ((pp[0] + 0.1, (pp[1], pp[2])) if pp else (min(dur * 0.45, max(0.3, dur - 1.0)), (540, 1050)))
@@ -1258,7 +1321,7 @@ def escena_accion(spec: dict, dur: float, i: int, primera: bool = False, tono: f
             elementos.append(el)
         e.sfx.append((round(t_d, 3), "ding"))
     if fondo in ("casa", "oficina", "taller", "fabrica", "tienda", "ciudad", "laboratorio", "hospital",
-                 "campo", "puerto") and i % 2 == 0:
+                 "campo", "puerto") and i % 2 == 0 and not hecha:
         # profundidad: algo cerca de la cámara en una esquina de abajo, con parallax (se corre al revés)
         lado = -1 if (i // 2) % 2 == 0 else 1
         elementos.append({"tipo": "prop", "nombre": "primer_plano", "texto": fondo, "forma": lado * (1 + 2 * (i // 4 % 2)),

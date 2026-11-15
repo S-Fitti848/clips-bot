@@ -105,6 +105,13 @@ def _props_guion() -> tuple:
 
 
 PROPS_GUION = _props_guion()
+
+from . import escenas_lib as _lib  # noqa: E402
+
+
+def _acciones_guion() -> list[str]:
+    """La biblioteca de escenas (las de código y las recetas guardadas), "libre" y "nueva"."""
+    return sorted(_lib.todas_las_acciones()) + [_lib.LIBRE, "nueva"]
 TRANSICIONES = ("corte", "fundido", "zoom", "barrido")
 
 
@@ -443,6 +450,18 @@ logos): se dibuja para este video y queda guardado. Para un personaje que no est
 rol parecido con un objeto que lo identifique (un dibujo nuevo en la mano). En los demás objetos, `dibujo`
 vacío.
 
+REGLA 15 — LO QUE SE VE ES LO QUE DICE LA VOZ (Santi, 2026-11-15). Cada escena muestra la ACCIÓN CONCRETA de
+su frase, con una escena de la BIBLIOTECA (`accion_escena`) y su `plano`:
+{{BIBLIOTECA}}
+Planos: arriba (cenital: las manos sobre la mesa), manos (primer plano de las manos), lejos, espaldas, cerca,
+frente (cada acción tiene los suyos; si pedís otro, va el primero). Ej.: "armó un rompecabezas" = armar_mesa
+desde arriba o de espaldas en la mesa; "lo vendió" = vender_tienda; "vendió millones" = contador_ventas. El
+objeto protagonista se MUEVE (gira, se resuelve, avanza en la cinta, vuela al barco, se apila). Usá `libre`
+(actores y objetos como hasta ahora) solo si ninguna sirve, y como mucho en 4 de cada 10 escenas; si la acción
+no está y la vas a necesitar seguido, `nueva` con `accion_nueva` = un nombre corto (se guarda para reusarla).
+`festejar` o `saltar` SOLO cuando la frase habla de un éxito; engranajes, martillo, el taller y la fábrica SOLO
+si la frase habla de una máquina, un taller o una fábrica.
+
 REGLA 10 — PERSONAJES SEGÚN LA HISTORIA Y LA ÉPOCA. Elegí los `rol` que hay en esa historia (obrero, obrera,
 científica, inventora, médico, enfermera, granjero, marinero, cocinero, deportista, empresario, vendedor,
 cliente, estudiante…): al menos 3 roles distintos en el video. Los chicos (nene, nena) solo si la historia
@@ -530,10 +549,13 @@ SCHEMA_GUION = {
                 "vuelve_al_presente": {"type": "BOOLEAN"},
                 "claves": _CLAVES, "emoji": _EMOJI, "multitud": {"type": "BOOLEAN"},
                 "anio_escena": {"type": "INTEGER"},
+                "accion_escena": {"type": "STRING", "enum": _acciones_guion()},
+                "plano": {"type": "STRING", "enum": list(_lib.PLANOS)},
+                "accion_nueva": {"type": "STRING"},
             },
             "required": ["frase", "parte", "fondo", "actores", "objetos", "camara", "texto_pantalla",
                          "transicion", "cadena", "viaje_a_anio", "vuelve_al_presente", "claves", "emoji",
-                         "multitud", "anio_escena"]}},
+                         "multitud", "anio_escena", "accion_escena", "plano", "accion_nueva"]}},
         "locutor": {"type": "ARRAY", "items": {"type": "OBJECT", "properties": {
             "despues_de_frase": {"type": "INTEGER"}, "texto": {"type": "STRING"},
             "claves": _CLAVES, "emoji": _EMOJI},
@@ -690,6 +712,46 @@ def errores_escenas_con_sentido(escenas: list[dict]) -> list[str]:
 def prop_real(o: dict) -> str:
     """El nombre del dibujo de un objeto del guion (el de la biblioteca o el `dibujo` de un dibujo_nuevo)."""
     return str(o.get("dibujo") or "").strip() if o.get("prop") == DIBUJO_NUEVO else str(o.get("prop") or "")
+
+
+_EXITO = re.compile(r"\b(éxito|exito|vend\w*|mill[oó]n\w*|r[eé]cord\w*|famos\w*|triunf\w*|gan[oó]|furor|"
+                    r"el m[aá]s|la m[aá]s|celebr\w*|festej\w*|lo logr\w*|funcion[oó])\b", re.I)
+_MAQUINA = re.compile(r"\b(m[aá]quina\w*|maquinaria|taller\w*|herramient\w*|motor\w*|f[aá]brica\w*|fabric\w*|"
+                      r"mec[aá]nic\w*|engranaje\w*|industria\w*|planta)\b", re.I)
+
+
+def errores_accion(d: dict) -> list[str]:
+    """Regla 15: la escena muestra lo que dice la frase (biblioteca), festejar solo con éxito, engranajes y
+    martillo solo con máquinas o taller, y el gancho en su época."""
+    errores = []
+    escenas = d.get("escenas") or []
+    libres = [i for i, e in enumerate(escenas, 1) if (e.get("accion_escena") or _lib.LIBRE) == _lib.LIBRE]
+    if len(escenas) >= 5 and len(libres) > len(escenas) * 0.4:
+        errores.append(f"demasiadas escenas `libre` ({', '.join(map(str, libres))}): usá la escena de la biblioteca "
+                       "que muestra lo que dice cada frase")
+    for i, e in enumerate(escenas, 1):
+        frase = str(e.get("frase") or "")
+        if e.get("accion_escena") == "nueva" and not str(e.get("accion_nueva") or "").strip():
+            errores.append(f"escena {i}: `nueva` necesita `accion_nueva` (un nombre corto)")
+        libre = (e.get("accion_escena") or _lib.LIBRE) == _lib.LIBRE    # las de la biblioteca arman sus actores
+        if libre and any(a.get("accion") in ("festejar", "saltar") for a in e.get("actores") or []) \
+                and not _EXITO.search(frase):
+            errores.append(f"escena {i}: festejan o saltan pero la frase no habla de un éxito: mostrá lo que dice "
+                           f"(«{frase[:60]}»)")
+        maquina = libre and (any(a.get("accion") == "martillar" for a in e.get("actores") or [])
+                   or any(prop_real(o) in ("engranaje", "martillo") for o in e.get("objetos") or [])
+                   or e.get("fondo") in ("taller", "fabrica") and (e.get("accion_escena") or _lib.LIBRE) == _lib.LIBRE)
+        if maquina and not _MAQUINA.search(frase):
+            errores.append(f"escena {i}: martillo, engranajes o taller sin que la frase hable de una máquina o un "
+                           "taller: usá el lugar y la acción de lo que dice")
+    anios = [int(x) for x in re.findall(r"\b(1[5-9]\d\d)\b", " ".join(str(e.get("frase") or "") for e in escenas))]
+    if escenas and anios and min(anios) < 1990:
+        e1 = escenas[0]
+        if e1.get("fondo") in ("oficina", "taller", "laboratorio", "fabrica") and \
+                not int(e1.get("anio_escena") or 0) and (e1.get("accion_escena") or "") != "objeto_gira":
+            errores.append(f"el gancho muestra el momento clave en un interior: poné su año en `anio_escena` "
+                           f"({min(anios)}: nada de monitores ni cosas de hoy)")
+    return errores
 
 
 def errores_fieles(d: dict) -> list[str]:
@@ -950,6 +1012,7 @@ def validar_guion(d: dict, m: Marca, fuente: str, ganchos_previos: list[dict] | 
     errores += errores_gancho_repetido(escenas, ganchos_previos or [])
     errores += errores_protagonista(d)
     errores += errores_fieles(d)
+    errores += errores_accion(d)
     errores += errores_viajes(d)
     # El locutor (Tito).
     if not LOCUTOR_MIN <= len(loc) <= LOCUTOR_MAX:
@@ -1076,6 +1139,12 @@ def chequear_calidad(cliente, d: dict, m: Marca) -> list[str]:
     return errores
 
 
+def sistema_guion() -> str:
+    """El prompt del guion con la biblioteca de escenas de hoy (las recetas guardadas también)."""
+    lista = "\n".join(f"  - {k}: {v}" for k, v in sorted(_lib.todas_las_acciones().items()))
+    return SISTEMA_GUION.replace("{BIBLIOTECA}", lista)
+
+
 def escribir_guion(cliente, e: Elegido, fuente: str, reintentos: int = 6, avisar=log.info,
                    revisor=None, extra: str = "", ganchos_previos: list[dict] | None = None) -> dict:
     """El guion validado (dict del schema). Primero el chequeo del código; si pasa, el de Haiku
@@ -1097,11 +1166,11 @@ def escribir_guion(cliente, e: Elegido, fuente: str, reintentos: int = 6, avisar
         try:
             if d is not None and ultimo and puntuales < correcciones.CORRECCIONES_MAX:
                 puntuales += 1
-                d = correcciones.corregir(cliente, SISTEMA_GUION, pedido, d, ultimo, SCHEMA_GUION, "escenas",
+                d = correcciones.corregir(cliente, sistema_guion(), pedido, d, ultimo, SCHEMA_GUION, "escenas",
                                           "escena")
             else:
                 puntuales = 0
-                d = json.loads(cliente.json(SISTEMA_GUION, pedido + correccion, SCHEMA_GUION, 0.9))
+                d = json.loads(cliente.json(sistema_guion(), pedido + correccion, SCHEMA_GUION, 0.9))
         except GeminiError as err:   # ClaudeError hereda: una respuesta cortada cuenta como un intento
             if getattr(err, "pasajero", False):
                 raise
@@ -1122,6 +1191,23 @@ def escribir_guion(cliente, e: Elegido, fuente: str, reintentos: int = 6, avisar
             correccion = ("\n\nTU GUION ANTERIOR:\n" + describir(d) +
                           "\n\nNO SIRVIÓ POR ESTO (corregilo y devolvé el guion entero):\n- " + "\n- ".join(ultimo))
     raise GuionInvalido(f"{e.marca.nombre} ({e.angulo}): {'; '.join(ultimo)[:400]}")
+
+
+def guardar_acciones_nuevas(d: dict) -> None:
+    """Las escenas `nueva` quedan en la biblioteca como receta (el protagonista y los roles como variables)."""
+    prota = prop_real(d.get("protagonista") or {})
+    for e in d.get("escenas") or []:
+        if e.get("accion_escena") == "nueva" and str(e.get("accion_nueva") or "").strip():
+            nombre = re.sub(r"[^a-z0-9_]", "_", str(e["accion_nueva"]).lower())[:30]
+            spec = json.loads(json.dumps(e))
+            for o in spec.get("objetos") or []:
+                if prop_real(o) == prota:
+                    o["prop"], o["dibujo"] = "{objeto}", ""
+            try:
+                _lib.guardar_receta(nombre, str(e.get("frase") or "")[:120], spec)
+            except OSError:
+                pass
+            e["accion_escena"] = nombre if nombre in _lib.recetas() else _lib.LIBRE
 
 
 def asegurar_dibujos(cliente, d: dict, e: "Elegido", fuente: str, avisar=log.info) -> dict:
@@ -1146,7 +1232,7 @@ def asegurar_dibujos(cliente, d: dict, e: "Elegido", fuente: str, avisar=log.inf
         return d
     errores = [f"no se pudo dibujar «{n}»: reemplazalo por un objeto de la lista o reformulá esa frase" for n in fallidos]
     try:
-        d2 = correcciones.corregir(cliente, SISTEMA_GUION, f"MARCA: {e.marca.nombre}\nTEXTO:\n{fuente[:12000]}",
+        d2 = correcciones.corregir(cliente, sistema_guion(), f"MARCA: {e.marca.nombre}\nTEXTO:\n{fuente[:12000]}",
                                    d, errores, SCHEMA_GUION, "escenas", "escena")
         if not validar_guion(d2, e.marca, fuente) or not fuente:
             return d2
@@ -1235,7 +1321,8 @@ def linea_de_tiempo(d: dict, inicios: list[float], fin: float, palabras: list,
         e = {**e, "objetos": [{**o, "prop": prop_real(o)} for o in e.get("objetos") or [] if prop_real(o)]}
         esc_d, fx = ac.escena_accion(e, dur, k, primera=(k == 0), tono=1.0 if pasado else 0.0,
                                      anio=anio_esc if 1800 <= anio_esc < presente else anio_actual,
-                                     variante=variante, reservar=reservar, proyectil=proyectil, visual=vis)
+                                     variante=variante, reservar=reservar, proyectil=proyectil, visual=vis,
+                                     protagonista=prota)
         esc_d["frase"] = k          # para la revisión visual: qué frase del guion es esta escena
         pisados = ac.superposiciones(esc_d)
         if pisados:
@@ -1442,6 +1529,9 @@ que un espectador notaría:
 - un personaje que no coincide con la persona real (otro género, otra edad, ropa de otra época);
 - algo fuera de época para el año de esa escena (un monitor moderno en 1974, un celular en 1950).
 Para estos usá `arreglo` = otro y decí en `que` qué escena y qué cambiar.
+- (2026-11-15) LA ACCIÓN QUE SE VE NO ES LA QUE DICE LA FRASE (alguien salta cuando la voz dice que arma algo;
+  gente parada con los brazos abiertos frente a engranajes): `arreglo` = cambiar_accion y en `que` decí qué se
+  ve y qué tendría que verse. Esa escena se rehace.
 Para cada problema: `cuadro` (el número), `que` (corto) y `arreglo`: mover_objeto (a otro lugar),
 cambiar_soporte (apoyarlo en otro lado), sacar_objeto, separar_personajes, sacar_texto u otro; y
 `objeto` (el nombre del objeto, si es un objeto). Si está todo bien, lista vacía. No inventes problemas."""
@@ -1450,7 +1540,7 @@ SCHEMA_REVISION = {"type": "OBJECT", "properties": {"problemas": {"type": "ARRAY
     "type": "OBJECT", "properties": {
         "cuadro": {"type": "INTEGER"}, "que": {"type": "STRING"},
         "arreglo": {"type": "STRING", "enum": ["mover_objeto", "cambiar_soporte", "sacar_objeto",
-                                               "separar_personajes", "sacar_texto", "otro"]},
+                                               "separar_personajes", "sacar_texto", "cambiar_accion", "otro"]},
         "objeto": {"type": "STRING"}},
     "required": ["cuadro", "que", "arreglo", "objeto"]}}}, "required": ["problemas"]}
 CUADROS_REVISION = 8
@@ -1486,6 +1576,32 @@ def _jpeg_512(png: Path) -> bytes:
     b = io.BytesIO()
     im.save(b, "JPEG", quality=80)
     return b.getvalue()
+
+
+def corregir_acciones(cliente, d: dict, e: "Elegido", fuente: str, malas: list[tuple[int, str]],
+                      claves: list, datos: dict, avisar=log.info) -> tuple[dict, str]:
+    """La revisión vio una acción que no es la de la frase: se corrige SOLO esa escena (corrección puntual) y se
+    vuelve a validar; si no valida, queda como estaba."""
+    from clips_bot import correcciones
+
+    errores = []
+    for n_, que in malas:
+        if 0 <= n_ < len(claves):
+            k = datos["escenas"][claves[n_][1]].get("frase")
+            if isinstance(k, int):
+                errores.append(f"escena {k + 1}: la acción que se ve no es la que dice la frase ({que[:160]}): "
+                               "elegí la escena de la biblioteca y el plano que la muestran")
+    if not errores or cliente is None:
+        return d, ""
+    try:
+        d2 = correcciones.corregir(cliente, sistema_guion(), f"MARCA: {e.marca.nombre}\nTEXTO:\n{(fuente or '')[:12000]}",
+                                   d, errores, SCHEMA_GUION, "escenas", "escena")
+    except Exception as err:  # noqa: BLE001
+        avisar(f"no pude corregir las acciones: {str(err)[:120]}")
+        return d, ""
+    if fuente and validar_guion(d2, e.marca, fuente):
+        return d, "la corrección de la acción no validó: quedó como estaba"
+    return d2, "rehice la acción de " + ", ".join(x.split(":")[0] for x in errores)
 
 
 def aplicar_revision(d: dict, problemas: list[dict], claves: list[tuple[float, int, str]],
@@ -1734,6 +1850,7 @@ def armar_video(conn, settings, carpeta: Path, cliente=None, wiki=None, hoy: dat
     bitacora.dato(titulo=str(d.get("titulo") or ""), marca=e.marca.nombre, angulo=e.angulo)
     bitacora.paso("dibujos")
     d = asegurar_dibujos(cliente, d, e, fuente or "", avisar)
+    guardar_acciones_nuevas(d)
     if getattr(cfg, "visual_plus", False):
         from . import visuales
 
@@ -1803,6 +1920,12 @@ def armar_video(conn, settings, carpeta: Path, cliente=None, wiki=None, hoy: dat
             revision.append(f"vuelta {vuelta + 1}: sin problemas" if vuelta else "revisión visual: sin problemas")
             break
         hechos = aplicar_revision(d, problemas, claves, datos)
+        acciones_mal = [(int(pr.get("cuadro") or 0) - 1, str(pr.get("que") or "")) for pr in problemas
+                        if pr.get("arreglo") == "cambiar_accion"]
+        if acciones_mal:
+            d, hecho = corregir_acciones(cliente, d, e, fuente, acciones_mal, claves, datos, avisar)
+            if hecho:
+                hechos.append(hecho)
         revision += [f"vuelta {vuelta + 1}: {h}" for h in hechos]
         avisar("revisión visual: " + "; ".join(hechos)[:300])
         datos, eventos = linea_de_tiempo(d, inicios, fin, palabras, wav,

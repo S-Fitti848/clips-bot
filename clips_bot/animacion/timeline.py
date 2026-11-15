@@ -47,7 +47,7 @@ from .audio import vocal
 from .easing import curva, recortar
 from .svg import g, texto_con_borde
 
-PROPS_ANIMABLES = ("x", "y", "escala", "rotacion", "opacidad", "mirada", "estirar", "cabeza")
+PROPS_ANIMABLES = ("x", "y", "escala", "rotacion", "opacidad", "mirada", "estirar", "cabeza", "fase")
 # "cara" de un personaje: (cejas, boca, apertura de la boca)
 CARAS = {"feliz": ("arriba", "sonrisa", 0.0), "enojado": ("enojo", "cerrada", 0.0),
          "sorprendido": ("arriba", "o", 0.7), "triste": ("triste", "cerrada", 0.0),
@@ -138,7 +138,8 @@ class Elemento:
         base = {"x": float(d.get("x", P.ANCHO / 2)), "y": float(d.get("y", P.ALTO / 2)),
                 "escala": float(d.get("escala", 1.0)), "rotacion": float(d.get("rotacion", 0)),
                 "opacidad": float(d.get("opacidad", 1.0)), "mirada": float(d.get("mirada", 0)),
-                "estirar": float(d.get("estirar", 1.0)), "cabeza": float(d.get("cabeza", 0))}
+                "estirar": float(d.get("estirar", 1.0)), "cabeza": float(d.get("cabeza", 0)),
+                "fase": float(d.get("fase", 0))}
         desde = float(d.get("desde", 0.0))
         hasta = float(d.get("hasta", math.inf))
         claves = list(d.get("keyframes", []))
@@ -196,6 +197,10 @@ class Elemento:
         sombra = ""
         if self.tipo == "personaje":
             est, dy = self._estado(t, apertura, cuadro, v["mirada"], v["cabeza"])
+            if self.datos.get("espaldas"):      # plano de espaldas (biblioteca de escenas, 2026-11-15)
+                from dataclasses import replace as _r
+
+                est = _r(est, espaldas=True)
             contenido = self._pj.svg(est)
             # sombra de contacto en el piso (2026-11-15, "sombras en el piso"): se queda en el piso y se
             # achica y aclara cuando salta
@@ -208,6 +213,8 @@ class Elemento:
         elif self.tipo == "prop":
             params = {k: val for k, val in self.datos.items()
                       if k in ("texto", "color", "encendida", "rota", "forma")}
+            if "fase" in self.datos or any("fase" in k for k in self.pista.claves):
+                params["fase"] = round(v["fase"], 3)     # 0..1: un objeto que cambia (el cubo que se resuelve)
             contenido = esc.prop(self.datos["nombre"], **params)
         elif self.tipo == "gancho":
             # el gancho se ubica con su propio x/y (centro de la línea): sin traslado extra

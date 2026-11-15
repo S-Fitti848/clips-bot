@@ -41,6 +41,7 @@ class Estado:
     perfil: int = 0
     zancada: float = 0.0
     corre: bool = False
+    espaldas: bool = False        # de espaldas: la nuca con el pelo, sin cara ni botones
 
 
 # Gestos: ángulos (hombro, codo) de cada brazo. Hombro 0 = colgando, 90 = horizontal hacia afuera,
@@ -132,7 +133,7 @@ class Personaje:
         hombro_y = tope_torso + 38
         return "".join([
             self._piernas(piso_torso, e),
-            self._torso(piso_torso, tope_torso),
+            self._torso_espaldas(piso_torso, tope_torso) if e.espaldas else self._torso(piso_torso, tope_torso),
             self._brazo(-1, hombro_y, *e.brazo_izq),
             self._brazo(1, hombro_y, *e.brazo_der),
             g(self._cabeza(e), 0, cy_cabeza, rot=e.inclinacion),
@@ -297,6 +298,13 @@ class Personaje:
                   f'fill="{BLANCO_SUCIO}" {trazo(ancho=P.TRAZO_FINO)}/>')
         return camino(d, self.ropa) + cuello + self._detalle_ropa(piso, tope)
 
+    def _torso_espaldas(self, piso: float, tope: float) -> str:
+        w_ab, w_ar = 118, 98
+        d = (f"M{-w_ab} {n(piso)} L{w_ab} {n(piso)} Q{w_ab + 6} {n(tope + 40)} {w_ar} {n(tope + 10)} "
+             f"Q{w_ar - 10} {n(tope)} 0 {n(tope)} Q{-w_ar + 10} {n(tope)} {-w_ar} {n(tope + 10)} "
+             f"Q{-w_ab - 6} {n(tope + 40)} {-w_ab} {n(piso)} Z")
+        return camino(d, self.ropa) + f'<path d="M0 {n(tope + 20)} L0 {n(piso - 10)}" stroke="{oscurecer(self.ropa, 0.25)}" stroke-width="5" opacity="0.6"/>'
+
     def _detalle_ropa(self, piso: float, tope: float) -> str:
         """Pliegues, botones, bolsillo y costuras (Santi, 2026-11-15: "más detalle en la ropa")."""
         sombra = oscurecer(self.ropa, 0.28)
@@ -343,6 +351,10 @@ class Personaje:
 
     def _cabeza(self, e: Estado) -> str:
         R = self.R_CABEZA
+        if e.espaldas:     # la nuca: orejas, la cabeza y el pelo tapando todo
+            pelo = self.pelo if self.peinado != "pelado" else self.piel
+            return "".join(circulo(s_ * (R - 4), 12, 26, self.piel) for s_ in (-1, 1)) + circulo(0, 0, R, pelo) \
+                + self._sombrero()
         p = []
         if self.peinado == "largo":   # pelo de atrás, debajo de la cara
             p.append(camino(f"M{-R - 14} -10 Q{-R - 24} {R + 70} {-R + 30} {R + 60} L{R - 30} "

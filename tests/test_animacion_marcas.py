@@ -171,23 +171,29 @@ ESCENAS = [
     ("El bar se llamaba Havanna Bar, pero vendía poco.", "problema", "tienda",
      [_a("vendedor", "asustarse", "derecha")], [_o("grafico_baja", "aparece", "izquierda")]),
     ("Entonces pensaron vender alfajores con el mismo nombre.", "idea", "oficina",
-     [_a("empresario", "pensar", "izquierda"), _a("fundador", "saltar", "derecha")], []),
+     [_a("empresario", "pensar", "izquierda"), _a("fundador", "senalar", "derecha")], []),
     ("En 1947 fundaron la empresa y empezaron a fabricar alfajores.", "que_paso", "fabrica",
      [_a("fundador", "martillar", "izquierda")], [_o("galletitas", "quieto", "derecha")]),
     ("Los alfajores se volvieron famosos en toda la costa.", "que_paso", "ciudad",
      [_a("cliente", "correr", "izquierda", "derecha")], [_o("billete", "llueve")]),
     ("La gente los llevaba de regalo después de las vacaciones.", "que_paso", "casa",
-     [_a("mama", "entrar", "izquierda", "centro"), _a("nene", "festejar", "derecha")], [_o("galletitas", "quieto", soporte="mano")]),
+     [_a("mama", "entrar", "izquierda", "centro"), _a("nene", "caminar", "derecha")], [_o("galletitas", "quieto", soporte="mano")]),
     ("¿Y el bar? Cerró, y el alfajor se quedó con el nombre.", "final", "escenario",
      [_a("fundador", "festejar", "centro")], [_o("corona", "crece", "derecha")]),
 ]
+
+
+ACCIONES_ESC = ["libre", "libre", "vender_tienda", "reunion", "fabrica_produce", "contador_ventas", "libre",
+                "objeto_gira"]
 
 
 def guion(**cambios):
     escenas = [{"frase": f, "parte": p, "fondo": fo, "actores": a, "objetos": o, "camara": "fija",
                 "texto_pantalla": "1947" if i == 4 else "", "transicion": "barrido",
                 "cadena": [_c("tele", "mesa", "izquierda"), _c("lampara", "piso", "centro")] if i == 0 else [],
-                "viaje_a_anio": 1947 if i == 1 else 0, "vuelve_al_presente": i == 7}
+                "viaje_a_anio": 1947 if i == 1 else 0, "vuelve_al_presente": i == 7,
+                # biblioteca de escenas (2026-11-15): la acción de cada frase; "libre" como mucho 4 de 10
+                "accion_escena": ACCIONES_ESC[i] if i < len(ACCIONES_ESC) else "libre", "plano": "lejos"}
                for i, (f, p, fo, a, o) in enumerate(ESCENAS)]
     d = {"titulo": "Havanna: el alfajor que se llama como un bar", "descripcion": "La historia del nombre.",
          "tono": "curioso", "pregunta_gancho": "¿Por qué se llama así?", "escenas": escenas,
@@ -284,6 +290,7 @@ def test_ninguna_escena_estatica():
     """"Dos personajes hablando no engancha": una escena sin movimiento no pasa."""
     d = guion()
     d["escenas"][3]["actores"] = [_a("empresario", "senalar"), _a("fundador", "quieto")]
+    d["escenas"][3]["accion_escena"] = "libre"          # las de la biblioteca ya traen su acción
     assert any("estáticas (solo personajes parados): 4" in e for e in mk.validar_guion(d, marca(), FUENTE))
 
 
@@ -1034,3 +1041,44 @@ def test_correccion_puntual_toca_solo_lo_que_falla():
     assert d["escenas"][1]["frase"] == "dos"                       # el original no se toca
     sch = co.schema_parche(mk.SCHEMA_GUION, "escenas")
     assert sch["properties"]["campos"]["required"] == [] and "escenas" not in sch["properties"]["campos"]["properties"]
+
+
+
+def test_lo_que_se_ve_es_lo_que_dice_la_voz():
+    d = guion()
+    for k in range(6):
+        d["escenas"][k]["accion_escena"] = "libre"
+    assert any("demasiadas escenas `libre`" in e for e in mk.validar_guion(d, marca(), FUENTE))
+    d = guion()
+    d["escenas"][1]["actores"] = [_a("empresario", "festejar", "izquierda")]     # libre, sin éxito en la frase
+    assert any("escena 2: festejan" in e for e in mk.validar_guion(d, marca(), FUENTE))
+    d = guion()
+    d["escenas"][1]["actores"] = [_a("empresario", "martillar", "izquierda")]
+    assert any("escena 2: martillo" in e for e in mk.validar_guion(d, marca(), FUENTE))
+
+
+def test_biblioteca_arma_cada_accion_con_sus_planos():
+    from clips_bot.animacion import acciones as ac, escenas_lib as lib
+
+    for accion, (_, planos, _) in lib.ACCIONES.items():
+        for plano in planos:
+            spec = {"frase": "vendió 1000 cubos", "parte": "que_paso", "fondo": "oficina", "accion_escena": accion,
+                    "plano": plano, "actores": [_a("inventor", "quieto")], "objetos": [_o("cubo_rubik", "quieto")]}
+            d, _ = ac.escena_accion(spec, 3.0, 2, protagonista="cubo_rubik")
+            nombres = [el.get("nombre") for el in d["elementos"]]
+            assert "cubo_rubik" in nombres or any(el.get("tipo") == "contador" for el in d["elementos"]), (accion, plano)
+    arriba, _ = ac.escena_accion({"frase": "armó el cubo", "parte": "idea", "fondo": "taller", "accion_escena": "armar_mesa",
+                                  "plano": "arriba", "actores": [], "objetos": []}, 3.0, 1, protagonista="cubo_rubik")
+    assert arriba["fondo"]["tipo"] == "mesa_arriba" and sum(el.get("nombre") == "mano" for el in arriba["elementos"]) == 2
+
+
+def test_receta_nueva_queda_guardada(tmp_path, monkeypatch):
+    from clips_bot.animacion import escenas_lib as lib
+
+    monkeypatch.setattr(lib, "RECETAS", tmp_path / "lib.json")
+    d = guion()
+    d["escenas"][6]["accion_escena"] = "nueva"
+    d["escenas"][6]["accion_nueva"] = "regalar_cajas"
+    mk.guardar_acciones_nuevas(d)
+    assert "regalar_cajas" in lib.recetas() and d["escenas"][6]["accion_escena"] == "regalar_cajas"
+    assert "regalar_cajas" in lib.todas_las_acciones()
