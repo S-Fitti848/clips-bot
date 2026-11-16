@@ -497,7 +497,9 @@ plata, susto en una sorpresa, risa en el chiste): pocas veces, solo cuando suma 
 frases).
 
 ESTRUCTURA:
-- La PRIMERA frase es el GANCHO: lo más sorprendente o divertido, máximo 8 palabras (dura menos de 3 s),
+- La PRIMERA frase es el GANCHO: el DATO concreto más fuerte o divertido de ESTA historia (nada de fórmulas
+  genéricas: "pasó algo que nadie esperaba", "nadie lo podía creer", "lo que pasó después te va a sorprender"),
+  máximo 8 palabras (dura menos de 3 s),
   sin año, sin "¿Sabías que…?", sin saludar. Su escena es pura ACCIÓN.
 - El final paga el gancho (responde la pregunta que dejó abierta: `pregunta_gancho`).
 - 7 a 11 frases cortas, 55 a 75 palabras en total en las frases; Tito suma 12 a 25 más (todo junto,
@@ -1014,8 +1016,13 @@ def errores_v3(d: dict) -> list[str]:
     contexto en la mayoría de las escenas."""
     from . import gancho_v3 as gv
 
+    from clips_bot.reglas import gancho_generico
+
     errores = []
     ops = gv.opciones_de(d)
+    genericas = [o["texto"] for o in ops if gancho_generico(o["texto"])]
+    if genericas:
+        errores.append(f"`ganchos`: textos genéricos ({', '.join(genericas)}): el dato concreto más fuerte de la historia")
     if len(ops) < 3 or len({o["tipo"] for o in ops}) < 3:
         errores.append("`ganchos`: 3 opciones de tipos DISTINTOS (" + ", ".join(gv.TIPOS) + ") con un `texto` de 3 a 5 "
                        "palabras que intrigue")
@@ -1032,7 +1039,8 @@ SISTEMA_V3 = """Te paso el guion de un video corto animado de "Así Nació" (el 
    sorprendente o imposible. `tipo`, uno de: explota (estalla en pedazos de colores), gigante (crece hasta ser enorme),
    multiplica (se multiplica por toda la pantalla), vuela (cruza volando), multitud (una multitud se pelea por él); los
    3 de tipos DISTINTOS. `texto`: una pregunta o un dato de ESTA historia que intrigue, de 3 a 5 palabras, que va grande
-   arriba ("¿UN JUGUETE DE JABÓN?", "VENDIÓ UN MILLÓN EN 1949"); datos solo del guion.
+   arriba ("¿UN JUGUETE DE JABÓN?", "VENDIÓ UN MILLÓN EN 1949"); datos solo del guion. Nada de fórmulas genéricas
+   ("ALGO QUE NADIE ESPERABA", "NO VAS A CREERLO"): el dato concreto más fuerte.
 2. `decorado`: para cada escena (desde la 2), 1 a 3 objetos de la lista que dan CONTEXTO a la historia en ese lugar y
    esa época (una cocina de 1946: botella, jarrón, radio; una oficina: teléfono de disco, calendario). Van atrás, sobre
    el estante, la mesa o el piso. Solo nombres de la lista.
@@ -1085,10 +1093,15 @@ def validar_guion(d: dict, m: Marca, fuente: str, ganchos_previos: list[dict] | 
     estructura, escenas con acción, locutor y presentación de cada empresa o persona."""
     from clips_bot.efemerides import no_respaldados
 
+    from clips_bot.reglas import gancho_generico
+
     errores = []
     escenas = d.get("escenas") or []
     frases = frases_de(d)
     n = len(frases)
+    if frases and gancho_generico(frases[0]):    # Santi, 2026-11-16: el gancho dice el dato concreto
+        errores.append(f"el gancho (frase 1) usa una frase genérica de intriga («{gancho_generico(frases[0])}»): "
+                       "decí el dato concreto más fuerte de esta historia")
     if not FRASES_MIN <= n <= FRASES_MAX:
         errores.append(f"van {FRASES_MIN} a {FRASES_MAX} frases (escenas), hay {n}")
     if any(not f for f in frases):

@@ -149,6 +149,12 @@ servicio systemd separado: `clips-bot`).
   ("En <año>,") y en pantalla; la voz arranca en el cuadro 1; el gancho escrito en grande desde el
   primer cuadro; la primera foto es la más impactante. Medición por video (`medicion_ph.py`) y
   comparación con los 10 anteriores el 26/11.
+- **Ganchos concretos (Santi, 2026-11-16; Pequeña Historia y Así Nació, regla fija):** el gancho dice el DATO
+  concreto más fuerte de la historia; las fórmulas genéricas de intriga ("pasó algo que no esperaban", "nadie lo
+  podía creer", "lo que pasó después te va a sorprender", "no vas a creer", "algo increíble"…) no pasan la
+  validación (`reglas.gancho_generico`, `REGLA_GANCHO_CONCRETO` en los prompts; en Así Nació también los textos de
+  las 3 opciones de gancho). MAL: "Fusilaron a una joven por espía, y pasó algo que no esperaban"; BIEN: "La
+  fusilaron a los 22 y antes gritó una frase que todavía se recuerda". La frase de giro de la mitad no entra.
 - **Pequeña Historia: pregunta al final y giro a la mitad (Santi, 2026-11-16; las dos plataformas, todos los
   videos):** la ÚLTIMA frase es una pregunta corta al público (≤ 12 palabras, termina en "?") que invita a
   comentar, sobre esa historia; el pago del gancho pasa a la ANTEÚLTIMA. A la mitad (30-60 % de las frases,
@@ -946,7 +952,7 @@ clips_bot/voces.py       voces de Gemini de hoy por clave (con Lo Encontré) y e
 clips_bot/prueba_manual.py prueba manual vs API (§1): el clip del día a mano, registro e informe del feed
 clips_bot/envivo.py      modo en vivo (§3b): quién está al aire, momentos por creadores distintos,
                          alertas en la DB (no repetir, tope, vencer) y el resumen de tiempos
-tests/                   1565 tests sin red ni video (conftest.py: nada sale a YouTube, Facebook ni ElevenLabs) (test_reglas_fijas.py: las 3 reglas de §1)
+tests/                   1577 tests sin red ni video (conftest.py: nada sale a YouTube, Facebook ni ElevenLabs) (test_reglas_fijas.py: las 3 reglas de §1)
 ```
 
 Comandos:

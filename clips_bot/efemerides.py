@@ -36,7 +36,7 @@ from .config import DATA_DIR, user_agent
 from .media import chequear_audio, find_bin, preparar_audio, run, X264
 from . import ilustrar
 from .narrar import NarrarError
-from .reglas import REGLAS_CLARIDAD
+from .reglas import REGLA_GANCHO_CONCRETO, REGLAS_CLARIDAD, gancho_generico
 from .textos import nombres_propios
 from .videos_libres import Video
 
@@ -682,7 +682,7 @@ nombre, ni un número, ni una fecha que no esté ahí. Si el artículo no lo dic
   palabras como mucho y SIN fecha ("Una banda terminó una canción 45 años después."). Nada de
   "Un día como hoy" ni de arranques de relleno ("¿Sabías que…?", "Hoy te cuento…").
 - La SEGUNDA frase suma INTRIGA, sin el año: algo que haga querer saber cómo siguió ("Y lo hicieron
-  sin ejército…", "Nadie lo esperaba…"). NO arranca con "En <año>" (en Facebook la gente se iba
+  sin ejército…", "Y tenía un solo barco…"). NO arranca con "En <año>" (en Facebook la gente se iba
   justo ahí: 98 % hasta el segundo 3 y 40 % en el 8). El año y el lugar ya van escritos en pantalla.
 - El AÑO se dice recién en la TERCERA o CUARTA frase ("Fue en 1811.").
 - ESTRUCTURA (Santi, 2026-11-13: en Facebook la gente se va después del segundo 3): GANCHO → TENSIÓN →
@@ -714,7 +714,7 @@ nombre, ni un número, ni una fecha que no esté ahí. Si el artículo no lo dic
   que hace o le pasa a un personaje ("en la serie, Ash viajó…", "Pikachu lo salvó"). Si el hecho
   es algo que pasa dentro de la historia, no sirve. Poné `cuenta_trama` en true si alguna frase
   cuenta la trama (y entonces reescribila).
-""" + REGLAS_CLARIDAD + """
+""" + REGLAS_CLARIDAD + REGLA_GANCHO_CONCRETO + """
 - "Menos datos" NO es un guion más corto: sigue siendo de 80 a 100 palabras. Las palabras que
   dejás de gastar en fechas y nombres van a explicar el cómo y el porqué.
 - Cada frase lleva `mostrar`: qué tendría que verse en pantalla mientras se dice, como búsqueda
@@ -1076,10 +1076,15 @@ def validar_guion(d: dict, anio: int, fuente: str, corto: bool = False,
         errores.append("la primera frase (el gancho) va SIN el año: el año va en la segunda")
     if len(frases[0].split()) > 14:
         errores.append("la primera frase (el gancho) tiene que tener 14 palabras como mucho")
+    generica = gancho_generico(frases[0])
+    if generica:     # Santi, 2026-11-16: el gancho dice el dato concreto más fuerte, nada de fórmulas
+        errores.append(f'el gancho usa una frase genérica de intriga («{generica}»): decí el DATO concreto más fuerte '
+                       'de la historia (MAL: "la fusilaron y pasó algo que no esperaban"; BIEN: "la fusilaron a los 22 '
+                       'y antes gritó una frase que todavía se recuerda")')
     # La segunda suma intriga y el año va en la 3.ª o 4.ª (Santi, 2026-11-12: el Reel de Cartagena
     # tenía 98 % hasta el segundo 3 y caía a 40 % en el 8, justo en "En 1811, en Cartagena…").
     if len(frases) > 1 and (str(anio) in frases[1] or re.match(r"en\s+\d", _norm(frases[1]))):
-        errores.append('la segunda frase suma INTRIGA ("Nadie lo esperaba…"), sin el año: el año va '
+        errores.append('la segunda frase suma INTRIGA ("Y tenía un solo barco…"), sin el año: el año va '
                        "en la tercera o la cuarta")
     if not any(str(anio) in f for f in frases[2:4]):
         errores.append(f"el año ({anio}) se dice en la tercera o la cuarta frase")
