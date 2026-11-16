@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-11-16 | **Versión:** v1.22.0 (desplegado) | **Modo:** Fase 2: corriendo solo en la Pi. **Rots APAGADO.** Pequeña Historia (3 por día, madrugada desde las 04:00) (publicación sin aprobar: llegan con ❌ Cancelar) y **Así Nació** (2 por día, desde las 07:00, publican 13:00 y 20:00 en YouTube y Facebook con ❌ Cancelar), todo al privado de Santi
+**Snapshot:** 2026-11-16 | **Versión:** v1.23.0 (desplegado) | **Modo:** Fase 2: corriendo solo en la Pi. **Rots APAGADO.** Pequeña Historia (3 por día, madrugada desde las 04:00) (publicación sin aprobar: llegan con ❌ Cancelar) y **Así Nació** (2 por día, desde las 07:00, publican 13:00 y 20:00 en YouTube y Facebook con ❌ Cancelar), todo al privado de Santi
 
 > **SI ESTÁS EMPEZANDO UNA SESIÓN NUEVA, LEÉ §10.** Ahí está qué está hecho, qué quedó a medias,
 > qué falta, y las trampas que ya nos mordieron.
@@ -1173,6 +1173,16 @@ Problemas abiertos:
 
 ## 9. CHANGELOG
 
+- v1.23.0 (2026-11-16, noche) — **Así Nació: el estilo ya no frena un video** (Santi, después de que el Tupper fallara
+  8 veces por "presentá a Brownie Wise"): solo frenan los datos que no están en el artículo, los temas sensibles y las
+  fallas técnicas (`marcas.bloquea`); si una regla de estilo sigue sin cumplirse después de las correcciones, sale el
+  mejor guion y el mensaje dice cuál (`aviso_estilo`). Desplegado y escucha reiniciada. **Regla para todos los videos:**
+  cada escena se entiende de un vistazo sin la voz y el dibujo usa los detalles que describe el guion (REGLA_16 y la
+  revisión: `cambiar_accion` / `redibujar_objeto`). **uso_manos (sigue APAGADO):** el apretón arranca con un plano medio
+  de las dos personas dándose la mano sobre la mesa con el contrato (gesto `dar_mano`, mesa con `en_medio`) y después el
+  primer plano; la inspiración trae `acompana` (el pincel al lado de la lata) y el producto sin su parte, y la pieza se
+  transforma en ella (la tapa de pintura cae sobre el Tupper abierto y pasa a ser la tapa blanca). Hojas de las escenas 5
+  y 7 mandadas a Santi (`output/animacion/prueba_escenas_v4b`, sin guion ni voz nuevos). 1612 tests OK.
 - v1.22.0 (2026-11-16, noche) — **Así Nació: uso real con las manos, plata de verdad e inspiración animada**
   (`animacion.uso_manos`, APAGADO hasta el OK de Santi; `uso_v3.py`). Escenas nuevas de la biblioteca (solo se le
   ofrecen al guion con el interruptor, `escenas_lib.ACCIONES_V4` / `CON_V4`): `uso_manos` (dos manos usan el producto
