@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-11-16 | **Versión:** v1.16.0 (desplegado) | **Modo:** Fase 2: corriendo solo en la Pi. **Rots APAGADO.** Pequeña Historia (3 por día, madrugada desde las 04:00) (publicación sin aprobar: llegan con ❌ Cancelar) y **Así Nació** (2 por día, desde las 07:00, publican 13:00 y 20:00 en YouTube y Facebook con ❌ Cancelar), todo al privado de Santi
+**Snapshot:** 2026-11-16 | **Versión:** v1.17.0 (desplegado) | **Modo:** Fase 2: corriendo solo en la Pi. **Rots APAGADO.** Pequeña Historia (3 por día, madrugada desde las 04:00) (publicación sin aprobar: llegan con ❌ Cancelar) y **Así Nació** (2 por día, desde las 07:00, publican 13:00 y 20:00 en YouTube y Facebook con ❌ Cancelar), todo al privado de Santi
 
 > **SI ESTÁS EMPEZANDO UNA SESIÓN NUEVA, LEÉ §10.** Ahí está qué está hecho, qué quedó a medias,
 > qué falta, y las trampas que ya nos mordieron.
@@ -268,7 +268,24 @@ servicio systemd separado: `clips-bot`).
   2026-11-16):** cada uso queda en `bot_estado.banco_usos`; /costos muestra los de la semana (lunes a domingo)
   por canal y, si uno pasa de 2, aviso a Santi una vez por semana (`_banco_usos_tick`: su búsqueda necesita
   arreglo). **(7) La segunda de Latinoamérica tampoco queda vacía:** sin ninguna de 8 (o 7), una del banco;
-  nunca una de menos de 8 (`de_banco` saltea las de menos de 8).
+  nunca una de menos de 8 (`de_banco` saltea las de menos de 8). Si ninguna de las del día sale (sin
+  verificar o sin fotos), se prueba con el banco antes de rendirse.
+- **Latinoamérica: fuentes web y 2 fuentes por dato (Santi, 2026-11-16, opción C; `web_historias.py`,
+  `historias_fb.web`):** además de Wikipedia, Haiku busca con la búsqueda web de la API (versiones básicas:
+  Haiku no tiene filtro dinámico) historias en diarios, sitios de historia, museos y archivos de cada país
+  (hasta 8 búsquedas por propuesta); entran como candidatas y se puntúan igual (8 o más). Antes del guion,
+  CUALQUIER historia de Latinoamérica (web, Wikipedia o banco) se verifica: cada dato en 2 o más fuentes de
+  sitios distintos (lo cuenta el código; es. y en.wikipedia son UNA sola), al menos 3 datos; el guion sale
+  SOLO del texto verificado. Sin verificar, una de la web no se usa; si la búsqueda está caída, una de
+  Wikipedia sale con "⚠️ sin verificar". Los links quedan en la propuesta (`local.verificados`,
+  `fuentes_web`, `origen`) y en la bitácora (`fuentes`). Cada búsqueda (US$ 0,01) se anota en gemini_uso como el
+  modelo `web_search` (1 unidad = 1 búsqueda), así entra en /costos y el informe diario. **Prueba de un día
+  real:** el primer día de producción con búsqueda web, al terminar, `_web_latam_tick` lo mide; hasta
+  `web_tope_usd` (0,45) queda andando y avisa; si se pasa, se apaga sola (`bot_estado.web_latam_apagado`) y
+  avisa. Medido el 16/11 (prueba, 17/11): 1 búsqueda de historias = 6 búsquedas y 101.000 tokens de entrada
+  (≈ US$ 0,07, 5 historias de infobae, ámbito, billiken, icarito); 1 verificación = 2 búsquedas + lecturas,
+  37.000-61.000 tokens (≈ US$ 0,03; Morelos en el Aguacatillo: 8 datos, cada uno en inehrm.gob.mx y
+  memoriapoliticademexico.org o vlex). Estimado ≈ US$ 0,25-0,30 por día. Tecnología y Así Nació todavía no.
 - **Audio: nada arriba de −3 dB (Santi, 2026-11-16; regla fija 3):** `media.cola_audio` arranca con un
   limitador a −4,4 dB (`LIMITADOR`: sin subir el volumen, sin correr la sincronía), así todos los videos (Así
   Nació, Pequeña Historia, clips, /narrar) terminan debajo de −3 dB aunque el último golpe venga fuerte
@@ -895,14 +912,15 @@ clips_bot/animacion/     canal Así Nació (prendido): personajes/escenas SVG, l
                          (Montserrat Black como trazos), mascotas.py (las 4 opciones originales)
 clips_bot/animacion_remotion/ + remotion/  prototipo de Así Nació con Remotion (no en producción)
 assets/fuentes/          Montserrat Black + OFL.txt
-clips_bot/locales.py     §3d: historias de Facebook (Wikipedia en español por día, Haiku, Sonnet)
+clips_bot/locales.py     §3d: historias de Latinoamérica (Wikipedia por día + la web, Haiku, Sonnet)
+clips_bot/web_historias.py §1: búsqueda web con Haiku (diarios, museos, archivos) y verificación con 2 fuentes por dato
 clips_bot/calendario.py  §3d: calendario de 90 días de fechas de Latinoamérica + la lista de los lunes
 clips_bot/medicion_ph.py §1: seguimiento por video (segundo en que se va la mayoría en FB, % que se queda en YT calibrado con Studio, empujones)
 clips_bot/voces.py       voces de Gemini de hoy por clave (con Lo Encontré) y el aviso cerca del tope
 clips_bot/prueba_manual.py prueba manual vs API (§1): el clip del día a mano, registro e informe del feed
 clips_bot/envivo.py      modo en vivo (§3b): quién está al aire, momentos por creadores distintos,
                          alertas en la DB (no repetir, tope, vencer) y el resumen de tiempos
-tests/                   1529 tests sin red ni video (conftest.py: nada sale a YouTube, Facebook ni ElevenLabs) (test_reglas_fijas.py: las 3 reglas de §1)
+tests/                   1541 tests sin red ni video (conftest.py: nada sale a YouTube, Facebook ni ElevenLabs) (test_reglas_fijas.py: las 3 reglas de §1)
 ```
 
 Comandos:
@@ -1095,6 +1113,12 @@ Problemas abiertos:
 
 ## 9. CHANGELOG
 
+- v1.17.0 (2026-11-16) — **Latinoamérica con fuentes web y 2 fuentes por dato** (opción C de Santi; regla en
+  §1): `web_historias.py` (ClienteWeb, buscar, verificar), `locales.candidatos_web` y la verificación antes de
+  cada guion, el banco como última vuelta si ninguna del día sale, `_web_latam` / `_web_latam_tick` /
+  `costo_web_dia`, el paso "verificacion" en la bitácora y los descartes. Prueba real en la Pi (origen prueba):
+  US$ 0,13 por una búsqueda y dos verificaciones (la primera se cortó con 8.000 tokens de respuesta: ahora
+  16.000). `tests/test_web_historias.py`. 1541 tests OK.
 - v1.16.0 (2026-11-16) — **El banco como excepción y el pico del final** (reglas en §1). Usos del banco por
   semana y canal en /costos, con aviso si un canal pasa de 2 (`banco.anotar_uso`, `usos_semana`, `texto_usos`,
   `avisos_pendientes`, `_banco_usos_tick`); la segunda historia de Latinoamérica también cae al banco (nunca
@@ -2883,11 +2907,9 @@ clips" queda sin uso mientras Rots siga apagado.
   de audio), música con tensión y efectos, links de búsqueda de grupos de Facebook.
 - **App de Meta en modo Live** (lo hace Santi, docs/facebook-asi-nacio.md): sin eso el público puede no
   ver los Reels de las dos páginas.
-- **Fuentes web para las historias** (pedido del 15/11: buscar en diarios, museos, archivos y sitios de las
-  marcas, verificar cada dato con 2 fuentes y guardar los links; repetido el 16/11: "las efemérides de Wikipedia
-  no alcanzan", ese día Latinoamérica sacó 1,8, 2,5 y 3,5): esperando que Santi elija entre las opciones de costo
-  (16/11: A todo Sonnet ~US$ 2,5-2,9 por día, B Haiku busca y Sonnet verifica ~US$ 1,6-1,9, C todo Haiku
-  ~US$ 0,6-0,8) antes de programar. La cuenta del banco ya está (v1.16.0).
+- **Fuentes web:** Santi eligió la opción C (todo Haiku) el 16/11 y empezar por Latinoamérica (v1.17.0, en
+  prueba desde el 17/11, ver §1). Si la prueba queda andando: lo mismo para tecnología y Así Nació (sitios de
+  las marcas y empresas), con su propio tope.
 - **Voz de Pequeña Historia** (v0.88.0): muestras de Fenrir más calmo, Achird, Sadaltager y Charon;
   falta que elija (`efemerides.tts_modelo: gemini-2.5-flash-preview-tts`, `tts_instruccion`, `tts_voz`).
 - **Descripciones de los canales** (propuestas el 2026-11-12): las cambia Santi.
