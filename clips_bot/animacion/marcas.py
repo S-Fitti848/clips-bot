@@ -108,7 +108,7 @@ FONDOS = ("casa", "taller", "fabrica", "tienda", "oficina", "ciudad", "escenario
           "laboratorio", "hospital", "campo", "puerto")
 # mesa y estante no son objetos de la historia: son el APOYO (`soporte`) y el render los pone contra la pared
 # Los efectos que agrega el render (polvo, líneas de movimiento, destellos, primer plano) NO los elige el guion.
-EFECTOS_RENDER = ("polvo", "lineas_mov", "destello", "primer_plano")
+EFECTOS_RENDER = ("polvo", "lineas_mov", "destello", "primer_plano", "rayos")
 PROPS = tuple(sorted(n for n in esc.PROPS if n not in ("pedazo", "microfono", "mesa", "estante") + EFECTOS_RENDER))
 # Lo que puede pedir el guion: la biblioteca, los dibujos guardados y "dibujo_nuevo" (Claude lo dibuja, dibujos.py)
 DIBUJO_NUEVO = "dibujo_nuevo"
@@ -575,6 +575,7 @@ SCHEMA_GUION = {
                 "accion_escena": {"type": "STRING"},   # sin enum: la gramática de Claude se pasaba de tamaño (15/11)
                 "plano": {"type": "STRING"},
                 "accion_nueva": {"type": "STRING"},
+                "decorado": {"type": "ARRAY", "items": {"type": "STRING"}},   # reglas_v3 (2026-11-16)
             },
             "required": ["frase", "parte", "fondo", "actores", "objetos", "camara", "texto_pantalla",
                          "transicion", "cadena", "viaje_a_anio", "vuelve_al_presente", "claves", "emoji",
@@ -593,6 +594,8 @@ SCHEMA_GUION = {
         "entidades": {"type": "ARRAY", "items": {"type": "OBJECT", "properties": {
             "nombre": {"type": "STRING"}, "presentacion": {"type": "STRING"},
             "frase": {"type": "INTEGER"}}, "required": ["nombre", "presentacion", "frase"]}},
+        "ganchos": {"type": "ARRAY", "items": {"type": "OBJECT", "properties": {     # reglas_v3 (2026-11-16)
+            "tipo": {"type": "STRING"}, "texto": {"type": "STRING"}}, "required": ["tipo", "texto"]}},
     },
     "required": ["titulo", "descripcion", "tono", "pregunta_gancho", "escenas", "locutor", "entidades",
                  "protagonista", "dibujos_nuevos"],
@@ -1003,12 +1006,29 @@ def errores_lugares_y_personajes(escenas: list[dict]) -> list[str]:
     return errores
 
 
+def errores_v3(d: dict) -> list[str]:
+    """Regla 16 (Santi, 2026-11-16): 3 opciones de gancho distintas con texto de 3 a 5 palabras, y decorado de
+    contexto en la mayoría de las escenas."""
+    from . import gancho_v3 as gv
+
+    errores = []
+    ops = gv.opciones_de(d)
+    if len(ops) < 3 or len({o["tipo"] for o in ops}) < 3:
+        errores.append("`ganchos`: 3 opciones de tipos DISTINTOS (" + ", ".join(gv.TIPOS) + ") con un `texto` de 3 a 5 "
+                       "palabras que intrigue")
+    escenas = (d.get("escenas") or [])[1:]
+    sin = [i + 2 for i, e in enumerate(escenas) if not (e.get("decorado") or [])]
+    if escenas and len(sin) > len(escenas) // 2:
+        errores.append(f"`decorado`: poné 1 a 3 objetos de contexto en las escenas {sin[:6]} (nada de mesas vacías)")
+    return errores
+
+
 def validar_guion(d: dict, m: Marca, fuente: str, ganchos_previos: list[dict] | None = None) -> list[str]:
     """Los errores del guion (vacío = sirve): datos contra el artículo (como Pequeña Historia),
     estructura, escenas con acción, locutor y presentación de cada empresa o persona."""
     from clips_bot.efemerides import no_respaldados
 
-    errores = []
+    errores = errores_v3(d) if REGLAS_V3 else []
     escenas = d.get("escenas") or []
     frases = frases_de(d)
     n = len(frases)
@@ -1195,7 +1215,28 @@ def chequear_calidad(cliente, d: dict, m: Marca) -> list[str]:
 def sistema_guion() -> str:
     """El prompt del guion con la biblioteca de escenas de hoy (las recetas guardadas también)."""
     lista = "\n".join(f"  - {k}: {v}" for k, v in sorted(_lib.todas_las_acciones().items()))
-    return SISTEMA_GUION.replace("{BIBLIOTECA}", lista)
+    return SISTEMA_GUION.replace("{BIBLIOTECA}", lista) + (REGLA_16 if REGLAS_V3 else "")
+
+
+REGLAS_V3 = False      # armar_video lo prende con `animacion.reglas_v3` (Santi, 2026-11-16)
+
+REGLA_16 = """
+REGLA 16 — GANCHO QUE FRENA EL DEDO Y ESCENAS VIVAS (Santi, 2026-11-16).
+- `ganchos`: 3 OPCIONES de gancho para los primeros 3 segundos, cada una con `tipo` (explota: el producto
+  estalla en pedazos de colores; gigante: el producto crece hasta ser enorme; multiplica: el producto se
+  multiplica por toda la pantalla; vuela: el producto cruza volando; multitud: una multitud se pelea por él),
+  tres tipos DISTINTOS, y `texto`: una pregunta o un dato que intrigue, de 3 a 5 palabras, que va grande arriba
+  ("¿UN JUGUETE DE JABÓN?", "VENDIÓ UN MILLÓN EN 1949"). Sale la más llamativa. La frase 1 sigue siendo el gancho
+  hablado (8 palabras como mucho).
+- Las MANOS siempre hacen algo con el objeto: lo agarran, lo abren, lo llenan, lo apilan (objeto con `soporte`
+  mano, acción `fabricar`, `usar`, `probar` o `vender`). Nunca manos abiertas al costado ni el objeto flotando.
+- `decorado` en cada escena (salvo la 1): 1 a 3 objetos de la lista que dan CONTEXTO a la historia en ese lugar y
+  esa época (en una cocina de 1946: botella, jarrón, radio; en una oficina: teléfono de disco, calendario): van
+  sobre el estante, la mesa o el piso, atrás. Nada de mesas ni estantes vacíos.
+- El OBJETO PROTAGONISTA tiene que parecerse al real: el Tupper es un recipiente de plástico bajo con tapa
+  hermética, no una olla. Si ningún dibujo de la lista ES ese objeto (no uno parecido), `dibujo_nuevo` con una
+  descripción precisa de su forma, material y colores.
+- Cada frase dura 3 segundos como mucho al decirla (8 a 10 palabras): el video corta a otra toma cada 3 s."""
 
 
 def escribir_guion(cliente, e: Elegido, fuente: str, reintentos: int = 6, avisar=log.info,
@@ -1342,6 +1383,9 @@ def resolver_objetos(cliente, d: dict, e: "Elegido | None" = None, avisar=log.in
             arreglar(o)
         for c in esc_.get("cadena") or []:
             arreglar(c)
+        if esc_.get("decorado"):     # el decorado de contexto (reglas_v3): lo que no está, el más parecido
+            esc_["decorado"] = [n_ if esc.es_prop(str(n_)) else esc.prop_parecido(str(n_))
+                                for n_ in esc_["decorado"] if str(n_ or "").strip()]
     pr = d.get("protagonista")
     if isinstance(pr, dict):
         arreglar(pr)
@@ -1365,7 +1409,8 @@ def cortes(inicios: list[float], fin: float, cola_s: float = 0.8) -> list[float]
 
 def linea_de_tiempo(d: dict, inicios: list[float], fin: float, palabras: list,
                     voz: Path | None, presente: int | None = None,
-                    subtitulos: str = "viral", visual: bool = False) -> tuple[dict, list[tuple[float, str]]]:
+                    subtitulos: str = "viral", visual: bool = False,
+                    v3: bool | None = None) -> tuple[dict, list[tuple[float, str]]]:
     """El guion + los tiempos reales de la voz (un inicio por SEGMENTO: frases y comentarios de Tito,
     en orden) → (dict de `timeline.Video`, SFX con su segundo global).
 
@@ -1383,6 +1428,11 @@ def linea_de_tiempo(d: dict, inicios: list[float], fin: float, palabras: list,
     proyectil = prota if prota in ac.LANZABLES else "pelota"
     vistas: dict[tuple, int] = {}     # (fondo, década) → cuántas veces: la variante, para no repetir igual
     mapa_hecho = False
+    from . import gancho_v3 as gv
+
+    v3 = REGLAS_V3 if v3 is None else v3
+    opciones = gv.opciones_de(d) if v3 else []
+    ultimo_lugar = ""
     for n_seg, ((tipo, k, _), dur) in enumerate(zip(segs, durs)):
         if tipo == "locutor":
             esc_d, fx = ac.escena_locutor(dur, k)
@@ -1422,12 +1472,34 @@ def linea_de_tiempo(d: dict, inicios: list[float], fin: float, palabras: list,
             t += visuales.MAPA_S
             dur = round(dur - visuales.MAPA_S, 3)
         anio_esc = int(e.get("anio_escena") or 0)
+        if v3 and vis is not None and vis.get("rotulo"):
+            # el rótulo lleva año y lugar ("1938 · Massachusetts", Santi 2026-11-16)
+            partes = [x.strip() for x in str(vis["rotulo"]).split("·") if x.strip()]
+            anio_r = next((x for x in partes if x.isdigit()), "") or str(anio_esc or anio_actual)
+            lugar_r = next((x for x in partes if not x.isdigit()), "") or ultimo_lugar
+            ultimo_lugar = lugar_r or ultimo_lugar
+            vis = {**vis, "rotulo": " · ".join(x for x in (anio_r, lugar_r) if x)}
+        if v3 and k == 0 and opciones:
+            # el gancho: 2 o 3 cortes de ~1 s con la imagen imposible (gancho_v3); si la frase dura más, sigue la escena
+            op = opciones[min(int(d.get("gancho_elegido") or 0), len(opciones) - 1)]
+            dg = round(min(dur, 3.3) if dur - min(dur, 3.3) >= 0.6 else dur, 3)
+            esc_g, fx = gv.escena_gancho(op, prota, e.get("fondo") or "ciudad", ac.semilla_fondo(anio_actual, variante),
+                                         dg, seed=len(prota))
+            esc_g["frase"] = k
+            escenas.append(esc_g)
+            sfx += [(round(t + x, 3), s_) for x, s_ in fx]
+            t += dg
+            dur = round(dur - dg, 3)
+            if dur < 0.6:
+                continue
         e = {**e, "objetos": [{**o, "prop": prop_real(o)} for o in e.get("objetos") or [] if prop_real(o)]}
         esc_d, fx = ac.escena_accion(e, dur, k, primera=(k == 0), tono=1.0 if pasado else 0.0,
                                      anio=anio_esc if 1800 <= anio_esc < presente else anio_actual,
                                      variante=variante, reservar=reservar, proyectil=proyectil, visual=vis,
                                      protagonista=prota)
         esc_d["frase"] = k          # para la revisión visual: qué frase del guion es esta escena
+        if v3:
+            gv.planos(esc_d)        # 2 planos o más por frase, ninguno de más de 3 s, siempre con zoom lento
         pisados = ac.superposiciones(esc_d)
         if pisados:
             log.warning("escena %d: personajes que se pisan en %s", k + 1, pisados[:3])
@@ -1649,7 +1721,7 @@ SCHEMA_REVISION = {"type": "OBJECT", "properties": {"problemas": {"type": "ARRAY
         "cuadro": {"type": "INTEGER"}, "que": {"type": "STRING"},
         "arreglo": {"type": "STRING", "enum": ["mover_objeto", "cambiar_soporte", "sacar_objeto",
                                                "separar_personajes", "sacar_texto", "cambiar_accion",
-                                               "rehacer_gancho", "otro"]},
+                                               "rehacer_gancho", "redibujar_objeto", "otro"]},
         "objeto": {"type": "STRING"}},
     "required": ["cuadro", "que", "arreglo", "objeto"]}}}, "required": ["problemas"]}
 CUADROS_REVISION = 8
@@ -1687,10 +1759,117 @@ def _jpeg_512(png: Path) -> bytes:
     return b.getvalue()
 
 
+SISTEMA_ELEGIR_GANCHO = """Elegís el GANCHO de un video corto animado (los primeros 3 segundos; en Facebook se va el 65 %
+entre el segundo 3 y el 7). Cada imagen es una opción: sus 2 o 3 cortes, uno al lado del otro. La pregunta es una sola:
+¿FRENARÍAS EL DEDO CON ESTO, scrolleando el celular? Gana la más sorprendente o imposible, la que se entiende en un
+golpe de vista, con el producto bien visible, colores fuertes y movimiento; pierde la confusa, la vacía o la que tapa
+el producto. `mejor` es el número de la opción (desde 1) y `por_que`, corto."""
+SCHEMA_ELEGIR_GANCHO = {"type": "OBJECT", "properties": {"mejor": {"type": "INTEGER"}, "por_que": {"type": "STRING"}},
+                        "required": ["mejor", "por_que"]}
+
+
+def tira_del_gancho(datos: dict, carpeta: Path, n: int, capturar=None) -> bytes:
+    """Los cortes del gancho (escena 0) en una sola imagen, uno al lado del otro (JPEG chico)."""
+    import io
+
+    from PIL import Image
+
+    from . import render as rd
+    from .timeline import Video
+
+    esc0 = datos["escenas"][0]
+    dur = float(esc0["duracion"])
+    cortes = 3 if dur >= 2.4 else 2
+    video = Video.desde_dict({**datos, "audio": None})
+    pngs = []
+    for c in range(cortes):
+        png = carpeta / f"gancho_{n}_{c}.png"
+        t = dur * (c + 0.6) / cortes
+        if capturar:
+            capturar(datos, t, png)
+        else:
+            rd.cuadro_png(video, min(video.total_cuadros - 1, int(t * video.fps)), png, escala=0.35)
+        pngs.append(Image.open(png).convert("RGB"))
+    alto = min(im.height for im in pngs)
+    pngs = [im.resize((int(im.width * alto / im.height), alto)) for im in pngs]
+    tira = Image.new("RGB", (sum(im.width for im in pngs) + 8 * (len(pngs) - 1), alto), "white")
+    x = 0
+    for im in pngs:
+        tira.paste(im, (x, 0))
+        x += im.width + 8
+    tira.thumbnail((900, 900))
+    b = io.BytesIO()
+    tira.save(b, "JPEG", quality=80)
+    (carpeta / f"gancho_opcion_{n + 1}.jpg").write_bytes(b.getvalue())
+    return b.getvalue()
+
+
+def elegir_gancho(cliente, d: dict, armar, carpeta: Path, avisar=log.info, capturar=None) -> str:
+    """Santi, 2026-11-16: 3 opciones de gancho por video y la revisión visual elige la más llamativa. `armar(d)`
+    devuelve los datos de la línea de tiempo. Deja `d["gancho_elegido"]` y devuelve qué eligió."""
+    from . import gancho_v3 as gv
+
+    ops = gv.opciones_de(d)
+    if cliente is None or len(ops) < 2:
+        return ""
+    tiras = []
+    for j in range(len(ops)):
+        d["gancho_elegido"] = j
+        tiras.append(tira_del_gancho(armar(d), carpeta, j, capturar))
+    lista = "\n".join(f"Opción {j + 1}: {o['tipo']} — texto «{o['texto']}»" for j, o in enumerate(ops))
+    try:
+        r = json.loads(cliente.json(SISTEMA_ELEGIR_GANCHO, lista, SCHEMA_ELEGIR_GANCHO, 0.2, imagenes=tiras))
+        mejor = int(r.get("mejor") or 1)
+    except Exception as err:  # noqa: BLE001 — sin respuesta, la primera opción
+        avisar(f"elección del gancho: no respondió ({str(err)[:120]}); va la 1")
+        mejor, r = 1, {"por_que": "sin respuesta"}
+    mejor = max(1, min(len(ops), mejor))
+    d["gancho_elegido"] = mejor - 1
+    o = ops[mejor - 1]
+    txt = f"gancho elegido: opción {mejor} de {len(ops)} ({o['tipo']}, «{o['texto']}»): {str(r.get('por_que') or '')[:140]}"
+    avisar(txt)
+    return txt
+
+
 GANCHO_REHACER = ("el GANCHO (escena 1) es lo más importante del video (en Facebook se va el 65 % entre el segundo 3 "
                   "y el 7): mostrá el momento MÁS SORPRENDENTE de esta historia CON ACCIÓN (alguien haciendo algo, en "
                   "su lugar) y el objeto protagonista a la vista; nada de escenario vacío, gente parada, el objeto "
                   "girando solo ni un arranque anterior del canal")
+
+
+REVISION_V3 = """
+(Santi, 2026-11-16) Además:
+- MANOS abiertas al costado, sin hacer nada, o un objeto flotando cerca de una mano en vez de estar agarrado, abierto,
+  llenado o apilado: `arreglo` = cambiar_accion.
+- El OBJETO PROTAGONISTA no se parece al objeto real (te digo qué es: un Tupper dibujado como una olla, un auto que
+  parece una caja): `arreglo` = redibujar_objeto y en `que` describí cómo es el real (forma, material, colores).
+- Una mesa o un estante vacíos donde la historia pide cosas de contexto: `arreglo` = otro."""
+
+
+def redibujar_protagonista(cliente, d: dict, como_es: str, avisar=log.info) -> str:
+    """La revisión vio que el protagonista no se parece al real: Sonnet lo dibuja de nuevo con la descripción y
+    reemplaza al anterior en todas las escenas (queda guardado para los próximos videos)."""
+    from . import dibujos
+
+    pr = d.get("protagonista") or {}
+    viejo = prop_real(pr)
+    if not viejo or cliente is None:
+        return ""
+    base = re.sub(r"[^a-z0-9_]", "", str(pr.get("que_es") or viejo).lower().replace(" ", "_"))[:24] or viejo
+    nuevo = f"{base}_real" if base != viejo else f"{viejo}_real"
+    if not dibujos.nombre_valido(nuevo):
+        nuevo = f"{viejo}_real"[:30]
+    try:
+        dibujos.dibujar(cliente, nuevo, f"{pr.get('que_es') or viejo}. Cómo es el real: {como_es}")
+    except Exception as err:  # noqa: BLE001 — si no sale, queda el de antes
+        avisar(f"no pude redibujar {viejo}: {str(err)[:120]}")
+        return ""
+    for e_ in d.get("escenas") or []:
+        for o in e_.get("objetos") or []:
+            if prop_real(o) == viejo:
+                o["prop"], o["dibujo"] = DIBUJO_NUEVO, nuevo
+    pr["prop"], pr["dibujo"] = DIBUJO_NUEVO, nuevo
+    return f"redibujé el protagonista ({viejo} → {nuevo}): {como_es[:100]}"
 
 
 def corregir_acciones(cliente, d: dict, e: "Elegido", fuente: str, malas: list[tuple[int, str]],
@@ -1794,7 +1973,7 @@ def revisar_visual(cliente, d: dict, datos: dict, carpeta: Path, capturar=None, 
     lista += ("\n\nARRANQUES ANTERIORES DEL CANAL:\n" + texto_ganchos(ganchos_recientes(conn)[:-1])
               if conn is not None else "")
     try:
-        r_ = json.loads(cliente.json(SISTEMA_REVISION, f"Los cuadros, en orden:\n{lista}", SCHEMA_REVISION, 0.2,
+        r_ = json.loads(cliente.json(SISTEMA_REVISION + (REVISION_V3 if REGLAS_V3 else ""), f"Los cuadros, en orden:\n{lista}", SCHEMA_REVISION, 0.2,
                                      imagenes=imagenes))
     except Exception as err:   # la revisión es una red de seguridad: si no responde, sigue
         avisar(f"revisión visual: no respondió ({str(err)[:120]})")
@@ -1990,6 +2169,8 @@ def armar_video(conn, settings, carpeta: Path, cliente=None, wiki=None, hoy: dat
     carpeta = Path(carpeta)
     carpeta.mkdir(parents=True, exist_ok=True)
     cfg = settings.animacion
+    global REGLAS_V3
+    REGLAS_V3 = bool(getattr(cfg, "reglas_v3", False))
     t_total = time.time()
     tiempos = {}
     fila0 = ultima_fila_uso(conn)
@@ -2092,12 +2273,29 @@ def armar_video(conn, settings, carpeta: Path, cliente=None, wiki=None, hoy: dat
     revision: list[str] = []
     t0 = time.time()
     bitacora.paso("revision")
+    if REGLAS_V3:
+        # 3 opciones de gancho: la revisión visual elige la más llamativa (Santi, 2026-11-16)
+        def _armar(d_):
+            return linea_de_tiempo(d_, inicios, fin, palabras, wav,
+                                   subtitulos="viral" if settings.animacion.subtitulos_virales else "clasico",
+                                   visual=getattr(cfg, "visual_plus", False))[0]
+        elegido = elegir_gancho(cliente, d, _armar, carpeta, avisar)
+        if elegido:
+            revision.append(elegido)
+            datos, eventos = linea_de_tiempo(d, inicios, fin, palabras, wav,
+                                             subtitulos="viral" if settings.animacion.subtitulos_virales else "clasico",
+                                             visual=getattr(cfg, "visual_plus", False))
     for vuelta in range(2):
         problemas, claves = revisar_visual(cliente, d, datos, carpeta, avisar=avisar, conn=conn)
         if not problemas:
             revision.append(f"vuelta {vuelta + 1}: sin problemas" if vuelta else "revisión visual: sin problemas")
             break
         hechos = aplicar_revision(d, problemas, claves, datos)
+        if any(pr.get("arreglo") == "redibujar_objeto" for pr in problemas):
+            hecho = redibujar_protagonista(cliente, d, next(str(pr.get("que") or "") for pr in problemas
+                                                            if pr.get("arreglo") == "redibujar_objeto"), avisar)
+            if hecho:
+                hechos.append(hecho)
         # lo que se corrige en el guion: la acción que no es la de la frase, la gente parada y el gancho
         # repetido o sin acción (Santi, 2026-11-15: "que lo corrija sola, no solo que lo marque")
         acciones_mal = [(int(pr.get("cuadro") or 0) - 1, str(pr.get("que") or "")) for pr in problemas

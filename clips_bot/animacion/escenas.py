@@ -1197,6 +1197,19 @@ def prop_lineas_mov(color: str = "#ffffff", **_) -> str:
     return "".join(out)
 
 
+def prop_rayos(color: str = P.AMARILLO, **_) -> str:
+    """Rayos de cómic (el gancho, 2026-11-16: "colores fuertes y mucho movimiento"): 16 rayos de dos colores
+    fuertes alrededor del centro, detrás del objeto; girando se ven en movimiento."""
+    out = []
+    otro = P.NARANJA if color != P.NARANJA else P.ROJO
+    for k in range(16):
+        a0, a1 = math.radians(k * 22.5 - 9), math.radians(k * 22.5 + 9)
+        r = 1400
+        d = f"M0 0 L{r * math.cos(a0):.0f} {r * math.sin(a0):.0f} L{r * math.cos(a1):.0f} {r * math.sin(a1):.0f} Z"
+        out.append(f'<path d="{d}" fill="{color if k % 2 else otro}"/>')
+    return "".join(out) + circulo(0, 0, 230, aclarar(color, 0.55), borde=False)
+
+
 def prop_destello(color: str = P.AMARILLO, **_) -> str:
     """Un destello de 4 puntas (el remate brilla)."""
     d = "M0 -90 Q10 -10 90 0 Q10 10 0 90 Q-10 10 -90 0 Q-10 -10 0 -90 Z"
@@ -1508,7 +1521,7 @@ PROPS = {"reloj_gigante": prop_reloj_gigante, "mano": prop_mano, "mostrador": pr
          "trofeo": prop_trofeo, "megafono": prop_megafono, "calendario": prop_calendario,
          "control": prop_control, "engranaje": prop_engranaje, "camion": prop_camion,
          "celular": prop_celular, "corona": prop_corona, "cohete": prop_cohete,
-         "idea_fallida": prop_bombilla_rota}
+         "idea_fallida": prop_bombilla_rota, "rayos": prop_rayos}
 
 
 def _palabras(t: str) -> set[str]:
@@ -1544,7 +1557,7 @@ def parecido(nombre: str, opciones, descripcion: str = "", descripciones: dict |
 
 
 # Lo que el código puede poner solo (efectos del render y piezas de las escenas): no reemplazan a un objeto.
-NO_REEMPLAZO = ("polvo", "lineas_mov", "destello", "primer_plano", "pedazo", "microfono", "rotulo", "cita", "dato",
+NO_REEMPLAZO = ("polvo", "lineas_mov", "destello", "primer_plano", "rayos", "pedazo", "microfono", "rotulo", "cita", "dato",
                 "cartel_comic", "tito_reaccion", "reloj_gigante",
                 # regla de Así Nació: martillo y engranajes solo si la frase habla de un taller o una máquina
                 "martillo", "engranaje")

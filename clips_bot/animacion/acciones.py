@@ -1295,9 +1295,27 @@ def escena_accion(spec: dict, dur: float, i: int, primera: bool = False, tono: f
         else:
             e.objeto(rompible.get("prop") or "ventana", "se_rompe", rompible.get("donde") or "centro",
                      str(rompible.get("texto") or ""), None, len(objetos), soporte=rompible.get("soporte"))
+    # Decorado de contexto (Santi, 2026-11-16, reglas_v3): 1 a 3 objetos de la historia y la época atrás, sobre el
+    # estante, la mesa o el piso (nada de mesas vacías). Más chicos y detrás de los personajes.
+    interior = fondo in ("casa", "oficina", "taller", "fabrica", "tienda", "laboratorio", "hospital")
+    # afuera (calle, campo, puerto) el fondo ya trae su contexto (autos, faroles, vidrieras): nada flotando en la vereda
+    decorado = [str(x) for x in (spec.get("decorado") or []) if x][:3] if interior else []
+    for j, nombre in enumerate(decorado):
+        from . import escenas as _esc2
+
+        if not _esc2.es_prop(nombre):
+            continue
+        antes, antes_f = len(e.elementos), len(e.fondo_el)
+        # adentro: estante, mesa y piso (nada de mesas vacías); afuera, solo en el piso (nada de un estante en la calle)
+        sop = ("estante", "mesa", "piso")[j]
+        e.objeto(nombre, "quieto", ("izquierda", "derecha", "centro")[j], soporte=sop)
+        for el in e.elementos[antes:] + e.fondo_el[antes_f:]:
+            el["decorado"] = True          # el objeto y el mueble que lo sostiene: la cámara no los encuadra
+            if el.get("nombre") == nombre:
+                el["escala"] = round(float(el.get("escala", 1.0)) * 0.7, 3)
     # orden de dibujo: muebles de apoyo → lo que cuelga o se apoya atrás → personajes → pedazos y proyectiles
     fondo_cosas = {"ventana", "lampara", "cuadro", "tele", "jarron", "botella", "trofeo"}
-    e.elementos.sort(key=lambda el: 0 if el.get("nombre") in fondo_cosas and not el.get("keyframes") else
+    e.elementos.sort(key=lambda el: 0 if (el.get("nombre") in fondo_cosas or el.get("decorado")) and not el.get("keyframes") else
                      1 if el.get("tipo") == "personaje" else 2)
     elementos = e.fondo_el + e.elementos
     texto = str(spec.get("texto_pantalla") or "").strip()
