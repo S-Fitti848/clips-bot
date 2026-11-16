@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-11-16 | **Versión:** v1.17.1 (desplegado) | **Modo:** Fase 2: corriendo solo en la Pi. **Rots APAGADO.** Pequeña Historia (3 por día, madrugada desde las 04:00) (publicación sin aprobar: llegan con ❌ Cancelar) y **Así Nació** (2 por día, desde las 07:00, publican 13:00 y 20:00 en YouTube y Facebook con ❌ Cancelar), todo al privado de Santi
+**Snapshot:** 2026-11-16 | **Versión:** v1.18.0 (desplegado) | **Modo:** Fase 2: corriendo solo en la Pi. **Rots APAGADO.** Pequeña Historia (3 por día, madrugada desde las 04:00) (publicación sin aprobar: llegan con ❌ Cancelar) y **Así Nació** (2 por día, desde las 07:00, publican 13:00 y 20:00 en YouTube y Facebook con ❌ Cancelar), todo al privado de Santi
 
 > **SI ESTÁS EMPEZANDO UNA SESIÓN NUEVA, LEÉ §10.** Ahí está qué está hecho, qué quedó a medias,
 > qué falta, y las trampas que ya nos mordieron.
@@ -147,8 +147,27 @@ servicio systemd separado: `clips-bot`).
   YouTube cada Short recibe un solo paquete de ~1.200 vistas en 24 h y la mitad desliza al arranque.
   La primera frase es lo más sorprendente (sin fecha ni "Un día como hoy"), el año va en la segunda
   ("En <año>,") y en pantalla; la voz arranca en el cuadro 1; el gancho escrito en grande desde el
-  primer cuadro; la primera foto es la más impactante. El cierre no se toca todavía. Medición por
-  video (`medicion_ph.py`) y comparación con los 10 anteriores el 26/11.
+  primer cuadro; la primera foto es la más impactante. Medición por video (`medicion_ph.py`) y
+  comparación con los 10 anteriores el 26/11.
+- **Pequeña Historia: pregunta al final y giro a la mitad (Santi, 2026-11-16; las dos plataformas, todos los
+  videos):** la ÚLTIMA frase es una pregunta corta al público (≤ 12 palabras, termina en "?") que invita a
+  comentar, sobre esa historia; el pago del gancho pasa a la ANTEÚLTIMA. A la mitad (30-60 % de las frases,
+  `frase_intriga`, `ef.rango_intriga`) una frase corta que renueva la intriga ("Pero lo que nadie sabía…") para la
+  caída del segundo 10 al 20. Lo exige `validar_guion` y la revisión del final (`SISTEMA_PAGO`) lo respeta.
+- **Facebook: resumen de cada Reel a las 24 h (Santi, 2026-11-16; Pequeña Historia y Así Nació, `stats_fb.py`,
+  `_fb_24h_tick`):** entre las 24 y las 48 h de publicado, una vez: reproducciones, cuántos pasan los 3 s (el valor
+  del segundo 4: Facebook da 100 % fijo en los segundos 0-3), siguen en el segundo 10, llegan al final, tiempo medio,
+  interacción, seguidores que trajo el Reel y los de la página en esas 24 h, contra la mediana de los otros Reels
+  del canal (con menos de 3 medidos a las 24 h, con los datos de hoy), y el gancho (la primera frase). Guardado en
+  `bot_estado.fb_reels_24h`; va en el informe del 26/11 (`stats_fb.resumen_informe`).
+- **Así Nació: reglas_v3 (Santi, 2026-11-16; `gancho_v3.py`, `animacion.reglas_v3`, APAGADO hasta que apruebe el
+  Tupper):** GANCHO de 2-3 cortes de ~1 s con un golpe en cada corte, la imagen imposible del producto (explota,
+  gigante, multiplica, vuela, multitud), rayos de cómic de colores fuertes, polvo y destellos, texto grande arriba (3
+  a 5 palabras); 3 opciones por video en un pedido aparte (`completar_v3`: sumadas al schema del guion, la gramática
+  pasaba el tope de Claude) y la revisión visual elige la más llamativa (`elegir_gancho`, "¿frenarías el dedo?").
+  RESTO: 2 planos por frase (de lejos → de cerca a las manos o el objeto, `gv.planos`), ninguna toma de más de 3 s,
+  zoom lento siempre; decorado de contexto solo en interiores (estante, mesa, piso; afuera ya hay autos y faroles);
+  rótulo con año y lugar; manos haciendo algo y objeto fiel en el prompt y en la revisión (`redibujar_protagonista`).
 - **Guion de Pequeña Historia desde el 2026-11-13 (Santi, con datos de Facebook: 98 % hasta el
   segundo 3 y 40 % en el 8 en Cartagena; los Reels de 30-45 s promedian 3.800 reproducciones y los
   de 15-30 s, 256):** gancho con una pregunta abierta → la 2.ª frase suma INTRIGA (nada de "En
@@ -919,13 +938,15 @@ clips_bot/animacion_remotion/ + remotion/  prototipo de Así Nació con Remotion
 assets/fuentes/          Montserrat Black + OFL.txt
 clips_bot/locales.py     §3d: historias de Latinoamérica (Wikipedia por día + la web, Haiku, Sonnet)
 clips_bot/web_historias.py §1: búsqueda web con Haiku (diarios, museos, archivos) y verificación con 2 fuentes por dato
+clips_bot/stats_fb.py    §1: el resumen de cada Reel de Facebook a las 24 h (Pequeña Historia y Así Nació)
+clips_bot/animacion/gancho_v3.py §1: reglas_v3 de Así Nació (gancho de 3 cortes, planos, opciones)
 clips_bot/calendario.py  §3d: calendario de 90 días de fechas de Latinoamérica + la lista de los lunes
 clips_bot/medicion_ph.py §1: seguimiento por video (segundo en que se va la mayoría en FB, % que se queda en YT calibrado con Studio, empujones)
 clips_bot/voces.py       voces de Gemini de hoy por clave (con Lo Encontré) y el aviso cerca del tope
 clips_bot/prueba_manual.py prueba manual vs API (§1): el clip del día a mano, registro e informe del feed
 clips_bot/envivo.py      modo en vivo (§3b): quién está al aire, momentos por creadores distintos,
                          alertas en la DB (no repetir, tope, vencer) y el resumen de tiempos
-tests/                   1548 tests sin red ni video (conftest.py: nada sale a YouTube, Facebook ni ElevenLabs) (test_reglas_fijas.py: las 3 reglas de §1)
+tests/                   1565 tests sin red ni video (conftest.py: nada sale a YouTube, Facebook ni ElevenLabs) (test_reglas_fijas.py: las 3 reglas de §1)
 ```
 
 Comandos:
@@ -1118,6 +1139,17 @@ Problemas abiertos:
 
 ## 9. CHANGELOG
 
+- v1.18.0 (2026-11-16, tarde) — Cinco pedidos de Santi. (1) **Telegram:** el informe de costo de las 09:00 no salió
+  ("Unsupported start tag 'module'": el nombre de función `__main__.<module>`); ahora todo mensaje pasa por
+  `telegram.html_seguro` (escapa `<`, `>` y `&` que no son etiquetas de Telegram) y, si igual no parsea, se reenvía como
+  texto plano (`_con_html`). El informe del 15/11 se reenvió. (2) Búsqueda web: ya andando (v1.17.0). (3) **Pequeña
+  Historia:** pregunta corta al final y giro a la mitad (regla en §1). (4) **Facebook:** el resumen de cada Reel a
+  las 24 h (§1); probado contra las dos páginas. (5) **Así Nació reglas_v3** (§1, APAGADO): prueba con el Tupper.
+  Encontrado al probar: con los campos nuevos en el schema del guion, Claude daba "compiled grammar is too large" los
+  8 intentos (antes de la voz: sin créditos gastados); producción no lo tuvo (la escucha no se había reiniciado) y se
+  probó contra la API que el schema de producción de Así Nació y el de Pequeña Historia (con `frase_intriga`) compilan.
+  Ojo con los scripts por heredoc: `\\n` llega como un salto real y parte el string (pasó 3 veces): esos cambios, con
+  Edit. `tests/test_telegram_html.py`, `test_stats_fb.py`, `test_asinacio_v3.py`. 1565 tests OK.
 - v1.17.1 (2026-11-16, 07:50) — **Así Nació: nada desconocido frena el video** (regla en §1). El primero del
   16/11 falló a las 07:13: la reescritura por duración (después de dibujar `masa_modelar`) trajo `masa_gris`, que
   nadie dibujó, y la línea de tiempo lo rechazó después de pagar 447 créditos de voz. `resolver_objetos`,
