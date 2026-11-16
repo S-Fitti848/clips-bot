@@ -104,14 +104,16 @@ def test_de_banco_saca_lo_ya_usado_y_ordena_por_puntaje():
 
 # ---- Latinoamérica: la primera del día sale siempre -------------------------------------------
 
-def test_la_primera_del_dia_tiene_piso_6_y_banco_la_segunda_no(conn):
+def test_la_primera_del_dia_tiene_piso_6_y_la_segunda_tambien_banco(conn):
     banco.agregar(conn, "latam", [_item(1)])
     p = m._piso_latam(conn, HOY)
     assert p["piso_alternativo"] == 6.0 and len(p["banco"]) == 1
     db.set_valor(conn, f"{m.PH_LATAM}:{HOY.isoformat()}", json.dumps([{"texto": "x", "puntaje": 8.5}]))
-    assert m._piso_latam(conn, HOY) == {"piso_alternativo": locales.PISO_UNA_POR_DIA}
+    p = m._piso_latam(conn, HOY)     # Santi, 2026-11-16: la segunda también tiene banco
+    assert p["piso_alternativo"] == locales.PISO_UNA_POR_DIA and len(p["banco"]) == 1
     db.set_valor(conn, f"{m.PH_LATAM}:{HOY.isoformat()}", json.dumps([{"texto": "x", "puntaje": 6.2}]))
-    assert m._piso_latam(conn, HOY) == {"piso_alternativo": None}
+    p = m._piso_latam(conn, HOY)
+    assert p["piso_alternativo"] is None and len(p["banco"]) == 1
     assert m._piso_latam(conn, HOY, hecho="Epecuén") == {}
 
 

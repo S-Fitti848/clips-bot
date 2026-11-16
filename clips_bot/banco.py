@@ -61,14 +61,83 @@ def agregar(conn, canal: str, nuevos: list[dict]) -> int:
     return len(sumados)
 
 
-def sacar(conn, canal: str, id_: str | None) -> None:
-    """La historia ya se usó: sale del banco (nunca se repite)."""
+def sacar(conn, canal: str, id_: str | None, hoy: date | None = None) -> None:
+    """La historia ya se usó: sale del banco (nunca se repite) y queda anotado el uso (USOS)."""
     if not id_:
         return
     items = leer(conn, canal)
     quedan = [x for x in items if x.get("id") != id_]
     if len(quedan) != len(items):
         guardar(conn, canal, quedan)
+    anotar_uso(conn, canal, id_, hoy)
+
+
+# ---- cuántas veces se usa (Santi, 2026-11-16: "el banco es la excepción") ---------------------------
+
+USOS = "banco_usos"              # bot_estado: [{"canal", "dia", "id"}], los usos de los últimos 60 días
+AVISO_USOS = "banco_usos_aviso"  # bot_estado, banco_usos_aviso:<canal>:<lunes>: ya se avisó esa semana
+TOPE_SEMANA = 2                  # más de 2 usos por semana en un canal = su búsqueda necesita arreglo
+
+
+def _usos(conn) -> list[dict]:
+    try:
+        return json.loads(db.get_valor(conn, USOS) or "[]")
+    except ValueError:
+        return []
+
+
+def anotar_uso(conn, canal: str, id_: str, hoy: date | None = None) -> None:
+    hoy = hoy or _hoy_ar()
+    desde = (hoy - timedelta(days=60)).isoformat()
+    usos = [u for u in _usos(conn) if u.get("dia", "") >= desde]
+    usos.append({"canal": canal, "dia": hoy.isoformat(), "id": id_})
+    db.set_valor(conn, USOS, json.dumps(usos, ensure_ascii=False))
+
+
+def _hoy_ar() -> date:
+    from datetime import datetime, timezone
+
+    return (datetime.now(timezone.utc) - timedelta(hours=3)).date()
+
+
+def lunes_de(d: date) -> date:
+    return d - timedelta(days=d.weekday())
+
+
+def usos_semana(conn, hoy: date | None = None) -> dict[str, int]:
+    """{canal: usos} de la semana de `hoy` (lunes a domingo)."""
+    lunes = lunes_de(hoy or _hoy_ar())
+    fin = lunes + timedelta(days=6)
+    out = {c: 0 for c in CANALES}
+    for u in _usos(conn):
+        if lunes.isoformat() <= u.get("dia", "") <= fin.isoformat() and u.get("canal") in out:
+            out[u["canal"]] += 1
+    return out
+
+
+def texto_usos(conn, hoy: date | None = None) -> str:
+    hoy = hoy or _hoy_ar()
+    este, anterior = usos_semana(conn, hoy), usos_semana(conn, lunes_de(hoy) - timedelta(days=1))
+    partes = []
+    for c in CANALES:
+        marca = " ⚠️" if este[c] > TOPE_SEMANA else ""
+        partes.append(f"{NOMBRES[c]} {este[c]}{marca} (la anterior {anterior[c]})")
+    return (f"<b>Banco de reserva</b>, usos esta semana (desde el lunes {lunes_de(hoy):%d/%m}; tope "
+            f"{TOPE_SEMANA}): " + " · ".join(partes) + f"\nQuedan: {resumen(conn)}.")
+
+
+def avisos_pendientes(conn, hoy: date | None = None) -> list[str]:
+    """Los avisos de esta semana que todavía no se mandaron (una vez por canal y semana); los marca."""
+    hoy = hoy or _hoy_ar()
+    lunes = lunes_de(hoy).isoformat()
+    out = []
+    for c, n in usos_semana(conn, hoy).items():
+        clave = f"{AVISO_USOS}:{c}:{lunes}"
+        if n > TOPE_SEMANA and not db.get_valor(conn, clave):
+            db.set_valor(conn, clave, "1")
+            out.append(f"🔧 Claude Code: {NOMBRES[c]} ya usó el banco de reserva {n} veces esta semana "
+                       f"(tope {TOPE_SEMANA}): la búsqueda de historias de ese canal necesita arreglo.")
+    return out
 
 
 def hay_que_reponer(conn, canal: str) -> bool:

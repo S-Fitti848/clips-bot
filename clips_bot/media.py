@@ -165,10 +165,17 @@ PICO_MAX_DB = -3.0
 DESFASE_MAX_S = 0.05     # audio y video tienen que terminar juntos (1,5 frames a 30 fps)
 
 
+# Limitador en la mezcla final (Santi, 2026-11-16: la historia de CDMX del 15/11 terminó con un pico de
+# -2,1 dB): nada pasa de LIMITE_DB, con margen para lo que sube al pasar a AAC (medido: -0,3 → -4,3 dB).
+# level=0: no sube el volumen de nada; latency=1: no corre la sincronía ni cambia el largo.
+LIMITE_DB = -4.4
+LIMITADOR = f"alimiter=limit={10 ** (LIMITE_DB / 20):.3f}:level=0:attack=5:release=50:latency=1"
+
+
 def cola_audio(duracion: float) -> str:
-    """Lo que va al final de la cadena de audio de CUALQUIER video: largo exacto y fundidos."""
+    """Lo que va al final de la cadena de audio de CUALQUIER video: tope de pico, largo exacto y fundidos."""
     d = max(float(duracion), FADE_OUT_S + FADE_IN_S)
-    return (f"apad,atrim=0:{d:.3f},asetpts=PTS-STARTPTS,"
+    return (f"{LIMITADOR},apad,atrim=0:{d:.3f},asetpts=PTS-STARTPTS,"
             f"afade=t=in:st=0:d={FADE_IN_S},afade=t=out:st={d - FADE_OUT_S:.3f}:d={FADE_OUT_S}")
 
 

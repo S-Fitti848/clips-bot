@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-11-15 | **Versión:** v1.15.0 (desplegado) | **Modo:** Fase 2: corriendo solo en la Pi. **Rots APAGADO.** Pequeña Historia (3 por día, madrugada desde las 04:00) (publicación sin aprobar: llegan con ❌ Cancelar) y **Así Nació** (2 por día, desde las 07:00, publican 13:00 y 20:00 en YouTube y Facebook con ❌ Cancelar), todo al privado de Santi
+**Snapshot:** 2026-11-16 | **Versión:** v1.16.0 (desplegado) | **Modo:** Fase 2: corriendo solo en la Pi. **Rots APAGADO.** Pequeña Historia (3 por día, madrugada desde las 04:00) (publicación sin aprobar: llegan con ❌ Cancelar) y **Así Nació** (2 por día, desde las 07:00, publican 13:00 y 20:00 en YouTube y Facebook con ❌ Cancelar), todo al privado de Santi
 
 > **SI ESTÁS EMPEZANDO UNA SESIÓN NUEVA, LEÉ §10.** Ahí está qué está hecho, qué quedó a medias,
 > qué falta, y las trampas que ya nos mordieron.
@@ -264,7 +264,15 @@ servicio systemd separado: `clips-bot`).
   (`ARCHIVOS_COMMONS`) y en Europeana. LoC y la Biblioteca Digital Hispánica dan 403 a bots y Memoria
   Chilena no tiene API: no se usan directo. (4) Aviso en el mensaje del video ("⚠️ salió con puntaje 6,2
   (mínimo 8)", "📦 del banco de reserva", "⚠️ fotos reales 55 %"). (5) A las 20:00, si un canal no tiene nada
-  programado ni publicado hoy, aviso a Santi (`_sin_video_tick`).
+  programado ni publicado hoy, aviso a Santi (`_sin_video_tick`). **(6) El banco es la excepción (Santi,
+  2026-11-16):** cada uso queda en `bot_estado.banco_usos`; /costos muestra los de la semana (lunes a domingo)
+  por canal y, si uno pasa de 2, aviso a Santi una vez por semana (`_banco_usos_tick`: su búsqueda necesita
+  arreglo). **(7) La segunda de Latinoamérica tampoco queda vacía:** sin ninguna de 8 (o 7), una del banco;
+  nunca una de menos de 8 (`de_banco` saltea las de menos de 8).
+- **Audio: nada arriba de −3 dB (Santi, 2026-11-16; regla fija 3):** `media.cola_audio` arranca con un
+  limitador a −4,4 dB (`LIMITADOR`: sin subir el volumen, sin correr la sincronía), así todos los videos (Así
+  Nació, Pequeña Historia, clips, /narrar) terminan debajo de −3 dB aunque el último golpe venga fuerte
+  (la historia de CDMX del 15/11 terminó en −2,1 dB; medido: −0,3 → −4,3 dB pasando a AAC).
 - **Así Nació: gancho, viaje, sepia, manos y textos (Santi, 2026-11-15, noche; regla permanente para TODOS los
   videos):** (1) el GANCHO es lo más importante (en Facebook se va el 65 % entre el segundo 3 y el 7): el momento
   más sorprendente con ACCIÓN y el objeto protagonista; nunca objeto_gira, contador, reunión, estantes ni el fondo
@@ -894,7 +902,7 @@ clips_bot/voces.py       voces de Gemini de hoy por clave (con Lo Encontré) y e
 clips_bot/prueba_manual.py prueba manual vs API (§1): el clip del día a mano, registro e informe del feed
 clips_bot/envivo.py      modo en vivo (§3b): quién está al aire, momentos por creadores distintos,
                          alertas en la DB (no repetir, tope, vencer) y el resumen de tiempos
-tests/                   1520 tests sin red ni video (conftest.py: nada sale a YouTube, Facebook ni ElevenLabs) (test_reglas_fijas.py: las 3 reglas de §1)
+tests/                   1529 tests sin red ni video (conftest.py: nada sale a YouTube, Facebook ni ElevenLabs) (test_reglas_fijas.py: las 3 reglas de §1)
 ```
 
 Comandos:
@@ -1087,6 +1095,12 @@ Problemas abiertos:
 
 ## 9. CHANGELOG
 
+- v1.16.0 (2026-11-16) — **El banco como excepción y el pico del final** (reglas en §1). Usos del banco por
+  semana y canal en /costos, con aviso si un canal pasa de 2 (`banco.anotar_uso`, `usos_semana`, `texto_usos`,
+  `avisos_pendientes`, `_banco_usos_tick`); la segunda historia de Latinoamérica también cae al banco (nunca
+  una de menos de 8); limitador en `media.cola_audio` (−4,4 dB) para que ningún video termine arriba de −3 dB.
+  Antes, el 15/11: la historia del banco (CDMX, 1925) salió en Facebook a las 21:42; arreglado el KeyError
+  'fuente' de Europeana en la segunda búsqueda de fotos. `tests/test_banco_usos.py`. 1529 tests OK.
 - v1.15.0 (2026-11-15, noche) — **ElevenLabs en Así Nació** (regla en §1). Cuenta conectada con
   `npx @elevenlabs/cli onboard` (clave nueva, terminada en 5094, en el .env de la compu; copiada a la Pi, huellas
   iguales `47fff12ec9c8`). Se habla con la API directo con `requests` (como el resto del bot), sin el SDK: el
@@ -2870,8 +2884,10 @@ clips" queda sin uso mientras Rots siga apagado.
 - **App de Meta en modo Live** (lo hace Santi, docs/facebook-asi-nacio.md): sin eso el público puede no
   ver los Reels de las dos páginas.
 - **Fuentes web para las historias** (pedido del 15/11: buscar en diarios, museos, archivos y sitios de las
-  marcas, verificar cada dato con 2 fuentes y guardar los links; contar los usos del banco por semana y canal en
-  /costos con aviso si pasa de 2): esperando que Santi elija entre las opciones de costo antes de programar.
+  marcas, verificar cada dato con 2 fuentes y guardar los links; repetido el 16/11: "las efemérides de Wikipedia
+  no alcanzan", ese día Latinoamérica sacó 1,8, 2,5 y 3,5): esperando que Santi elija entre las opciones de costo
+  (16/11: A todo Sonnet ~US$ 2,5-2,9 por día, B Haiku busca y Sonnet verifica ~US$ 1,6-1,9, C todo Haiku
+  ~US$ 0,6-0,8) antes de programar. La cuenta del banco ya está (v1.16.0).
 - **Voz de Pequeña Historia** (v0.88.0): muestras de Fenrir más calmo, Achird, Sadaltager y Charon;
   falta que elija (`efemerides.tts_modelo: gemini-2.5-flash-preview-tts`, `tts_instruccion`, `tts_voz`).
 - **Descripciones de los canales** (propuestas el 2026-11-12): las cambia Santi.

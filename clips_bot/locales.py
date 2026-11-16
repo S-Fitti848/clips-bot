@@ -752,6 +752,8 @@ def de_banco(banco: list[dict] | None, excluir: set | None = None) -> list[tuple
     for it in sorted(banco or [], key=lambda x: -float(x.get("puntaje") or 0)):
         if it.get("texto") in (excluir or set()) or it.get("articulo") in (excluir or set()):
             continue
+        if float(it.get("puntaje") or 0) < PUNTAJE_MIN:     # nunca una de menos de 8 (Santi, 2026-11-16)
+            continue
         clasif = dict(it.get("clasif") or {}, banco_id=it.get("id"), puntaje=it.get("puntaje"), conmemora="")
         c = Candidato("banco", int(it["anio"]), it["texto"], list(it["paginas"]), clasif)
         out.append((c, it.get("articulo") or c.paginas[0], it.get("articulo_lugar") or ""))

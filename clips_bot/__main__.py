@@ -2719,6 +2719,7 @@ def escuchar_telegram(settings: Settings, timeout_poll: int = 50) -> int:
             _seguro(tg, str(chat_ultimo or ""), "el aviso de las voces", _voces_tick, conn, tg, settings)
             _seguro(tg, str(chat_ultimo or ""), "el costo de Claude", _costo_claude_tick, conn, tg, settings)
             _seguro(tg, str(chat_ultimo or ""), "los créditos de ElevenLabs", _elevenlabs_tick, conn, tg, settings)
+            _seguro(tg, str(chat_ultimo or ""), "el uso del banco de reserva", _banco_usos_tick, conn, tg)
             _seguro(tg, str(chat_ultimo or ""), "el resumen semanal de costos", _costos_semana_tick, conn, tg, settings)
             _seguro(tg, str(chat_ultimo or ""), "el reintento de los clips",
                     _auto(_clips_reintento_tick), conn, settings)
@@ -3621,7 +3622,10 @@ def _piso_latam(conn, dia, hecho: str = "") -> dict:
     if not ya:
         return {"piso_alternativo": locales.PISO_ABSOLUTO, "banco": banco_mod.leer(conn, "latam")}
     baja = any(float(x.get("puntaje") or 10) < locales.PUNTAJE_MIN for x in ya)
-    return {"piso_alternativo": None if baja else locales.PISO_UNA_POR_DIA}
+    # Santi, 2026-11-16: la segunda tampoco queda vacía: sin ninguna de 8 (o 7), una del banco (8 o más);
+    # nunca una por debajo.
+    return {"piso_alternativo": None if baja else locales.PISO_UNA_POR_DIA,
+            "banco": banco_mod.leer(conn, "latam")}
 
 
 def _fb_proponer(conn, tg: TelegramClient, chats: list[str], dia, settings: Settings,
@@ -3914,7 +3918,14 @@ def _texto_costos(conn, dias: int = 7, settings: Settings | None = None) -> str:
         except elevenlabs.ElevenLabsError:
             sub = None
         texto += "\n" + elevenlabs.texto_creditos(conn, datetime.now(AR).strftime("%Y-%m"), sub)
+    texto += "\n" + banco_mod.texto_usos(conn, datetime.now(AR).date())
     return texto
+
+
+def _banco_usos_tick(conn, tg: TelegramClient, hoy=None) -> None:
+    """Santi, 2026-11-16: si un canal usa el banco de reserva más de 2 veces en la semana, aviso (una vez)."""
+    for texto in banco_mod.avisos_pendientes(conn, hoy or datetime.now(AR).date()):
+        tg.send_message(DUENO, texto)
 
 
 ELEVEN_REVISADO = "elevenlabs_revisado"   # bot_estado: cuándo se leyó la suscripción por última vez (UTC)

@@ -251,7 +251,9 @@ def test_menos_datos_no_es_un_guion_mas_corto():
 
 def test_cola_de_audio():
     c = media.cola_audio(40.0)
-    assert c.startswith("apad,atrim=0:40.000")               # largo exacto: ni cortado ni de más
+    # primero el tope de pico (Santi, 2026-11-16: nada arriba de -3 dB), después el largo exacto
+    assert c.startswith(media.LIMITADOR + ",apad,atrim=0:40.000") and "level=0" in media.LIMITADOR
+    assert media.LIMITE_DB < media.PICO_MAX_DB
     assert "afade=t=in:st=0:d=0.1" in c and "afade=t=out:st=39.500:d=0.5" in c
     assert media.FADE_IN_S == 0.1 and media.FADE_OUT_S == 0.5 and media.PICO_MAX_DB == -3.0
 
@@ -289,7 +291,7 @@ def test_clips_y_editar_terminan_con_la_cola(monkeypatch, tmp_path):
     monkeypatch.setattr(render, "probe", lambda p: media.Info(1920, 1080, 30.0, 30, True))
     lay = layout_fit_blur(1920, 1080, Render())
     render.renderizar(tmp_path / "a.mp4", tmp_path / "b.mp4", lay, Render(), None)
-    assert "[0:a]apad,atrim=0:30.000" in comandos[0] and "afade=t=out:st=29.500" in comandos[0]
+    assert f"[0:a]{media.LIMITADOR},apad,atrim=0:30.000" in comandos[0] and "afade=t=out:st=29.500" in comandos[0]
     assert "0:a?" not in comandos[0]                         # el audio crudo ya no se copia
 
 
@@ -321,7 +323,7 @@ def test_la_efemeride_termina_con_la_cola_del_largo_de_las_fotos(monkeypatch, tm
     ef.armar_video([(fotos[0], 4.0), (fotos[1], 5.5)], tmp_path / "voz.wav", tmp_path,
                    tmp_path / "v.mp4", Render())
     # el audio se termina en un paso aparte (con la entrada concat, ffmpeg lo cortaba a 26,7 s)
-    assert "aresample=48000,apad,atrim=0:9.500" in audio[0] and "afade=t=out:st=9.000" in audio[0]
+    assert f"aresample=48000,{media.LIMITADOR},apad,atrim=0:9.500" in audio[0] and "afade=t=out:st=9.000" in audio[0]
     final = comandos[-1]
     assert "audio_final.wav" in final and "-map 1:a" in final
     assert "-shortest" not in final and "[1:a]" not in final
