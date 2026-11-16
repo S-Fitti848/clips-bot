@@ -2722,6 +2722,7 @@ def escuchar_telegram(settings: Settings, timeout_poll: int = 50) -> int:
             _seguro(tg, str(chat_ultimo or ""), "el uso del banco de reserva", _banco_usos_tick, conn, tg)
             _seguro(tg, str(chat_ultimo or ""), "la prueba de la búsqueda web", _web_latam_tick, conn, tg, settings)
             _seguro(tg, str(chat_ultimo or ""), "el resumen de los Reels a las 24 h", _fb_24h_tick, conn, tg, settings)
+            _seguro(tg, str(chat_ultimo or ""), "las mejoras al motor", _mejoras_motor_tick, conn, tg, settings)
             _seguro(tg, str(chat_ultimo or ""), "el resumen semanal de costos", _costos_semana_tick, conn, tg, settings)
             _seguro(tg, str(chat_ultimo or ""), "el reintento de los clips",
                     _auto(_clips_reintento_tick), conn, settings)
@@ -3725,6 +3726,9 @@ def _fb_24h_tick(conn, tg: TelegramClient, settings: Settings, ahora=None, medir
             continue
         x.update(canal=canal, clip_id=s.get("clip_id"), publicado=s["_pub"].isoformat(), medido=ahora.isoformat())
         x["gancho"], x["titulo"] = sf.gancho_y_titulo(str(s.get("clip_id") or ""), ROOT)
+        flojas = json.loads(db.get_valor(conn, ASINACIO_FLOJAS) or "{}").get(str(s.get("clip_id") or ""))
+        if flojas:     # cruzado con lo más flojo según la revisión (mejora continua, 2026-11-16)
+            x["flojas"] = [{"categoria": f["categoria"], "que": f["que"]} for f in flojas.get("flojas") or []]
         otros = [o for k, o in medidos.items() if o.get("canal") == canal and k != vid]
         de_hoy = len(otros) < sf.MIN_PARA_MEDIANA
         if de_hoy:
@@ -3741,6 +3745,86 @@ def _fb_24h_tick(conn, tg: TelegramClient, settings: Settings, ahora=None, medir
         medidos[vid] = x
         db.set_valor(conn, sf.CLAVE, json.dumps(medidos, ensure_ascii=False))
         tg.send_message(DUENO, sf.texto(canal, x, otros, de_hoy))
+
+
+MEJORAS_DIA = "mejoras_motor_dia"     # bot_estado: el día (AR) en que ya se mandaron las mejoras
+MEJORAS = "mejoras_motor"             # bot_estado: [{fecha, mejoras}] las propuestas (Santi las aprueba)
+MEJORAS_HORA = "10:00"
+
+
+def _mejoras_motor_tick(conn, tg: TelegramClient, settings: Settings, ahora=None, cliente=None) -> None:
+    """Así Nació, mejora continua (Santi, 2026-11-16): lunes y jueves desde las 10:00, las 5 mejoras al motor más
+    importantes, ordenadas por impacto, con un cuadro de cada una (al menos una del gancho), a partir de lo más flojo de
+    cada video y sus estadísticas de 24 h. Santi las aprueba y se programan."""
+    from pathlib import Path as _P
+
+    from . import claude
+    from .animacion import marcas
+
+    if not settings.animacion.activo:
+        return
+    ahora = ahora or datetime.now(AR)
+    hoy = ahora.date().isoformat()
+    if ahora.weekday() not in (0, 3) or ahora.strftime("%H:%M") < MEJORAS_HORA or db.get_valor(conn, MEJORAS_DIA) == hoy:
+        return
+    db.set_valor(conn, MEJORAS_DIA, hoy)
+    desde = (ahora.date() - timedelta(days=7)).isoformat()
+    flojas = {k: v for k, v in json.loads(db.get_valor(conn, ASINACIO_FLOJAS) or "{}").items() if v.get("fecha", "") >= desde}
+    if not flojas:
+        return
+    from . import stats_fb
+
+    stats = {x.get("clip_id"): x for x in stats_fb.cargar(conn).values() if x.get("canal") == "facebook_asinacio"}
+    lineas, imagenes, rutas = [], [], []
+    for clip, v in sorted(flojas.items()):
+        st = stats.get(clip) or {}
+        num = (f" [24 h en Facebook: {st.get('vistas')} rep., pasan los 3 s {st.get('pasa_3s')} %, siguen en el 10: "
+               f"{st.get('ret_10')} %]" if st else "")
+        lineas.append(f"{v.get('titulo')}{num}")
+        for f in v.get("flojas") or []:
+            ruta = _P(f.get("cuadro") or "")
+            if ruta.exists() and len(imagenes) < 12:
+                imagenes.append(marcas._jpeg_512(ruta))
+                rutas.append(ruta)
+                lineas.append(f"  - imagen {len(imagenes)} · {f['categoria']}: {f['que']}")
+            else:
+                lineas.append(f"  - {f['categoria']}: {f['que']}")
+    cliente = cliente or claude.cliente(settings.animacion.modelo_texto)
+    if cliente is None:
+        return
+    sistema = ("Mejorás el MOTOR de animación de \"Así Nació\" (videos cortos de origen de marcas, dibujos SVG por código). "
+               "Te paso lo más flojo de cada video de la semana (con un cuadro de ejemplo) y sus números de 24 h. Proponé "
+               "las 5 MEJORAS AL MOTOR más importantes, ordenadas por impacto en la retención (primero lo que más gente "
+               "haría quedarse): cada una concreta y programable (una escena de acción nueva, una animación del objeto, "
+               "un efecto, una regla del gancho, un plano de cámara…), con `por_que` usando los datos, la `imagen` que "
+               "mejor la muestra (número) y `categoria`. Al menos UNA tiene que ser del gancho (categoria gancho).")
+    schema = {"type": "OBJECT", "properties": {"mejoras": {"type": "ARRAY", "items": {"type": "OBJECT", "properties": {
+        "mejora": {"type": "STRING"}, "por_que": {"type": "STRING"}, "imagen": {"type": "INTEGER"},
+        "categoria": {"type": "STRING", "enum": list(marcas.CATEGORIAS_FLOJAS)}},
+        "required": ["mejora", "por_que", "imagen", "categoria"]}}}, "required": ["mejoras"]}
+    mejoras, extra = [], ""
+    for _ in range(2):
+        r = json.loads(cliente.json(sistema, "\n".join(lineas) + extra, schema, 0.4, imagenes=imagenes or None))
+        mejoras = (r.get("mejoras") or [])[:5]
+        if any(m_.get("categoria") == "gancho" for m_ in mejoras):
+            break
+        extra = "\n\nFaltó una mejora del gancho: al menos una de las 5 tiene que ser del gancho."
+    historial = json.loads(db.get_valor(conn, MEJORAS) or "[]")
+    historial.append({"fecha": hoy, "mejoras": mejoras})
+    db.set_valor(conn, MEJORAS, json.dumps(historial[-20:], ensure_ascii=False))
+    tg.send_message(DUENO, f"🔧 Claude Code: 🛠 <b>Mejoras al motor de Así Nació</b> ({len(flojas)} videos de la semana). "
+                           "Ordenadas por impacto; decime cuáles apruebo y las programo.")
+    for n, m_ in enumerate(mejoras, 1):
+        caption = (f"{n}. <b>{html.escape(str(m_.get('mejora') or ''))}</b> ({html.escape(str(m_.get('categoria') or ''))})\n"
+                   f"{html.escape(str(m_.get('por_que') or ''))}")
+        k = int(m_.get("imagen") or 0)
+        if 1 <= k <= len(rutas):
+            try:
+                tg.send_photo(DUENO, rutas[k - 1], caption[:1000])
+                continue
+            except Exception as e:  # noqa: BLE001 — sin la foto, va el texto
+                log.info("mejoras: no pude mandar el cuadro: %s", e)
+        tg.send_message(DUENO, caption)
 
 
 def _fb_proponer(conn, tg: TelegramClient, chats: list[str], dia, settings: Settings,

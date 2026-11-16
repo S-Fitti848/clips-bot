@@ -158,6 +158,9 @@ def texto(canal: str, x: dict, otros: list[dict], de_hoy: bool) -> str:
                       f"({x['reacciones']} reacciones, {x['comentarios']} comentarios, {x['compartidos']} compartidos)")
     if x.get("seguidores_pagina") is not None:
         lineas.append(f"• La página sumó {x['seguidores_pagina']} seguidores en esas 24 h")
+    if x.get("flojas"):     # Así Nació: lo más flojo según la revisión, al lado de los números (2026-11-16)
+        lineas.append("Lo más flojo según la revisión: " + " · ".join(
+            f"{html.escape(f['categoria'])}: {html.escape(f['que'][:90])}" for f in x["flojas"]))
     if x.get("link"):
         lineas.append(x["link"])
     return "\n".join(lineas)
