@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-11-16 | **Versión:** v1.20.0 (desplegado) | **Modo:** Fase 2: corriendo solo en la Pi. **Rots APAGADO.** Pequeña Historia (3 por día, madrugada desde las 04:00) (publicación sin aprobar: llegan con ❌ Cancelar) y **Así Nació** (2 por día, desde las 07:00, publican 13:00 y 20:00 en YouTube y Facebook con ❌ Cancelar), todo al privado de Santi
+**Snapshot:** 2026-11-16 | **Versión:** v1.21.0 (desplegado) | **Modo:** Fase 2: corriendo solo en la Pi. **Rots APAGADO.** Pequeña Historia (3 por día, madrugada desde las 04:00) (publicación sin aprobar: llegan con ❌ Cancelar) y **Así Nació** (2 por día, desde las 07:00, publican 13:00 y 20:00 en YouTube y Facebook con ❌ Cancelar), todo al privado de Santi
 
 > **SI ESTÁS EMPEZANDO UNA SESIÓN NUEVA, LEÉ §10.** Ahí está qué está hecho, qué quedó a medias,
 > qué falta, y las trampas que ya nos mordieron.
@@ -191,7 +191,7 @@ servicio systemd separado: `clips-bot`).
   con un cuadro de cada una y al menos una del gancho (`_mejoras_motor_tick`, `bot_estado.mejoras_motor`): Santi las
   aprueba y se programan.
 - **Pequeña Historia: publicaciones de comunidad en Facebook (Santi, 2026-11-16; `comunidad_fb.py`,
-  `historias_fb.comunidad`, APAGADO hasta que apruebe los 5 ejemplos mandados el 16/11):** 1 por día además de los
+  `historias_fb.comunidad`, PRENDIDO por Santi el 16/11 después de ver los 5 ejemplos):** 1 por día además de los
   Reels: la foto principal del artículo de la historia de Latinoamérica del día (reglas de fotos de siempre, con autor
   y licencia) en 4:5 con una pregunta grande que pide opinión o recuerdos (Haiku), programada para las 13:00 AR
   (`_comunidad_tick`, desde las 10:00, un intento por día). En el resumen de 24 h: vistas, comentarios, compartidos y
@@ -979,7 +979,7 @@ clips_bot/voces.py       voces de Gemini de hoy por clave (con Lo Encontré) y e
 clips_bot/prueba_manual.py prueba manual vs API (§1): el clip del día a mano, registro e informe del feed
 clips_bot/envivo.py      modo en vivo (§3b): quién está al aire, momentos por creadores distintos,
                          alertas en la DB (no repetir, tope, vencer) y el resumen de tiempos
-tests/                   1594 tests sin red ni video (conftest.py: nada sale a YouTube, Facebook ni ElevenLabs) (test_reglas_fijas.py: las 3 reglas de §1)
+tests/                   1596 tests sin red ni video (conftest.py: nada sale a YouTube, Facebook ni ElevenLabs) (test_reglas_fijas.py: las 3 reglas de §1)
 ```
 
 Comandos:
@@ -1172,6 +1172,15 @@ Problemas abiertos:
 
 ## 9. CHANGELOG
 
+- v1.21.0 (2026-11-16, noche) — **Comunidad prendida** (13:00, la primera el 17/11). **Así Nació:** (1) una versión
+  nueva de un dibujo reemplaza a la vieja en todas las escenas y la vieja sale de la biblioteca
+  (`dibujos.reemplazar` / `actual` / `mismo_objeto`, `data/animacion/dibujos/reemplazos.json` y `retirados/`;
+  `marcas.unificar_protagonista`): en el tercer Tupper el laboratorio usó `tazon_maravilla` (la olla de la primera
+  prueba) en vez de `tazon_tupper`; ya retirado en la Pi. (2) Época de cada objeto (`esc.ANIO_DESDE`, `existe_en`;
+  los dibujos nuevos guardan su `anio_desde`): en `escena_accion` nada aparece antes de existir (el protagonista,
+  siempre), para todos los videos; el rótulo usa el año de la escena. (3) Pendientes para la tanda del jueves, ya
+  aprobados por Santi (`bot_estado.mejoras_pedidas`, encabezan el mensaje de las mejoras): secuencias de uso real de
+  las manos paso a paso, manos con más detalle y la conexión visual de lo que inspiró al producto. 1596 tests OK.
 - v1.20.0 (2026-11-16, tarde) — **reglas_v3 de Así Nació PRENDIDAS** después de 3 Tuppers de prueba
   (output/animacion/prueba_tupper_v3, v3b y v3c en la Pi; ~US$ 1,3 de Claude y 8-9 min de render cada uno). Lo que
   cambió entre el 2.º y el 3.º: `usar`/`probar` eran los gestos "atrapar"/"saltar" (brazos abiertos): ahora `usar`,
