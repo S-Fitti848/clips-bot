@@ -151,3 +151,26 @@ def test_redibujar_el_protagonista(monkeypatch):
     assert pedidos and pedidos[0][0] == "un_tupper_real" and "tapa hermética" in pedidos[0][1]
     assert marcas.prop_real(d["protagonista"]) == "un_tupper_real" and "redibujé" in hecho
     assert marcas.prop_real(d["escenas"][0]["objetos"][0]) == "un_tupper_real"
+
+
+class _Completa:
+    def __init__(self, *resps):
+        self.resps, self.prompts = list(resps), []
+
+    def json(self, sistema, prompt, schema, temp=0.7, **k):
+        self.prompts.append(prompt)
+        return json.dumps(self.resps.pop(0))
+
+
+def test_las_opciones_y_el_decorado_van_en_un_pedido_aparte():
+    """El guion principal no cambia de schema (con los campos nuevos pasaba el tope de gramática de Claude)."""
+    assert marcas.schema_guion() is marcas.SCHEMA_GUION
+    d = guion()
+    malo = {"ganchos": [dict(OPS[0]), dict(OPS[0]), dict(OPS[2])], "decorado": []}
+    bueno = {"ganchos": [dict(o) for o in OPS], "decorado": [{"escena": 2, "objetos": ["radio", "botella"]},
+                                                             {"escena": 99, "objetos": ["x"]}]}
+    cli = _Completa(malo, bueno)
+    assert marcas.completar_v3(cli, d)
+    assert d["ganchos"] == OPS and d["escenas"][1]["decorado"] == ["radio", "botella"]
+    assert "DISTINTOS" in cli.prompts[1]            # el segundo pedido lleva el error del primero
+    assert not marcas.completar_v3(_Completa(malo, malo, malo), guion())

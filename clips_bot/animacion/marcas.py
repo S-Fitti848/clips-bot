@@ -600,23 +600,9 @@ SCHEMA_GUION = {
 
 
 def schema_guion() -> dict:
-    """El schema del guion. Con las reglas_v3 suma `ganchos` y `decorado` como OBLIGATORIOS (2026-11-16: opcionales
-    multiplican la gramática de Claude y pasaba el tope, "compiled grammar is too large"); para que entren, los
-    objetos van sin la lista cerrada (lo que no está lo resuelve `resolver_objetos`). Sin las reglas, el de siempre."""
-    if not REGLAS_V3:
-        return SCHEMA_GUION
-    import copy
-
-    sch = copy.deepcopy(SCHEMA_GUION)
-    esc_ = sch["properties"]["escenas"]["items"]
-    esc_["properties"]["objetos"]["items"]["properties"]["prop"] = {"type": "STRING"}
-    esc_["properties"]["cadena"]["items"]["properties"]["prop"] = {"type": "STRING"}
-    esc_["properties"]["decorado"] = {"type": "ARRAY", "items": {"type": "STRING"}}
-    esc_["required"] = list(esc_["required"]) + ["decorado"]
-    sch["properties"]["ganchos"] = {"type": "ARRAY", "items": {"type": "OBJECT", "properties": {
-        "tipo": {"type": "STRING"}, "texto": {"type": "STRING"}}, "required": ["tipo", "texto"]}}
-    sch["required"] = list(sch["required"]) + ["ganchos"]
-    return sch
+    """El schema del guion (el mismo con o sin reglas_v3: las opciones de gancho y el decorado van en un pedido
+    aparte, `completar_v3`, porque sumados acá la gramática pasaba el tope de Claude, 2026-11-16)."""
+    return SCHEMA_GUION
 
 
 def frases_de(d: dict) -> list[str]:
@@ -1040,12 +1026,66 @@ def errores_v3(d: dict) -> list[str]:
     return errores
 
 
+SISTEMA_V3 = """Te paso el guion de un video corto animado de "Así Nació" (el origen de una marca). Agregás dos cosas
+(Santi, 2026-11-16):
+1. `ganchos`: 3 OPCIONES de gancho para los primeros 3 segundos, con el producto protagonista en una imagen
+   sorprendente o imposible. `tipo`, uno de: explota (estalla en pedazos de colores), gigante (crece hasta ser enorme),
+   multiplica (se multiplica por toda la pantalla), vuela (cruza volando), multitud (una multitud se pelea por él); los
+   3 de tipos DISTINTOS. `texto`: una pregunta o un dato de ESTA historia que intrigue, de 3 a 5 palabras, que va grande
+   arriba ("¿UN JUGUETE DE JABÓN?", "VENDIÓ UN MILLÓN EN 1949"); datos solo del guion.
+2. `decorado`: para cada escena (desde la 2), 1 a 3 objetos de la lista que dan CONTEXTO a la historia en ese lugar y
+   esa época (una cocina de 1946: botella, jarrón, radio; una oficina: teléfono de disco, calendario). Van atrás, sobre
+   el estante, la mesa o el piso. Solo nombres de la lista.
+Respondé solo el JSON."""
+SCHEMA_V3 = {"type": "OBJECT", "properties": {
+    "ganchos": {"type": "ARRAY", "items": {"type": "OBJECT", "properties": {
+        "tipo": {"type": "STRING", "enum": ["explota", "gigante", "multiplica", "vuela", "multitud"]},
+        "texto": {"type": "STRING"}}, "required": ["tipo", "texto"]}},
+    "decorado": {"type": "ARRAY", "items": {"type": "OBJECT", "properties": {
+        "escena": {"type": "INTEGER"}, "objetos": {"type": "ARRAY", "items": {"type": "STRING"}}},
+        "required": ["escena", "objetos"]}}},
+    "required": ["ganchos", "decorado"]}
+
+
+def completar_v3(cliente, d: dict, avisar=log.info) -> bool:
+    """Las 3 opciones de gancho y el decorado de cada escena, en un pedido aparte (reglas_v3). Si no salen, el video
+    sigue con el gancho de siempre. Devuelve si quedaron las 3 opciones."""
+    if cliente is None:
+        return False
+    lista = ", ".join(p for p in PROPS if p not in esc.NO_REEMPLAZO)
+    guion_txt = "\n".join(f"{i + 1}. [{e_.get('fondo')}, {e_.get('anio_escena') or 'hoy'}] {e_.get('frase')}"
+                          for i, e_ in enumerate(d.get("escenas") or []))
+    prota = (d.get("protagonista") or {}).get("que_es") or prop_real(d.get("protagonista") or {})
+    errores: list[str] = []
+    for _ in range(3):
+        pedido = (f"Producto protagonista: {prota}\nObjetos de la lista: {lista}\n\nGUION:\n{guion_txt}"
+                  + (f"\n\nTu respuesta anterior tenía estos errores: {'; '.join(errores)}" if errores else ""))
+        try:
+            r = json.loads(cliente.json(SISTEMA_V3, pedido, SCHEMA_V3, 0.7))
+        except Exception as err:  # noqa: BLE001
+            avisar(f"opciones de gancho: no salieron ({str(err)[:120]})")
+            return False
+        d2 = {**d, "ganchos": r.get("ganchos") or []}
+        errores = [x for x in errores_v3({**d2, "escenas": []}) if "ganchos" in x]
+        if errores:
+            continue
+        d["ganchos"] = r["ganchos"]
+        for x in r.get("decorado") or []:
+            k = int(x.get("escena") or 0) - 1
+            if 1 <= k < len(d.get("escenas") or []):
+                d["escenas"][k]["decorado"] = [str(o) for o in x.get("objetos") or []][:3]
+        avisar("opciones de gancho: " + " | ".join(f"{o['tipo']} «{o['texto']}»" for o in d["ganchos"]))
+        return True
+    avisar(f"opciones de gancho: no validaron ({'; '.join(errores)[:150]}); va el gancho de siempre")
+    return False
+
+
 def validar_guion(d: dict, m: Marca, fuente: str, ganchos_previos: list[dict] | None = None) -> list[str]:
     """Los errores del guion (vacío = sirve): datos contra el artículo (como Pequeña Historia),
     estructura, escenas con acción, locutor y presentación de cada empresa o persona."""
     from clips_bot.efemerides import no_respaldados
 
-    errores = errores_v3(d) if REGLAS_V3 else []
+    errores = []
     escenas = d.get("escenas") or []
     frases = frases_de(d)
     n = len(frases)
@@ -1238,18 +1278,9 @@ def sistema_guion() -> str:
 REGLAS_V3 = False      # armar_video lo prende con `animacion.reglas_v3` (Santi, 2026-11-16)
 
 REGLA_16 = """
-REGLA 16 — GANCHO QUE FRENA EL DEDO Y ESCENAS VIVAS (Santi, 2026-11-16).
-- `ganchos`: 3 OPCIONES de gancho para los primeros 3 segundos, cada una con `tipo` (explota: el producto
-  estalla en pedazos de colores; gigante: el producto crece hasta ser enorme; multiplica: el producto se
-  multiplica por toda la pantalla; vuela: el producto cruza volando; multitud: una multitud se pelea por él),
-  tres tipos DISTINTOS, y `texto`: una pregunta o un dato que intrigue, de 3 a 5 palabras, que va grande arriba
-  ("¿UN JUGUETE DE JABÓN?", "VENDIÓ UN MILLÓN EN 1949"). Sale la más llamativa. La frase 1 sigue siendo el gancho
-  hablado (8 palabras como mucho).
+REGLA 16 — ESCENAS VIVAS (Santi, 2026-11-16; las 3 opciones de gancho y el decorado se piden aparte).
 - Las MANOS siempre hacen algo con el objeto: lo agarran, lo abren, lo llenan, lo apilan (objeto con `soporte`
   mano, acción `fabricar`, `usar`, `probar` o `vender`). Nunca manos abiertas al costado ni el objeto flotando.
-- `decorado` en cada escena (salvo la 1): 1 a 3 objetos de la lista que dan CONTEXTO a la historia en ese lugar y
-  esa época (en una cocina de 1946: botella, jarrón, radio; en una oficina: teléfono de disco, calendario): van
-  sobre el estante, la mesa o el piso, atrás. Nada de mesas ni estantes vacíos.
 - El OBJETO PROTAGONISTA tiene que parecerse al real: el Tupper es un recipiente de plástico bajo con tapa
   hermética, no una olla. Si ningún dibujo de la lista ES ese objeto (no uno parecido), `dibujo_nuevo` con una
   descripción precisa de su forma, material y colores.
@@ -2215,6 +2246,8 @@ def armar_video(conn, settings, carpeta: Path, cliente=None, wiki=None, hoy: dat
     bitacora.dato(titulo=str(d.get("titulo") or ""), marca=e.marca.nombre, angulo=e.angulo)
     bitacora.paso("dibujos")
     d = asegurar_dibujos(cliente, d, e, fuente or "", avisar)
+    if REGLAS_V3:
+        completar_v3(cliente, d, avisar)     # las 3 opciones de gancho y el decorado (pedido aparte)
     resolver_objetos(cliente, d, e, avisar)
     guardar_acciones_nuevas(d)
     if getattr(cfg, "visual_plus", False):
@@ -2270,6 +2303,8 @@ def armar_video(conn, settings, carpeta: Path, cliente=None, wiki=None, hoy: dat
             avisar(f"no pude acortar el guion: {err}")
             break
         # la reescritura puede traer objetos nuevos (el 16/11: 'masa_gris'): se dibujan o va el más parecido
+        if REGLAS_V3:
+            completar_v3(cliente, d, avisar)
         resolver_objetos(cliente, d, e, avisar)
     tiempos["voz_s"] = round(time.time() - t0, 1)
     t0 = time.time()
