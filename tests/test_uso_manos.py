@@ -66,7 +66,7 @@ def test_la_inspiracion_encastra_en_el_producto():
     h = uso_v3.escena_inspiracion(3.0, "lata", "moneda", "tupper")
     pieza = next(el for el in h["elementos"] if el["nombre"] == "moneda")
     producto = next(el for el in h["elementos"] if el["nombre"] == "tupper")
-    t_llega = 3.0 * 0.68
+    t_llega = 3.0 * 0.62
     assert abs(_valor(pieza, "x", t_llega) - producto["x"]) < 5 and _valor(pieza, "rotacion", t_llega) == 180
     flecha = next(el for el in h["elementos"] if el["nombre"] == "flecha")
     assert flecha["desde"] >= t_llega - 0.01
@@ -167,3 +167,27 @@ def test_redibujar_un_objeto_de_la_biblioteca(monkeypatch, tmp_path):
     hecho = marcas.redibujar_objeto(object(), "botella", "vidrio verde con brillo y una etiqueta con dibujo")
     assert "botella_det" in hecho and "#123456" in esc.prop("botella")
     dibujos._CACHE_REEMP.clear()
+
+
+def test_la_tapa_de_pintura_se_transforma_en_la_tapa_del_tupper():
+    """Santi, 2026-11-16: el Tupper empieza SIN tapa; la tapa de pintura cae arriba y se vuelve la tapa blanca; al lado de
+    la lata, el pincel."""
+    h = uso_v3.escena_inspiracion(3.4, "lata", "moneda", "jarron", resultado="botella", acompana="pincel")
+    nombres = [el["nombre"] for el in h["elementos"]]
+    assert "pincel" in nombres and "botella" in nombres
+    pieza = next(el for el in h["elementos"] if el["nombre"] == "moneda")
+    tapa = next(el for el in h["elementos"] if el["nombre"] == "botella")
+    assert _valor(pieza, "opacidad", 3.39) == 0.0 and tapa["desde"] > 3.4 * 0.62    # la pieza se apaga, la tapa aparece
+    assert _valor(tapa, "opacidad", 3.39) == 1.0
+
+
+def test_el_apreton_empieza_con_las_dos_personas():
+    """Santi, 2026-11-16: "nunca dos manos solas": plano medio con las dos personas y la mesa con el contrato, después el
+    primer plano del apretón."""
+    h = uso_v3.escena_plata("apreton_manos", 3.4)
+    personas = [el for el in h["elementos"] if el.get("tipo") == "personaje"]
+    manos = [el for el in h["elementos"] if el.get("nombre") == "mano"]
+    assert len(personas) == 2 and all(p_["hasta"] == manos[0]["desde"] for p_ in personas)
+    assert any(el.get("nombre") == "papel_firma" for el in h["elementos"])
+    assert any(k.get("easing") == "escalon" for k in h["camara"])               # el corte al primer plano
+

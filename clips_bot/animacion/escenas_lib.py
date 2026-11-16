@@ -192,14 +192,15 @@ def _inspiracion(plano, spec, dur, i, obj, rnd):
     ins = spec.get("inspiracion") or {}
     if not (ins.get("fuente") and ins.get("pieza")):
         return _objeto_gira(plano, spec, dur, i, obj, rnd)
-    return uso_v3.escena_inspiracion(dur, ins["fuente"], ins["pieza"], ins.get("producto") or obj, seed=i)
+    return uso_v3.escena_inspiracion(dur, ins["fuente"], ins["pieza"], ins.get("producto") or obj, seed=i,
+                                     resultado=ins.get("resultado") or "", acompana=ins.get("acompana") or "")
 
 
 def _plata(tipo):
     def f(plano, spec, dur, i, obj, rnd):
         from . import uso_v3
 
-        return uso_v3.escena_plata(tipo, dur, (spec.get("uso") or {}).get("manga") or "", seed=i)
+        return uso_v3.escena_plata(tipo, dur, (spec.get("uso") or {}).get("manga") or "", seed=i, spec=spec)
     return f
 
 

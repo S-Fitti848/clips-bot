@@ -145,32 +145,47 @@ def escena_uso(dur: float, prota: str, partes: dict, pasos: list[str], manga: st
     return {"elementos": els, "fondo": None, "camara": cam, "sfx": sorted(sfx), "actores": []}
 
 
-def escena_inspiracion(dur: float, fuente: str, pieza: str, producto: str, seed: int = 0) -> dict:
-    """Lo que inspiró al producto a la izquierda y el producto a la derecha: la pieza sale de la fuente, se da vuelta,
-    vuela en arco y encastra en el producto con un clic, destellos y una flecha que une los dos."""
+def escena_inspiracion(dur: float, fuente: str, pieza: str, producto: str, seed: int = 0, resultado: str = "",
+                       acompana: str = "") -> dict:
+    """Lo que inspiró al producto a la izquierda (con lo que lo hace reconocible al lado: `acompana`, el pincel de la
+    lata) y el producto a la derecha, SIN su parte (el Tupper sin tapa). La pieza sale de la fuente, se da vuelta, vuela,
+    cae sobre el producto y se TRANSFORMA en su parte (`resultado`: la tapa de pintura se vuelve la tapa blanca del
+    Tupper), con un clic, destellos y una flecha (Santi, 2026-11-16: "que se entienda sin la voz")."""
     rnd = random.Random(seed)
     xf, xp, y = 290, 790, 1180
-    t_sale, t_gira, t_llega = dur * 0.12, dur * 0.42, dur * 0.68
-    y_pieza_f, y_pieza_p = y - 150, y - 120
-    kp = [_k(0, x=xf, y=y_pieza_f, rotacion=0, escala=1.3),
+    esc_ = 1.6
+    t_sale, t_gira, t_llega = dur * 0.12, dur * 0.4, dur * 0.62
+    t_trans = min(dur - 0.35, t_llega + 0.15)
+    y_pieza_f, y_pieza_p = y - 150, y - 120 * esc_ * 0.55
+    kp = [_k(0, x=xf, y=y_pieza_f, rotacion=0, escala=1.3, opacidad=1.0),
           _k(t_sale, x=xf, y=y_pieza_f - 160, rotacion=0, escala=1.35, easing="salida"),      # se levanta
           _k(t_gira, x=(xf + xp) / 2, y=y - 520, rotacion=180, escala=1.45, easing="suave"),  # se da vuelta en el aire
-          _k(t_llega, x=xp, y=y_pieza_p, rotacion=180, escala=1.3, easing="entrada"),         # baja sobre el producto
-          _k(t_llega + 0.1, escala=1.18, easing="lineal"), _k(t_llega + 0.25, escala=1.3, easing="rebote")]
+          _k(t_llega, x=xp, y=y_pieza_p, rotacion=180, escala=1.3, easing="entrada"),         # cae sobre el producto
+          _k(t_llega + 0.1, escala=1.18, easing="lineal")]
+    if resultado:      # se transforma: la pieza se apaga mientras aparece la parte del producto en el mismo lugar
+        kp += [_k(t_trans, escala=1.25, opacidad=1.0), _k(t_trans + 0.3, escala=1.5, opacidad=0.0, easing="salida")]
+    else:
+        kp.append(_k(t_llega + 0.25, escala=1.3, easing="rebote"))
     linea = ac.estela(kp[1:4], t_sale, t_llega)
-    els = [_el(fuente, xf, y, escala=1.6, color=True),
-           _el(producto, xp, y, escala=1.6, color=True,
-               keyframes=[_k(t_llega, escala=1.6), _k(t_llega + 0.12, escala=1.5),
-                          _k(t_llega + 0.3, escala=1.65, easing="rebote"), _k(dur, escala=1.65)])]
+    els = [_el(fuente, xf, y, escala=esc_, color=True)]
+    if acompana:
+        els.append(_el(acompana, xf + 175, y + 70, escala=1.0, rotacion=24, color=True))
+    els.append(_el(producto, xp, y, escala=esc_, color=True,
+                   keyframes=[_k(t_llega, escala=esc_), _k(t_llega + 0.12, escala=esc_ * 0.94),
+                              _k(t_llega + 0.3, escala=esc_ * 1.03, easing="rebote"), _k(dur, escala=esc_ * 1.03)]))
+    if resultado:
+        els.append(_el(resultado, xp, y_pieza_p, escala=esc_, color=True, desde=round(t_trans, 3),
+                       keyframes=[_k(t_trans, escala=esc_ * 0.8, opacidad=0.0),
+                                  _k(t_trans + 0.3, escala=esc_ * 1.03, opacidad=1.0, easing="rebote")]))
     if linea:
         els.append(linea)
     els.append(_el(pieza, xf, y_pieza_f, color=True, keyframes=kp))
     els.append(_el("flecha", (xf + xp) / 2, y + 260, escala=0.9, desde=round(t_llega, 3), entrada="rebote"))
-    els += ac.destellos(t_llega + 0.02, rnd, (xp, y_pieza_p), n_=5)
-    sfx = [(round(t_sale, 3), "whoosh"), (round(t_llega, 3), "tac"), (round(t_llega + 0.15, 3), "ding")]
+    els += ac.destellos(t_trans if resultado else t_llega + 0.02, rnd, (xp, y_pieza_p), n_=6)
+    sfx = [(round(t_sale, 3), "whoosh"), (round(t_llega, 3), "tac"), (round(t_trans + 0.1, 3), "ding")]
     cam = [_k(0, zoom=1.0), _k(t_llega, zoom=1.06, easing="suave"),
-           _k(t_llega + 0.02, zoom=1.22, x=(xp - 540) * 0.4, y=(y_pieza_p - 960) * 0.3, easing="escalon"),
-           _k(dur, zoom=1.28, x=(xp - 540) * 0.4, y=(y_pieza_p - 960) * 0.3, easing="suave")]
+           _k(t_llega + 0.02, zoom=1.22, x=(xp - 540) * 0.6, y=(y_pieza_p - 960) * 0.3, easing="escalon"),
+           _k(dur, zoom=1.3, x=(xp - 540) * 0.6, y=(y_pieza_p - 960) * 0.3, easing="suave")]
     return {"elementos": els, "fondo": None, "camara": cam, "sfx": sorted(sfx), "actores": []}
 
 
@@ -187,7 +202,7 @@ def _manos(izq: list[dict], der: list[dict], manga: str, manga2: str = "") -> li
     return out
 
 
-def escena_plata(tipo: str, dur: float, manga: str = "", seed: int = 0) -> dict:
+def escena_plata(tipo: str, dur: float, manga: str = "", seed: int = 0, spec: dict | None = None) -> dict:
     """Una acción de plata que se lee en un segundo: contar billetes, abrir la caja registradora, darse la mano al
     cerrar un trato, firmar un contrato o un cheque."""
     rnd = random.Random(seed)
@@ -227,24 +242,43 @@ def escena_plata(tipo: str, dur: float, manga: str = "", seed: int = 0) -> dict:
                                   _k(dur, x=X0 - 260, y=Y0 + 200, rotacion=-12, easing="suave")]))
         sfx += [(round(t_tecla, 3), "tac"), (round(t_abre, 3), "caja_registradora")]
         els += _manos(izq, der, manga)
-    elif tipo == "apreton_manos":      # dos manos que se encuentran en el medio y se sacuden: trato cerrado
-        t_toca = dur * 0.3
-        izq = [_k(0, x=X0 - 620, y=Y0, rotacion=90, fase=0.0), _k(t_toca, x=X0 - 95, y=Y0, rotacion=90, fase=0.7,
-                                                                   easing="salida")]
-        der = [_k(0, x=X0 + 620, y=Y0 + 20, rotacion=-90, fase=0.0), _k(t_toca, x=X0 + 95, y=Y0 + 20, rotacion=-90,
-                                                                         fase=0.7, easing="salida")]
-        for k_ in range(3):
-            ta = t_toca + 0.15 + k_ * 0.3
+    elif tipo == "apreton_manos":
+        # Santi, 2026-11-16 ("nunca dos manos solas"): primero un PLANO MEDIO con las dos personas (caras, ropa, la mesa
+        # con el contrato) extendiendo la mano, y después el PRIMER PLANO del apretón.
+        t_corte = round(dur * 0.45, 3)
+        e_ = ac.Escena(dur, semilla=seed)
+        actores = list((spec or {}).get("actores") or [])
+        defectos = (("empresario", "hombre"), ("empresaria", "mujer"))
+        for k_, (x_, (rol_def, gen_def)) in enumerate(zip((380, 700), defectos)):
+            a_ = actores[k_] if k_ < len(actores) else {}
+            e_.actor(a_.get("rol") or rol_def, "senalar", "centro", None, "feliz", k_, x0=x_, x1=x_,
+                     genero=a_.get("genero") or gen_def, edad=a_.get("edad") or "adulto")
+        for el in e_.elementos:
+            el["hasta"] = t_corte
+        els += e_.elementos
+        y_mesa = ac.PISO - 300
+        els += [_el("mesa", X0, y_mesa, escala=1.5, hasta=t_corte),
+                _el("papel_firma", X0, y_mesa - 70, escala=0.42, fase=1.0, rotacion=-8, hasta=t_corte)]
+        t_toca = t_corte + (dur - t_corte) * 0.15
+        izq = [_k(0, x=X0 - 620, y=Y0, rotacion=90, fase=0.0), _k(t_corte, x=X0 - 420, y=Y0, rotacion=90, fase=0.0),
+               _k(t_toca, x=X0 - 95, y=Y0, rotacion=90, fase=0.7, easing="salida")]
+        der = [_k(0, x=X0 + 620, y=Y0 + 20, rotacion=-90, fase=0.0), _k(t_corte, x=X0 + 420, y=Y0 + 20, rotacion=-90,
+                                                                         fase=0.0),
+               _k(t_toca, x=X0 + 95, y=Y0 + 20, rotacion=-90, fase=0.7, easing="salida")]
+        n_sac = 3 if dur - t_toca > 1.2 else 2
+        for k_ in range(n_sac):
+            ta = t_toca + 0.12 + k_ * 0.28
             for kf, dy in ((izq, 0), (der, 20)):
-                kf += [_k(ta, y=Y0 + dy - 45, easing="suave"), _k(ta + 0.15, y=Y0 + dy + 35, easing="suave")]
+                kf += [_k(ta, y=Y0 + dy - 45, easing="suave"), _k(ta + 0.14, y=Y0 + dy + 35, easing="suave")]
         for kf, dy in ((izq, 0), (der, 20)):
             kf.append(_k(dur, y=Y0 + dy, easing="suave"))
-        sfx += [(round(t_toca, 3), "tac"), (round(t_toca + 1.1, 3), "ding")]
-        els += _manos(izq, der, manga or "#3d4f7a", "#5a3d2b")
-        for el in els:
-            if el.get("nombre") == "mano":
-                el["escala"] = 1.45          # el apretón tiene que leerse en un segundo: grande y de cerca
-        els += ac.destellos(t_toca + 1.0, rnd, (X0, Y0 - 150), n_=4)
+        sfx += [(round(t_toca, 3), "tac"), (round(min(dur - 0.1, t_toca + 0.9), 3), "ding")]
+        manos = _manos(izq, der, manga or "#3d4f7a", "#5a3d2b")
+        for el in manos:
+            el["escala"] = 1.45          # el apretón tiene que leerse en un segundo: grande y de cerca
+            el["desde"] = t_corte        # solo en el primer plano
+        els += manos
+        els += ac.destellos(min(dur - 0.5, t_toca + 0.8), rnd, (X0, Y0 - 150), n_=4)
     else:                              # firmar: la lapicera escribe la firma mientras la otra mano sostiene el papel
         t0, t1 = dur * 0.18, dur * 0.85
         esc_p = 2.1
@@ -263,6 +297,10 @@ def escena_plata(tipo: str, dur: float, manga: str = "", seed: int = 0) -> dict:
                _k(t0 * 0.8, x=X0 - 300, y=Y0 + 90, rotacion=40, fase=0.4, easing="salida")]
         sfx += [(round(t0, 3), "tac"), (round(t1, 3), "ding")]
         els += _manos(izq, der, manga)
-    cam = ([_k(0, zoom=1.3, y=Y0 - 960), _k(dur, zoom=1.42, y=Y0 - 960, easing="suave")] if tipo == "apreton_manos"
-           else [_k(0, zoom=1.0), _k(dur, zoom=1.06, easing="suave")])
+    if tipo == "apreton_manos":    # plano medio de las dos personas → corte seco al primer plano del apretón
+        t_c = round(dur * 0.45, 3)
+        cam = [_k(0, zoom=1.12, y=180), _k(t_c - 0.02, zoom=1.18, y=180, easing="suave"),
+               _k(t_c, zoom=1.35, y=Y0 - 960, easing="escalon"), _k(dur, zoom=1.45, y=Y0 - 960, easing="suave")]
+    else:
+        cam = [_k(0, zoom=1.0), _k(dur, zoom=1.06, easing="suave")]
     return {"elementos": els, "fondo": None, "camara": cam, "sfx": sorted(sfx), "actores": []}

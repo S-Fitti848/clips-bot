@@ -1101,8 +1101,12 @@ SISTEMA_V3 = """Te paso el guion de un video corto animado de "Así Nació" (el 
    es cada parte por separado (forma, material, colores), para dibujarlas; si no, vacíos. `contenido`: lo que se mete
    adentro (comida, para el Tupper), descrito para dibujarlo; vacío si no hay.
 4. `inspiracion`: si la historia dice que ALGO INSPIRÓ al producto (la tapa de una lata de pintura inspiró la tapa del
-   Tupper), `escena` = la escena donde la voz lo explica, `fuente` = cómo es eso que lo inspiró (para dibujarlo) y
-   `pieza` = la parte que pasa al producto (la tapa de la lata). Si no hay nada así, `escena` 0.
+   Tupper), `escena` = la escena donde la voz lo explica, `fuente` = cómo es eso que lo inspiró, con TODOS los detalles
+   que lo hacen reconocible de un vistazo (una lata de pintura: metálica, con manija de alambre, pintura chorreando por
+   el borde), `pieza` = la parte que pasa al producto, también reconocible (una tapa de lata clásica con reborde) y
+   `acompana` = algo que va al lado y termina de explicarlo (un pincel con pintura), o vacío. Si no hay nada así,
+   `escena` 0.
+Todo lo que describís se tiene que entender SIN la voz y con los mismos detalles que dice el guion.
 Respondé solo el JSON."""
 SCHEMA_V3 = {"type": "OBJECT", "properties": {
     "ganchos": {"type": "ARRAY", "items": {"type": "OBJECT", "properties": {
@@ -1118,8 +1122,9 @@ SCHEMA_V3 = {"type": "OBJECT", "properties": {
         "cuerpo": {"type": "STRING"}, "tapa": {"type": "STRING"}, "contenido": {"type": "STRING"}},
         "required": ["escena", "pasos", "cuerpo", "tapa", "contenido"]},
     "inspiracion": {"type": "OBJECT", "properties": {
-        "escena": {"type": "INTEGER"}, "fuente": {"type": "STRING"}, "pieza": {"type": "STRING"}},
-        "required": ["escena", "fuente", "pieza"]}},
+        "escena": {"type": "INTEGER"}, "fuente": {"type": "STRING"}, "pieza": {"type": "STRING"},
+        "acompana": {"type": "STRING"}},
+        "required": ["escena", "fuente", "pieza", "acompana"]}},
     "required": ["ganchos", "decorado", "uso", "inspiracion"]}
 
 
@@ -1143,14 +1148,16 @@ def preparar_uso(cliente, d: dict, avisar=log.info) -> list[str]:
     escenas = d.get("escenas") or []
     prota = prop_real(d.get("protagonista") or {})
     hechos = []
+    partes_uso: dict = {}
 
-    def dibujo(nombre: str, desc: str) -> str:
+    def dibujo(nombre: str, desc: str, frase: str = "") -> str:
         if not nombre or not desc.strip():
             return ""
         if esc.es_prop(nombre):
             return dibujos.actual(nombre)
         try:
-            dibujos.dibujar(cliente, nombre, desc)
+            # el dibujo con los mismos detalles que describe el guion (Santi, 2026-11-16): la frase va de contexto
+            dibujos.dibujar(cliente, nombre, desc, f"lo que dice la voz en esa escena: {frase}" if frase else "")
             return nombre
         except Exception as err:  # noqa: BLE001
             avisar(f"no pude dibujar {nombre}: {str(err)[:100]}")
@@ -1173,16 +1180,24 @@ def preparar_uso(cliente, d: dict, avisar=log.info) -> list[str]:
             partes["cuerpo"] = prota
         escenas[k]["accion_escena"], escenas[k]["plano"] = "uso_manos", "manos"
         escenas[k]["uso"] = {"partes": partes, "pasos": [p_ for p_ in u.get("pasos") or [] if isinstance(p_, str)]}
+        partes_uso = partes
         hechos.append(f"uso en la escena {k + 1}: {', '.join(escenas[k]['uso']['pasos'])}")
     ins = d.get("inspiracion") or {}
     k = int(ins.get("escena") or 0) - 1
     if 1 <= k < len(escenas) and prota and str(ins.get("fuente") or "").strip() and str(ins.get("pieza") or "").strip():
+        frase_k = str(escenas[k].get("frase") or "")
         nombre = _slug(ins["fuente"]) or "inspiracion"
-        fuente = dibujo(nombre, str(ins["fuente"]) + ", sin la pieza que pasa al producto")
-        pieza = dibujo(f"{nombre[:22]}_pieza", str(ins["pieza"]))
+        fuente = dibujo(nombre, str(ins["fuente"]) + ", sin la pieza que pasa al producto", frase_k)
+        pieza = dibujo(f"{nombre[:22]}_pieza", str(ins["pieza"]), frase_k)
+        acomp = str(ins.get("acompana") or "").strip()
+        acompana = (acomp if esc.es_prop(acomp) else dibujo(_slug(acomp) or "", acomp, frase_k)) if acomp else ""
         if fuente and pieza:
             escenas[k]["accion_escena"], escenas[k]["plano"] = "inspiracion", "cerca"
-            escenas[k]["inspiracion"] = {"fuente": fuente, "pieza": pieza, "producto": prota}
+            # el producto empieza SIN su parte y la pieza se transforma en ella (la tapa de pintura → la tapa del Tupper)
+            con_partes = bool(partes_uso.get("cuerpo") and partes_uso.get("tapa") and partes_uso["cuerpo"] != prota)
+            escenas[k]["inspiracion"] = {"fuente": fuente, "pieza": pieza, "acompana": acompana,
+                                         "producto": partes_uso["cuerpo"] if con_partes else prota,
+                                         "resultado": partes_uso["tapa"] if con_partes else ""}
             hechos.append(f"inspiración en la escena {k + 1}: {fuente} → {prota}")
     if hechos:
         avisar("escenas nuevas: " + " | ".join(hechos))
@@ -1475,7 +1490,10 @@ REGLA 16 — ESCENAS VIVAS (Santi, 2026-11-16; las 3 opciones de gancho y el dec
 - Cada frase dura 3 segundos como mucho al decirla (8 a 10 palabras): el video corta a otra toma cada 3 s.
 - ÉPOCA DE CADA OBJETO: nada que no existiera en el `anio_escena` (ni un celular, una tele o un monitor en 1938):
   el código saca lo que no corresponde.
-- Nada de objetos sin relación con la historia ni con etiquetas de texto escritas, salvo que la historia lo pida."""
+- Nada de objetos sin relación con la historia ni con etiquetas de texto escritas, salvo que la historia lo pida.
+- CADA ESCENA SE ENTIENDE DE UN VISTAZO SIN LA VOZ (Santi, 2026-11-16): con los elementos que la hacen reconocible
+  (una lata de pintura es metálica, con manija y pintura chorreando, y al lado un pincel; un trato es dos personas en una
+  mesa con un contrato que se dan la mano). Los dibujos usan los MISMOS detalles que describe el guion."""
 
 
 def escribir_guion(cliente, e: Elegido, fuente: str, reintentos: int = 6, avisar=log.info,
@@ -2178,7 +2196,10 @@ REVISION_V3 = """
 - Un PRIMER PLANO que corta caras en vez de mostrar las manos con el objeto: `arreglo` = otro.
 - Un TEXTO repetido (la misma cifra o año dos veces, o lo mismo que el subtítulo) o dos textos pisados: `arreglo` =
   sacar_texto.
-- DECORACIÓN sin relación con la historia: `arreglo` = sacar_objeto con su nombre en `objeto`."""
+- DECORACIÓN sin relación con la historia: `arreglo` = sacar_objeto con su nombre en `objeto`.
+- Una escena que NO SE ENTIENDE SIN LA VOZ (le faltan los elementos que la hacen reconocible): `arreglo` = cambiar_accion;
+  un dibujo que no tiene los detalles que dice la frase (una lata que no parece de pintura): `arreglo` =
+  redibujar_objeto con su nombre en `objeto`."""
 
 
 CATEGORIAS_FLOJAS = ("gancho", "accion", "objeto", "personajes", "camara", "texto", "decorado", "ritmo", "efectos")
