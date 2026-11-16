@@ -3630,6 +3630,7 @@ def _piso_latam(conn, dia, hecho: str = "") -> dict:
             "banco": banco_mod.leer(conn, "latam")}
 
 
+ASINACIO_FLOJAS = "asinacio_flojas"   # bot_estado: {clip_id: {fecha, titulo, flojas: [{categoria, que, cuadro}]}}
 WEB_APAGADO = "web_latam_apagado"   # bot_estado: la búsqueda web de Latinoamérica la apagó la prueba (motivo)
 WEB_PRUEBA = "web_latam_prueba"     # bot_estado: el día de la prueba ya evaluado (AAAA-MM-DD)
 
@@ -4315,6 +4316,10 @@ def _animacion_armar(conn, tg: TelegramClient, chats: list[str], settings: Setti
     avisos = _animacion_subir(conn, settings, r, carpeta, hoy, k) if settings.animacion.subir else []
     bitacora.paso(None)
     clip_id = clip_asinacio(hoy, k)
+    if getattr(r, "flojas", None):     # mejora continua (Santi, 2026-11-16): lo más flojo de cada video, con su cuadro
+        flojas = json.loads(db.get_valor(conn, ASINACIO_FLOJAS) or "{}")
+        flojas[clip_id] = {"fecha": hoy.isoformat(), "titulo": r.titulo, "flojas": r.flojas}
+        db.set_valor(conn, ASINACIO_FLOJAS, json.dumps(flojas, ensure_ascii=False))
     programado = any(a.startswith(("📤", "📘")) for a in avisos)
     encabezado = (("🤖 <b>Se publica sola</b>: si no tocás nada sale a su hora; ❌ Cancelar la frena.\n"
                    if programado else "") + "\n".join(avisos + ([html.escape(r.aviso)] if getattr(r, "aviso", "") else [])))

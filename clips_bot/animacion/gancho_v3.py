@@ -22,6 +22,10 @@ EFECTOS = {"polvo", "lineas_mov", "destello", "primer_plano", "rayos", "rotulo",
            "tito_reaccion", "pedazo", "reloj_gigante"}
 Y_OBJETO = 1150
 MUEBLES = {"mesa", "estante", "mostrador", "ventana", "cuadro", "lampara"}
+Y_MANOS_MIN = 1150          # un objeto más arriba que esto está flotando: el primer plano no va ahí
+ZOOM_CERCA = (1.55, 1.65)   # el primer plano de las manos (más cerrado cortaba las caras)
+Y_TEXTO_GANCHO = 600        # el texto del gancho, lejos de los subtítulos de arriba (2026-11-16)
+Y_ROTULO = 420              # el rótulo, debajo de los subtítulos (antes 330: quedaba pegado)
 
 
 def _corte(t: float, zoom: float, x: float = 0.0, y: float = 0.0, rot: float = 0.0) -> list[dict]:
@@ -64,15 +68,21 @@ def _pos(el: dict, campo: str, t: float, defecto: float) -> float:
 
 
 def foco(esc_d: dict, t: float = 0.0) -> tuple[float, float] | None:
-    """Dónde están las manos y el objeto a los `t` segundos: el protagonista, el objeto en la mano o el de la escena
-    (nunca el decorado, los muebles ni los efectos); si no hay, a la altura de las manos del primer personaje."""
+    """Dónde están las MANOS CON EL OBJETO a los `t` segundos (Santi, 2026-11-16: "los primeros planos encuadran las
+    manos con el objeto, no caras cortadas"): el objeto en la mano; si no, un objeto apoyado abajo (mesa, piso); si no,
+    las manos del primer personaje. Nunca el decorado, los muebles, los efectos ni algo flotando arriba."""
     props = [el for el in esc_d.get("elementos") or [] if el.get("tipo") == "prop" and el.get("nombre") not in EFECTOS
-             and el.get("nombre") not in MUEBLES and not el.get("decorado")]
-    for el in sorted(props, key=lambda el: (el.get("color") is not True, not el.get("en_mano"), not el.get("lib"))):
+             and el.get("nombre") not in MUEBLES and not el.get("decorado") and not el.get("fijo")]
+    en_mano = [el for el in props if el.get("en_mano")]
+    if en_mano:
+        el = en_mano[0]
+        return _pos(el, "x", t, 540), _pos(el, "y", t, 1000)
+    abajo = [el for el in props if _pos(el, "y", t, 0) >= Y_MANOS_MIN]
+    for el in sorted(abajo, key=lambda el: (el.get("color") is not True, not el.get("lib"))):
         return _pos(el, "x", t, 540), _pos(el, "y", t, 1000)
     for el in esc_d.get("elementos") or []:
         if el.get("tipo") == "personaje" and not el.get("multitud"):
-            return _pos(el, "x", t, 540), _pos(el, "y", t, ac.PISO) - 380 * float(el.get("escala", 1))
+            return _pos(el, "x", t, 540), _pos(el, "y", t, ac.PISO) - 330 * float(el.get("escala", 1))
     return None
 
 
@@ -88,7 +98,7 @@ def planos(esc_d: dict) -> None:
         if f is None:
             tramos.append((1.0 + 0.04 * (j % 2), 1.07 + 0.04 * (j % 2), 0.0, 0.0, 0.0))
         else:
-            tramos.append((1.7, 1.82, f[0] - 540, f[1] - 960, 0.0))
+            tramos.append((ZOOM_CERCA[0], ZOOM_CERCA[1], f[0] - 540, f[1] - 960, 0.0))
     esc_d["camara"] = camara_cortes(dur, tramos)
 
 
@@ -175,7 +185,7 @@ def escena_gancho(opcion: dict, prota: str, fondo: str, semilla: int, dur: float
         els += ac.polvo(540 + rnd.uniform(-120, 120), Y_OBJETO + 260, c + 0.02, rnd, n_=5)
         els += ac.destellos(c + 0.05, rnd, (540, Y_OBJETO), n_=4)
     if texto:
-        els.append({"tipo": "gancho", "texto": texto, "y": ac.Y_TEXTO_PANTALLA, "modo": "palabras", "tam": 110, "desde": 0.0})
+        els.append({"tipo": "gancho", "texto": texto, "y": Y_TEXTO_GANCHO, "modo": "palabras", "tam": 110, "desde": 0.0})
     tramos = [(1.0, 1.08, 0, 0, 0), (1.55, 1.7, 0, Y_OBJETO - 960, 3), (2.0, 2.15, 0, Y_OBJETO - 960, -4)][:n]
     camara = camara_cortes(dur, tramos)
     for c in cortes[1:]:      # el corte pega: un sacudón corto
@@ -195,3 +205,53 @@ def opciones_de(d: dict) -> list[dict]:
         if o.get("tipo") in TIPOS and 3 <= len(str(o.get("texto") or "").split()) <= 5:
             out.append({"tipo": o["tipo"], "texto": str(o["texto"]).strip()})
     return out[:3]
+
+
+def _palabras(t: str) -> set[str]:
+    import unicodedata
+
+    t = unicodedata.normalize("NFKD", str(t or "").lower())
+    t = "".join(ch for ch in t if not unicodedata.combining(ch))
+    out, actual = set(), ""
+    for ch in t + " ":
+        if ch.isalnum():
+            actual += ch
+        else:
+            if len(actual) >= 3 or actual.isdigit():
+                out.add(actual)
+            actual = ""
+    return out
+
+
+def sin_textos_repetidos(esc_d: dict, frase: str) -> list[str]:
+    """Santi, 2026-11-16: ningún texto en pantalla se repite ni se pisa con otro. Lo que ya dice el subtítulo (la voz)
+    no va también grande (una cifra, un texto de la escena); un solo texto grande a la vez (el dato le gana al texto
+    de la escena); el rótulo (año · lugar) baja para no quedar pegado a los subtítulos. Devuelve lo que sacó."""
+    dichas = _palabras(frase)
+    for el in esc_d.get("elementos") or []:     # lo que dice el rótulo tampoco se repite en otro texto
+        if el.get("tipo") == "prop" and el.get("nombre") == "rotulo":
+            dichas |= _palabras(el.get("texto"))
+    sacados, quedan, hay_dato = [], [], False
+    for el in esc_d.get("elementos") or []:
+        nombre = el.get("nombre") if el.get("tipo") == "prop" else el.get("tipo")
+        if nombre in ("dato", "gancho"):
+            texto = str(el.get("texto") or "").split("|")[0]
+            suyas = _palabras(texto)
+            if suyas and suyas <= dichas | {p for p in suyas if not p.isdigit() and len(p) < 4}:
+                sacados.append(texto)
+                continue
+            if nombre == "gancho" and hay_dato:
+                sacados.append(texto)
+                continue
+            hay_dato = hay_dato or nombre == "dato"
+        if nombre == "rotulo":
+            el["y"] = Y_ROTULO
+        quedan.append(el)
+    # el texto de la escena va después del dato en la lista: si quedó uno de cada uno, sale el de la escena
+    if hay_dato:
+        textos = [el for el in quedan if el.get("tipo") == "gancho"]
+        for el in textos:
+            quedan.remove(el)
+            sacados.append(str(el.get("texto") or ""))
+    esc_d["elementos"] = quedan
+    return sacados

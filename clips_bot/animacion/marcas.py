@@ -1011,6 +1011,42 @@ def errores_lugares_y_personajes(escenas: list[dict]) -> list[str]:
     return errores
 
 
+FLOTA = {"gira", "aparece", "crece", "vuela", "rebota", "llueve"}
+FLOTA_MAX = 2
+EN_USO_MIN = 0.6
+
+
+def errores_uso(d: dict) -> list[str]:
+    """Reglas_v3 del guion (Santi, 2026-11-16): el producto en uso en la mayoría de las escenas, flotando o girando como
+    mucho 2 veces, y algo nuevo para la biblioteca en cada video."""
+    errores = []
+    prota = prop_real(d.get("protagonista") or {})
+    escenas = (d.get("escenas") or [])[1:]           # la 1 es el gancho (la imagen imposible)
+    if not escenas:
+        return errores
+    flotan, con = [], []
+    for i, e_ in enumerate(escenas, 2):
+        suyos = [o for o in e_.get("objetos") or [] if prop_real(o) == prota]
+        if e_.get("accion_escena") == "objeto_gira" or any(o.get("efecto") in FLOTA or o.get("soporte") == "aire"
+                                                             for o in suyos):
+            flotan.append(i)
+        if suyos or (e_.get("accion_escena") or _lib.LIBRE) not in (_lib.LIBRE, "nueva"):
+            con.append(i)
+    if len(flotan) > FLOTA_MAX:
+        errores.append(f"el producto flota o gira en las escenas {flotan}: como mucho en {FLOTA_MAX} y solo si la frase "
+                       "lo justifica; en las otras, en uso (en la mano de alguien o donde se usa)")
+    if len(con) < EN_USO_MIN * len(escenas):
+        faltan = [i for i in range(2, len(escenas) + 2) if i not in con]
+        errores.append(f"el producto ({prota}) no se ve en uso en las escenas {faltan[:6]}: mostralo funcionando aunque la "
+                       "frase hable de otra cosa")
+    nuevas = [e_ for e_ in escenas if e_.get("accion_escena") == "nueva" and str(e_.get("accion_nueva") or "").strip()
+              and str(e_["accion_nueva"]).strip() not in _lib.todas_las_acciones()]
+    if not nuevas:
+        errores.append("falta algo NUEVO para la biblioteca: 1 escena con `accion_escena` = nueva y un `accion_nueva` que "
+                       "todavía no exista (una acción de este producto)")
+    return errores
+
+
 def errores_v3(d: dict) -> list[str]:
     """Regla 16 (Santi, 2026-11-16): 3 opciones de gancho distintas con texto de 3 a 5 palabras, y decorado de
     contexto en la mayoría de las escenas."""
@@ -1043,7 +1079,7 @@ SISTEMA_V3 = """Te paso el guion de un video corto animado de "Así Nació" (el 
    ("ALGO QUE NADIE ESPERABA", "NO VAS A CREERLO"): el dato concreto más fuerte.
 2. `decorado`: para cada escena (desde la 2), 1 a 3 objetos de la lista que dan CONTEXTO a la historia en ese lugar y
    esa época (una cocina de 1946: botella, jarrón, radio; una oficina: teléfono de disco, calendario). Van atrás, sobre
-   el estante, la mesa o el piso. Solo nombres de la lista.
+   el estante, la mesa o el piso. Solo nombres de la lista. Nada que no tenga relación con la historia.
 Respondé solo el JSON."""
 SCHEMA_V3 = {"type": "OBJECT", "properties": {
     "ganchos": {"type": "ARRAY", "items": {"type": "OBJECT", "properties": {
@@ -1099,6 +1135,8 @@ def validar_guion(d: dict, m: Marca, fuente: str, ganchos_previos: list[dict] | 
     escenas = d.get("escenas") or []
     frases = frases_de(d)
     n = len(frases)
+    if REGLAS_V3:
+        errores += errores_uso(d)
     if frases and gancho_generico(frases[0]):    # Santi, 2026-11-16: el gancho dice el dato concreto
         errores.append(f"el gancho (frase 1) usa una frase genérica de intriga («{gancho_generico(frases[0])}»): "
                        "decí el dato concreto más fuerte de esta historia")
@@ -1294,6 +1332,15 @@ REGLA_16 = """
 REGLA 16 — ESCENAS VIVAS (Santi, 2026-11-16; las 3 opciones de gancho y el decorado se piden aparte).
 - Las MANOS siempre hacen algo con el objeto: lo agarran, lo abren, lo llenan, lo apilan (objeto con `soporte`
   mano, acción `fabricar`, `usar`, `probar` o `vender`). Nunca manos abiertas al costado ni el objeto flotando.
+- EL PRODUCTO EN USO (Santi, 2026-11-16): en casi todas las escenas se ve el protagonista haciendo lo que hace, en la
+  mano de alguien que lo usa (`soporte` mano) o apoyado donde se usa: el Tupper guardando comida, cerrándose con la
+  tapa, apilado en la heladera, en una reunión de venta en una casa; el Play-Doh amasado por chicos; el cubo siendo
+  resuelto. Aunque la frase hable de otra cosa (la quiebra, el nombre, el rival), se ve el producto funcionando o la
+  escena de esa parte de la historia. El producto FLOTANDO o GIRANDO (`gira`, `aparece`, `crece`, `vuela`, `rebota`,
+  soporte `aire`, `objeto_gira`) como mucho en 2 escenas y solo si la frase lo justifica.
+- NADIE PARADO SIN HACER NADA, nunca: cada persona hace algo con las manos o el cuerpo que muestra la frase.
+- ALGO NUEVO EN CADA VIDEO: al menos 1 escena con `accion_escena` = nueva y un `accion_nueva` que todavía no exista
+  (una acción de ESTE producto), que queda en la biblioteca para los próximos videos.
 - El OBJETO PROTAGONISTA tiene que parecerse al real: el Tupper es un recipiente de plástico bajo con tapa
   hermética, no una olla. Si ningún dibujo de la lista ES ese objeto (no uno parecido), `dibujo_nuevo` con una
   descripción precisa de su forma, material y colores.
@@ -1561,6 +1608,7 @@ def linea_de_tiempo(d: dict, inicios: list[float], fin: float, palabras: list,
         esc_d["frase"] = k          # para la revisión visual: qué frase del guion es esta escena
         if v3:
             gv.planos(esc_d)        # 2 planos o más por frase, ninguno de más de 3 s, siempre con zoom lento
+            gv.sin_textos_repetidos(esc_d, str(e.get("frase") or ""))   # ningún texto se repite ni se pisa
         pisados = ac.superposiciones(esc_d)
         if pisados:
             log.warning("escena %d: personajes que se pisan en %s", k + 1, pisados[:3])
@@ -1898,13 +1946,68 @@ GANCHO_REHACER = ("el GANCHO (escena 1) es lo más importante del video (en Face
                   "girando solo ni un arranque anterior del canal")
 
 
+def sistema_revision_v3() -> str:
+    """La revisión con las reglas_v3 (Santi, 2026-11-16): el gancho ya no se juzga como una escena de la historia con
+    gente (es a propósito la imagen imposible del producto), y se suman el producto en uso, los textos y el decorado."""
+    base = SISTEMA_REVISION
+    for desde in ("- (Santi, 2026-11-15) el GANCHO (cuadro 1) no muestra algo",
+                  "- (2026-11-15) el gancho NO muestra el producto",
+                  "- (2026-11-15) EL GANCHO (cuadro 1) repetido"):
+        if desde in base:
+            a = base.index(desde)
+            b = base.find("\n- ", a + 3)
+            fin = base.find("Para cada problema:", a)
+            if b == -1 or (fin != -1 and fin < b):
+                base = base[:a] + base[fin:]
+            else:
+                base = base[:a] + base[b + 1:]
+    return base + REVISION_V3
+
+
 REVISION_V3 = """
-(Santi, 2026-11-16) Además:
-- MANOS abiertas al costado, sin hacer nada, o un objeto flotando cerca de una mano en vez de estar agarrado, abierto,
-  llenado o apilado: `arreglo` = cambiar_accion.
-- El OBJETO PROTAGONISTA no se parece al objeto real (te digo qué es: un Tupper dibujado como una olla, un auto que
-  parece una caja): `arreglo` = redibujar_objeto y en `que` describí cómo es el real (forma, material, colores).
-- Una mesa o un estante vacíos donde la historia pide cosas de contexto: `arreglo` = otro."""
+(Santi, 2026-11-16) Con las reglas nuevas:
+- El GANCHO (cuadro 1) es A PROPÓSITO la imagen imposible del producto (gigante, explotando, multiplicado, volando o
+  una multitud peleándose por él) sobre rayos de colores fuertes, con el texto grande: NO lo marques por no tener gente,
+  lugar ni escena de la historia. La única pregunta: ¿frenarías el dedo con esto? Si el producto no se reconoce, está
+  tapado o es aburrido: `arreglo` = rehacer_gancho (se prueba otra de las opciones).
+- El PRODUCTO FLOTANDO o girando en el aire sin motivo, o cerca de una mano en vez de agarrado, o una escena donde no
+  se ve el producto en uso (guardando comida, siendo amasado, siendo resuelto…): `arreglo` = cambiar_accion.
+- ALGUIEN PARADO SIN HACER NADA (brazos abajo, quieto, mirando): `arreglo` = cambiar_accion, SIEMPRE.
+- Un PRIMER PLANO que corta caras en vez de mostrar las manos con el objeto: `arreglo` = otro.
+- Un TEXTO repetido (la misma cifra o año dos veces, o lo mismo que el subtítulo) o dos textos pisados: `arreglo` =
+  sacar_texto.
+- DECORACIÓN sin relación con la historia: `arreglo` = sacar_objeto con su nombre en `objeto`."""
+
+
+CATEGORIAS_FLOJAS = ("gancho", "accion", "objeto", "personajes", "camara", "texto", "decorado", "ritmo", "efectos")
+SISTEMA_FLOJAS = """Mirás los cuadros clave de un video animado corto de "Así Nació" ya terminado. Decí las 3 cosas MÁS FLOJAS
+(las que más le restan al video, aunque no estén mal del todo), para mejorar el motor de animación: cada una con
+`cuadro` (el número de la imagen que mejor la muestra), `categoria` y `que` (concreto: qué se ve y qué faltaría).
+La categoría `gancho` es el cuadro 1. Nada de elogios."""
+SCHEMA_FLOJAS = {"type": "OBJECT", "properties": {"flojas": {"type": "ARRAY", "items": {"type": "OBJECT", "properties": {
+    "cuadro": {"type": "INTEGER"}, "categoria": {"type": "STRING", "enum": list(CATEGORIAS_FLOJAS)},
+    "que": {"type": "STRING"}}, "required": ["cuadro", "categoria", "que"]}}}, "required": ["flojas"]}
+
+
+def puntos_flojos(cliente, d: dict, datos: dict, carpeta: Path, avisar=log.info) -> list[dict]:
+    """Mejora continua (Santi, 2026-11-16): después de cada video, las 3 cosas más flojas con un cuadro de ejemplo
+    (los de la revisión visual). Se cruzan con las estadísticas de 24 h y alimentan las mejoras de los lunes y jueves."""
+    claves = cuadros_clave(datos)
+    pngs = [carpeta / f"revision_{n + 1}.png" for n in range(len(claves))]
+    pngs = [p for p in pngs if p.exists()]
+    if cliente is None or not pngs:
+        return []
+    lista = "\n".join(f"Cuadro {n + 1}: {q}" for n, (_t, _i, q) in enumerate(claves[:len(pngs)]))
+    r = json.loads(cliente.json(SISTEMA_FLOJAS, f"{d.get('titulo')}\n{lista}", SCHEMA_FLOJAS, 0.3,
+                                imagenes=[_jpeg_512(p) for p in pngs]))
+    out = []
+    for x in (r.get("flojas") or [])[:3]:
+        n = int(x.get("cuadro") or 1)
+        png = pngs[n - 1] if 1 <= n <= len(pngs) else pngs[0]
+        out.append({"categoria": str(x.get("categoria") or "accion"), "que": str(x.get("que") or "")[:300],
+                    "cuadro": str(png)})
+    avisar("lo más flojo: " + " | ".join(f"{x['categoria']}: {x['que'][:80]}" for x in out))
+    return out
 
 
 def redibujar_protagonista(cliente, d: dict, como_es: str, avisar=log.info) -> str:
@@ -1981,7 +2084,11 @@ def aplicar_revision(d: dict, problemas: list[dict], claves: list[tuple[float, i
         arreglo, obj = pr.get("arreglo"), str(pr.get("objeto") or "").strip().lower()
         objs = e.get("objetos") or []
         cual = next((o for o in objs if obj and obj in str(o.get("prop"))), objs[0] if objs else None)
-        if arreglo == "sacar_objeto" and cual is not None:
+        deco = [x for x in e.get("decorado") or [] if obj and obj in str(x).lower()]
+        if arreglo == "sacar_objeto" and deco:
+            e["decorado"] = [x for x in e.get("decorado") or [] if x not in deco]
+            hechos.append(f"escena {k + 1}: saqué del decorado {', '.join(deco)} ({pr.get('que')})")
+        elif arreglo == "sacar_objeto" and cual is not None:
             objs.remove(cual)
             hechos.append(f"escena {k + 1}: saqué {cual['prop']} ({pr.get('que')})")
         elif arreglo in ("mover_objeto", "cambiar_soporte") and cual is not None:
@@ -2034,7 +2141,7 @@ def revisar_visual(cliente, d: dict, datos: dict, carpeta: Path, capturar=None, 
     lista += ("\n\nARRANQUES ANTERIORES DEL CANAL:\n" + texto_ganchos(ganchos_recientes(conn)[:-1])
               if conn is not None else "")
     try:
-        r_ = json.loads(cliente.json(SISTEMA_REVISION + (REVISION_V3 if REGLAS_V3 else ""), f"Los cuadros, en orden:\n{lista}", SCHEMA_REVISION, 0.2,
+        r_ = json.loads(cliente.json(sistema_revision_v3() if REGLAS_V3 else SISTEMA_REVISION, f"Los cuadros, en orden:\n{lista}", SCHEMA_REVISION, 0.2,
                                      imagenes=imagenes))
     except Exception as err:   # la revisión es una red de seguridad: si no responde, sigue
         avisar(f"revisión visual: no respondió ({str(err)[:120]})")
@@ -2063,6 +2170,7 @@ class Resultado:
     costo_usd: float = 0.0
     tiempos: dict = field(default_factory=dict)
     revision: list = field(default_factory=list)      # lo que vio la revisión visual y lo que se corrigió
+    flojas: list = field(default_factory=list)        # las 3 cosas más flojas, con su cuadro (mejora continua, 2026-11-16)
     niveles: dict = field(default_factory=dict)       # dB de la voz, la música, los SFX y la mezcla
     aviso: str = ""        # puntaje bajo o banco de reserva (nunca un día sin video, 2026-11-15)
     banco_id: str = ""
@@ -2366,6 +2474,16 @@ def armar_video(conn, settings, carpeta: Path, cliente=None, wiki=None, hoy: dat
         acciones_mal = [(int(pr.get("cuadro") or 0) - 1, str(pr.get("que") or "")) for pr in problemas
                         if pr.get("arreglo") in ("cambiar_accion", "rehacer_gancho")
                         or (pr.get("arreglo") == "otro" and int(pr.get("cuadro") or 0) == 1)]
+        if REGLAS_V3 and d.get("ganchos"):
+            # el gancho de las reglas nuevas no se reescribe: se prueba la opción siguiente (Santi, 2026-11-16)
+            del_gancho = [a for a in acciones_mal if a[0] == 0]
+            acciones_mal = [a for a in acciones_mal if a[0] != 0]
+            probados = d.setdefault("ganchos_probados", [int(d.get("gancho_elegido") or 0)])
+            libres = [j for j in range(len(d["ganchos"])) if j not in probados]
+            if del_gancho and libres:
+                d["gancho_elegido"] = libres[0]
+                probados.append(libres[0])
+                hechos.append(f"gancho: pasé a la opción {libres[0] + 1} ({del_gancho[0][1][:100]})")
         if acciones_mal:
             d, hecho = corregir_acciones(cliente, d, e, fuente, acciones_mal, claves, datos, avisar,
                                          ganchos=texto_ganchos(ganchos_recientes(conn)[:-1]) if conn is not None else "")
@@ -2378,6 +2496,11 @@ def armar_video(conn, settings, carpeta: Path, cliente=None, wiki=None, hoy: dat
                                          subtitulos="viral" if settings.animacion.subtitulos_virales else "clasico",
                                          visual=getattr(cfg, "visual_plus", False))
     tiempos["revision_s"] = round(time.time() - t0, 1)
+    try:
+        flojas = puntos_flojos(cliente, d, datos, carpeta, avisar)      # mejora continua (Santi, 2026-11-16)
+    except Exception as err:  # noqa: BLE001 — anotar nunca frena el video
+        avisar(f"puntos flojos: no salieron ({str(err)[:120]})")
+        flojas = []
     (carpeta / "linea_de_tiempo.json").write_text(json.dumps({"video": datos, "sfx": eventos},
                                                              ensure_ascii=False, indent=1), encoding="utf-8")
     video = Video.desde_dict(datos)
@@ -2430,7 +2553,7 @@ def armar_video(conn, settings, carpeta: Path, cliente=None, wiki=None, hoy: dat
         motor_voz=motor, musica=tema.ruta if tema else "", credito_musica=tema.credito() if tema else "",
         articulo=f"https://es.wikipedia.org/wiki/{e.marca.wiki_es.replace(' ', '_')}",
         render_s=tiempos["render_s"], total_s=round(time.time() - t_total, 1),
-        costo_usd=costo_desde(conn, fila0), tiempos=tiempos, revision=revision, niveles=niv,
+        costo_usd=costo_desde(conn, fila0), tiempos=tiempos, revision=revision, flojas=flojas, niveles=niv,
         aviso=e.aviso, banco_id=e.banco_id)
 
 
