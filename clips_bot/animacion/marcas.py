@@ -1081,6 +1081,15 @@ SISTEMA_V3 = """Te paso el guion de un video corto animado de "Así Nació" (el 
    esa época (una cocina de 1946: botella, jarrón, radio; una oficina: teléfono de disco, calendario). Van atrás, sobre
    el estante, la mesa o el piso. Solo nombres de la lista. Nada que no tenga relación con la historia ni que no
    existiera en el año de esa escena (nada de celulares, teles ni monitores en una escena de 1938).
+3. `uso`: UNA escena (desde la 2; la que habla del producto o de cómo se usaba) donde dos manos de cerca usan el
+   producto como se usa de verdad, paso a paso. `pasos`, en orden, de: agarrar, abrir_tapa, meter, cerrar_tapa,
+   apretar (el Tupper: agarrar, abrir_tapa, meter, cerrar_tapa, apretar), amasar, moldear (el Play-Doh: agarrar,
+   amasar, moldear), girar (el cubo: agarrar, girar), apilar. Si el producto tiene tapa, `cuerpo` y `tapa` dicen cómo
+   es cada parte por separado (forma, material, colores), para dibujarlas; si no, vacíos. `contenido`: lo que se mete
+   adentro (comida, para el Tupper), descrito para dibujarlo; vacío si no hay.
+4. `inspiracion`: si la historia dice que ALGO INSPIRÓ al producto (la tapa de una lata de pintura inspiró la tapa del
+   Tupper), `escena` = la escena donde la voz lo explica, `fuente` = cómo es eso que lo inspiró (para dibujarlo) y
+   `pieza` = la parte que pasa al producto (la tapa de la lata). Si no hay nada así, `escena` 0.
 Respondé solo el JSON."""
 SCHEMA_V3 = {"type": "OBJECT", "properties": {
     "ganchos": {"type": "ARRAY", "items": {"type": "OBJECT", "properties": {
@@ -1088,8 +1097,83 @@ SCHEMA_V3 = {"type": "OBJECT", "properties": {
         "texto": {"type": "STRING"}}, "required": ["tipo", "texto"]}},
     "decorado": {"type": "ARRAY", "items": {"type": "OBJECT", "properties": {
         "escena": {"type": "INTEGER"}, "objetos": {"type": "ARRAY", "items": {"type": "STRING"}}},
-        "required": ["escena", "objetos"]}}},
-    "required": ["ganchos", "decorado"]}
+        "required": ["escena", "objetos"]}},
+    "uso": {"type": "OBJECT", "properties": {
+        "escena": {"type": "INTEGER"},
+        "pasos": {"type": "ARRAY", "items": {"type": "STRING", "enum": ["agarrar", "abrir_tapa", "meter", "cerrar_tapa",
+                                                                       "apretar", "amasar", "moldear", "girar", "apilar"]}},
+        "cuerpo": {"type": "STRING"}, "tapa": {"type": "STRING"}, "contenido": {"type": "STRING"}},
+        "required": ["escena", "pasos", "cuerpo", "tapa", "contenido"]},
+    "inspiracion": {"type": "OBJECT", "properties": {
+        "escena": {"type": "INTEGER"}, "fuente": {"type": "STRING"}, "pieza": {"type": "STRING"}},
+        "required": ["escena", "fuente", "pieza"]}},
+    "required": ["ganchos", "decorado", "uso", "inspiracion"]}
+
+
+def _slug(t: str, largo: int = 22) -> str:
+    import unicodedata
+
+    t = unicodedata.normalize("NFKD", str(t or "").lower())
+    t = "".join(ch for ch in t if not unicodedata.combining(ch))
+    palabras = [w for w in re.split(r"[^a-z0-9]+", t) if len(w) >= 3 and w not in ("con", "sin", "una", "del", "las",
+                                                                                    "los", "que", "para", "texto", "logos")]
+    out = "_".join(palabras[:3])[:largo].strip("_")
+    return out if len(out) >= 3 and out[0].isalpha() else ""
+
+
+def preparar_uso(cliente, d: dict, avisar=log.info) -> list[str]:
+    """Santi, 2026-11-16: la escena de USO REAL con las manos (el producto por partes: cuerpo, tapa y lo que se guarda) y
+    la de la INSPIRACIÓN (lo que lo inspiró y la pieza que pasa al producto). Dibuja las partes que falten (quedan
+    guardadas) y marca esas escenas con `uso_manos` / `inspiracion`. Devuelve qué hizo."""
+    from . import dibujos
+
+    escenas = d.get("escenas") or []
+    prota = prop_real(d.get("protagonista") or {})
+    hechos = []
+
+    def dibujo(nombre: str, desc: str) -> str:
+        if not nombre or not desc.strip():
+            return ""
+        if esc.es_prop(nombre):
+            return dibujos.actual(nombre)
+        try:
+            dibujos.dibujar(cliente, nombre, desc)
+            return nombre
+        except Exception as err:  # noqa: BLE001
+            avisar(f"no pude dibujar {nombre}: {str(err)[:100]}")
+            return ""
+
+    u = d.get("uso") or {}
+    k = int(u.get("escena") or 0) - 1
+    if 1 <= k < len(escenas) and prota:
+        base = prota[:20]
+        partes = {"cuerpo": "", "tapa": "", "contenido": ""}
+        if str(u.get("tapa") or "").strip() and str(u.get("cuerpo") or "").strip():
+            partes["cuerpo"] = dibujo(f"{base}_cuerpo", str(u["cuerpo"]) + ", sin tapa, visto de costado")
+            partes["tapa"] = dibujo(f"{base}_tapa", str(u["tapa"]) + ", sola, vista de costado")
+            if not (partes["cuerpo"] and partes["tapa"]):
+                partes["cuerpo"] = partes["tapa"] = ""
+        cont = str(u.get("contenido") or "").strip()
+        if cont:
+            partes["contenido"] = cont if esc.es_prop(cont) else dibujo(_slug(cont) or "contenido", cont)
+        if not partes["cuerpo"]:
+            partes["cuerpo"] = prota
+        escenas[k]["accion_escena"], escenas[k]["plano"] = "uso_manos", "manos"
+        escenas[k]["uso"] = {"partes": partes, "pasos": [p_ for p_ in u.get("pasos") or [] if isinstance(p_, str)]}
+        hechos.append(f"uso en la escena {k + 1}: {', '.join(escenas[k]['uso']['pasos'])}")
+    ins = d.get("inspiracion") or {}
+    k = int(ins.get("escena") or 0) - 1
+    if 1 <= k < len(escenas) and prota and str(ins.get("fuente") or "").strip() and str(ins.get("pieza") or "").strip():
+        nombre = _slug(ins["fuente"]) or "inspiracion"
+        fuente = dibujo(nombre, str(ins["fuente"]) + ", sin la pieza que pasa al producto")
+        pieza = dibujo(f"{nombre[:22]}_pieza", str(ins["pieza"]))
+        if fuente and pieza:
+            escenas[k]["accion_escena"], escenas[k]["plano"] = "inspiracion", "cerca"
+            escenas[k]["inspiracion"] = {"fuente": fuente, "pieza": pieza, "producto": prota}
+            hechos.append(f"inspiración en la escena {k + 1}: {fuente} → {prota}")
+    if hechos:
+        avisar("escenas nuevas: " + " | ".join(hechos))
+    return hechos
 
 
 def gv_palabras(t) -> set:
@@ -1132,6 +1216,12 @@ def completar_v3(cliente, d: dict, avisar=log.info) -> bool:
             if 1 <= k < len(d.get("escenas") or []):
                 d["escenas"][k]["decorado"] = [str(o) for o in x.get("objetos") or []][:3]
         avisar("opciones de gancho: " + " | ".join(f"{o['tipo']} «{o['texto']}»" for o in d["ganchos"]))
+        d["uso"], d["inspiracion"] = r.get("uso") or {}, r.get("inspiracion") or {}
+        try:
+            if USO_V4:
+                preparar_uso(cliente, d, avisar)
+        except Exception as err:  # noqa: BLE001 — sin las escenas de uso, el video sale igual
+            avisar(f"escenas de uso e inspiración: no salieron ({str(err)[:120]})")
         return True
     avisar(f"opciones de gancho: no validaron ({'; '.join(errores)[:150]}); va el gancho de siempre")
     return False
@@ -1340,6 +1430,7 @@ def sistema_guion() -> str:
 
 
 REGLAS_V3 = False      # armar_video lo prende con `animacion.reglas_v3` (Santi, 2026-11-16)
+USO_V4 = False         # armar_video lo prende con `animacion.uso_manos` (escenas de uso con las manos e inspiración)
 
 REGLA_16 = """
 REGLA 16 — ESCENAS VIVAS (Santi, 2026-11-16; las 3 opciones de gancho y el decorado se piden aparte).
@@ -2392,8 +2483,9 @@ def armar_video(conn, settings, carpeta: Path, cliente=None, wiki=None, hoy: dat
     carpeta = Path(carpeta)
     carpeta.mkdir(parents=True, exist_ok=True)
     cfg = settings.animacion
-    global REGLAS_V3
+    global REGLAS_V3, USO_V4
     REGLAS_V3 = bool(getattr(cfg, "reglas_v3", False))
+    USO_V4 = REGLAS_V3 and bool(getattr(cfg, "uso_manos", False))
     t_total = time.time()
     tiempos = {}
     fila0 = ultima_fila_uso(conn)

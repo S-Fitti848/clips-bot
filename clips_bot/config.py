@@ -478,6 +478,9 @@ class Animacion:
     # Reglas del 2026-11-16 (Santi): gancho de 3 opciones con cortes de 1 s, 2 planos por frase, manos, decorado,
     # objeto fiel y rótulo con año y lugar (gancho_v3.py). Apagado hasta que apruebe el Tupper.
     reglas_v3: bool = False
+    # Santi, 2026-11-16 (uso_v3.py): escenas de uso real con las manos paso a paso, manos con detalle y la inspiración
+    # animada. Apagado hasta que apruebe el Tupper de prueba.
+    uso_manos: bool = False
     reintento_min: int = 60            # si falla (no por falta de candidatos), otro intento en 1 h
     reintento_hasta: str = "22:00"     # y ninguno después de esta hora
     # El Reel en la página de Facebook de Así Nació, cuando esté conectada (ASINACIO_FACEBOOK_PAGE_ID y

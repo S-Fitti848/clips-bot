@@ -1355,19 +1355,15 @@ def _dedo(largo: float, ancho: float, piel: str, nudillos: int = 2) -> str:
     return out + uña + pliegues
 
 
-def prop_mano(forma: int = 1, color: str = "", **_) -> str:
-    """Una mano vista desde arriba con la manga (plano de manos de la biblioteca de escenas): entra desde abajo;
-    `forma` -1 = la izquierda, 1 = la derecha. Con dedos separados, nudillos, uñas y pulgar (Santi, 2026-11-15:
-    "manos con dedos y más detalle, no tipo guante")."""
-    # vista desde arriba (el dorso): el pulgar y el índice van del lado de ADENTRO (hacia la otra mano)
+def _mano_de_antes(forma: int = 1, color: str = "") -> str:
+    """La mano de antes (hasta el OK de Santi a la nueva: animacion.uso_manos)."""
     s_ = 1 if int(forma or 1) < 0 else -1
-    piel, manga = P.PIEL[0], color or P.AZUL
+    piel, manga = P.PIEL[0], color if isinstance(color, str) and color.startswith("#") else P.AZUL
     sombra = oscurecer(piel, 0.18)
-    # dedos: índice, medio, anular y meñique (del pulgar hacia afuera), un poco en abanico
     dedos = ""
     for dx, largo, ang in ((22, 74, 4), (0, 84, 0), (-22, 78, -4), (-42, 60, -10)):
         dedos += g(_dedo(largo, 21 if largo > 62 else 18, piel), s_ * dx, -118, rot=s_ * ang)
-    palma = camino(f"M{-56} -36 C-62 -80 -58 -118 -40 -126 L40 -126 C58 -118 62 -80 56 -36 Z", piel, ancho=5)
+    palma = camino("M-56 -36 C-62 -80 -58 -118 -40 -126 L40 -126 C58 -118 62 -80 56 -36 Z", piel, ancho=5)
     nudillos = "".join(elipse(s_ * dx, -122, 9, 5, sombra, borde=False) for dx in (22, 0, -22, -42))
     tendones = "".join(f'<path d="M{s_ * dx} -50 L{s_ * dx * 1.05} -110" stroke="{sombra}" stroke-width="3" '
                        f'stroke-linecap="round" opacity="0.6"/>' for dx in (18, 0, -18))
@@ -1375,6 +1371,45 @@ def prop_mano(forma: int = 1, color: str = "", **_) -> str:
     manga_svg = (rect(-60, -40, 120, 230, manga, r=26) + rect(-64, -44, 128, 28, aclarar(manga, 0.3), r=10, ancho=5)
                  + f'<path d="M-30 -10 L-26 180 M30 -10 L26 180" stroke="{oscurecer(manga, 0.2)}" stroke-width="4"/>')
     return manga_svg + pulgar + palma + tendones + nudillos + dedos
+
+
+def prop_mano(forma: int = 1, color: str = "", fase: float = 0.0, manga: str = "", detalle: bool = False, **_) -> str:
+    if not detalle:
+        return _mano_de_antes(forma, color)
+    return _mano_detalle(forma, color, fase, manga)
+
+
+def _mano_detalle(forma: int = 1, color: str = "", fase: float = 0.0, manga: str = "") -> str:
+    """Una mano vista desde arriba con la manga (plano de manos de la biblioteca de escenas): entra desde abajo;
+    `forma` -1 = la izquierda, 1 = la derecha. Santi, 2026-11-16 ("manos con más detalle: sombras, arrugas en los
+    dedos, puño de la camisa o manga de la época; no las de madera gigantes"): la palma con su lado en sombra, tres
+    arrugas en cada nudillo, uñas con su lúnula, el puño blanco de la camisa con su botón y la manga del color de la
+    ropa (`color`). `fase` 0..1 = cuánto agarra (los dedos se doblan sobre el objeto)."""
+    s_ = 1 if int(forma or 1) < 0 else -1
+    agarre = max(0.0, min(1.0, float(fase or 0.0)))
+    piel, manga = P.PIEL[0], manga or (color if isinstance(color, str) and color.startswith("#") else "") or "#3d4f7a"
+    sombra, profunda = oscurecer(piel, 0.16), oscurecer(piel, 0.32)
+    dedos = ""
+    for dx, largo, ang in ((22, 74, 4), (0, 84, 0), (-22, 78, -4), (-42, 60, -10)):
+        l_ = largo * (1 - 0.42 * agarre)          # al agarrar, el dedo se dobla: se ve más corto desde arriba
+        dedo = _dedo(l_, 21 if largo > 62 else 18, piel)
+        arrugas = "".join(f'<path d="M{n(-6 + k * 3)} {n(-l_ * 0.62 - k * 3)} q 6 -2 12 0" fill="none" '
+                          f'stroke="{profunda}" stroke-width="2" stroke-linecap="round" opacity="0.55"/>' for k in range(3))
+        dedos += g(dedo + arrugas, s_ * dx, -118, rot=s_ * ang * (1 - agarre))
+    palma = camino("M-56 -36 C-62 -80 -58 -118 -40 -126 L40 -126 C58 -118 62 -80 56 -36 Z", piel, ancho=5)
+    lado_sombra = camino(f"M{s_ * -56} -36 C{s_ * -62} -80 {s_ * -58} -118 {s_ * -40} -126 L{s_ * -22} -126 "
+                         f"C{s_ * -36} -100 {s_ * -38} -70 {s_ * -30} -36 Z", sombra, borde=False)
+    nudillos = "".join(elipse(s_ * dx, -122, 9, 5, sombra, borde=False) for dx in (22, 0, -22, -42))
+    tendones = "".join(f'<path d="M{s_ * dx} -50 L{s_ * dx * 1.05} -110" stroke="{sombra}" stroke-width="3" '
+                       f'stroke-linecap="round" opacity="0.6"/>' for dx in (18, 0, -18))
+    pulgar = g(_dedo(66, 24, piel, nudillos=1), s_ * 36, -52, rot=s_ * (42 + 30 * agarre))
+    puño = (rect(-62, -46, 124, 40, "#f4f1ea", r=12, ancho=5) + circulo(s_ * -38, -26, 6, "#d8d2c4", ancho=3)
+            + f'<path d="M-58 -14 L58 -14" stroke="{oscurecer("#f4f1ea", 0.15)}" stroke-width="3"/>')
+    manga_svg = (rect(-66, -18, 132, 230, manga, r=26)
+                 + camino(f"M{s_ * 66} -10 L{s_ * 66} 210 L{s_ * 30} 210 L{s_ * 40} -10 Z", oscurecer(manga, 0.22),
+                          borde=False)
+                 + f'<path d="M-30 10 L-26 190 M30 10 L26 190" stroke="{oscurecer(manga, 0.3)}" stroke-width="4"/>')
+    return manga_svg + puño + pulgar + palma + lado_sombra + tendones + nudillos + dedos
 
 
 def prop_mostrador(**_) -> str:

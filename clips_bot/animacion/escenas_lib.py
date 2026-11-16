@@ -42,6 +42,11 @@ ACCIONES = {
                     "se resuelve)", ("cerca",), "escenario"),
     "despega": ("el objeto despega o sale volando con humo y fuego (un lanzamiento, explotar de fama, viajar lejos)",
                 ("lejos",), "cielo"),
+    # Santi, 2026-11-16 (uso_v3.py): el producto usado de verdad por dos manos, paso a paso, y la inspiración animada
+    "uso_manos": ("dos manos de cerca usan el producto como se usa de verdad, paso a paso (guardar comida y cerrar la "
+                  "tapa, amasar, girar las caras)", ("manos",), None),
+    "inspiracion": ("lo que inspiró al producto y el producto, lado a lado: la pieza pasa de uno al otro y encastra "
+                    "(la frase que cuenta de dónde salió la idea)", ("cerca",), None),
 }
 LIBRE = "libre"
 PLANOS = ("arriba", "manos", "lejos", "espaldas", "cerca", "frente")
@@ -160,6 +165,22 @@ def _armar_mesa(plano, spec, dur, i, obj, rnd):
                            keyframes=[{"t": 0, "rotacion": 0, "fase": 0.0},
                                       {"t": dur, "rotacion": 360, "fase": 1.0, "easing": "lineal"}]))
     return {"elementos": e.elementos, "fondo": None, "camara": None, "sfx": e.sfx, "actores": e.actores}
+
+
+def _uso_manos(plano, spec, dur, i, obj, rnd):
+    from . import uso_v3
+
+    u = spec.get("uso") or {}
+    return uso_v3.escena_uso(dur, obj, u.get("partes") or {}, u.get("pasos") or [], u.get("manga") or "", seed=i)
+
+
+def _inspiracion(plano, spec, dur, i, obj, rnd):
+    from . import uso_v3
+
+    ins = spec.get("inspiracion") or {}
+    if not (ins.get("fuente") and ins.get("pieza")):
+        return _objeto_gira(plano, spec, dur, i, obj, rnd)
+    return uso_v3.escena_inspiracion(dur, ins["fuente"], ins["pieza"], ins.get("producto") or obj, seed=i)
 
 
 def _vender_tienda(plano, spec, dur, i, obj, rnd):
