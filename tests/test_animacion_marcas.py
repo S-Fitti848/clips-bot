@@ -357,8 +357,9 @@ def test_escribir_guion_reintenta_con_los_errores():
     assert mk.escribir_guion(cliente, e, FUENTE, avisar=lambda *_: None)["locutor"]
     # 2026-11-15: el segundo pedido es una CORRECCIÓN PUNTUAL (el guion como contexto y los errores)
     assert "ERRORES:" in cliente.pedidos[1] and "el locutor interrumpe" in cliente.pedidos[1]
-    with pytest.raises(mk.GuionInvalido):
-        mk.escribir_guion(ClienteFalso(malo, malo, malo, malo, malo), e, FUENTE, reintentos=5, avisar=lambda *_: None)
+    # Santi, 2026-11-16: una regla de ESTILO que nunca se cumple no frena el video: sale con aviso
+    d = mk.escribir_guion(ClienteFalso(malo, malo, malo, malo, malo), e, FUENTE, reintentos=5, avisar=lambda *_: None)
+    assert any("locutor" in x for x in d["_estilo_pendiente"]) and "⚠️" in mk.aviso_estilo(d)
 
 
 def test_el_chequeo_de_haiku_tambien_hace_reintentar():
