@@ -621,6 +621,10 @@ animacion:
   # Más visual + biblioteca de escenas + viaje nuevo (Santi, 2026-11-15: "prendé el modo nuevo para el video de
   # mañana a las 07:00"): rótulo, número gigante, cita, cartel, mapa, luz del momento, cámara variada y Tito.
   visual_plus: true
+  # Reglas del 2026-11-16 (Santi; gancho_v3.py): gancho de 3 opciones con cortes de 1 s elegido por la revisión, el
+  # producto en uso con las manos, 2 planos por frase, textos sin repetirse, decorado y mejora continua. PRENDIDO el
+  # 16/11 después del tercer Tupper de prueba (prueba_tupper_v3c).
+  reglas_v3: true
   hora_publicacion: "19:00"
   # 2 videos por día (Santi, 2026-11-15), de marcas distintas: el primero se arma desde las 07:00 y el
   # segundo apenas termina el primero; cada uno se programa en su horario.

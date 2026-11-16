@@ -2476,6 +2476,17 @@ def armar_video(conn, settings, carpeta: Path, cliente=None, wiki=None, hoy: dat
         if not problemas:
             revision.append(f"vuelta {vuelta + 1}: sin problemas" if vuelta else "revisión visual: sin problemas")
             break
+        if REGLAS_V3:
+            # Santi, 2026-11-16: "nadie parado sin hacer nada, nunca: la revisión lo rechaza siempre"; y el producto
+            # flotando sin motivo. Aunque la revisión lo marque como "otro", esa escena se rehace (salvo el gancho, que
+            # flota a propósito).
+            for pr in problemas:
+                n_ = int(pr.get("cuadro") or 0) - 1
+                es_gancho = 0 <= n_ < len(claves) and datos["escenas"][claves[n_][1]].get("gancho_v3")
+                if not es_gancho and pr.get("arreglo") in ("otro", "mover_objeto", "cambiar_soporte", "separar_personajes") \
+                        and re.search(r"parad|sin hacer nada|quiet|flota|en el aire|brazos abiertos|brazos arriba",
+                                      str(pr.get("que") or ""), re.I):
+                    pr["arreglo"] = "cambiar_accion"
         hechos = aplicar_revision(d, problemas, claves, datos)
         if any(pr.get("arreglo") == "redibujar_objeto" for pr in problemas):
             hecho = redibujar_protagonista(cliente, d, next(str(pr.get("que") or "") for pr in problemas

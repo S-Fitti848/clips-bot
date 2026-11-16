@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-11-16 | **Versión:** v1.19.0 (desplegado) | **Modo:** Fase 2: corriendo solo en la Pi. **Rots APAGADO.** Pequeña Historia (3 por día, madrugada desde las 04:00) (publicación sin aprobar: llegan con ❌ Cancelar) y **Así Nació** (2 por día, desde las 07:00, publican 13:00 y 20:00 en YouTube y Facebook con ❌ Cancelar), todo al privado de Santi
+**Snapshot:** 2026-11-16 | **Versión:** v1.20.0 (desplegado) | **Modo:** Fase 2: corriendo solo en la Pi. **Rots APAGADO.** Pequeña Historia (3 por día, madrugada desde las 04:00) (publicación sin aprobar: llegan con ❌ Cancelar) y **Así Nació** (2 por día, desde las 07:00, publican 13:00 y 20:00 en YouTube y Facebook con ❌ Cancelar), todo al privado de Santi
 
 > **SI ESTÁS EMPEZANDO UNA SESIÓN NUEVA, LEÉ §10.** Ahí está qué está hecho, qué quedó a medias,
 > qué falta, y las trampas que ya nos mordieron.
@@ -166,8 +166,8 @@ servicio systemd separado: `clips-bot`).
   interacción, seguidores que trajo el Reel y los de la página en esas 24 h, contra la mediana de los otros Reels
   del canal (con menos de 3 medidos a las 24 h, con los datos de hoy), y el gancho (la primera frase). Guardado en
   `bot_estado.fb_reels_24h`; va en el informe del 26/11 (`stats_fb.resumen_informe`).
-- **Así Nació: reglas_v3 (Santi, 2026-11-16; `gancho_v3.py`, `animacion.reglas_v3`, APAGADO hasta que apruebe el
-  Tupper):** GANCHO de 2-3 cortes de ~1 s con un golpe en cada corte, la imagen imposible del producto (explota,
+- **Así Nació: reglas_v3 (Santi, 2026-11-16; `gancho_v3.py`, `animacion.reglas_v3`, PRENDIDO el 16/11 a la tarde
+  después del tercer Tupper de prueba, con el OK previo de Santi "cuando esté bien, prendelo"):** GANCHO de 2-3 cortes de ~1 s con un golpe en cada corte, la imagen imposible del producto (explota,
   gigante, multiplica, vuela, multitud), rayos de cómic de colores fuertes, polvo y destellos, texto grande arriba (3
   a 5 palabras); 3 opciones por video en un pedido aparte (`completar_v3`: sumadas al schema del guion, la gramática
   pasaba el tope de Claude) y la revisión visual elige la más llamativa (`elegir_gancho`, "¿frenarías el dedo?").
@@ -979,7 +979,7 @@ clips_bot/voces.py       voces de Gemini de hoy por clave (con Lo Encontré) y e
 clips_bot/prueba_manual.py prueba manual vs API (§1): el clip del día a mano, registro e informe del feed
 clips_bot/envivo.py      modo en vivo (§3b): quién está al aire, momentos por creadores distintos,
                          alertas en la DB (no repetir, tope, vencer) y el resumen de tiempos
-tests/                   1580 tests sin red ni video (conftest.py: nada sale a YouTube, Facebook ni ElevenLabs) (test_reglas_fijas.py: las 3 reglas de §1)
+tests/                   1594 tests sin red ni video (conftest.py: nada sale a YouTube, Facebook ni ElevenLabs) (test_reglas_fijas.py: las 3 reglas de §1)
 ```
 
 Comandos:
@@ -1172,6 +1172,14 @@ Problemas abiertos:
 
 ## 9. CHANGELOG
 
+- v1.20.0 (2026-11-16, tarde) — **reglas_v3 de Así Nació PRENDIDAS** después de 3 Tuppers de prueba
+  (output/animacion/prueba_tupper_v3, v3b y v3c en la Pi; ~US$ 1,3 de Claude y 8-9 min de render cada uno). Lo que
+  cambió entre el 2.º y el 3.º: `usar`/`probar` eran los gestos "atrapar"/"saltar" (brazos abiertos): ahora `usar`,
+  `probar` y `fabricar` son `sostener_a/b` (las dos manos adelante) con el producto en las manos de quien lo manipula;
+  el texto del gancho no puede repetir lo que dice la voz en la frase 1; la revisión rehace siempre la gente parada y el
+  producto flotando (aunque la marque "otro"; el gancho flota a propósito). Quedó flojo (del motor de antes, también en
+  producción): el plano "manos" de la biblioteca dibuja manos de madera gigantes y el remolino del viaje en el tiempo
+  deforma las caras; van a las mejoras de los lunes y jueves. 1594 tests OK.
 - v1.19.0 (2026-11-16, tarde) — Después del primer Tupper con reglas_v3 (gancho bien; objetos flotando, manos sin
   hacer nada, primer plano cortando caras, textos pegados y la revisión con el criterio viejo del gancho): segunda
   vuelta de reglas_v3, mejora continua de Así Nació, publicaciones de comunidad (5 ejemplos mandados) e ídolos de antes
