@@ -208,7 +208,7 @@ def _fondo_tienda_base(semilla: int = 6) -> str:
                                   borde=False))
                 x += w + 14
     # cartel de oferta genérico
-    p.append(g(prop_cartel("OFERTA", P.AMARILLO), 860, 150, escala=0.7))
+    p.append(g(prop_cartel("", P.AMARILLO), 860, 150, escala=0.7))     # sin letras: en el espejado salían al revés
     return "".join(p)
 
 
@@ -778,12 +778,16 @@ def espejado(semilla: int) -> bool:
 
 # ---- props --------------------------------------------------------------------
 
-def prop_cartel(texto: str = "¡OJO!", color: str = P.AMARILLO, **_) -> str:
+def prop_cartel(texto: str = "", color: str = P.AMARILLO, **_) -> str:
+    """Un cartel. Sin texto (Santi, 2026-11-16: "ningún objeto con etiquetas de texto salvo que la historia lo pida"; y en
+    un fondo espejado el texto salía al revés), una estrella de oferta dibujada."""
+    base = rect(-14, 0, 28, 230, P.MADERA) + rect(-190, -140, 380, 170, color, r=14)
+    if not texto:
+        pts = " ".join(f"{(60 if k % 2 == 0 else 26) * math.cos(math.radians(-90 + k * 36)):.0f},"
+                       f"{-55 + (60 if k % 2 == 0 else 26) * math.sin(math.radians(-90 + k * 36)):.0f}" for k in range(10))
+        return base + f'<polygon points="{pts}" fill="{P.ROJO}" stroke="{P.CONTORNO}" stroke-width="6" stroke-linejoin="round"/>'
     tam = 64 if len(texto) <= 8 else 48
-    return (rect(-14, 0, 28, 230, P.MADERA)
-            + rect(-190, -140, 380, 170, color, r=14)
-            + texto_con_borde(texto, 0, -36, tam, color=P.CONTORNO, borde=P.BLANCO,
-                              ancho_borde=6))
+    return base + texto_con_borde(texto, 0, -36, tam, color=P.CONTORNO, borde=P.BLANCO, ancho_borde=6)
 
 
 def prop_flecha(color: str = P.ROJO, **_) -> str:

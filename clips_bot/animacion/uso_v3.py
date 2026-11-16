@@ -132,7 +132,7 @@ def escena_uso(dur: float, prota: str, partes: dict, pasos: list[str], manga: st
                 sfx.append((round(t1 + 0.25, 3), "tac"))
         t = b
     # de cerca, apoyado en una mesa (nada flotando en el medio del cuarto)
-    els = [_el("mesa", X0, Y0 + 100 * ESCALA, escala=3.4, decorado=True),
+    els = [_el("mesa", X0, Y0 + 62 * ESCALA, escala=3.4, decorado=True),
            _el(cuerpo, X0, Y0, escala=ESCALA, color=True, keyframes=sorted(kc, key=lambda k: k["t"]))]
     if tapa:
         els.append(_el(tapa, X0, y_tapa, escala=ESCALA, color=True, keyframes=sorted(kt, key=lambda k: k["t"])))

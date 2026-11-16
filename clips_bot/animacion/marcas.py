@@ -1774,7 +1774,7 @@ def linea_de_tiempo(d: dict, inicios: list[float], fin: float, palabras: list,
                                      variante=variante, reservar=reservar, proyectil=proyectil, visual=vis,
                                      protagonista=prota)
         esc_d["frase"] = k          # para la revisión visual: qué frase del guion es esta escena
-        if v3:
+        if v3 and e.get("accion_escena") not in _lib.ACCIONES_V4:   # las escenas de uso traen su propia cámara
             gv.planos(esc_d)        # 2 planos o más por frase, ninguno de más de 3 s, siempre con zoom lento
             gv.sin_textos_repetidos(esc_d, str(e.get("frase") or ""))   # ningún texto se repite ni se pisa
         pisados = ac.superposiciones(esc_d)

@@ -1334,7 +1334,8 @@ def escena_accion(spec: dict, dur: float, i: int, primera: bool = False, tono: f
     # estante, la mesa o el piso (nada de mesas vacías). Más chicos y detrás de los personajes.
     interior = fondo in ("casa", "oficina", "taller", "fabrica", "tienda", "laboratorio", "hospital")
     # afuera (calle, campo, puerto) el fondo ya trae su contexto (autos, faroles, vidrieras): nada flotando en la vereda
-    decorado = [str(x) for x in (spec.get("decorado") or []) if x and _de_epoca(str(x))][:3] if interior else []
+    decorado = [str(x) for x in (spec.get("decorado") or []) if x and _de_epoca(str(x))
+                and not (SIN_PLATA_SIMBOLO and str(x) in ("moneda", "bolsa_plata"))][:3] if interior else []
     for j, nombre in enumerate(decorado):
         from . import escenas as _esc2
 
