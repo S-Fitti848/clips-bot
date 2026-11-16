@@ -689,14 +689,20 @@ nombre, ni un número, ni una fecha que no esté ahí. Si el artículo no lo dic
   GIRO → un FINAL QUE PAGA lo que prometió el gancho. El gancho deja una PREGUNTA ABIERTA que solo se
   responde al final (por eso se quedan). La tensión es el problema, el peligro o lo que estaba en
   juego ("Pero había un problema…"); el giro, lo que nadie esperaba; el pago, la respuesta a la
-  pregunta del gancho, en la última o la anteúltima frase. Decí en `pregunta_gancho` cuál es esa
+  pregunta del gancho, en la ANTEÚLTIMA frase (la última es la pregunta al público). Decí en `pregunta_gancho` cuál es esa
   pregunta y en `frase_tension`, `frase_giro` y `frase_pago` el número de cada frase (desde 1).
 - Tono: como alguien que te cuenta algo que lo sorprendió, con ganas. Nada de tono de manual.
 - Frases CORTAS: ninguna de más de 14 palabras. Mejor dos frases que una larga con comas.
 - Al menos UNA pregunta ("¿Sabés qué hizo después?") y al menos UNA exclamación ("¡Y funcionó!")
   en el medio del guion, para que no suene plano.
-- Cierre con gancho: la última frase es una pregunta al público o una exclamación que deje algo
-  picando (termina con "?" o "!"). Nada de cierres tipo "y así fue".
+- GIRO A LA MITAD (Santi, 2026-11-16: la gente se va entre el segundo 10 y el 20): justo en el medio del
+  guion, una frase CORTA que renueve la intriga y anuncie que viene algo inesperado ("Pero lo que nadie
+  sabía…", "Y ahí todo cambió.", "Pero faltaba lo peor…"), dicha con las palabras de ESTA historia. Decí
+  en `frase_intriga` su número (va entre el 30 % y el 60 % de las frases, nunca la 1 ni la 2).
+- CIERRE (Santi, 2026-11-16): la ÚLTIMA frase es una PREGUNTA CORTA al público que invite a comentar,
+  sobre ESTA historia (12 palabras como mucho, termina con "?"): "¿Vos hubieras hecho lo mismo?",
+  "¿Sabías que esto pasó en tu país?", "¿Cuál otra historia así conocés?". El pago del gancho va en la
+  ANTEÚLTIMA frase. Nada de cierres tipo "y así fue" ni de "suscribite" o "dale like".
 - Entre 80 y 100 palabras en total (contalas: menos de 70 queda corto y más de 105 se pasa de
   45 segundos), en 8 a 14 frases, habladas, no escritas. Si el artículo da para poco,
   contá más detalle de lo que SÍ dice.
@@ -812,6 +818,7 @@ SCHEMA_GUION = {
         "frase_tension": {"type": "INTEGER"},
         "frase_giro": {"type": "INTEGER"},
         "frase_pago": {"type": "INTEGER"},
+        "frase_intriga": {"type": "INTEGER"},
     },
     "required": ["frases", "idea_clave", "titulo", "descripcion", "hashtags"],
 }
@@ -1021,9 +1028,24 @@ def errores_estructura(d: dict, n: int) -> list[str]:
     if not 3 <= t < g <= p <= n:
         errores.append(f"la estructura no está en orden (tensión {t}, giro {g}, pago {p}): tensión desde "
                        "la frase 3, después el giro y el final que paga el gancho")
-    elif p < n - 1:
-        errores.append(f"el final que paga el gancho va en la última o la anteúltima frase (está en la {p})")
+    elif p != n - 1:
+        errores.append(f"el pago del gancho va en la anteúltima frase (la {n - 1}; está en la {p}): la última "
+                       "es la pregunta al público")
+    # Giro a la mitad (Santi, 2026-11-16: frenar la caída del segundo 10 al 20).
+    i = d.get("frase_intriga")
+    lo, hi = rango_intriga(n)
+    if not isinstance(i, int):
+        errores.append(f"falta `frase_intriga`: la frase corta de la mitad que renueva la intriga "
+                       f"(\"Pero lo que nadie sabía…\"), entre la {lo} y la {hi}")
+    elif not lo <= i <= hi:
+        errores.append(f"la frase que renueva la intriga va a la MITAD del video (entre la {lo} y la {hi}; "
+                       f"está en la {i})")
     return errores
+
+
+def rango_intriga(n: int) -> tuple[int, int]:
+    """Las frases donde va el giro de la mitad (30-60 % del guion, nunca la 1 ni la 2)."""
+    return max(3, round(n * 0.3)), max(3, round(n * 0.6))
 
 
 def validar_guion(d: dict, anio: int, fuente: str, corto: bool = False,
@@ -1064,8 +1086,9 @@ def validar_guion(d: dict, anio: int, fuente: str, corto: bool = False,
     errores += errores_estructura(d, len(frases))
     # Pedido 2026-09-27 ("la voz suena triste y plana"): frases cortas, al menos una pregunta y
     # una exclamación, y cierre con gancho. Piper entona distinto una frase con ¿? o ¡!.
-    if not frases[-1].rstrip().endswith(("?", "!")):
-        errores.append("la última frase tiene que ser un gancho: una pregunta (?) o una exclamación (!)")
+    if not frases[-1].rstrip().endswith("?") or len(frases[-1].split()) > 12:
+        errores.append("la última frase es una PREGUNTA CORTA al público que invite a comentar, sobre esta "
+                       "historia (12 palabras como mucho, termina con \"?\")")
     if "?" not in texto or "!" not in texto:
         errores.append("tiene que haber al menos una pregunta (¿…?) y una exclamación (¡…!)")
     largas = [i + 1 for i, f in enumerate(frases) if len(f.split()) > 16]
@@ -1149,9 +1172,10 @@ def frases_de_accion(frases: list[dict]) -> list[int]:
 SISTEMA_PAGO = """Revisás el final de un guion de video corto. El gancho (la primera frase) deja una
 pregunta abierta, y el final la tiene que RESPONDER: la anteúltima o la última frase dice la
 respuesta concreta a esa pregunta (si el gancho promete "terminó en un billete", el final dice lo del
-billete). Si ya la responde, `responde` true y repetís las dos últimas frases igual. Si no, `responde`
-false y reescribís SOLO las dos últimas frases: la anteúltima responde la pregunta y la última cierra
-con un gancho que termina en "?" o "!". Usás SOLO lo que dice el artículo (ni un nombre, número ni
+billete) y la ÚLTIMA es una pregunta corta al público (12 palabras como mucho, sobre esta historia) que
+invite a comentar. Si ya está así, `responde` true y repetís las dos últimas frases igual. Si no,
+`responde` false y reescribís SOLO las dos últimas frases: la anteúltima responde la pregunta del gancho y
+la última es la pregunta corta al público, que termina en "?". Usás SOLO lo que dice el artículo (ni un nombre, número ni
 fecha que no esté ahí), frases de 14 palabras como mucho, español rioplatense, mismo tono.
 Respondé solo con el JSON pedido."""
 

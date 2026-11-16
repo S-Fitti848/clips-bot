@@ -382,7 +382,8 @@ def _d_pola(final="¡Y cada 14 de noviembre es el Día de la Mujer Colombiana!")
     return {"frases": [{"texto": t, "mostrar": f"1817 Bogota escena {chr(97 + i)}", "presente": False}
                        for i, t in enumerate(frases)],
             "idea_clave": "x", "titulo": "La Pola", "descripcion": "d", "hashtags": ["#Shorts", "#Bogota", "#Colombia"],
-            "pregunta_gancho": "¿Cómo terminó en un billete?", "frase_tension": 4, "frase_giro": 5, "frase_pago": 8}
+            "pregunta_gancho": "¿Cómo terminó en un billete?", "frase_tension": 4, "frase_giro": 5, "frase_pago": 8,
+            "frase_intriga": 4}
 
 
 class _Revisor:

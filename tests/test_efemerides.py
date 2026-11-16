@@ -197,7 +197,8 @@ def _guion_ok(**cambios):
          "descripcion": "Así empezó el buscador.", "hashtags": ["#Shorts", "#Google", "#PequeñaHistoria"],
          # gancho → tensión → giro → final que paga (2026-11-13)
          "pregunta_gancho": "¿Cómo un armario cambió la forma de buscar?",
-         "frase_tension": 4, "frase_giro": 5, "frase_pago": 8}
+         "frase_tension": 4, "frase_giro": 5, "frase_pago": 8,
+         "frase_intriga": 5}     # el giro de la mitad (2026-11-16)
     d.update(cambios)
     return d
 
@@ -226,14 +227,23 @@ def test_el_gancho_la_pregunta_y_las_fotos():
     assert any("pregunta_gancho" in e for e in ef.validar_guion(_guion_ok(pregunta_gancho=""), 1998, ARTICULO))
     sin_pregunta = _guion_ok()
     sin_pregunta["frases"][-1]["texto"] = "Y así fue como empezó todo, en un armario."
-    assert any("gancho" in e for e in ef.validar_guion(sin_pregunta, 1998, ARTICULO))
+    assert any("PREGUNTA CORTA" in e for e in ef.validar_guion(sin_pregunta, 1998, ARTICULO))
     sin_exclamacion = _guion_ok()
     sin_exclamacion["frases"][3]["texto"] = "Tenían un armario lleno de servidores y dos routers HP."
     assert any("exclamación" in e for e in ef.validar_guion(sin_exclamacion, 1998, ARTICULO))
     cierre_exclamado = _guion_ok()
     cierre_exclamado["frases"][-1]["texto"] = "¡Y todo empezó en un armario de Stanford!"
     cierre_exclamado["frases"][4]["texto"] = "¿Sabés cómo se llamaba al principio el buscador? BackRub."
-    assert ef.validar_guion(cierre_exclamado, 1998, ARTICULO) == []   # también es gancho
+    # Santi, 2026-11-16: el cierre es SIEMPRE una pregunta corta que invite a comentar (no una exclamación)
+    assert any("PREGUNTA CORTA" in e for e in ef.validar_guion(cierre_exclamado, 1998, ARTICULO))
+    larga_pregunta = _guion_ok()
+    larga_pregunta["frases"][-1]["texto"] = ("¿Te imaginás cómo buscarías hoy cualquier cosa en la web si no "
+                                             "existiera este buscador?")
+    assert any("PREGUNTA CORTA" in e for e in ef.validar_guion(larga_pregunta, 1998, ARTICULO))
+    # el giro que renueva la intriga, a la mitad (30-60 %)
+    assert any("frase_intriga" in e for e in ef.validar_guion(_guion_ok(frase_intriga=None), 1998, ARTICULO))
+    assert any("MITAD" in e for e in ef.validar_guion(_guion_ok(frase_intriga=8), 1998, ARTICULO))
+    assert ef.rango_intriga(9) == (3, 5) and ef.rango_intriga(12) == (4, 7)
     larga = _guion_ok()
     larga["frases"][2]["texto"] = ("Lo arrancaron en la Universidad de Stanford con muy poco y sin "
                                    "saber todavía que iba a cambiar la forma de buscar en la web.")
