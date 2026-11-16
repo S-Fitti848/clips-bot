@@ -2721,6 +2721,7 @@ def escuchar_telegram(settings: Settings, timeout_poll: int = 50) -> int:
             _seguro(tg, str(chat_ultimo or ""), "los créditos de ElevenLabs", _elevenlabs_tick, conn, tg, settings)
             _seguro(tg, str(chat_ultimo or ""), "el uso del banco de reserva", _banco_usos_tick, conn, tg)
             _seguro(tg, str(chat_ultimo or ""), "la prueba de la búsqueda web", _web_latam_tick, conn, tg, settings)
+            _seguro(tg, str(chat_ultimo or ""), "el resumen de los Reels a las 24 h", _fb_24h_tick, conn, tg, settings)
             _seguro(tg, str(chat_ultimo or ""), "el resumen semanal de costos", _costos_semana_tick, conn, tg, settings)
             _seguro(tg, str(chat_ultimo or ""), "el reintento de los clips",
                     _auto(_clips_reintento_tick), conn, settings)
@@ -3691,6 +3692,56 @@ def _web_latam_tick(conn, tg: TelegramClient, settings: Settings, ahora=None) ->
                                       "de nuevo hay que borrar web_latam_apagado.")
 
 
+def _medir_reel(canal: str, vid: str, publicado, settings: Settings) -> dict:
+    from . import stats_fb
+
+    pagina, token = (env(k, requerido=False) for k in stats_fb.CREDENCIALES[canal])
+    if not pagina or not token:
+        raise ValueError(f"faltan las credenciales de {canal}")
+    return stats_fb.metricas(vid, token, pagina, settings.facebook.version, publicado=publicado)
+
+
+def _fb_24h_tick(conn, tg: TelegramClient, settings: Settings, ahora=None, medir=None) -> None:
+    """Santi, 2026-11-16: a las 24 h de cada Reel (Pequeña Historia y Así Nació), el resumen contra la mediana
+    de los otros Reels del canal, con el gancho; queda guardado para el informe del 26/11 (stats_fb.py)."""
+    from . import stats_fb as sf
+    from .config import ROOT
+
+    ahora = ahora or datetime.now(timezone.utc)
+    ultimo = db.get_valor(conn, sf.REVISADO)
+    if medir is None and ultimo and (ahora - datetime.fromisoformat(ultimo)).total_seconds() < sf.CADA_S:
+        return
+    db.set_valor(conn, sf.REVISADO, ahora.isoformat())
+    medidos = sf.cargar(conn)
+    subidas = db.subidas(conn, ("programada", "publicada"))
+    medir = medir or (lambda canal, vid, pub: _medir_reel(canal, vid, pub, settings))
+    for s in sf.pendientes(subidas, medidos, ahora):
+        canal, vid = s["canal"], s["video_id"]
+        try:
+            x = medir(canal, vid, s["_pub"])
+        except Exception as e:  # noqa: BLE001 — Facebook caído o sin credenciales: se reintenta en 30 min
+            log.info("resumen del Reel %s: %s", vid, e)
+            continue
+        x.update(canal=canal, clip_id=s.get("clip_id"), publicado=s["_pub"].isoformat(), medido=ahora.isoformat())
+        x["gancho"], x["titulo"] = sf.gancho_y_titulo(str(s.get("clip_id") or ""), ROOT)
+        otros = [o for k, o in medidos.items() if o.get("canal") == canal and k != vid]
+        de_hoy = len(otros) < sf.MIN_PARA_MEDIANA
+        if de_hoy:
+            # todavía sin 3 medidos a las 24 h: los otros Reels del canal con lo que tienen hoy
+            otros = []
+            previos = sorted((o for o in subidas if o.get("canal") == canal and o.get("video_id")
+                              and o["video_id"] != vid and str(o.get("publish_at") or "") <= ahora.isoformat()),
+                             key=lambda o: str(o.get("publish_at") or ""))[-12:]
+            for o in previos:
+                try:
+                    otros.append(medir(canal, o["video_id"], None))
+                except Exception:  # noqa: BLE001
+                    continue
+        medidos[vid] = x
+        db.set_valor(conn, sf.CLAVE, json.dumps(medidos, ensure_ascii=False))
+        tg.send_message(DUENO, sf.texto(canal, x, otros, de_hoy))
+
+
 def _fb_proponer(conn, tg: TelegramClient, chats: list[str], dia, settings: Settings,
                  hecho: str = "", auto: bool = False, solo_banco: bool = False) -> str | None:
     """Propone una historia de Latinoamérica (va a YouTube y a Facebook desde el 2026-11-12) y manda
@@ -3870,6 +3921,11 @@ def _medicion_ph_tick(conn, tg: TelegramClient, settings: Settings, ahora=None, 
         from .telegram import partir_html
 
         texto = mp.informe(datos, hasta=hoy) + "\n\n<b>Video por video</b>\n" + mp.por_video(datos)
+        from . import stats_fb
+
+        reels = stats_fb.resumen_informe(conn)     # los Reels a las 24 h (Santi, 2026-11-16)
+        if reels:
+            texto += "\n\n" + reels
         for parte in partir_html(texto):
             tg.send_message(DUENO, parte)
 
