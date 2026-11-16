@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import math
 import random
+import re
 
 from . import paleta as P
 from .svg import aclarar, camino, circulo, elipse, g, linea_gruesa, mezcla, n, oscurecer, rect, texto_con_borde, trazo
@@ -1508,6 +1509,54 @@ PROPS = {"reloj_gigante": prop_reloj_gigante, "mano": prop_mano, "mostrador": pr
          "control": prop_control, "engranaje": prop_engranaje, "camion": prop_camion,
          "celular": prop_celular, "corona": prop_corona, "cohete": prop_cohete,
          "idea_fallida": prop_bombilla_rota}
+
+
+def _palabras(t: str) -> set[str]:
+    import unicodedata
+
+    t = unicodedata.normalize("NFKD", str(t or "").lower())
+    t = "".join(ch for ch in t if not unicodedata.combining(ch))
+    return {w for w in re.split(r"[^a-z0-9]+", t) if len(w) >= 3}
+
+
+def parecido(nombre: str, opciones, descripcion: str = "", descripciones: dict | None = None,
+             defecto: str | None = None) -> str:
+    """La opción más parecida a `nombre` (Santi, 2026-11-16: "un objeto que no está nunca puede frenar el
+    video"): primero las palabras en común (del nombre y de qué es), después el parecido de las letras."""
+    import difflib
+
+    opciones = [o for o in opciones if o]
+    if not opciones:
+        return defecto or ""
+    buscado = _palabras(nombre.replace("_", " ") + " " + descripcion)
+    descripciones = descripciones or {}
+
+    def puntaje(o):
+        suyas = _palabras(o.replace("_", " ") + " " + str(descripciones.get(o) or ""))
+        comunes = len(buscado & suyas) + sum(1 for b in buscado for s in suyas if b != s and len(b) >= 4
+                                              and (b.startswith(s[:4]) or s.startswith(b[:4])))
+        return comunes, difflib.SequenceMatcher(None, nombre, o).ratio()
+
+    mejor = max(opciones, key=puntaje)
+    if puntaje(mejor) == (0, 0.0) or (puntaje(mejor)[0] == 0 and puntaje(mejor)[1] < 0.6 and defecto):
+        return defecto if defecto in opciones else mejor
+    return mejor
+
+
+# Lo que el código puede poner solo (efectos del render y piezas de las escenas): no reemplazan a un objeto.
+NO_REEMPLAZO = ("polvo", "lineas_mov", "destello", "primer_plano", "pedazo", "microfono", "rotulo", "cita", "dato",
+                "cartel_comic", "tito_reaccion", "reloj_gigante",
+                # regla de Así Nació: martillo y engranajes solo si la frase habla de un taller o una máquina
+                "martillo", "engranaje")
+
+
+def prop_parecido(nombre: str, descripcion: str = "") -> str:
+    """El objeto existente (biblioteca de siempre o dibujo guardado) más parecido; si no se parece a nada, una caja."""
+    from . import dibujos
+
+    guardados = dibujos.biblioteca()
+    opciones = [p for p in PROPS if p not in NO_REEMPLAZO] + list(guardados)
+    return parecido(nombre, opciones, descripcion, guardados, defecto="caja")
 
 
 def es_prop(nombre: str) -> bool:

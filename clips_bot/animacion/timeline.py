@@ -33,6 +33,7 @@ la anterior sigue andando por debajo mientras dura. El largo total = suma de las
 from __future__ import annotations
 
 import json
+import logging
 import math
 import random
 import zlib
@@ -42,6 +43,8 @@ from pathlib import Path
 from . import escenas as esc
 from . import paleta as P
 from . import personajes as per
+
+log = logging.getLogger(__name__)
 from . import texto as tx
 from .audio import vocal
 from .easing import curva, recortar
@@ -131,8 +134,10 @@ class Elemento:
         if tipo not in TIPOS_ELEMENTO:
             raise ErrorGuion(f"{donde}: tipo {tipo!r} desconocido (hay {', '.join(TIPOS_ELEMENTO)})")
         if tipo == "prop" and not esc.es_prop(d.get("nombre")):
-            raise ErrorGuion(f"{donde}: prop {d.get('nombre')!r} desconocido "
-                             f"(hay {', '.join(sorted(esc.PROPS))})")
+            # Santi, 2026-11-16 ('masa_gris' frenó el video): un objeto que no está nunca frena; va el más parecido
+            nuevo = esc.prop_parecido(str(d.get("nombre") or ""))
+            log.warning("%s: prop %r desconocido, va %r", donde, d.get("nombre"), nuevo)
+            d = dict(d, nombre=nuevo)
         if tipo in ("gancho", "texto") and not str(d.get("texto", "")).strip():
             raise ErrorGuion(f"{donde}: {tipo} sin texto")
         base = {"x": float(d.get("x", P.ANCHO / 2)), "y": float(d.get("y", P.ALTO / 2)),
@@ -166,8 +171,9 @@ class Elemento:
 
             for ps in d.get("poses", []):
                 if ps.get("pose") not in _tito.POSES:
-                    raise ErrorGuion(f"{donde}: pose {ps.get('pose')!r} de Tito desconocida "
-                                     f"(hay {', '.join(_tito.POSES)})")
+                    nueva = esc.parecido(str(ps.get("pose") or ""), list(_tito.POSES), defecto=list(_tito.POSES)[0])
+                    log.warning("%s: pose de Tito %r desconocida, va %r", donde, ps.get("pose"), nueva)
+                    ps["pose"] = nueva
             rnd = random.Random(zlib.crc32(json.dumps(d, sort_keys=True, default=str).encode()))
             t = rnd.uniform(0.6, 1.6)
             while t < dur_escena + 2:
@@ -176,8 +182,9 @@ class Elemento:
         if tipo == "personaje":
             for gs in d.get("gestos", []):
                 if gs.get("gesto") not in per.GESTOS:
-                    raise ErrorGuion(f"{donde}: gesto {gs.get('gesto')!r} desconocido "
-                                     f"(hay {', '.join(per.GESTOS)})")
+                    nuevo = esc.parecido(str(gs.get("gesto") or ""), list(per.GESTOS), defecto=list(per.GESTOS)[0])
+                    log.warning("%s: gesto %r desconocido, va %r", donde, gs.get("gesto"), nuevo)
+                    gs["gesto"] = nuevo
             rnd = random.Random(zlib.crc32(json.dumps(d, sort_keys=True, default=str).encode()))
             t = rnd.uniform(0.6, 2.0)
             while t < dur_escena + 2:
@@ -373,8 +380,10 @@ class Escena:
             if f.get("momento"):      # la luz del momento (visuales, 2026-11-15)
                 fondo = fondo + (str(f["momento"]),)
         else:
-            raise ErrorGuion(f"{donde}: fondo {f.get('tipo')!r} desconocido "
-                             f"(hay color, {', '.join(sorted(esc.FONDOS))})")
+            opciones = [k for k in esc.FONDOS if k != "mapa_geo"]
+            nuevo = esc.parecido(str(f.get("tipo") or ""), opciones, defecto="casa" if "casa" in opciones else opciones[0])
+            log.warning("%s: fondo %r desconocido, va %r", donde, f.get("tipo"), nuevo)
+            fondo = (nuevo, int(f.get("semilla", 1)))
         tr = d.get("transicion", {"tipo": "corte"})
         if isinstance(tr, str):
             tr = {"tipo": tr}

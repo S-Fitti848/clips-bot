@@ -1291,10 +1291,61 @@ def asegurar_dibujos(cliente, d: dict, e: "Elegido", fuente: str, avisar=log.inf
             return d2
     except Exception as err:  # noqa: BLE001
         avisar(f"no pude reformular sin {fallidos}: {str(err)[:150]}")
-    # último recurso: sacar esos objetos (la escena sigue con sus actores)
-    for esc_ in d.get("escenas") or []:
-        esc_["objetos"] = [o for o in esc_.get("objetos") or [] if prop_real(o) not in fallidos]
+    # último recurso: el objeto más parecido de la biblioteca (Santi, 2026-11-16: nunca frena el video)
+    resolver_objetos(None, d, e, avisar)
     return d
+
+
+def resolver_objetos(cliente, d: dict, e: "Elegido | None" = None, avisar=log.info) -> list[str]:
+    """Santi, 2026-11-16 ('masa_gris' frenó el video del 16/11: lo trajo la reescritura por duración, después de
+    dibujar): TODO objeto del guion que no está en la biblioteca se dibuja con Claude (queda guardado) y, si no
+    se puede (o no hay cliente), pasa a ser el más parecido de la biblioteca. Corre después de dibujar, después
+    de cada reescritura y antes de armar la línea de tiempo. Devuelve lo que cambió."""
+    from . import dibujos
+
+    descr = {str(x.get("nombre") or "").strip(): str(x.get("descripcion") or "") for x in d.get("dibujos_nuevos") or []}
+    resueltos: dict[str, str] = {}
+    cambios: list[str] = []
+    contexto = f"{e.marca.nombre}: {e.angulo}" if e is not None else ""
+
+    def resolver(nombre: str, que_es: str = "") -> str:
+        if nombre in resueltos:
+            return resueltos[nombre]
+        texto = descr.get(nombre) or que_es or nombre.replace("_", " ")
+        if cliente is not None and dibujos.nombre_valido(nombre):
+            try:
+                dibujos.dibujar(cliente, nombre, texto, contexto)
+                avisar(f"dibujo nuevo (faltaba): {nombre} ({texto})")
+                resueltos[nombre] = nombre
+                return nombre
+            except Exception as err:  # noqa: BLE001 — si no se puede dibujar, el más parecido
+                avisar(f"no pude dibujar {nombre}: {str(err)[:150]}")
+        nuevo = esc.prop_parecido(nombre, texto)
+        avisar(f"objeto {nombre!r} sin dibujo: va {nuevo!r} (el más parecido de la biblioteca)")
+        cambios.append(f"{nombre} → {nuevo}")
+        resueltos[nombre] = nuevo
+        return nuevo
+
+    def arreglar(o: dict, clave: str = "prop", que_es: str = "") -> None:
+        nombre = prop_real(o) if clave == "prop" else str(o.get(clave) or "")
+        if not nombre or esc.es_prop(nombre):
+            return
+        nuevo = resolver(nombre, que_es or str(o.get("que_es") or ""))
+        if nuevo != nombre:
+            o[clave] = nuevo
+            o.pop("dibujo", None)
+        elif o.get(clave) != DIBUJO_NUEVO:
+            o[clave] = nuevo
+
+    for esc_ in d.get("escenas") or []:
+        for o in esc_.get("objetos") or []:
+            arreglar(o)
+        for c in esc_.get("cadena") or []:
+            arreglar(c)
+    pr = d.get("protagonista")
+    if isinstance(pr, dict):
+        arreglar(pr)
+    return cambios
 
 
 def hashtags(m: Marca) -> list[str]:
@@ -1966,6 +2017,7 @@ def armar_video(conn, settings, carpeta: Path, cliente=None, wiki=None, hoy: dat
     bitacora.dato(titulo=str(d.get("titulo") or ""), marca=e.marca.nombre, angulo=e.angulo)
     bitacora.paso("dibujos")
     d = asegurar_dibujos(cliente, d, e, fuente or "", avisar)
+    resolver_objetos(cliente, d, e, avisar)
     guardar_acciones_nuevas(d)
     if getattr(cfg, "visual_plus", False):
         from . import visuales
@@ -2019,6 +2071,8 @@ def armar_video(conn, settings, carpeta: Path, cliente=None, wiki=None, hoy: dat
         except GuionInvalido as err:
             avisar(f"no pude acortar el guion: {err}")
             break
+        # la reescritura puede traer objetos nuevos (el 16/11: 'masa_gris'): se dibujan o va el más parecido
+        resolver_objetos(cliente, d, e, avisar)
     tiempos["voz_s"] = round(time.time() - t0, 1)
     t0 = time.time()
     bitacora.paso("whisper")
@@ -2029,6 +2083,7 @@ def armar_video(conn, settings, carpeta: Path, cliente=None, wiki=None, hoy: dat
     palabras, inicios = narrar.alinear_a_guion(oidas, hablado, fin)
     tiempos["whisper_s"] = round(time.time() - t0, 1)
     avisar(f"voz ({motor}): {fin:.1f} s")
+    resolver_objetos(cliente, d, e, avisar)
     datos, eventos = linea_de_tiempo(d, inicios, fin, palabras, wav,
                                          subtitulos="viral" if settings.animacion.subtitulos_virales else "clasico",
                                          visual=getattr(cfg, "visual_plus", False))
@@ -2055,6 +2110,7 @@ def armar_video(conn, settings, carpeta: Path, cliente=None, wiki=None, hoy: dat
                 hechos.append(hecho)
         revision += [f"vuelta {vuelta + 1}: {h}" for h in hechos]
         avisar("revisión visual: " + "; ".join(hechos)[:300])
+        resolver_objetos(cliente, d, e, avisar)
         datos, eventos = linea_de_tiempo(d, inicios, fin, palabras, wav,
                                          subtitulos="viral" if settings.animacion.subtitulos_virales else "clasico",
                                          visual=getattr(cfg, "visual_plus", False))

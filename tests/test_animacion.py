@@ -131,12 +131,8 @@ def test_camara_no_se_sale_del_dibujo():
 
 @pytest.mark.parametrize("cambio,texto", [
     ({"escenas": [{"duracion": 1, "elementos": [{"tipo": "dragon"}]}]}, "dragon"),
-    ({"escenas": [{"duracion": 1, "fondo": "playa"}]}, "playa"),
-    ({"escenas": [{"duracion": 1, "elementos": [{"tipo": "prop", "nombre": "submarino"}]}]}, "submarino"),
     ({"escenas": [{"duracion": 1, "transicion": "giro"}]}, "giro"),
     ({"escenas": [{"elementos": []}]}, "duracion"),
-    ({"escenas": [{"duracion": 1, "elementos": [
-        {"tipo": "personaje", "gestos": [{"t": 0, "gesto": "bailar"}]}]}]}, "bailar"),
     ({"escenas": [{"duracion": 1, "elementos": [
         {"tipo": "prop", "nombre": "flecha", "keyframes": [{"t": 0, "color": 1}]}]}]}, "color"),
     ({"escenas": []}, "escenas"),
@@ -144,6 +140,14 @@ def test_camara_no_se_sale_del_dibujo():
 def test_errores_de_guion_dicen_que_esta_mal(cambio, texto):
     with pytest.raises(ErrorGuion, match=texto):
         Video.desde_dict(cambio)
+
+
+def test_lo_desconocido_del_guion_no_frena_va_lo_mas_parecido():
+    """Santi, 2026-11-16: un fondo, un objeto o un gesto que no existen nunca frenan el video."""
+    v = Video.desde_dict({"escenas": [{"duracion": 1, "fondo": "playa", "elementos": [
+        {"tipo": "prop", "nombre": "submarino"},
+        {"tipo": "personaje", "gestos": [{"t": 0, "gesto": "bailar"}]}]}]})
+    assert v.escenas[0].fondo[0] != "playa"
 
 
 def test_cuadros_iguales_se_detectan():
