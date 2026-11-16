@@ -32,7 +32,9 @@ log = logging.getLogger(__name__)
 
 TIPOS = ("heroe_de_pueblo", "gente_comun", "anecdota", "momento_emotivo", "fundacion",
          # Santi, 2026-11-15: "historias curiosas y reales de Latinoamérica", no solo héroes y personas
-         "lugar_curioso", "invento", "costumbre", "record", "misterio", "dato_sorprendente", "otro")
+         "lugar_curioso", "invento", "costumbre", "record", "misterio", "dato_sorprendente",
+         # Santi, 2026-11-16: ídolos latinoamericanos de antes (época de oro del cine, cantantes, actores, deportistas)
+         "idolo", "otro")
 
 # Lugares de Latinoamérica: países, sus gentilicios y las provincias, estados y ciudades que más
 # aparecen en las páginas de cada día. Sin esto, Haiku vería ~150 líneas por día.
@@ -353,7 +355,10 @@ FRASES_PERSONAJES = ('"el {d} de" héroe', '"el {d} de" heroína', '"el {d} de" 
                      # historias curiosas (2026-11-15): lugares, inventos, costumbres, récords, misterios
                      '"el {d} de" récord', '"el {d} de" misterio', '"el {d} de" inventó', '"el {d} de" invento',
                      '"el {d} de" curioso', '"el {d} de" tradición', '"el {d} de" primera vez',
-                     '"el {d} de" insólito', '"el {d} de" enigma', '"el {d} de" patentó')
+                     '"el {d} de" insólito', '"el {d} de" enigma', '"el {d} de" patentó',
+                     # ídolos de antes (2026-11-16)
+                     '"el {d} de" actor', '"el {d} de" actriz', '"el {d} de" cantante', '"el {d} de" "época de oro"',
+                     '"el {d} de" futbolista', '"el {d} de" boxeador')
 TOPE_PERSONAJES = 40
 
 
@@ -493,7 +498,9 @@ hecho de la lista decí:
   hay ninguno.
 - `region`: la provincia, estado o departamento, si se sabe. `pais`: el país de hoy.
 - `tipo`: heroe_de_pueblo, gente_comun, anecdota, momento_emotivo, fundacion, lugar_curioso, invento,
-  costumbre, record, misterio, dato_sorprendente u otro.
+  costumbre, record, misterio, dato_sorprendente, idolo (un ídolo latinoamericano de antes: la época de oro del cine
+  mexicano y argentino, cantantes, actores, deportistas; contado como historia real de su vida, con un giro y
+  emoción, no como ficha biográfica) u otro.
 - `tragedia_sola`: true si lo central es una muerte, un desastre, un crimen o una represión SIN un acto
   heroico o algo luminoso que contar. (Un maquinista que muere salvando a su pueblo: false. Un terremoto
   con miles de muertos: true. Una heroína fusilada por defender la independencia: false.)
@@ -582,6 +589,9 @@ Ordená del mejor al peor (hasta {cuantos}) los que más se parecen a eso, y pun
 - gente concreta que hizo algo notable (héroes de pueblo, gente común, anécdotas, momentos
   emotivos), en un pueblo o ciudad que se pueda nombrar; o un lugar, un invento, una costumbre, un récord,
   un misterio o un dato de un país que sorprenda y tenga una historia detrás;
+- ídolos latinoamericanos de antes (época de oro del cine mexicano y argentino, cantantes, actores, deportistas:
+  Jorge Negrete, Carlos Gardel, Pedro Infante, Tita Merello…), contados como una historia real de su vida, con
+  persona, giro y emoción (el momento que cambió su carrera, lo que nadie sabía de él con un dato concreto);
 - los marcados ★ CALENDARIO se recuerdan HOY (aniversario, fundación, día nacional, fiesta del
   lugar): van SIEMPRE primero, antes que cualquier otro, y entre ellos primero México, Colombia,
   Argentina, Perú, Chile y Venezuela (es cuando la gente lo comparte);
