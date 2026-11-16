@@ -535,17 +535,15 @@ _ACTOR = {"type": "OBJECT", "properties": {
     "edad": {"type": "STRING", "enum": list(ac.EDADES)},
     "persona_real": {"type": "STRING"}},
     "required": ["rol", "accion", "desde", "hacia", "cara", "genero", "edad", "persona_real"]}
-# Sin enum (2026-11-16: con las opciones de gancho y el decorado, la gramática pasó el tope de Claude, "compiled grammar
-# is too large"): el prompt da la lista y lo que no está lo resuelve `resolver_objetos` (se dibuja o va el más parecido).
 _OBJETO = {"type": "OBJECT", "properties": {
-    "prop": {"type": "STRING"},
+    "prop": {"type": "STRING", "enum": list(PROPS_GUION)},
     "efecto": {"type": "STRING", "enum": list(ac.EFECTOS)},
     "donde": {"type": "STRING", "enum": list(ac.LADOS)},
     "soporte": {"type": "STRING", "enum": list(ac.SOPORTES)},
     "texto": {"type": "STRING"}, "dibujo": {"type": "STRING"}},
     "required": ["prop", "efecto", "donde", "soporte", "texto", "dibujo"]}
 _CADENA = {"type": "OBJECT", "properties": {
-    "prop": {"type": "STRING"},
+    "prop": {"type": "STRING", "enum": sorted(ROMPIBLES)},
     "soporte": {"type": "STRING", "enum": list(ac.SOPORTES)},
     "donde": {"type": "STRING", "enum": list(ac.LADOS)}},
     "required": ["prop", "soporte", "donde"]}
@@ -577,7 +575,6 @@ SCHEMA_GUION = {
                 "accion_escena": {"type": "STRING"},   # sin enum: la gramática de Claude se pasaba de tamaño (15/11)
                 "plano": {"type": "STRING"},
                 "accion_nueva": {"type": "STRING"},
-                "decorado": {"type": "ARRAY", "items": {"type": "STRING"}},   # reglas_v3 (2026-11-16)
             },
             "required": ["frase", "parte", "fondo", "actores", "objetos", "camara", "texto_pantalla",
                          "transicion", "cadena", "viaje_a_anio", "vuelve_al_presente", "claves", "emoji",
@@ -596,12 +593,30 @@ SCHEMA_GUION = {
         "entidades": {"type": "ARRAY", "items": {"type": "OBJECT", "properties": {
             "nombre": {"type": "STRING"}, "presentacion": {"type": "STRING"},
             "frase": {"type": "INTEGER"}}, "required": ["nombre", "presentacion", "frase"]}},
-        "ganchos": {"type": "ARRAY", "items": {"type": "OBJECT", "properties": {     # reglas_v3 (2026-11-16)
-            "tipo": {"type": "STRING"}, "texto": {"type": "STRING"}}, "required": ["tipo", "texto"]}},
     },
     "required": ["titulo", "descripcion", "tono", "pregunta_gancho", "escenas", "locutor", "entidades",
                  "protagonista", "dibujos_nuevos"],
 }
+
+
+def schema_guion() -> dict:
+    """El schema del guion. Con las reglas_v3 suma `ganchos` y `decorado` como OBLIGATORIOS (2026-11-16: opcionales
+    multiplican la gramática de Claude y pasaba el tope, "compiled grammar is too large"); para que entren, los
+    objetos van sin la lista cerrada (lo que no está lo resuelve `resolver_objetos`). Sin las reglas, el de siempre."""
+    if not REGLAS_V3:
+        return SCHEMA_GUION
+    import copy
+
+    sch = copy.deepcopy(SCHEMA_GUION)
+    esc_ = sch["properties"]["escenas"]["items"]
+    esc_["properties"]["objetos"]["items"]["properties"]["prop"] = {"type": "STRING"}
+    esc_["properties"]["cadena"]["items"]["properties"]["prop"] = {"type": "STRING"}
+    esc_["properties"]["decorado"] = {"type": "ARRAY", "items": {"type": "STRING"}}
+    esc_["required"] = list(esc_["required"]) + ["decorado"]
+    sch["properties"]["ganchos"] = {"type": "ARRAY", "items": {"type": "OBJECT", "properties": {
+        "tipo": {"type": "STRING"}, "texto": {"type": "STRING"}}, "required": ["tipo", "texto"]}}
+    sch["required"] = list(sch["required"]) + ["ganchos"]
+    return sch
 
 
 def frases_de(d: dict) -> list[str]:
@@ -1262,11 +1277,11 @@ def escribir_guion(cliente, e: Elegido, fuente: str, reintentos: int = 6, avisar
         try:
             if d is not None and ultimo and puntuales < correcciones.CORRECCIONES_MAX:
                 puntuales += 1
-                d = correcciones.corregir(cliente, sistema_guion(), pedido, d, ultimo, SCHEMA_GUION, "escenas",
+                d = correcciones.corregir(cliente, sistema_guion(), pedido, d, ultimo, schema_guion(), "escenas",
                                           "escena")
             else:
                 puntuales = 0
-                d = json.loads(cliente.json(sistema_guion(), pedido + correccion, SCHEMA_GUION, 0.9))
+                d = json.loads(cliente.json(sistema_guion(), pedido + correccion, schema_guion(), 0.9))
         except GeminiError as err:   # ClaudeError hereda: una respuesta cortada cuenta como un intento
             if getattr(err, "pasajero", False):
                 raise
@@ -1329,7 +1344,7 @@ def asegurar_dibujos(cliente, d: dict, e: "Elegido", fuente: str, avisar=log.inf
     errores = [f"no se pudo dibujar «{n}»: reemplazalo por un objeto de la lista o reformulá esa frase" for n in fallidos]
     try:
         d2 = correcciones.corregir(cliente, sistema_guion(), f"MARCA: {e.marca.nombre}\nTEXTO:\n{fuente[:12000]}",
-                                   d, errores, SCHEMA_GUION, "escenas", "escena")
+                                   d, errores, schema_guion(), "escenas", "escena")
         if not validar_guion(d2, e.marca, fuente) or not fuente:
             return d2
     except Exception as err:  # noqa: BLE001
@@ -1897,7 +1912,7 @@ def corregir_acciones(cliente, d: dict, e: "Elegido", fuente: str, malas: list[t
         return d, ""
     try:
         d2 = correcciones.corregir(cliente, sistema_guion(), f"MARCA: {e.marca.nombre}\nTEXTO:\n{(fuente or '')[:12000]}",
-                                   d, errores, SCHEMA_GUION, "escenas", "escena")
+                                   d, errores, schema_guion(), "escenas", "escena")
     except Exception as err:  # noqa: BLE001
         avisar(f"no pude corregir: {str(err)[:120]}")
         return d, ""
