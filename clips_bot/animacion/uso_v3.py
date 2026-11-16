@@ -132,7 +132,7 @@ def escena_uso(dur: float, prota: str, partes: dict, pasos: list[str], manga: st
                 sfx.append((round(t1 + 0.25, 3), "tac"))
         t = b
     # de cerca, apoyado en una mesa (nada flotando en el medio del cuarto)
-    els = [_el("mesa", X0, Y0 + 62 * ESCALA, escala=3.4, decorado=True),
+    els = [_el("mesa", X0, Y0 + 62 * ESCALA, escala=3.4, decorado=True, en_medio=True),
            _el(cuerpo, X0, Y0, escala=ESCALA, color=True, keyframes=sorted(kc, key=lambda k: k["t"]))]
     if tapa:
         els.append(_el(tapa, X0, y_tapa, escala=ESCALA, color=True, keyframes=sorted(kt, key=lambda k: k["t"])))
@@ -208,7 +208,7 @@ def escena_plata(tipo: str, dur: float, manga: str = "", seed: int = 0, spec: di
     rnd = random.Random(seed)
     els: list[dict] = []
     sfx: list[tuple[float, str]] = []
-    mesa = _el("mesa", X0, Y0 + 190, escala=3.4, decorado=True)
+    mesa = _el("mesa", X0, Y0 + 190, escala=3.4, decorado=True, en_medio=True)
     if tipo == "contar_billetes":      # de una pila a la otra, de a uno, con la mano que lo pasa
         n_ = max(4, min(8, int(dur / 0.4)))
         els.append(mesa)
@@ -249,16 +249,20 @@ def escena_plata(tipo: str, dur: float, manga: str = "", seed: int = 0, spec: di
         e_ = ac.Escena(dur, semilla=seed)
         actores = list((spec or {}).get("actores") or [])
         defectos = (("empresario", "hombre"), ("empresaria", "mujer"))
-        for k_, (x_, (rol_def, gen_def)) in enumerate(zip((380, 700), defectos)):
+        for k_, (x_, (rol_def, gen_def)) in enumerate(zip((270, 810), defectos)):
             a_ = actores[k_] if k_ < len(actores) else {}
-            e_.actor(a_.get("rol") or rol_def, "senalar", "centro", None, "feliz", k_, x0=x_, x1=x_,
+            e_.actor(a_.get("rol") or rol_def, "quieto", "centro", None, "feliz", k_, x0=x_, x1=x_,
                      genero=a_.get("genero") or gen_def, edad=a_.get("edad") or "adulto")
-        for el in e_.elementos:
+        esc_p = 0.74
+        for k_, el in enumerate(e_.elementos):
             el["hasta"] = t_corte
+            el["gestos"] = [{"t": 0, "gesto": "dar_mano" if k_ == 0 else "dar_mano_izq"}]   # se extienden la mano
+            esc_p = float(el.get("escala", esc_p))
         els += e_.elementos
-        y_mesa = ac.PISO - 300
-        els += [_el("mesa", X0, y_mesa, escala=1.5, hasta=t_corte),
-                _el("papel_firma", X0, y_mesa - 70, escala=0.42, fase=1.0, rotacion=-8, hasta=t_corte)]
+        y_mesa = ac.PISO - 330 * esc_p           # la mesa entre los dos, a la altura de las manos, con el contrato
+        els += [_el("mesa", X0, y_mesa, escala=1.0, hasta=t_corte, decorado=True, en_medio=True),
+                _el("papel_firma", X0 - 20, y_mesa - 55, escala=0.32, fase=1.0, rotacion=-6, hasta=t_corte,
+                    decorado=True)]
         t_toca = t_corte + (dur - t_corte) * 0.15
         izq = [_k(0, x=X0 - 620, y=Y0, rotacion=90, fase=0.0), _k(t_corte, x=X0 - 420, y=Y0, rotacion=90, fase=0.0),
                _k(t_toca, x=X0 - 95, y=Y0, rotacion=90, fase=0.7, easing="salida")]
@@ -299,7 +303,7 @@ def escena_plata(tipo: str, dur: float, manga: str = "", seed: int = 0, spec: di
         els += _manos(izq, der, manga)
     if tipo == "apreton_manos":    # plano medio de las dos personas → corte seco al primer plano del apretón
         t_c = round(dur * 0.45, 3)
-        cam = [_k(0, zoom=1.12, y=180), _k(t_c - 0.02, zoom=1.18, y=180, easing="suave"),
+        cam = [_k(0, zoom=1.22, y=190), _k(t_c - 0.02, zoom=1.27, y=190, easing="suave"),
                _k(t_c, zoom=1.35, y=Y0 - 960, easing="escalon"), _k(dur, zoom=1.45, y=Y0 - 960, easing="suave")]
     else:
         cam = [_k(0, zoom=1.0), _k(dur, zoom=1.06, easing="suave")]

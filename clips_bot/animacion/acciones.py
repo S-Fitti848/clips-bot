@@ -1033,7 +1033,9 @@ def composicion(esc_d: dict, paso: float = 0.1) -> list[tuple[float, str, int, i
             personas.append((k, Elemento.desde_dict(d, f"elemento {k}", dur)))
         elif d.get("tipo") == "prop" and not d.get("lib"):
             cosas.append((k, d, Elemento.desde_dict(d, f"elemento {k}", dur)))
-        if d.get("tipo") == "prop" and d.get("nombre") in ("mesa", "estante") and 330 < float(d.get("x", 0)) < 750:
+        # la mesa del trato o del uso va en el medio a propósito (`en_medio`, 2026-11-16)
+        if d.get("tipo") == "prop" and d.get("nombre") in ("mesa", "estante") and 330 < float(d.get("x", 0)) < 750 \
+                and not d.get("en_medio"):
             return [(0.0, "mueble_en_medio", k, -1)]
     out, vistos = [], set()
     t = 0.0

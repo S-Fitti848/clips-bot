@@ -72,6 +72,9 @@ GESTOS: dict[str, dict] = {
     "cubrirse": {"izq": (150, 120), "der": (150, 120), "cejas": "triste"},
     # Las manos con el objeto adelante (Así Nació, 2026-11-16: "las manos siempre hacen algo con el objeto"): se
     # alternan de a pares (lo agarra, lo abre, lo llena), nunca los brazos abiertos al costado.
+    # dar la mano para cerrar un trato (2026-11-16): el brazo extendido horizontal hacia el otro
+    "dar_mano": {"izq": (14, 12), "der": (84, -8)},
+    "dar_mano_izq": {"izq": (84, -8), "der": (14, 12)},
     "sostener_a": {"izq": (18, -95), "der": (18, -95)},
     "sostener_b": {"izq": (24, -110), "der": (14, -88)},
 }
