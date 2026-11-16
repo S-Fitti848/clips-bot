@@ -31,6 +31,8 @@ from pathlib import Path
 
 import yaml
 
+from clips_bot import calidad
+
 from . import acciones as ac
 from . import escenas as esc
 from . import paleta as P
@@ -2044,8 +2046,12 @@ SCHEMA_REVISION = {"type": "OBJECT", "properties": {"problemas": {"type": "ARRAY
                                                "separar_personajes", "sacar_texto", "cambiar_accion",
                                                "rehacer_gancho", "redibujar_objeto", "otro"]},
         "objeto": {"type": "STRING"}},
-    "required": ["cuadro", "que", "arreglo", "objeto"]}}}, "required": ["problemas"]}
+    "required": ["cuadro", "que", "arreglo", "objeto"]}},
+    "reglas": calidad.SCHEMA_REGLAS}, "required": ["problemas", "reglas"]}
+ARREGLOS = ("mover_objeto", "cambiar_soporte", "sacar_objeto", "separar_personajes", "sacar_texto", "cambiar_accion",
+            "rehacer_gancho", "redibujar_objeto", "otro")
 CUADROS_REVISION = 8
+VUELTAS_REVISION = 2      # vueltas de corrección; después, una última que solo mira (estándar de calidad)
 
 
 def cuadros_clave(datos: dict, maximo: int = CUADROS_REVISION) -> list[tuple[float, int, str]]:
@@ -2384,14 +2390,35 @@ def revisar_visual(cliente, d: dict, datos: dict, carpeta: Path, capturar=None, 
     lista = "\n".join(f"Cuadro {n + 1}: {qd(i, q)}" for n, (_t, i, q) in enumerate(claves))
     lista += ("\n\nARRANQUES ANTERIORES DEL CANAL:\n" + texto_ganchos(ganchos_recientes(conn)[:-1])
               if conn is not None else "")
+    sistema = ((sistema_revision_v3() + (REVISION_V4 if USO_V4 else "")) if REGLAS_V3 else SISTEMA_REVISION)
+    sistema += calidad.para_prompt("asinacio") + ("\nToda regla que no se cumple va TAMBIÉN en `problemas`, con su "
+                                                   "cuadro y el arreglo que la corrige.")
     try:
-        r_ = json.loads(cliente.json((sistema_revision_v3() + (REVISION_V4 if USO_V4 else "")) if REGLAS_V3
-                                     else SISTEMA_REVISION, f"Los cuadros, en orden:\n{lista}", SCHEMA_REVISION, 0.2,
+        r_ = json.loads(cliente.json(sistema, f"Los cuadros, en orden:\n{lista}", SCHEMA_REVISION, 0.2,
                                      imagenes=imagenes))
     except Exception as err:   # la revisión es una red de seguridad: si no responde, sigue
         avisar(f"revisión visual: no respondió ({str(err)[:120]})")
+        d["_estandar_ok"] = False
         return [], claves
-    return list(r_.get("problemas") or []), claves
+    problemas = list(r_.get("problemas") or [])
+    # el estándar de calidad (Santi, 2026-11-16): lo que no cumple y la revisión no puso en `problemas` se suma con el
+    # arreglo de la regla, así se corrige igual
+    fallas = calidad.fallas_de(r_.get("reglas"), "asinacio")
+    d["_estandar"], d["_estandar_ok"] = fallas, True
+    return problemas_del_estandar(fallas, problemas, len(claves)), claves
+
+
+def problemas_del_estandar(fallas: list[dict], problemas: list[dict], n_cuadros: int) -> list[dict]:
+    """Cada regla del estándar que no se cumple y que la revisión no puso en `problemas` se suma con el arreglo de la
+    regla (ESTANDAR_CALIDAD.md), así se corrige igual."""
+    reglas_ = calidad.por_id("asinacio")
+    out = list(problemas)
+    for f in fallas:
+        arreglo = reglas_[f["id"]].arreglo if f["id"] in reglas_ else "otro"
+        if arreglo in ARREGLOS and 1 <= f["cuadro"] <= n_cuadros and not any(
+                int(pr.get("cuadro") or 0) == f["cuadro"] and pr.get("arreglo") == arreglo for pr in out):
+            out.append({"cuadro": f["cuadro"], "que": f"{f['id']}: {f['que']}", "arreglo": arreglo, "objeto": ""})
+    return out
 
 
 @dataclass
@@ -2416,6 +2443,7 @@ class Resultado:
     tiempos: dict = field(default_factory=dict)
     revision: list = field(default_factory=list)      # lo que vio la revisión visual y lo que se corrigió
     flojas: list = field(default_factory=list)        # las 3 cosas más flojas, con su cuadro (mejora continua, 2026-11-16)
+    estandar: dict = field(default_factory=dict)      # el estándar de calidad: fallas finales, corregidas (2026-11-16)
     niveles: dict = field(default_factory=dict)       # dB de la voz, la música, los SFX y la mezcla
     aviso: str = ""        # puntaje bajo o banco de reserva (nunca un día sin video, 2026-11-15)
     banco_id: str = ""
@@ -2705,10 +2733,19 @@ def armar_video(conn, settings, carpeta: Path, cliente=None, wiki=None, hoy: dat
             datos, eventos = linea_de_tiempo(d, inicios, fin, palabras, wav,
                                              subtitulos="viral" if settings.animacion.subtitulos_virales else "clasico",
                                              visual=getattr(cfg, "visual_plus", False))
-    for vuelta in range(2):
+    # Estándar de calidad (Santi, 2026-11-16): 2 vueltas de corrección y una última que solo mira; lo que no se
+    # cumplió después de corregir sale en el mensaje y queda anotado para el resumen de los lunes.
+    primeras: list[str] | None = None
+    for vuelta in range(VUELTAS_REVISION + 1):
         problemas, claves = revisar_visual(cliente, d, datos, carpeta, avisar=avisar, conn=conn)
+        if primeras is None and d.get("_estandar_ok"):
+            primeras = [f["id"] for f in d.get("_estandar") or []]
         if not problemas:
             revision.append(f"vuelta {vuelta + 1}: sin problemas" if vuelta else "revisión visual: sin problemas")
+            break
+        if vuelta == VUELTAS_REVISION:
+            revision.append(f"vuelta {vuelta + 1}: quedó sin corregir: "
+                            + "; ".join(str(pr.get("que") or "")[:80] for pr in problemas[:4]))
             break
         if REGLAS_V3:
             # Santi, 2026-11-16: "nadie parado sin hacer nada, nunca: la revisión lo rechaza siempre"; y el producto
@@ -2760,6 +2797,14 @@ def armar_video(conn, settings, carpeta: Path, cliente=None, wiki=None, hoy: dat
                                          subtitulos="viral" if settings.animacion.subtitulos_virales else "clasico",
                                          visual=getattr(cfg, "visual_plus", False))
     tiempos["revision_s"] = round(time.time() - t0, 1)
+    revisado = bool(d.get("_estandar_ok"))
+    finales = list(d.get("_estandar") or []) if revisado else []
+    estandar = {"revisado": revisado, "fallas": finales,
+                "corregidas": sorted(set(primeras or []) - {f["id"] for f in finales}),
+                "guion": [str(x) for x in d.get("_estilo_pendiente") or []]}
+    calidad.anotar(conn, "asinacio", f"{hoy.isoformat()}/{e.marca.nombre}/{e.angulo}", finales,
+                   estandar["corregidas"], [("AN-21", g_[:240]) for g_ in estandar["guion"]], revisado,
+                   dia=hoy.isoformat())
     try:
         flojas = puntos_flojos(cliente, d, datos, carpeta, avisar)      # mejora continua (Santi, 2026-11-16)
     except Exception as err:  # noqa: BLE001 — anotar nunca frena el video
@@ -2818,6 +2863,7 @@ def armar_video(conn, settings, carpeta: Path, cliente=None, wiki=None, hoy: dat
         articulo=f"https://es.wikipedia.org/wiki/{e.marca.wiki_es.replace(' ', '_')}",
         render_s=tiempos["render_s"], total_s=round(time.time() - t_total, 1),
         costo_usd=costo_desde(conn, fila0), tiempos=tiempos, revision=revision, flojas=flojas, niveles=niv,
+        estandar=estandar,
         aviso=" · ".join(x for x in (e.aviso, aviso_estilo(d)) if x), banco_id=e.banco_id)
 
 
@@ -2844,6 +2890,9 @@ def texto_mensaje(r: Resultado, encabezado: str = "", subida: bool = False) -> s
         + (f"\nMúsica: {html.escape(r.credito_musica)}" if r.credito_musica else "") + "</code>",
         "",
     ] + ([] if subida else ["📵 No quedó programado en ningún lado (mirá el aviso de arriba)."])
+    if r.estandar:
+        partes += ["", calidad.texto_estandar("asinacio", r.estandar.get("fallas") or [], r.estandar.get("corregidas"),
+                                              revisado=bool(r.estandar.get("revisado")))]
     if r.revision:
         partes += ["", "<b>Revisión visual:</b> " + html.escape("; ".join(r.revision))[:900]]
     if r.niveles:

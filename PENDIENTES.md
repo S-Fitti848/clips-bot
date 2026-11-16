@@ -16,6 +16,14 @@ Se actualiza al terminar cada tarea.
 - [ ] Visto en la hoja, sin arreglar: la escena 7 del Tupper de prueba arranca con el cuadro del viaje en el tiempo
       (el reloj con "2026") en sus primeras décimas; es del motor de antes, no del apretón.
 
+## Estándar de calidad (`ESTANDAR_CALIDAD.md`, `clips_bot/calidad.py`)
+
+- [x] 2026-11-16: documento con las reglas de Así Nació (AN-01…AN-24) y Pequeña Historia (PH-01…PH-23); la revisión
+      puntúa cada video, corrige sola y lo que quede va en el mensaje (📏); registro en `calidad_fallas`.
+- [ ] Mirar los primeros mensajes con 📏 (17/11): que la revisión puntúe todas las reglas y no invente fallas.
+- [ ] Lunes 23/11, 09:30: primer resumen semanal del estándar a Santi (`_calidad_semana_tick`).
+- [ ] Cada regla nueva que apruebe Santi → sumarla al documento con el próximo número libre.
+
 ## Latinoamérica: prueba de fuentes web (`web_historias.py`, `historias_fb.web`)
 
 - [ ] 17/11: primer día de producción con búsqueda web. Al terminar el día, `_web_latam_tick` mide el costo: hasta

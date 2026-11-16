@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-11-16 | **Versión:** v1.24.0 (desplegado) | **Modo:** Fase 2: corriendo solo en la Pi. **Rots APAGADO.** Pequeña Historia (3 por día, madrugada desde las 04:00) (publicación sin aprobar: llegan con ❌ Cancelar) y **Así Nació** (2 por día, desde las 07:00, publican 13:00 y 20:00 en YouTube y Facebook con ❌ Cancelar), todo al privado de Santi
+**Snapshot:** 2026-11-16 | **Versión:** v1.25.0 (desplegado) | **Modo:** Fase 2: corriendo solo en la Pi. **Rots APAGADO.** Pequeña Historia (3 por día, madrugada desde las 04:00) (publicación sin aprobar: llegan con ❌ Cancelar) y **Así Nació** (2 por día, desde las 07:00, publican 13:00 y 20:00 en YouTube y Facebook con ❌ Cancelar), todo al privado de Santi
 
 > **SI ESTÁS EMPEZANDO UNA SESIÓN NUEVA, LEÉ §10.** Ahí está qué está hecho, qué quedó a medias,
 > qué falta, y las trampas que ya nos mordieron.
@@ -370,6 +370,14 @@ servicio systemd separado: `clips-bot`).
   despegue con humo y fuego). (4) la revisión visual marca `cambiar_accion` cuando lo que se ve no es lo que
   dice la frase, y se corrige esa escena. (5) nada de engranajes ni martillo salvo que la frase hable de una
   máquina o un taller.
+- **ESTÁNDAR DE CALIDAD (Santi, 2026-11-16; `ESTANDAR_CALIDAD.md`, `clips_bot/calidad.py`): el estándar fijo de Así
+  Nació y Pequeña Historia.** Cada video se puntúa contra las reglas "revisión" antes de publicarse (Así Nació: la
+  revisión visual de los cuadros, 2 vueltas de corrección y una última que solo mira; Pequeña Historia: Claude mira la
+  hoja foto + frase antes de la voz y cambia solas las fotos que no pasan, una vuelta). Lo que sigue sin cumplirse sale
+  igual y el mensaje lo dice ("📏 Estándar 12/14 · ❌ AN-05 …"). Todo queda en `calidad_fallas` / `calidad_videos` y los
+  lunes desde las 09:30 le llega a Santi qué reglas fallaron más (`_calidad_semana_tick`). **Toda regla de calidad nueva
+  que apruebe Santi se suma a ESTANDAR_CALIDAD.md** (con el próximo número libre; las de revisión entran solas en la
+  próxima revisión). Santi no revisa video por video.
 - **Videos largos: NO por ahora (decisión de Santi, 2026-09-28).** No quiere videos largos con voz
   de IA. Si más adelante se hacen, van con SU voz grabada, no con Gemini TTS ni Piper.
 - **Sin música agregada en los clips.** Cualquier música es riesgo de Content ID. Si el clip trae
@@ -970,6 +978,7 @@ clips_bot/animacion_remotion/ + remotion/  prototipo de Así Nació con Remotion
 assets/fuentes/          Montserrat Black + OFL.txt
 clips_bot/locales.py     §3d: historias de Latinoamérica (Wikipedia por día + la web, Haiku, Sonnet)
 clips_bot/web_historias.py §1: búsqueda web con Haiku (diarios, museos, archivos) y verificación con 2 fuentes por dato
+clips_bot/calidad.py     §1: el estándar de calidad (ESTANDAR_CALIDAD.md): revisión, registro y resumen de los lunes
 clips_bot/stats_fb.py    §1: el resumen de cada Reel de Facebook a las 24 h (Pequeña Historia y Así Nació)
 clips_bot/comunidad_fb.py §1: publicaciones de comunidad de Pequeña Historia (foto de época + pregunta)
 clips_bot/animacion/uso_v3.py §9 v1.22.0: escenas de uso con las manos, plata de verdad e inspiración (uso_manos)
@@ -980,7 +989,7 @@ clips_bot/voces.py       voces de Gemini de hoy por clave (con Lo Encontré) y e
 clips_bot/prueba_manual.py prueba manual vs API (§1): el clip del día a mano, registro e informe del feed
 clips_bot/envivo.py      modo en vivo (§3b): quién está al aire, momentos por creadores distintos,
                          alertas en la DB (no repetir, tope, vencer) y el resumen de tiempos
-tests/                   1629 tests sin red ni video (conftest.py: nada sale a YouTube, Facebook ni ElevenLabs) (test_reglas_fijas.py: las 3 reglas de §1)
+tests/                   1637 tests sin red ni video (conftest.py: nada sale a YouTube, Facebook ni ElevenLabs) (test_reglas_fijas.py: las 3 reglas de §1)
 ```
 
 Comandos:
@@ -1173,6 +1182,14 @@ Problemas abiertos:
 
 ## 9. CHANGELOG
 
+- v1.25.0 (2026-11-16, noche) — **Estándar de calidad** (Santi; regla en §1): `ESTANDAR_CALIDAD.md` con 19 reglas de
+  Así Nació (14 de revisión y 5 de código) y 13 de Pequeña Historia (9 y 4), juntas de lo aprobado en §1, cada una con
+  su id y su arreglo. `calidad.py` lo lee (se relee si cambia), arma el pedido, anota las fallas y arma el resumen de
+  los lunes. Así Nació: la revisión visual devuelve `reglas` (cumple sí/no por regla) además de `problemas`; una regla
+  que falla sin problema se corrige con el arreglo de la regla (`marcas.problemas_del_estandar`); 2 vueltas de
+  corrección + una que solo mira (`VUELTAS_REVISION`); `Resultado.estandar` y la línea 📏 en el mensaje. Pequeña
+  Historia: `calidad.revisar_ph` en `_efe_armar` antes de la voz (cambio de foto con `ef.cambiar_foto`); el aviso de
+  fotos reales cuenta como PH-21. `tests/test_calidad.py`.
 - v1.24.0 (2026-11-16, noche) — **Así Nació: el apretón rehecho y `uso_manos` PRENDIDO** (Santi: "parece un saludo
   con el codo"; "puño contra puño"). Plano medio: las dos personas a 190 px del medio (antes se corrían por separado
   para dejarle lugar a Tito y se alejaban de su mesa: `dejar_lugar_a_tito` ya no toca a los que se van antes del

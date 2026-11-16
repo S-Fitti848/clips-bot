@@ -2725,6 +2725,8 @@ def escuchar_telegram(settings: Settings, timeout_poll: int = 50) -> int:
             _seguro(tg, str(chat_ultimo or ""), "las mejoras al motor", _mejoras_motor_tick, conn, tg, settings)
             _seguro(tg, str(chat_ultimo or ""), "la publicación de comunidad", _comunidad_tick, conn, tg, settings)
             _seguro(tg, str(chat_ultimo or ""), "el resumen semanal de costos", _costos_semana_tick, conn, tg, settings)
+            _seguro(tg, str(chat_ultimo or ""), "el resumen semanal del estándar de calidad", _calidad_semana_tick,
+                    conn, tg)
             _seguro(tg, str(chat_ultimo or ""), "el reintento de los clips",
                     _auto(_clips_reintento_tick), conn, settings)
             _seguro(tg, str(chat_ultimo or ""), "la búsqueda de lo que pegó",
@@ -4260,6 +4262,25 @@ def _costos_semana_tick(conn, tg: TelegramClient, settings: Settings, ahora=None
     tg.send_message(DUENO, texto)
 
 
+CALIDAD_SEMANA = "calidad_semana_enviado"   # bot_estado: el lunes (AR) cuyo resumen del estándar ya salió
+CALIDAD_SEMANA_HORA = (9, 30)                # los lunes, desde las 09:30 AR (después del de costos)
+
+
+def _calidad_semana_tick(conn, tg: TelegramClient, ahora=None) -> None:
+    """Los lunes (Santi, 2026-11-16: "yo no reviso video por video"): qué reglas del estándar de calidad fallaron más
+    en la semana anterior, por canal, para mejorar el motor."""
+    from . import calidad
+
+    ahora = ahora or datetime.now(AR)
+    lunes = ahora.date().isoformat()
+    if (ahora.weekday() != 0 or (ahora.hour, ahora.minute) < CALIDAD_SEMANA_HORA
+            or db.get_valor(conn, CALIDAD_SEMANA) == lunes):
+        return
+    db.set_valor(conn, CALIDAD_SEMANA, lunes)
+    desde, hasta = calidad.semana_anterior(ahora.date())
+    tg.send_message(DUENO, calidad.resumen_semana(conn, desde, hasta))
+
+
 def _voces_tick(conn, tg: TelegramClient, settings: Settings, ahora=None) -> None:
     """En cada vuelta de la escucha: si las voces de Gemini de hoy (con Lo Encontré) llegan a
     efemerides.tts_aviso, le avisa a Santi (una vez por día y clave)."""
@@ -4915,6 +4936,19 @@ def _efe_armar(conn, tg: TelegramClient, chat_id, token: str, settings: Settings
     if bitacora.activa() != token:
         bitacora.retomar(conn, token) or bitacora.abrir(conn, token, "pequena_historia",
                                                         "latinoamerica" if fb else "tecnologia")
+    # Estándar de calidad (Santi, 2026-11-16; ESTANDAR_CALIDAD.md): Claude mira la hoja (cada frase con su foto)
+    # contra las reglas ANTES de gastar la voz; las fotos que no pasan se cambian solas y lo que quede se avisa.
+    from . import calidad
+
+    try:
+        prop, cal_fallas, cal_corregidas, cal_revisado = calidad.revisar_ph(
+            _claude_textos(settings)[0], prop, Path(estado["carpeta"]), avisar=log.info)
+    except Exception as err:  # noqa: BLE001 — la revisión nunca frena el video
+        log.warning("estándar de calidad (Pequeña Historia): %s", err)
+        cal_fallas, cal_corregidas, cal_revisado = [], [], False
+    if cal_corregidas:
+        estado = {**estado, "propuesta": prop.__dict__}
+        db.set_valor(conn, f"efe:{token}", json.dumps(estado, ensure_ascii=False))
     try:
         meta = ef.hacer_video(prop, settings, Path(estado["carpeta"]), avisar=log.info, conn=conn,
                               cliente=(_claude_textos(settings)[0] if fb else
@@ -4949,6 +4983,12 @@ def _efe_armar(conn, tg: TelegramClient, chat_id, token: str, settings: Settings
                       "📅 <b>Pequeña Historia</b> — subilo al canal de efemérides")
     if relajado:
         encabezado += "\n" + html.escape(relajado)
+    aviso_fotos = meta.get("efemeride", {}).get("aviso_fotos") or ""
+    codigo = [("PH-21", aviso_fotos)] if aviso_fotos else []
+    calidad.anotar(conn, "pequena_historia", meta["clip_id"], cal_fallas, cal_corregidas, codigo, cal_revisado,
+                   dia=calidad.hoy_ar())
+    encabezado += "\n" + calidad.texto_estandar("pequena_historia", cal_fallas, cal_corregidas,
+                                                [f"{i} {q}" for i, q in codigo], revisado=cal_revisado)
     enviar_clip(tg, chat_id, conn, meta["clip_id"], meta, 1, None,
                 encabezado=f"{encabezado}\n🎙 {html.escape(ef.texto_voz(motor))}", extra_filas=extra)
     bitacora.cerrar(conn, "programado" if auto else "entregado")
