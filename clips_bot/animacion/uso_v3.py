@@ -241,6 +241,9 @@ def escena_plata(tipo: str, dur: float, manga: str = "", seed: int = 0) -> dict:
             kf.append(_k(dur, y=Y0 + dy, easing="suave"))
         sfx += [(round(t_toca, 3), "tac"), (round(t_toca + 1.1, 3), "ding")]
         els += _manos(izq, der, manga or "#3d4f7a", "#5a3d2b")
+        for el in els:
+            if el.get("nombre") == "mano":
+                el["escala"] = 1.45          # el apretón tiene que leerse en un segundo: grande y de cerca
         els += ac.destellos(t_toca + 1.0, rnd, (X0, Y0 - 150), n_=4)
     else:                              # firmar: la lapicera escribe la firma mientras la otra mano sostiene el papel
         t0, t1 = dur * 0.18, dur * 0.85
@@ -260,5 +263,6 @@ def escena_plata(tipo: str, dur: float, manga: str = "", seed: int = 0) -> dict:
                _k(t0 * 0.8, x=X0 - 300, y=Y0 + 90, rotacion=40, fase=0.4, easing="salida")]
         sfx += [(round(t0, 3), "tac"), (round(t1, 3), "ding")]
         els += _manos(izq, der, manga)
-    cam = [_k(0, zoom=1.0), _k(dur, zoom=1.06, easing="suave")]
+    cam = ([_k(0, zoom=1.3, y=Y0 - 960), _k(dur, zoom=1.42, y=Y0 - 960, easing="suave")] if tipo == "apreton_manos"
+           else [_k(0, zoom=1.0), _k(dur, zoom=1.06, easing="suave")])
     return {"elementos": els, "fondo": None, "camara": cam, "sfx": sorted(sfx), "actores": []}
