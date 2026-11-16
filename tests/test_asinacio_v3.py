@@ -216,3 +216,36 @@ def test_ningun_objeto_antes_de_que_exista():
     assert "celular" not in nombres and "telefono_disco" not in nombres and "tele" not in nombres
     esc_d, _ = ac.escena_accion({**spec, "objetos": spec["objetos"][:1]}, 3.0, 2, anio=1938, protagonista="celular")
     assert "celular" in {el.get("nombre") for el in esc_d["elementos"]}     # el protagonista, siempre
+
+
+def test_una_regla_de_estilo_no_frena_el_video_y_se_avisa():
+    """Santi, 2026-11-16: el guion del Tupper falló 8 veces por "presentá a Brownie Wise": solo los datos verdaderos y la
+    seguridad frenan un video; el estilo sale con aviso."""
+    from types import SimpleNamespace as NS
+
+    d0 = guion()
+    llamadas = []
+
+    class Cli:
+        def json(self, *a, **k):
+            llamadas.append(1)
+            return json.dumps(d0)
+
+    import clips_bot.animacion.marcas as mk
+    errores = [["presentá en pocas palabras: Brownie Wise"], ["entre frases y locutor son 101 palabras"],
+               ["presentá en pocas palabras: Brownie Wise"]]
+    orig_v, orig_c = mk.validar_guion, mk.chequear_calidad
+    try:
+        mk.validar_guion = lambda d, m, f, g=None: errores[min(len(llamadas) - 1, 2)]
+        mk.chequear_calidad = lambda *a, **k: []
+        e = NS(marca=NS(nombre="Tupperware", pais="EE.UU."), angulo="origen", dato="")
+        mk.ANGULOS.setdefault("origen", "origen")
+        d = mk.escribir_guion(Cli(), e, "texto", reintentos=3)
+        assert d["_estilo_pendiente"] and "⚠️ salió sin cumplir" in mk.aviso_estilo(d)
+        mk.validar_guion = lambda d, m, f, g=None: ["esto no está en el artículo de Wikipedia: 818 millones"]
+        llamadas.clear()
+        with pytest.raises(mk.GuionInvalido):     # un dato inventado sí frena
+            mk.escribir_guion(Cli(), e, "texto", reintentos=2)
+        assert mk.bloquea("nada de temas sensibles (aparece: muerte)") and not mk.bloquea("presentá a Brownie Wise")
+    finally:
+        mk.validar_guion, mk.chequear_calidad = orig_v, orig_c

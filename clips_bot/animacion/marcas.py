@@ -1495,6 +1495,7 @@ def escribir_guion(cliente, e: Elegido, fuente: str, reintentos: int = 6, avisar
     # escenas o los campos a cambiar; recién con CORRECCIONES_MAX correcciones fallidas seguidas, el guion
     # entero de nuevo. Cada pedido (entero o corrección) cuenta como un intento.
     correccion, ultimo, d, puntuales = "", [], None, 0
+    mejor: tuple[dict, list[str]] | None = None     # el mejor sin errores de datos ni de seguridad (Santi, 2026-11-16)
     for intento in range(reintentos):
         try:
             if d is not None and ultimo and puntuales < correcciones.CORRECCIONES_MAX:
@@ -1518,12 +1519,37 @@ def escribir_guion(cliente, e: Elegido, fuente: str, reintentos: int = 6, avisar
             ultimo = chequear_calidad(revisor, d, e.marca)
         if not ultimo:
             return d
+        if not any(bloquea(x) for x in ultimo) and (mejor is None or len(ultimo) < len(mejor[1])):
+            mejor = (json.loads(json.dumps(d)), list(ultimo))
         avisar(f"guion de {e.marca.nombre} ({e.angulo}), intento {intento + 1}"
                f"{' (corrección puntual)' if puntuales else ''}: {'; '.join(ultimo)[:400]}")
         if puntuales >= correcciones.CORRECCIONES_MAX:
             correccion = ("\n\nTU GUION ANTERIOR:\n" + describir(d) +
                           "\n\nNO SIRVIÓ POR ESTO (corregilo y devolvé el guion entero):\n- " + "\n- ".join(ultimo))
+    if mejor is not None:
+        # Santi, 2026-11-16 (8 intentos fallidos por "presentá a Brownie Wise"): solo los datos verdaderos y la
+        # seguridad frenan un video; si una regla de estilo no se cumplió, el video sale igual y se avisa cuál.
+        d, pendientes = mejor
+        d["_estilo_pendiente"] = pendientes
+        avisar(f"guion de {e.marca.nombre}: sale con reglas de estilo sin cumplir: {'; '.join(pendientes)[:300]}")
+        return d
     raise GuionInvalido(f"{e.marca.nombre} ({e.angulo}): {'; '.join(ultimo)[:400]}")
+
+
+# Lo único que frena un video (Santi, 2026-11-16): un dato que no está en la fuente, un tema sensible, o un guion que
+# técnicamente no se puede armar. Todo lo demás (estilo) sale con aviso.
+_BLOQUEA = re.compile(r"no está en el artículo|NO está en el|temas sensibles|escena sin frase|faltan las escenas|"
+                      r"respuesta que no es JSON|Claude \(|sin escenas", re.I)
+
+
+def bloquea(error: str) -> bool:
+    return bool(_BLOQUEA.search(str(error or "")))
+
+
+def aviso_estilo(d: dict) -> str:
+    """Lo que el video no cumplió de las reglas de estilo (sale igual; Santi, 2026-11-16)."""
+    pend = [str(x) for x in d.get("_estilo_pendiente") or []]
+    return ("⚠️ salió sin cumplir estas reglas de estilo: " + "; ".join(p_[:140] for p_ in pend))[:600] if pend else ""
 
 
 def guardar_acciones_nuevas(d: dict) -> None:
@@ -2771,7 +2797,7 @@ def armar_video(conn, settings, carpeta: Path, cliente=None, wiki=None, hoy: dat
         articulo=f"https://es.wikipedia.org/wiki/{e.marca.wiki_es.replace(' ', '_')}",
         render_s=tiempos["render_s"], total_s=round(time.time() - t_total, 1),
         costo_usd=costo_desde(conn, fila0), tiempos=tiempos, revision=revision, flojas=flojas, niveles=niv,
-        aviso=e.aviso, banco_id=e.banco_id)
+        aviso=" · ".join(x for x in (e.aviso, aviso_estilo(d)) if x), banco_id=e.banco_id)
 
 
 # ---- 8. a Telegram (sin subir a ningún lado) -----------------------------------------------------
