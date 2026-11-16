@@ -181,7 +181,7 @@ class Elemento:
                 t += rnd.uniform(2.0, 4.0)
         if tipo == "personaje":
             for gs in d.get("gestos", []):
-                if gs.get("gesto") not in per.GESTOS:
+                if not per.gesto_valido(gs.get("gesto")):
                     nuevo = esc.parecido(str(gs.get("gesto") or ""), list(per.GESTOS), defecto=list(per.GESTOS)[0])
                     log.warning("%s: gesto %r desconocido, va %r", donde, gs.get("gesto"), nuevo)
                     gs["gesto"] = nuevo

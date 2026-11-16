@@ -879,9 +879,18 @@ def prop_caja_registradora(fase: float = 0.0, **_) -> str:
             + "".join(circulo(-80 + (k % 4) * 54, 10 + (k // 4) * 40, 14, "#f4f1ea", ancho=3) for k in range(8)))
 
 
-def prop_papel_firma(fase: float = 0.0, **_) -> str:
-    """Un contrato o un cheque con la firma que se va escribiendo (`fase` 0..1)."""
+def prop_papel_firma(fase: float = 0.0, forma: int = 0, **_) -> str:
+    """Un contrato o un cheque con la firma que se va escribiendo (`fase` 0..1). `forma` 1 = apoyado sobre una mesa,
+    visto un poco desde arriba (un trapecio chato: el contrato sobre la mesa del apretón, Santi 2026-11-16)."""
     f = max(0.0, min(1.0, float(fase or 0.0)))
+    if int(forma or 0) == 1:
+        hoja = camino("M-118 -62 L118 -62 L150 0 L-150 0 Z", "#fbf7ec", ancho=5)
+        sombra = camino("M-150 0 L150 0 L146 8 L-146 8 Z", "#d9d2c0", borde=False)
+        renglones = "".join(f'<path d="M{-112 + k * 6} {-50 + k * 11} L{(96 if k % 2 else 70) + k * 6} {-50 + k * 11}" '
+                            f'stroke="#9aa0ab" stroke-width="4" stroke-linecap="round"/>' for k in range(3))
+        firma = (f'<path d="M20 -12 C35 -30 45 -2 62 -16 S90 -26 110 -10" fill="none" stroke="#1d3a8a" stroke-width="5" '
+                 f'stroke-linecap="round"/><path d="M-60 -8 L10 -8" stroke="#5a6070" stroke-width="3"/>')
+        return sombra + hoja + renglones + firma
     renglones = "".join(f'<path d="M-120 {-110 + k * 34} L{120 - (k % 3) * 30} {-110 + k * 34}" stroke="#9aa0ab" '
                         f'stroke-width="6" stroke-linecap="round"/>' for k in range(5))
     largo = 420 * f
@@ -1459,6 +1468,66 @@ def _mano_detalle(forma: int = 1, color: str = "", fase: float = 0.0, manga: str
     return manga_svg + puño + pulgar + palma + lado_sombra + tendones + nudillos + dedos
 
 
+def prop_apreton(manga: str = "", color: str = "", forma: int = 1, **_) -> str:
+    """Dos manos que se dan un apretón, vistas DE COSTADO (Santi, 2026-11-16: "puño contra puño no; la palma de una
+    contra la palma de la otra, los dedos envolviendo la mano del otro y los pulgares cruzados arriba"). La de la
+    izquierda (manga `manga`) muestra el dorso con sus cuatro dedos doblados sobre la mano de la derecha (manga
+    `color`); los dedos de la derecha la envuelven por atrás y se asoman abajo; los dos pulgares se cruzan arriba.
+    El centro (0, 0) es donde se juntan las palmas. `forma` 0 = mangas cortas (para el plano medio, sobre los brazos
+    de los personajes)."""
+    m_izq = manga if isinstance(manga, str) and manga.startswith("#") else "#3d4f7a"
+    m_der = color if isinstance(color, str) and color.startswith("#") else "#5a3d2b"
+    largo = 420 if int(forma if forma is not None else 1) else 110
+    p1, p2 = P.PIEL[0], P.PIEL[1]
+    s1, s2 = oscurecer(p1, 0.16), oscurecer(p2, 0.16)
+    blanco = "#f4f1ea"
+
+    def manga_(x0: float, y0: float, alto: float, c: str, lado: int) -> str:
+        x = x0 if lado > 0 else x0 - largo
+        return (rect(x, y0, largo, alto, c, r=22)
+                + camino(f"M{n(x + 6)} {n(y0 + alto * 0.68)} L{n(x + largo - 6)} {n(y0 + alto * 0.68)} "
+                         f"L{n(x + largo - 6)} {n(y0 + alto - 6)} L{n(x + 6)} {n(y0 + alto - 6)} Z",
+                         oscurecer(c, 0.22), borde=False)
+                + f'<path d="M{n(x + 20)} {n(y0 + alto * 0.3)} L{n(x + largo - 20)} {n(y0 + alto * 0.3)}" '
+                  f'stroke="{oscurecer(c, 0.3)}" stroke-width="4" opacity="0.6"/>')
+
+    def puno(x: float, y0: float, alto: float, lado: int) -> str:
+        return (rect(x - 26, y0, 52, alto, blanco, r=12, ancho=5)
+                + circulo(x + lado * 4, y0 + alto * 0.62, 6, "#d8d2c4", ancho=3))
+
+    out = []
+    # la de la DERECHA, atrás: manga, puño, la mano (su palma contra la otra) y la punta de sus dedos asomando abajo
+    out.append(manga_(170, -72, 150, m_der, 1))
+    out.append(puno(160, -64, 136, 1))
+    out.append(camino("M150 -60 C90 -70 30 -64 -6 -50 C-14 -10 -14 30 -6 64 C40 74 100 74 150 66 Z", p2, ancho=5))
+    out.append(camino("M150 30 C100 40 40 44 -6 40 L-6 64 C40 74 100 74 150 66 Z", s2, borde=False))
+    for cx, cy, rot in ((-92, 60, 20), (-62, 70, 10), (-32, 74, 0)):
+        out.append(g(elipse(0, 0, 17, 13, p2, ancho=4), cx, cy, rot=rot))
+    # la de la IZQUIERDA, adelante: manga, puño y el dorso de la mano
+    out.append(manga_(-170, -68, 144, m_izq, -1))
+    out.append(puno(-160, -60, 128, -1))
+    # el dorso: angosto en la muñeca, ancho y abombado en los nudillos (no una tabla)
+    out.append(camino("M-150 -46 C-96 -52 -36 -72 26 -64 C62 -58 78 -30 78 0 C78 30 62 56 28 62 "
+                      "C-34 68 -94 56 -150 50 Z", p1, ancho=5))
+    out.append(camino("M-150 24 C-94 32 -30 42 40 40 C66 38 76 22 78 6 C78 30 62 56 28 62 C-34 68 -94 56 -150 50 Z",
+                      s1, borde=False))
+    out.append(f'<path d="M-128 -42 C-80 -50 -24 -66 30 -56" fill="none" stroke="{aclarar(p1, 0.45)}" '
+               f'stroke-width="8" stroke-linecap="round" opacity="0.8"/>')
+    out.append("".join(f'<path d="M-118 {n(y * 0.4)} Q-40 {n(y * 0.7)} 40 {y}" fill="none" stroke="{s1}" '
+                       f'stroke-width="3.5" stroke-linecap="round" opacity="0.5"/>' for y in (-30, -6, 18)))
+    out.append(f'<path d="M-140 -10 q 6 10 0 22" fill="none" stroke="{s1}" stroke-width="3" opacity="0.6"/>')
+    # sus cuatro dedos doblados por encima de la mano de la derecha (se ven el dorso y las uñas)
+    for (x, y, largo_d, ancho_d, rot) in ((54, -36, 74, 24, 104), (62, -12, 82, 24, 100), (62, 12, 78, 23, 97),
+                                          (54, 36, 62, 20, 94)):
+        out.append(g(_dedo(largo_d, ancho_d, p1), x, y, rot=rot))
+    for y in (-36, -12, 12, 36):          # los nudillos
+        out.append(elipse(54 if abs(y) > 20 else 60, y, 10, 11, s1, borde=False))
+    # los pulgares cruzados arriba: el de la izquierda va hacia la derecha y el de la derecha, por encima, hacia la izq.
+    out.append(g(_dedo(112, 28, p1, nudillos=1), -14, -40, rot=60))
+    out.append(g(_dedo(116, 28, p2, nudillos=1), 110, -36, rot=-58))
+    return "".join(out)
+
+
 def prop_mostrador(**_) -> str:
     """El mostrador de la tienda (el vendedor queda detrás)."""
     return (rect(-200, -120, 400, 240, "#8a5a2b", r=10) + rect(-215, -140, 430, 34, "#a8714a", r=8)
@@ -1604,7 +1673,8 @@ PROPS = {"reloj_gigante": prop_reloj_gigante, "mano": prop_mano, "mostrador": pr
          "control": prop_control, "engranaje": prop_engranaje, "camion": prop_camion,
          "celular": prop_celular, "corona": prop_corona, "cohete": prop_cohete,
          "idea_fallida": prop_bombilla_rota, "rayos": prop_rayos,
-         "caja_registradora": prop_caja_registradora, "papel_firma": prop_papel_firma, "lapicera": prop_lapicera}
+         "caja_registradora": prop_caja_registradora, "papel_firma": prop_papel_firma, "lapicera": prop_lapicera,
+         "apreton": prop_apreton}
 
 
 def _palabras(t: str) -> set[str]:

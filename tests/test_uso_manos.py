@@ -135,7 +135,7 @@ def test_la_plata_con_acciones_reales():
     for tipo in uso_v3.PLATA:
         h = uso_v3.escena_plata(tipo, 3.0)
         nombres = {el["nombre"] for el in h["elementos"]}
-        assert "mano" in nombres and not nombres & {"moneda", "bolsa_plata"}, tipo
+        assert ("apreton" if tipo == "apreton_manos" else "mano") in nombres and not nombres & {"moneda", "bolsa_plata"}, tipo
         Video.desde_dict({"fps": 30, "escenas": [{"duracion": 3.0, "fondo": "oficina", "elementos": h["elementos"]}]})
     assert "caja_registradora" in {el["nombre"] for el in uso_v3.escena_plata("abrir_caja", 3.0)["elementos"]}
     d = guion()
@@ -186,7 +186,7 @@ def test_el_apreton_empieza_con_las_dos_personas():
     primer plano del apretón."""
     h = uso_v3.escena_plata("apreton_manos", 3.4)
     personas = [el for el in h["elementos"] if el.get("tipo") == "personaje"]
-    manos = [el for el in h["elementos"] if el.get("nombre") == "mano"]
+    manos = [el for el in h["elementos"] if el.get("nombre") == "apreton" and el.get("escala", 1) > 1]
     assert len(personas) == 2 and all(p_["hasta"] == manos[0]["desde"] for p_ in personas)
     assert any(el.get("nombre") == "papel_firma" for el in h["elementos"])
     assert any(k.get("easing") == "escalon" for k in h["camara"])               # el corte al primer plano

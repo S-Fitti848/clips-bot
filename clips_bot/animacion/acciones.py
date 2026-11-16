@@ -1205,7 +1205,9 @@ def dejar_lugar_a_tito(elementos: list[dict], lado: str) -> None:
     """En una escena de la biblioteca que sigue con la pausa de Tito: los personajes terminan (en orden, sin
     pisarse) en la parte de la pantalla que Tito no ocupa; si no entran todos, se van los del lado de Tito.
     Cada uno se corre entero (su caminata también), así no cambia cómo se mueve."""
-    pj = [el for el in elementos if el.get("tipo") == "personaje" and not el.get("multitud")]
+    # los que se van antes del final (el plano medio del apretón) no están cuando entra Tito: no se tocan (correrlos
+    # por separado los alejaba de su mesa y sus manos no se juntaban, 2026-11-16)
+    pj = [el for el in elementos if el.get("tipo") == "personaje" and not el.get("multitud") and "hasta" not in el]
     if not pj:
         return
 

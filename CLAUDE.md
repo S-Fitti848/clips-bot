@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-11-16 | **Versión:** v1.23.0 (desplegado) | **Modo:** Fase 2: corriendo solo en la Pi. **Rots APAGADO.** Pequeña Historia (3 por día, madrugada desde las 04:00) (publicación sin aprobar: llegan con ❌ Cancelar) y **Así Nació** (2 por día, desde las 07:00, publican 13:00 y 20:00 en YouTube y Facebook con ❌ Cancelar), todo al privado de Santi
+**Snapshot:** 2026-11-16 | **Versión:** v1.24.0 (desplegado) | **Modo:** Fase 2: corriendo solo en la Pi. **Rots APAGADO.** Pequeña Historia (3 por día, madrugada desde las 04:00) (publicación sin aprobar: llegan con ❌ Cancelar) y **Así Nació** (2 por día, desde las 07:00, publican 13:00 y 20:00 en YouTube y Facebook con ❌ Cancelar), todo al privado de Santi
 
 > **SI ESTÁS EMPEZANDO UNA SESIÓN NUEVA, LEÉ §10.** Ahí está qué está hecho, qué quedó a medias,
 > qué falta, y las trampas que ya nos mordieron.
@@ -980,7 +980,7 @@ clips_bot/voces.py       voces de Gemini de hoy por clave (con Lo Encontré) y e
 clips_bot/prueba_manual.py prueba manual vs API (§1): el clip del día a mano, registro e informe del feed
 clips_bot/envivo.py      modo en vivo (§3b): quién está al aire, momentos por creadores distintos,
                          alertas en la DB (no repetir, tope, vencer) y el resumen de tiempos
-tests/                   1611 tests sin red ni video (conftest.py: nada sale a YouTube, Facebook ni ElevenLabs) (test_reglas_fijas.py: las 3 reglas de §1)
+tests/                   1629 tests sin red ni video (conftest.py: nada sale a YouTube, Facebook ni ElevenLabs) (test_reglas_fijas.py: las 3 reglas de §1)
 ```
 
 Comandos:
@@ -1173,6 +1173,16 @@ Problemas abiertos:
 
 ## 9. CHANGELOG
 
+- v1.24.0 (2026-11-16, noche) — **Así Nació: el apretón rehecho y `uso_manos` PRENDIDO** (Santi: "parece un saludo
+  con el codo"; "puño contra puño"). Plano medio: las dos personas a 190 px del medio (antes se corrían por separado
+  para dejarle lugar a Tito y se alejaban de su mesa: `dejar_lugar_a_tito` ya no toca a los que se van antes del
+  final), detrás de la mesa con el contrato apoyado (`papel_firma` con `forma` 1, visto desde arriba; la mesa sin
+  `decorado`, que la mandaba detrás de los personajes), y cada brazo calculado para llegar justo al medio
+  (`personajes.brazo_hacia`, gestos `brazo_der:H:C` / `brazo_izq:H:C`, `gesto_valido`), con las manos enganchadas en
+  chico encima. Primer plano: dibujo nuevo `apreton` (de costado: palma contra palma, los dedos de una envolviendo la
+  otra, los de la otra asomando abajo, los pulgares cruzados arriba) con 2-3 sacudidas de arriba abajo. Hoja de la
+  escena 7 mandada a Santi (`output/animacion/prueba_apreton_v5` en la Pi, sin guion ni voz nuevos).
+  `animacion.uso_manos: true` desde el video del 17/11 a las 07:00 (lo revisa con ❌ Cancelar). `PENDIENTES.md` nuevo.
 - v1.23.0 (2026-11-16, noche) — **Así Nació: el estilo ya no frena un video** (Santi, después de que el Tupper fallara
   8 veces por "presentá a Brownie Wise"): solo frenan los datos que no están en el artículo, los temas sensibles y las
   fallas técnicas (`marcas.bloquea`); si una regla de estilo sigue sin cumplirse después de las correcciones, sale el
@@ -2932,7 +2942,7 @@ clips" queda sin uso mientras Rots siga apagado.
 |---|---|
 | Rots | **APAGADO desde 2026-11-14** (`publicacion.rots: false`; código y canal intactos; /buscar a mano sigue). Al prenderlo vuelve con `render.edicion_rots`, `publicacion.subir_solo`, `textos.motor: claude`, etc. |
 | Pequeña Historia | 3 por día: `efemerides.tema: tecnologia` + `corto` (20-30 s, solo YouTube) y `historias_fb.por_dia: 2` (30-40 s, YouTube + Facebook); `imagen_frase`, `formato_corto`, `videos`; gancho primero, intriga en la 2.ª, año/lugar en la 3.ª-4.ª, revisión del final; **escenas ilustrativas también en las frases centrales** (`ESCENAS_EN_CENTRALES`); humor suave cuando se puede; mapa sincronizado con la voz (solo con `estilo_nuevo`); `efemerides.chat` / `historias_fb.chat` = privado de Santi |
-| Así Nació | `animacion.activo / subir / facebook: true`, `hora: 07:00`, `horas_publicacion: [13:00, 20:00]` (2 por día, marcas distintas), `max_tokens: 32000`, `reintentos_guion: 8`, `candidatos: 14`, motor actual (SVG → cairosvg); reglas permanentes de v0.96.0 a v0.98.0 (acción, gancho en cadena, Tito con pausa en gris, viaje en el tiempo en sepia, composición verificada, revisión visual, ritmo 32-38 s con voz ×1,065, subtítulos arriba) |
+| Así Nació | `animacion.activo / subir / facebook / reglas_v3: true`, `uso_manos: true` (desde el 17/11: uso con las manos, inspiración, contar billetes, caja, apretón, firma), `hora: 07:00`, `horas_publicacion: [13:00, 20:00]` (2 por día, marcas distintas), `max_tokens: 32000`, `reintentos_guion: 8`, `candidatos: 14`, motor actual (SVG → cairosvg); reglas permanentes de v0.96.0 a v0.98.0 (acción, gancho en cadena, Tito con pausa en gris, viaje en el tiempo en sepia, composición verificada, revisión visual, ritmo 32-38 s con voz ×1,065, subtítulos arriba) |
 | Claude | Sonnet elige, puntúa, escribe guiones, revisa el final, elige fotos y revisa los cuadros de Así Nació; Haiku clasifica y chequea; Gemini SOLO voces y audio (y de respaldo) |
 | subidas | YouTube: Pequeña Historia, Así Nació (y Rots, apagado); Facebook: página de Pequeña Historia y página de Así Nació. La app de Meta (clips-bot) estaba en modo desarrollo en octubre: si sigue así, el público no ve los Reels (pasarla a Live es de Santi) |
 | apagado | Rots; `efemerides.sin_aprobar` (espera el OK de Santi; `estilo_nuevo` PRENDIDO el 15/11); ElevenLabs (sin clave ni voz); multi-POV; prueba manual vs API; portadas con IA |

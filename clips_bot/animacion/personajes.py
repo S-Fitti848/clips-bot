@@ -80,8 +80,40 @@ GESTOS: dict[str, dict] = {
 }
 
 
+def brazo_hacia(dx: float, dy: float) -> tuple[float, float]:
+    """(hombro, codo) para que la mano llegue a (dx, dy) desde el hombro, en coordenadas locales del personaje (dx
+    hacia afuera, dy hacia abajo), con el codo para abajo. Si no llega, el brazo estirado hacia ese punto."""
+    l1, l2 = Personaje.LARGO_BRAZO, Personaje.LARGO_ANTEBRAZO
+    d = max(1.0, min(l1 + l2 - 0.5, math.hypot(dx, dy)))
+    fi = math.atan2(dx, dy)
+    alfa = math.acos(max(-1.0, min(1.0, (l1 * l1 + d * d - l2 * l2) / (2 * l1 * d))))
+    h = fi - alfa
+    ex, ey = l1 * math.sin(h), l1 * math.cos(h)
+    tx, ty = d * math.sin(fi), d * math.cos(fi)
+    a2 = math.atan2(tx - ex, ty - ey)
+    return round(math.degrees(h), 1), round(math.degrees(a2 - h), 1)
+
+
+def gesto_valido(nombre) -> bool:
+    return isinstance(nombre, str) and (nombre in GESTOS or _gesto_brazo(nombre) is not None)
+
+
+def _gesto_brazo(nombre: str) -> dict | None:
+    """'brazo_der:H:C' / 'brazo_izq:H:C' = ese brazo en (hombro H, codo C) y el otro en reposo: el apretón del plano
+    medio calcula el ángulo exacto para que las dos manos se junten en el medio (`brazo_hacia`)."""
+    partes = nombre.split(":")
+    if len(partes) != 3 or partes[0] not in ("brazo_der", "brazo_izq"):
+        return None
+    try:
+        ang = (float(partes[1]), float(partes[2]))
+    except ValueError:
+        return None
+    reposo = GESTOS["reposo"]["izq"]
+    return {"izq": ang, "der": reposo} if partes[0] == "brazo_izq" else {"izq": reposo, "der": ang}
+
+
 def estado_de_gesto(nombre: str, base: Estado | None = None) -> Estado:
-    gs = GESTOS.get(nombre, GESTOS["reposo"])
+    gs = GESTOS.get(nombre) or _gesto_brazo(str(nombre)) or GESTOS["reposo"]
     e = base or Estado()
     return replace(e, brazo_izq=tuple(gs["izq"]), brazo_der=tuple(gs["der"]),
                    cejas=gs.get("cejas", "normal"))

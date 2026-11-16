@@ -628,6 +628,10 @@ animacion:
   # producto en uso con las manos, 2 planos por frase, textos sin repetirse, decorado y mejora continua. PRENDIDO el
   # 16/11 después del tercer Tupper de prueba (prueba_tupper_v3c).
   reglas_v3: true
+  # Escenas de uso con las manos, inspiración animada y la plata con acciones reales (contar billetes, caja,
+  # apretón, firma; uso_v3.py). PRENDIDO por Santi el 16/11 (noche) después de la hoja del apretón rehecho: desde el
+  # video del 17/11 a las 07:00, que revisa con ❌ Cancelar.
+  uso_manos: true
   hora_publicacion: "19:00"
   # 2 videos por día (Santi, 2026-11-15), de marcas distintas: el primero se arma desde las 07:00 y el
   # segundo apenas termina el primero; cada uno se programa en su horario.

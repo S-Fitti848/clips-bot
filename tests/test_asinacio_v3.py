@@ -249,3 +249,39 @@ def test_una_regla_de_estilo_no_frena_el_video_y_se_avisa():
         assert mk.bloquea("nada de temas sensibles (aparece: muerte)") and not mk.bloquea("presentá a Brownie Wise")
     finally:
         mk.validar_guion, mk.chequear_calidad = orig_v, orig_c
+
+
+def test_apreton_las_manos_se_juntan_en_el_medio_y_se_ve_enganchado():
+    """Santi, 2026-11-16 ("parece un saludo con el codo"; "puño contra puño"): en el plano medio cada brazo llega
+    justo al medio, encima de la mesa con el contrato (delante de los dos); en el primer plano, el dibujo de las manos
+    enganchadas de costado, con 2 o 3 sacudidas de arriba abajo."""
+    from clips_bot.animacion import acciones as ac, personajes as per, uso_v3
+
+    d = uso_v3.escena_plata("apreton_manos", 3.4, seed=1)
+    els = d["elementos"]
+    pjs = [el for el in els if el.get("tipo") == "personaje"]
+    assert len(pjs) == 2 and all("hasta" in el for el in pjs)
+    mesa = next(el for el in els if el.get("nombre") == "mesa")
+    assert not mesa.get("decorado") and els.index(mesa) > max(els.index(p_) for p_ in pjs)
+    chica = next(el for el in els if el.get("nombre") == "apreton" and el.get("escala", 1) < 0.5)
+    for el in pjs:
+        gesto = el["gestos"][-1]["gesto"]
+        assert per.gesto_valido(gesto)
+        e = per.estado_de_gesto(gesto)
+        brazo = per.personaje(el["nombre"], **el.get("cambios", {})).brazos(e)[0 if gesto.startswith("brazo_izq") else 1]
+        mx = el["x"] + brazo[-1][0] * el["escala"]
+        my = ac.PISO + brazo[-1][1] * el["escala"]
+        assert abs(mx - chica["x"]) < 6 and abs(my - chica["y"]) < 6, (el["nombre"], mx, my)
+    grande = next(el for el in els if el.get("nombre") == "apreton" and el.get("escala", 1) > 1)
+    ys = [k["y"] for k in grande["keyframes"] if "y" in k]
+    arriba = sum(1 for y in ys if y < uso_v3.Y0 - 30)
+    assert 2 <= arriba <= 3
+
+
+def test_dejar_lugar_a_tito_no_corre_a_los_que_se_van_antes():
+    from clips_bot.animacion import acciones as ac, uso_v3
+
+    d = uso_v3.escena_plata("apreton_manos", 3.4, seed=1)
+    antes = [el["x"] for el in d["elementos"] if el.get("tipo") == "personaje"]
+    ac.dejar_lugar_a_tito(d["elementos"], "izquierda")
+    assert [el["x"] for el in d["elementos"] if el.get("tipo") == "personaje"] == antes

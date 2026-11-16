@@ -19,6 +19,7 @@ from . import paleta as P
 PASOS = ("agarrar", "abrir_tapa", "meter", "cerrar_tapa", "apretar", "amasar", "moldear", "girar", "apilar")
 CON_TAPA = {"abrir_tapa", "meter", "cerrar_tapa", "apretar"}
 X0, Y0 = 540, 1180            # el producto, de cerca, en el centro
+SEP_TRATO = 190               # en el apretón, cada persona a esta distancia del medio (cerca, del otro lado de la mesa)
 ESCALA = 1.9                  # los dibujos miden ~200 px: el producto ocupa ~380 px
 SEP_MANO = 230                # las manos, a los costados del cuerpo
 PASO_MIN_S = 0.55
@@ -243,46 +244,61 @@ def escena_plata(tipo: str, dur: float, manga: str = "", seed: int = 0, spec: di
         sfx += [(round(t_tecla, 3), "tac"), (round(t_abre, 3), "caja_registradora")]
         els += _manos(izq, der, manga)
     elif tipo == "apreton_manos":
-        # Santi, 2026-11-16 ("nunca dos manos solas"): primero un PLANO MEDIO con las dos personas (caras, ropa, la mesa
-        # con el contrato) extendiendo la mano, y después el PRIMER PLANO del apretón.
+        # Santi, 2026-11-16 ("nunca dos manos solas"; "parece un saludo con el codo"; "puño contra puño"): primero un
+        # PLANO MEDIO con las dos personas CERCA, detrás de la mesa con el contrato grande, y las manos que se juntan
+        # justo en el medio, encima del contrato (el ángulo de cada brazo se calcula para que lleguen); después el
+        # PRIMER PLANO de las manos enganchadas de costado (palma contra palma, los dedos envolviendo la otra mano,
+        # los pulgares cruzados arriba) con una sacudida de arriba abajo.
+        from . import personajes as per
+
         t_corte = round(dur * 0.45, 3)
         e_ = ac.Escena(dur, semilla=seed)
         actores = list((spec or {}).get("actores") or [])
         defectos = (("empresario", "hombre"), ("empresaria", "mujer"))
-        for k_, (x_, (rol_def, gen_def)) in enumerate(zip((270, 810), defectos)):
+        esc_mesa = 0.9
+        y_mesa = ac.PISO - 226 * esc_mesa          # la tapa de la mesa (sus patas llegan al piso)
+        y_mano = y_mesa - 58                       # las manos se juntan un poco arriba del contrato
+        for k_, (rol_def, gen_def) in enumerate(defectos):
             a_ = actores[k_] if k_ < len(actores) else {}
+            x_ = X0 + (SEP_TRATO if k_ else -SEP_TRATO)
             e_.actor(a_.get("rol") or rol_def, "quieto", "centro", None, "feliz", k_, x0=x_, x1=x_,
                      genero=a_.get("genero") or gen_def, edad=a_.get("edad") or "adulto")
-        esc_p = 0.74
+        ropas = []
         for k_, el in enumerate(e_.elementos):
+            s_ = float(el.get("escala", 0.74))
+            alto = float(el.get("cambios", {}).get("alto_cuerpo") or per.ELENCO.get(el.get("nombre"),
+                                                                                per.ELENCO["narrador"]).alto_cuerpo)
+            hy = -420 * alto + 38                  # el hombro, en coordenadas del personaje
+            dx = SEP_TRATO / s_ - 92               # del hombro hasta el medio (hacia el otro)
+            dy = (y_mano - ac.PISO) / s_ - hy
+            h_, c_ = per.brazo_hacia(dx, dy)
             el["hasta"] = t_corte
-            el["gestos"] = [{"t": 0, "gesto": "dar_mano" if k_ == 0 else "dar_mano_izq"}]   # se extienden la mano
-            esc_p = float(el.get("escala", esc_p))
+            el["gestos"] = [{"t": 0, "gesto": "reposo"},
+                            {"t": 0.25, "gesto": f"{'brazo_izq' if k_ else 'brazo_der'}:{h_}:{c_}"}]
+            ropas.append(el.get("cambios", {}).get("ropa") or per.ELENCO.get(el.get("nombre"),
+                                                                             per.ELENCO["narrador"]).ropa)
         els += e_.elementos
-        y_mesa = ac.PISO - 330 * esc_p           # la mesa entre los dos, a la altura de las manos, con el contrato
-        els += [_el("mesa", X0, y_mesa, escala=1.0, hasta=t_corte, decorado=True, en_medio=True),
-                _el("papel_firma", X0 - 20, y_mesa - 55, escala=0.32, fase=1.0, rotacion=-6, hasta=t_corte,
-                    decorado=True)]
-        t_toca = t_corte + (dur - t_corte) * 0.15
-        izq = [_k(0, x=X0 - 620, y=Y0, rotacion=90, fase=0.0), _k(t_corte, x=X0 - 420, y=Y0, rotacion=90, fase=0.0),
-               _k(t_toca, x=X0 - 95, y=Y0, rotacion=90, fase=0.7, easing="salida")]
-        der = [_k(0, x=X0 + 620, y=Y0 + 20, rotacion=-90, fase=0.0), _k(t_corte, x=X0 + 420, y=Y0 + 20, rotacion=-90,
-                                                                         fase=0.0),
-               _k(t_toca, x=X0 + 95, y=Y0 + 20, rotacion=-90, fase=0.7, easing="salida")]
-        n_sac = 3 if dur - t_toca > 1.2 else 2
-        for k_ in range(n_sac):
-            ta = t_toca + 0.12 + k_ * 0.28
-            for kf, dy in ((izq, 0), (der, 20)):
-                kf += [_k(ta, y=Y0 + dy - 45, easing="suave"), _k(ta + 0.14, y=Y0 + dy + 35, easing="suave")]
-        for kf, dy in ((izq, 0), (der, 20)):
-            kf.append(_k(dur, y=Y0 + dy, easing="suave"))
+        ropas += ["#3d4f7a", "#5a3d2b"]
+        # la mesa y el contrato van DELANTE de los dos (sin `decorado`, que los mandaba detrás de los personajes)
+        els += [_el("mesa", X0, y_mesa, escala=esc_mesa, hasta=t_corte, en_medio=True),
+                _el("papel_firma", X0, y_mesa + 4, escala=0.9, forma=1, hasta=t_corte),
+                # las dos manos ya enganchadas, chicas, donde se tocan (aparecen cuando los brazos llegan)
+                _el("apreton", X0, y_mano, escala=0.26, forma=0, manga=ropas[0], color=ropas[1], desde=0.5,
+                    hasta=t_corte, keyframes=[_k(0.5, y=y_mano), _k(0.75, y=y_mano - 10, easing="suave"),
+                                              _k(1.0, y=y_mano + 8, easing="suave"), _k(t_corte, y=y_mano)])]
+        t_toca = t_corte + 0.18
+        mano = _el("apreton", X0, Y0, escala=1.35, manga=manga or "#3d4f7a", color="#5a3d2b", desde=t_corte,
+                   keyframes=[_k(t_corte, y=Y0, escala=1.3, rotacion=0), _k(t_toca, escala=1.4, easing="salida")])
+        n_sac = 3 if dur - t_toca > 1.3 else 2
+        paso = min(0.3, (dur - t_toca - 0.2) / n_sac)
+        for k_ in range(n_sac):                    # la sacudida: arriba y abajo, con un poco de giro
+            ta = t_toca + 0.05 + k_ * paso
+            mano["keyframes"] += [_k(ta + paso * 0.5, y=Y0 - 55, rotacion=-4, easing="suave"),
+                                  _k(ta + paso, y=Y0 + 40, rotacion=3, easing="suave")]
+        mano["keyframes"].append(_k(min(dur, t_toca + 0.05 + n_sac * paso + 0.2), y=Y0, rotacion=0, easing="suave"))
+        els.append(mano)
         sfx += [(round(t_toca, 3), "tac"), (round(min(dur - 0.1, t_toca + 0.9), 3), "ding")]
-        manos = _manos(izq, der, manga or "#3d4f7a", "#5a3d2b")
-        for el in manos:
-            el["escala"] = 1.45          # el apretón tiene que leerse en un segundo: grande y de cerca
-            el["desde"] = t_corte        # solo en el primer plano
-        els += manos
-        els += ac.destellos(min(dur - 0.5, t_toca + 0.8), rnd, (X0, Y0 - 150), n_=4)
+        els += ac.destellos(min(dur - 0.5, t_toca + 0.8), rnd, (X0, Y0 - 200), n_=4)
     else:                              # firmar: la lapicera escribe la firma mientras la otra mano sostiene el papel
         t0, t1 = dur * 0.18, dur * 0.85
         esc_p = 2.1
