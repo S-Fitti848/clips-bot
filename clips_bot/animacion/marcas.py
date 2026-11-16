@@ -535,15 +535,17 @@ _ACTOR = {"type": "OBJECT", "properties": {
     "edad": {"type": "STRING", "enum": list(ac.EDADES)},
     "persona_real": {"type": "STRING"}},
     "required": ["rol", "accion", "desde", "hacia", "cara", "genero", "edad", "persona_real"]}
+# Sin enum (2026-11-16: con las opciones de gancho y el decorado, la gramática pasó el tope de Claude, "compiled grammar
+# is too large"): el prompt da la lista y lo que no está lo resuelve `resolver_objetos` (se dibuja o va el más parecido).
 _OBJETO = {"type": "OBJECT", "properties": {
-    "prop": {"type": "STRING", "enum": list(PROPS_GUION)},
+    "prop": {"type": "STRING"},
     "efecto": {"type": "STRING", "enum": list(ac.EFECTOS)},
     "donde": {"type": "STRING", "enum": list(ac.LADOS)},
     "soporte": {"type": "STRING", "enum": list(ac.SOPORTES)},
     "texto": {"type": "STRING"}, "dibujo": {"type": "STRING"}},
     "required": ["prop", "efecto", "donde", "soporte", "texto", "dibujo"]}
 _CADENA = {"type": "OBJECT", "properties": {
-    "prop": {"type": "STRING", "enum": sorted(ROMPIBLES)},
+    "prop": {"type": "STRING"},
     "soporte": {"type": "STRING", "enum": list(ac.SOPORTES)},
     "donde": {"type": "STRING", "enum": list(ac.LADOS)}},
     "required": ["prop", "soporte", "donde"]}
