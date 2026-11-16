@@ -95,7 +95,7 @@ class ClienteWeb:
         self._c, self.modelo, self.uso = cliente, modelo, uso
 
     def pedir(self, sistema: str, prompt: str, busquedas: int, lecturas: int = 0,
-              max_tokens: int = 8000) -> tuple[str, list[str]]:
+              max_tokens: int = 16000) -> tuple[str, list[str]]:
         """(texto final, links que aparecieron en los resultados). Anota tokens y búsquedas."""
         import anthropic
 
