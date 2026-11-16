@@ -28,8 +28,10 @@ REVISADO = "fb_reels_24h_revisado"
 CADA_S = 1800                    # se mira cada 30 min
 DESDE_H, HASTA_H = 24, 48        # se mide entre las 24 y las 48 h de publicado (nada del pasado de golpe)
 MIN_PARA_MEDIANA = 3             # con menos de 3 medidos a las 24 h, la mediana sale de los datos de hoy
-NOMBRES = {"facebook": "Pequeña Historia", "facebook_asinacio": "Así Nació"}
+NOMBRES = {"facebook": "Pequeña Historia", "facebook_asinacio": "Así Nació",
+           "facebook_comunidad": "Pequeña Historia (publicación de comunidad)"}
 CREDENCIALES = {"facebook": ("FACEBOOK_PAGE_ID", "FACEBOOK_PAGE_TOKEN"),
+                "facebook_comunidad": ("FACEBOOK_PAGE_ID", "FACEBOOK_PAGE_TOKEN"),
                 "facebook_asinacio": ("ASINACIO_FACEBOOK_PAGE_ID", "ASINACIO_FACEBOOK_PAGE_TOKEN")}
 
 
@@ -82,6 +84,32 @@ def metricas(vid: str, token: str, page_id: str, version: str, session=None,
             compartidos = int(_num((pj.get("shares") or {}).get("count")))
     out.update(reacciones=reacciones, comentarios=comentarios, compartidos=compartidos,
                interaccion=reacciones + comentarios + compartidos)
+    if publicado is not None:
+        out["seguidores_pagina"] = seguidores_pagina(s, base, page_id, token, publicado)
+    return out
+
+
+def metricas_post(post_id: str, token: str, page_id: str, version: str, session=None,
+                  publicado: datetime | None = None) -> dict:
+    """Una publicación de comunidad (foto + pregunta): cuántos la vieron, comentarios, compartidos y reacciones."""
+    from .facebook import GRAPH
+
+    s = session or requests.Session()
+    base = GRAPH.format(version=version)
+    p = s.get(f"{base}/{post_id}", timeout=30, params={
+        "access_token": token, "fields": "permalink_url,reactions.summary(true).limit(0),comments.summary(true).limit(0),shares"})
+    p.raise_for_status()
+    pj = p.json()
+    vistas = None
+    i = s.get(f"{base}/{post_id}/insights", timeout=30,
+              params={"access_token": token, "metric": "post_impressions_unique"})
+    if i.status_code == 200:
+        datos = i.json().get("data") or []
+        vistas = int(_num(((datos[0].get("values") or [{}])[0] if datos else {}).get("value")))
+    out = {"vistas": vistas, "reacciones": int(_num(((pj.get("reactions") or {}).get("summary") or {}).get("total_count"))),
+           "comentarios": int(_num(((pj.get("comments") or {}).get("summary") or {}).get("total_count"))),
+           "compartidos": int(_num((pj.get("shares") or {}).get("count"))), "link": pj.get("permalink_url", "")}
+    out["interaccion"] = out["reacciones"] + out["comentarios"] + out["compartidos"]
     if publicado is not None:
         out["seguidores_pagina"] = seguidores_pagina(s, base, page_id, token, publicado)
     return out
@@ -145,13 +173,18 @@ def _f(x, suf=""):
     return (f"{x:,}".replace(",", ".") if isinstance(x, int) else str(x).replace(".", ",")) + suf
 
 
+CAMPOS_POST = (("vistas", "Personas que la vieron", ""), ("comentarios", "Comentarios", ""),
+               ("compartidos", "Compartidos", ""), ("reacciones", "Reacciones", ""))
+
+
 def texto(canal: str, x: dict, otros: list[dict], de_hoy: bool) -> str:
     nombre = NOMBRES.get(canal, canal)
-    lineas = [f"🔧 Claude Code: 📊 <b>Reel de {nombre} a las 24 h</b>" + (f": {html.escape(x['titulo'])}" if x.get("titulo") else ""),
+    que = "Publicación" if canal == "facebook_comunidad" else "Reel"
+    lineas = [f"🔧 Claude Code: 📊 <b>{que} de {nombre} a las 24 h</b>" + (f": {html.escape(x['titulo'])}" if x.get("titulo") else ""),
               f"Gancho: «{html.escape(x.get('gancho') or '(no lo encontré)')}»",
-              f"Mediana de los otros {len(otros)} Reels del canal entre paréntesis"
+              f"Mediana de las otras {len(otros)} del canal entre paréntesis"
               + (" (todavía sin 3 medidos a las 24 h: los datos de hoy, acumulados)" if de_hoy else " (a las 24 h)") + ":"]
-    for k, nombre_k, suf in CAMPOS:
+    for k, nombre_k, suf in (CAMPOS_POST if canal == "facebook_comunidad" else CAMPOS):
         lineas.append(f"• {nombre_k}: {_f(x.get(k), suf)} ({_f(_mediana([o.get(k) for o in otros]), suf)})")
     if x.get("vistas"):
         lineas.append(f"• Cada 1.000 reproducciones: {_f(round(1000 * x['interaccion'] / x['vistas'], 1))} interacciones "

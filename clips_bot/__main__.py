@@ -2723,6 +2723,7 @@ def escuchar_telegram(settings: Settings, timeout_poll: int = 50) -> int:
             _seguro(tg, str(chat_ultimo or ""), "la prueba de la búsqueda web", _web_latam_tick, conn, tg, settings)
             _seguro(tg, str(chat_ultimo or ""), "el resumen de los Reels a las 24 h", _fb_24h_tick, conn, tg, settings)
             _seguro(tg, str(chat_ultimo or ""), "las mejoras al motor", _mejoras_motor_tick, conn, tg, settings)
+            _seguro(tg, str(chat_ultimo or ""), "la publicación de comunidad", _comunidad_tick, conn, tg, settings)
             _seguro(tg, str(chat_ultimo or ""), "el resumen semanal de costos", _costos_semana_tick, conn, tg, settings)
             _seguro(tg, str(chat_ultimo or ""), "el reintento de los clips",
                     _auto(_clips_reintento_tick), conn, settings)
@@ -3700,6 +3701,8 @@ def _medir_reel(canal: str, vid: str, publicado, settings: Settings) -> dict:
     pagina, token = (env(k, requerido=False) for k in stats_fb.CREDENCIALES[canal])
     if not pagina or not token:
         raise ValueError(f"faltan las credenciales de {canal}")
+    if canal == "facebook_comunidad":
+        return stats_fb.metricas_post(vid, token, pagina, settings.facebook.version, publicado=publicado)
     return stats_fb.metricas(vid, token, pagina, settings.facebook.version, publicado=publicado)
 
 
@@ -3745,6 +3748,61 @@ def _fb_24h_tick(conn, tg: TelegramClient, settings: Settings, ahora=None, medir
         medidos[vid] = x
         db.set_valor(conn, sf.CLAVE, json.dumps(medidos, ensure_ascii=False))
         tg.send_message(DUENO, sf.texto(canal, x, otros, de_hoy))
+
+
+COMUNIDAD_DIA = "comunidad_fb_dia"    # bot_estado: el día (AR) en que ya se programó la publicación de comunidad
+COMUNIDAD_DESDE = "10:00"
+
+
+def _comunidad_tick(conn, tg: TelegramClient, settings: Settings, ahora=None, cliente=None, wiki=None,
+                    programar=None) -> None:
+    """Pequeña Historia en Facebook (Santi, 2026-11-16): 1 publicación de comunidad por día, foto de época + pregunta,
+    programada para las 13:00 AR, con la historia de Latinoamérica de hoy (comunidad_fb.py). Un intento por día."""
+    from . import claude
+    from . import comunidad_fb as cf
+    from . import efemerides as ef
+    from .config import OUTPUT_DIR
+
+    cfg = settings.historias_fb
+    if not cfg.comunidad:
+        return
+    ahora = ahora or datetime.now(AR)
+    dia = ahora.date()
+    if ahora.strftime("%H:%M") < COMUNIDAD_DESDE or ahora.strftime("%H:%M") >= cfg.comunidad_hora \
+            or db.get_valor(conn, COMUNIDAD_DIA) == dia.isoformat():
+        return
+    historias = _latam_del_dia(conn, dia)
+    if not historias:
+        return          # todavía no salió la historia de hoy: se espera (hasta la hora de publicar)
+    db.set_valor(conn, COMUNIDAD_DIA, dia.isoformat())
+    h = historias[0]
+    historia = {"titulo": "", "texto": h.get("texto"), "anio": int(str(h.get("texto") or "0")[:4] or 0)
+                if str(h.get("texto") or "")[:4].isdigit() else 0,
+                "lugar": "", "pais": h.get("pais"), "articulo": h.get("articulo")}
+    clip_id = f"comunidad_{dia:%Y%m%d}"
+    carpeta = OUTPUT_DIR / "comunidad" / clip_id
+    try:
+        foto = cf.foto_de_la_historia(wiki or ef.Wiki(), historia, carpeta)
+        if not foto:
+            raise ValueError("la historia de hoy no tiene una foto que sirva")
+        txt = cf.escribir(cliente or claude.cliente(claude.HAIKU), historia)
+        img = cf.armar_imagen(foto[0], txt["pregunta"], foto[1], carpeta / f"{clip_id}.jpg")
+        hh, mm = (int(x) for x in cfg.comunidad_hora.split(":"))
+        cuando = datetime(dia.year, dia.month, dia.day, hh, mm, tzinfo=AR)
+        pagina, token = env("FACEBOOK_PAGE_ID", requerido=False), env("FACEBOOK_PAGE_TOKEN", requerido=False)
+        post = (programar or cf.programar)(img, cf.mensaje(txt["texto"], txt["pregunta"], foto[1]), cuando,
+                                           settings.facebook.version, pagina, token)
+        db.crear_subida(conn, clip_id, cf.CANAL, "programada", video_id=post,
+                        publish_at=cuando.astimezone(timezone.utc).isoformat().replace("+00:00", "Z"))
+        (OUTPUT_DIR / "ready").mkdir(parents=True, exist_ok=True)
+        (OUTPUT_DIR / "ready" / f"{clip_id}.json").write_text(json.dumps(
+            {"clip_id": clip_id, "textos": {"titulo": txt["pregunta"]}, "efemeride": {"guion": [txt["pregunta"]]}},
+            ensure_ascii=False), encoding="utf-8")
+        tg.send_photo(DUENO, img, html.escape(f"🔧 Claude Code: 🗣 publicación de comunidad programada para las "
+                                              f"{cfg.comunidad_hora}:\n\n{cf.mensaje(txt['texto'], txt['pregunta'], foto[1])}")[:1000])
+    except Exception as e:  # noqa: BLE001 — un día sin publicación de comunidad no frena nada
+        log.warning("publicación de comunidad: %s", e)
+        tg.send_message(DUENO, f"🔧 Claude Code: la publicación de comunidad de hoy no salió: {html.escape(str(e)[:300])}")
 
 
 MEJORAS_DIA = "mejoras_motor_dia"     # bot_estado: el día (AR) en que ya se mandaron las mejoras

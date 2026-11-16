@@ -70,3 +70,47 @@ def test_el_gancho_sale_de_lo_guardado(tmp_path):
     gancho, titulo = sf.gancho_y_titulo("asinacio_20261116_2", tmp_path)
     assert titulo == "Play"
     assert sf.gancho_y_titulo("no_existe", tmp_path) == ("", "")
+
+
+def test_publicacion_de_comunidad_apagada_y_programada(tmp_path, monkeypatch):
+    """Santi, 2026-11-16: 1 por día a las 13:00 con la historia de hoy (apagado hasta que apruebe los ejemplos)."""
+    from dataclasses import replace
+    from pathlib import Path
+
+    from PIL import Image
+
+    from clips_bot import comunidad_fb as cf
+    from clips_bot import config
+
+    conn = db.connect(tmp_path / "c.db")
+    s = load_settings()
+    assert s.historias_fb.comunidad is False
+    tg = _TG()
+    ahora = datetime(2026, 11, 17, 10, 30, tzinfo=m.AR)
+    m._comunidad_tick(conn, tg, s, ahora=ahora)
+    assert not tg.mensajes                                       # apagado: nada
+    s = replace(s, historias_fb=replace(s.historias_fb, comunidad=True))
+    monkeypatch.setattr(config, "OUTPUT_DIR", tmp_path)
+    m._comunidad_tick(conn, tg, s, ahora=ahora)
+    assert not tg.mensajes and m.db.get_valor(conn, m.COMUNIDAD_DIA) is None   # sin la historia de hoy, espera
+    db.set_valor(conn, f"{m.PH_LATAM}:2026-11-17", json.dumps([{"texto": "1907 Nacozari: el maquinista", "articulo": "Jesús García",
+                                                                "pais": "México"}]))
+    foto = tmp_path / "f.jpg"
+    Image.new("RGB", (900, 700), "gray").save(foto)
+    monkeypatch.setattr(cf, "foto_de_la_historia", lambda wiki, h, c: (foto, "Foto: X · Dominio público"))
+
+    class Cli:
+        def json(self, *a, **k):
+            return json.dumps({"pregunta": "¿Tu abuelo te contó esta historia?", "texto": "En 1907 un maquinista salvó a Nacozari."})
+
+    hechos = []
+    tg.send_photo = lambda chat, path, caption="": hechos.append((Path(path), caption))
+    m._comunidad_tick(conn, tg, s, ahora=ahora, cliente=Cli(), wiki=object(),
+                      programar=lambda img, msg, cuando, v, p, t: hechos.append((cuando, msg)) or "post_1")
+    cuando, msg = hechos[0]
+    assert cuando.hour == 13 and "¿Tu abuelo te contó esta historia?" in msg and "Foto: X" in msg
+    sub = [x for x in db.subidas(conn) if x["canal"] == cf.CANAL][0]
+    assert sub["video_id"] == "post_1" and sub["publish_at"].startswith("2026-11-17T16:00")
+    assert hechos[1][0].exists()
+    m._comunidad_tick(conn, tg, s, ahora=ahora.replace(hour=11))
+    assert len([x for x in db.subidas(conn) if x["canal"] == cf.CANAL]) == 1      # una por día

@@ -440,6 +440,10 @@ class HistoriasFb:
     # `_web_latam_tick` y, si se pasa de `web_tope_usd` por día, la apaga sola (bot_estado.web_latam_apagado).
     web: bool = False
     web_tope_usd: float = 0.45
+    # Publicaciones de comunidad (Santi, 2026-11-16; comunidad_fb.py): 1 por día (foto de época + pregunta), sin voz ni
+    # render, a esta hora AR. Apagado hasta que Santi apruebe los ejemplos.
+    comunidad: bool = False
+    comunidad_hora: str = "13:00"
 
 
 @dataclass(frozen=True)
