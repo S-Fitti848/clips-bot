@@ -70,6 +70,10 @@ GESTOS: dict[str, dict] = {
     "atrapar": {"izq": (100, -15), "der": (100, -15), "cejas": "arriba"},
     "festejar": {"izq": (168, 8), "der": (168, 8), "cejas": "arriba"},
     "cubrirse": {"izq": (150, 120), "der": (150, 120), "cejas": "triste"},
+    # Las manos con el objeto adelante (Así Nació, 2026-11-16: "las manos siempre hacen algo con el objeto"): se
+    # alternan de a pares (lo agarra, lo abre, lo llena), nunca los brazos abiertos al costado.
+    "sostener_a": {"izq": (18, -95), "der": (18, -95)},
+    "sostener_b": {"izq": (24, -110), "der": (14, -88)},
 }
 
 

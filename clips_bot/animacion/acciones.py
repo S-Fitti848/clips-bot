@@ -114,6 +114,10 @@ MOVIMIENTO = {"caminar", "correr", "saltar", "caerse", "retar", "martillar", "ti
 # Acciones de trabajo (2026-11-15: "fabricando, inventando, vendiendo, gente usando el producto"): se
 # dibujan con los gestos de otra acción que ya tiene movimiento con peso.
 ALIAS_ACCION = {"usar": "atrapar", "probar": "saltar"}
+# Reglas_v3 de Así Nació (Santi, 2026-11-16; lo prende marcas.armar_video): usar, probar y fabricar = las manos
+# adelante haciendo algo con el objeto (sostener_a/b), y el objeto en las dos manos, delante del cuerpo.
+MANOS_V3 = False
+CON_MANOS = ("usar", "probar", "fabricar")
 CARAS = ("feliz", "enojado", "sorprendido", "triste", "normal")
 
 # Efectos de un objeto. Los DINÁMICOS cuentan como acción.
@@ -335,7 +339,8 @@ class Escena:
         squash & stretch en saltos y golpes, la cabeza que se inclina y la cara que cambia con la acción.
         `x0`/`x1` (numéricos) los pone el plan de la escena para que nadie se pise."""
         nombre, cambios, escala = aspecto(rol, genero, edad)
-        accion = ALIAS_ACCION.get(accion, accion)
+        accion_pedida = accion
+        accion = "manipular" if (MANOS_V3 and accion in CON_MANOS) else ALIAS_ACCION.get(accion, accion)
         x0 = _x(desde) if x0 is None else x0
         x1 = (_x(hacia, desde) if hacia and hacia in POS else x0) if x1 is None else x1
         t0 = round(0.05 + 0.18 * k, 2)
@@ -475,6 +480,14 @@ class Escena:
             self.elementos.append({"tipo": "prop", "nombre": "lamparita", "x": x0,
                                    "y": PISO - alto - 130, "escala": 0.65, "entrada": "rebote", "desde": ding})
             self.sfx.append((ding, "ding"))
+        elif accion == "manipular":   # reglas_v3: las manos adelante haciendo algo con el objeto (agarra, abre, llena)
+            caras.append({"t": t0, "cara": "feliz" if accion_pedida != "fabricar" else "normal"})
+            gestos += _alternar("sostener_a", "sostener_b", t0, fin, 0.38)
+            t, s_ = t0, 1
+            while t < fin:   # mira lo que tiene en las manos
+                kf.append({"t": round(t, 3), "cabeza": 9 + 3 * s_, "estirar": 1.0 - 0.015 * s_, "easing": "suave"})
+                t += 0.38
+                s_ = -s_
         elif accion == "fabricar":   # arma con las manos lo que hace (2026-11-15: nada de martillo genérico)
             caras.append({"t": t0, "cara": "normal"})
             gestos += _alternar("atrapar", "explicar", t0, fin, 0.32)
@@ -501,6 +514,8 @@ class Escena:
             respira(t0, fin, 4.0)
         el["keyframes"] = sorted(kf, key=lambda q: q["t"])
         el["gestos"] = gestos
+        if accion == "manipular":
+            el["manos"] = True       # el objeto "en la mano" va en las dos, adelante (Escena.objeto)
         self.actores.append(el)
         if caras:
             el["caras"] = [c for c in caras if c["cara"] != "normal"] or caras
@@ -572,12 +587,14 @@ class Escena:
         self._apoyo(sop, x)
         base = {"tipo": "prop", "nombre": prop, "x": x, "y": y}
         if sop == "mano" and self.actores and efecto in ("quieto", "gira"):
-            # en la mano del primero que aparece: a la altura de la mano y siguiéndolo si camina
-            quien = self.actores[0]
+            # en la mano del primero que aparece (o del que lo está manipulando): a la altura de la mano y siguiéndolo
+            quien = next((a for a in self.actores if a.get("manos")), self.actores[0])
             esc_ = float(quien.get("escala", 1))
             lado = 1 if float(quien["x"]) <= 540 else -1
             off = 125 * esc_ * lado
             y = PISO - 330 * esc_
+            if quien.get("manos"):   # reglas_v3: en las dos manos, delante del cuerpo
+                off, y = 0.0, PISO - 300 * esc_
             kx = [{"t": k["t"], "x": round(float(k["x"]) + off, 1), "easing": k.get("easing", "suave")}
                   for k in quien.get("keyframes", []) if "x" in k]
             self.elementos.append({**base, "x": float(quien["x"]) + off, "y": y, "escala": 0.55,
@@ -1295,6 +1312,13 @@ def escena_accion(spec: dict, dur: float, i: int, primera: bool = False, tono: f
         else:
             e.objeto(rompible.get("prop") or "ventana", "se_rompe", rompible.get("donde") or "centro",
                      str(rompible.get("texto") or ""), None, len(objetos), soporte=rompible.get("soporte"))
+    # Reglas_v3: quien manipula tiene el producto en las manos (nunca manos vacías ni el objeto flotando al lado)
+    if MANOS_V3 and protagonista and any(a.get("manos") for a in e.actores) \
+            and not any(el.get("en_mano") for el in e.elementos):
+        e.objeto(protagonista, "quieto", "centro", soporte="mano")
+        for el in e.elementos:
+            if el.get("en_mano") and el.get("nombre") == protagonista:
+                el["color"] = True
     # Decorado de contexto (Santi, 2026-11-16, reglas_v3): 1 a 3 objetos de la historia y la época atrás, sobre el
     # estante, la mesa o el piso (nada de mesas vacías). Más chicos y detrás de los personajes.
     interior = fondo in ("casa", "oficina", "taller", "fabrica", "tienda", "laboratorio", "hospital")

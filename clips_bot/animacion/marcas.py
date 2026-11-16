@@ -1091,6 +1091,12 @@ SCHEMA_V3 = {"type": "OBJECT", "properties": {
     "required": ["ganchos", "decorado"]}
 
 
+def gv_palabras(t) -> set:
+    from . import gancho_v3 as gv
+
+    return gv._palabras(t)
+
+
 def completar_v3(cliente, d: dict, avisar=log.info) -> bool:
     """Las 3 opciones de gancho y el decorado de cada escena, en un pedido aparte (reglas_v3). Si no salen, el video
     sigue con el gancho de siempre. Devuelve si quedaron las 3 opciones."""
@@ -1111,6 +1117,12 @@ def completar_v3(cliente, d: dict, avisar=log.info) -> bool:
             return False
         d2 = {**d, "ganchos": r.get("ganchos") or []}
         errores = [x for x in errores_v3({**d2, "escenas": []}) if "ganchos" in x]
+        frase1 = gv_palabras(frases_de(d)[0] if frases_de(d) else "")
+        repetidos = [o.get("texto") for o in d2["ganchos"]
+                     if gv_palabras(o.get("texto")) and len(gv_palabras(o.get("texto")) & frase1) * 2 >= len(gv_palabras(o.get("texto")))]
+        if repetidos:   # Santi, 2026-11-16: ningún texto repite lo que dice la voz (la frase 1 sale en el subtítulo)
+            errores.append(f"`ganchos`: estos textos repiten lo que dice la voz en la frase 1 ({', '.join(map(str, repetidos))}): "
+                           "poné otro dato o una pregunta que no esté en esa frase")
         if errores:
             continue
         d["ganchos"] = r["ganchos"]
@@ -1539,6 +1551,7 @@ def linea_de_tiempo(d: dict, inicios: list[float], fin: float, palabras: list,
     from . import gancho_v3 as gv
 
     v3 = REGLAS_V3 if v3 is None else v3
+    ac.MANOS_V3 = bool(v3)          # usar/probar/fabricar = las manos con el objeto (2026-11-16)
     opciones = gv.opciones_de(d) if v3 else []
     ultimo_lugar = ""
     for n_seg, ((tipo, k, _), dur) in enumerate(zip(segs, durs)):
@@ -2476,8 +2489,10 @@ def armar_video(conn, settings, carpeta: Path, cliente=None, wiki=None, hoy: dat
                         or (pr.get("arreglo") == "otro" and int(pr.get("cuadro") or 0) == 1)]
         if REGLAS_V3 and d.get("ganchos"):
             # el gancho de las reglas nuevas no se reescribe: se prueba la opción siguiente (Santi, 2026-11-16)
-            del_gancho = [a for a in acciones_mal if a[0] == 0]
-            acciones_mal = [a for a in acciones_mal if a[0] != 0]
+            # solo "rehacer_gancho" cambia de opción; lo demás de esa escena (gente parada…) se corrige como siempre
+            del_gancho = [(int(pr.get("cuadro") or 0) - 1, str(pr.get("que") or "")) for pr in problemas
+                          if pr.get("arreglo") == "rehacer_gancho"]
+            acciones_mal = [a for a in acciones_mal if not any(a[0] == g[0] and a[1] == g[1] for g in del_gancho)]
             probados = d.setdefault("ganchos_probados", [int(d.get("gancho_elegido") or 0)])
             libres = [j for j in range(len(d["ganchos"])) if j not in probados]
             if del_gancho and libres:
