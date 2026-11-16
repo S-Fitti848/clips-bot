@@ -218,8 +218,11 @@ class Elemento:
                       f'fill="{P.SOMBRA_TINTE}" opacity="{round(0.28 * k * min(1.0, v["opacidad"]), 3)}"/>')
             v["y"] += dy
         elif self.tipo == "prop":
+            # `color: True` es la marca de "queda a color en el pasado", no un color: al dibujo solo le llega un color
+            # de verdad (2026-11-16: con True, la botella o la lata salían rellenas de negro)
             params = {k: val for k, val in self.datos.items()
-                      if k in ("texto", "color", "encendida", "rota", "forma")}
+                      if k in ("texto", "color", "encendida", "rota", "forma", "manga", "detalle")
+                      and not (k == "color" and not isinstance(val, str))}
             if "fase" in self.datos or any("fase" in k for k in self.pista.claves):
                 params["fase"] = round(v["fase"], 3)     # 0..1: un objeto que cambia (el cubo que se resuelve)
             contenido = esc.prop(self.datos["nombre"], **params)

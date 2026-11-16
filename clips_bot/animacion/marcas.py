@@ -1016,6 +1016,19 @@ FLOTA_MAX = 2
 EN_USO_MIN = 0.6
 
 
+PLATA_SIMBOLO = {"moneda", "bolsa_plata"}
+
+
+def errores_plata(d: dict) -> list[str]:
+    """Regla 17 (Santi, 2026-11-16): nada de monedas con $ ni bolsas de plata gigantes; la plata con acciones reales."""
+    malas = [i for i, e_ in enumerate(d.get("escenas") or [], 1)
+             if any(prop_real(o) in PLATA_SIMBOLO for o in e_.get("objetos") or [])]
+    if not malas:
+        return []
+    return [f"escenas {malas}: nada de monedas o bolsas de plata gigantes; la plata con una acción real (contar_billetes, "
+            "abrir_caja, apreton_manos, firmar, contador_ventas)"]
+
+
 def errores_uso(d: dict) -> list[str]:
     """Reglas_v3 del guion (Santi, 2026-11-16): el producto en uso en la mayoría de las escenas, flotando o girando como
     mucho 2 veces, y algo nuevo para la biblioteca en cada video."""
@@ -1240,6 +1253,8 @@ def validar_guion(d: dict, m: Marca, fuente: str, ganchos_previos: list[dict] | 
     n = len(frases)
     if REGLAS_V3:
         errores += errores_uso(d)
+    if USO_V4:
+        errores += errores_plata(d)
     if frases and gancho_generico(frases[0]):    # Santi, 2026-11-16: el gancho dice el dato concreto
         errores.append(f"el gancho (frase 1) usa una frase genérica de intriga («{gancho_generico(frases[0])}»): "
                        "decí el dato concreto más fuerte de esta historia")
@@ -1426,11 +1441,20 @@ def chequear_calidad(cliente, d: dict, m: Marca) -> list[str]:
 def sistema_guion() -> str:
     """El prompt del guion con la biblioteca de escenas de hoy (las recetas guardadas también)."""
     lista = "\n".join(f"  - {k}: {v}" for k, v in sorted(_lib.todas_las_acciones().items()))
-    return SISTEMA_GUION.replace("{BIBLIOTECA}", lista) + (REGLA_16 if REGLAS_V3 else "")
+    return SISTEMA_GUION.replace("{BIBLIOTECA}", lista) + (REGLA_16 if REGLAS_V3 else "") + (REGLA_17 if USO_V4 else "")
 
 
 REGLAS_V3 = False      # armar_video lo prende con `animacion.reglas_v3` (Santi, 2026-11-16)
 USO_V4 = False         # armar_video lo prende con `animacion.uso_manos` (escenas de uso con las manos e inspiración)
+
+REGLA_17 = """
+REGLA 17 — MANOS QUE SE ENTIENDEN Y LA PLATA DE VERDAD (Santi, 2026-11-16).
+- La PLATA se muestra con acciones reales y reconocibles: contar_billetes, abrir_caja (la caja registradora), apreton_manos
+  (cerrar un trato), firmar (un contrato o un cheque), contador_ventas (el gráfico que sube). NUNCA una moneda con $ o una
+  bolsa de plata gigante en las manos o en el medio de la escena (parece que la están lavando).
+- Cada movimiento de manos se lee como UNA acción concreta en 1 segundo (agarrar, abrir, guardar, contar, firmar, dar).
+- Objetos con detalle: nada de siluetas ni etiquetas en blanco; si un objeto no tiene un dibujo bueno, dibujo_nuevo."""
+
 
 REGLA_16 = """
 REGLA 16 — ESCENAS VIVAS (Santi, 2026-11-16; las 3 opciones de gancho y el decorado se piden aparte).
@@ -1681,6 +1705,7 @@ def linea_de_tiempo(d: dict, inicios: list[float], fin: float, palabras: list,
 
     v3 = REGLAS_V3 if v3 is None else v3
     ac.MANOS_V3 = bool(v3)          # usar/probar/fabricar = las manos con el objeto (2026-11-16)
+    ac.SIN_PLATA_SIMBOLO = bool(v3) and USO_V4
     opciones = gv.opciones_de(d) if v3 else []
     ultimo_lugar = ""
     for n_seg, ((tipo, k, _), dur) in enumerate(zip(segs, durs)):
@@ -2107,6 +2132,14 @@ def sistema_revision_v3() -> str:
     return base + REVISION_V3
 
 
+REVISION_V4 = """
+(Santi, 2026-11-16) Y además:
+- MANOS cuyo movimiento no se lee como una acción concreta en 1 segundo (agarrar, abrir, guardar, contar, firmar, dar), o
+  manos sosteniendo una moneda con $ o una bolsa de plata gigante: `arreglo` = cambiar_accion.
+- Un OBJETO SIN DETALLE (una silueta negra, una etiqueta en blanco, un dibujo que no se reconoce): `arreglo` =
+  redibujar_objeto, con su nombre en `objeto` y en `que` cómo tendría que verse."""
+
+
 REVISION_V3 = """
 (Santi, 2026-11-16) Con las reglas nuevas:
 - El GANCHO (cuadro 1) es A PROPÓSITO la imagen imposible del producto (gigante, explotando, multiplicado, volando o
@@ -2151,6 +2184,25 @@ def puntos_flojos(cliente, d: dict, datos: dict, carpeta: Path, avisar=log.info)
                     "cuadro": str(png)})
     avisar("lo más flojo: " + " | ".join(f"{x['categoria']}: {x['que'][:80]}" for x in out))
     return out
+
+
+def redibujar_objeto(cliente, nombre: str, como_es: str, avisar=log.info) -> str:
+    """Santi, 2026-11-16 ("si un objeto no tiene dibujo bueno, dibujalo nuevo"): Sonnet lo dibuja de nuevo con detalle y
+    la versión nueva reemplaza a la vieja en todas las escenas, también si era un dibujo de la biblioteca de código."""
+    from . import dibujos
+
+    nombre = re.sub(r"[^a-z0-9_]", "", nombre)[:24]
+    if not nombre or not esc.es_prop(nombre) or cliente is None:
+        return ""
+    nuevo = f"{nombre}_det"[:30]
+    try:
+        dibujos.dibujar(cliente, nuevo, f"{nombre.replace('_', ' ')} con detalle (sin siluetas ni etiquetas en blanco). "
+                                        f"Cómo tiene que verse: {como_es}")
+    except Exception as err:  # noqa: BLE001
+        avisar(f"no pude redibujar {nombre}: {str(err)[:120]}")
+        return ""
+    dibujos.reemplazar(nombre, nuevo)
+    return f"redibujé {nombre} con detalle ({nuevo}): {como_es[:90]}"
 
 
 def redibujar_protagonista(cliente, d: dict, como_es: str, avisar=log.info) -> str:
@@ -2286,7 +2338,8 @@ def revisar_visual(cliente, d: dict, datos: dict, carpeta: Path, capturar=None, 
     lista += ("\n\nARRANQUES ANTERIORES DEL CANAL:\n" + texto_ganchos(ganchos_recientes(conn)[:-1])
               if conn is not None else "")
     try:
-        r_ = json.loads(cliente.json(sistema_revision_v3() if REGLAS_V3 else SISTEMA_REVISION, f"Los cuadros, en orden:\n{lista}", SCHEMA_REVISION, 0.2,
+        r_ = json.loads(cliente.json((sistema_revision_v3() + (REVISION_V4 if USO_V4 else "")) if REGLAS_V3
+                                     else SISTEMA_REVISION, f"Los cuadros, en orden:\n{lista}", SCHEMA_REVISION, 0.2,
                                      imagenes=imagenes))
     except Exception as err:   # la revisión es una red de seguridad: si no responde, sigue
         avisar(f"revisión visual: no respondió ({str(err)[:120]})")
@@ -2486,6 +2539,7 @@ def armar_video(conn, settings, carpeta: Path, cliente=None, wiki=None, hoy: dat
     global REGLAS_V3, USO_V4
     REGLAS_V3 = bool(getattr(cfg, "reglas_v3", False))
     USO_V4 = REGLAS_V3 and bool(getattr(cfg, "uso_manos", False))
+    _lib.CON_V4 = USO_V4
     t_total = time.time()
     tiempos = {}
     fila0 = ultima_fila_uso(conn)
@@ -2621,9 +2675,13 @@ def armar_video(conn, settings, carpeta: Path, cliente=None, wiki=None, hoy: dat
                                       str(pr.get("que") or ""), re.I):
                     pr["arreglo"] = "cambiar_accion"
         hechos = aplicar_revision(d, problemas, claves, datos)
-        if any(pr.get("arreglo") == "redibujar_objeto" for pr in problemas):
-            hecho = redibujar_protagonista(cliente, d, next(str(pr.get("que") or "") for pr in problemas
-                                                            if pr.get("arreglo") == "redibujar_objeto"), avisar)
+        prota_ = prop_real(d.get("protagonista") or {})
+        for pr in [p_ for p_ in problemas if p_.get("arreglo") == "redibujar_objeto"][:2]:
+            obj_ = str(pr.get("objeto") or "").strip().lower()
+            if not obj_ or obj_ == prota_ or obj_ in str((d.get("protagonista") or {}).get("que_es") or "").lower():
+                hecho = redibujar_protagonista(cliente, d, str(pr.get("que") or ""), avisar)
+            else:
+                hecho = redibujar_objeto(cliente, obj_, str(pr.get("que") or ""), avisar) if USO_V4 else ""
             if hecho:
                 hechos.append(hecho)
         # lo que se corrige en el guion: la acción que no es la de la frase, la gente parada y el gancho

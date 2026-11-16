@@ -833,12 +833,23 @@ def _etiqueta(texto: str, y: float, ancho: float, tam: int = 40) -> str:
                            ancho_borde=5)
 
 
+def _etiqueta_dibujada(x: float, y: float, w: float, h: float, color: str) -> str:
+    """Una etiqueta con dibujo (Santi, 2026-11-16: "nada de etiquetas en blanco"): fondo claro, dos franjas del color del
+    objeto y un sello redondo, sin letras."""
+    claro = aclarar(color, 0.62)
+    return (rect(x, y, w, h, claro, ancho=P.TRAZO_FINO)
+            + rect(x, y + h * 0.16, w, h * 0.14, aclarar(color, 0.2), borde=False)
+            + rect(x, y + h * 0.70, w, h * 0.14, aclarar(color, 0.2), borde=False)
+            + circulo(x + w / 2, y + h / 2, min(w, h) * 0.2, oscurecer(color, 0.1), ancho=P.TRAZO_FINO)
+            + circulo(x + w / 2, y + h / 2, min(w, h) * 0.09, P.AMARILLO, borde=False))
+
+
 def prop_botella(texto: str = "", color: str = P.ROJO, **_) -> str:
     return (camino("M-26 -230 L26 -230 L26 -170 Q80 -130 80 -60 L80 200 Q80 230 50 230 L-50 230 "
                    "Q-80 230 -80 200 L-80 -60 Q-80 -130 -26 -170 Z", color)
             + rect(-30, -262, 60, 36, P.GRIS_OSCURO, r=6)
-            + rect(-80, -10, 160, 110, P.BLANCO, ancho=P.TRAZO_FINO)
-            + _etiqueta(texto, 58, 150)
+            + (rect(-80, -10, 160, 110, P.BLANCO, ancho=P.TRAZO_FINO) + _etiqueta(texto, 58, 150) if texto
+               else _etiqueta_dibujada(-80, -10, 160, 110, color))
             + camino("M-50 -100 Q-58 -40 -54 40", borde=True, ancho=10, color="#ffffff"))
 
 
@@ -846,8 +857,40 @@ def prop_lata(texto: str = "", color: str = P.AZUL, **_) -> str:
     return (rect(-80, -150, 160, 300, color, r=18)
             + elipse(0, -150, 80, 18, P.GRIS)
             + elipse(0, -150, 22, 6, P.GRIS_OSCURO, borde=False)
-            + rect(-80, -50, 160, 100, P.BLANCO, ancho=P.TRAZO_FINO)
-            + _etiqueta(texto, 14, 150))
+            + (rect(-80, -50, 160, 100, P.BLANCO, ancho=P.TRAZO_FINO) + _etiqueta(texto, 14, 150) if texto
+               else _etiqueta_dibujada(-80, -50, 160, 100, color))
+            + camino("M-58 -120 L-58 120", borde=True, ancho=9, color="#ffffff"))
+
+
+def prop_caja_registradora(fase: float = 0.0, **_) -> str:
+    """La caja registradora de antes (la plata con una acción real, 2026-11-16): `fase` 0..1 = el cajón que se abre con
+    los billetes adentro."""
+    abre = max(0.0, min(1.0, float(fase or 0.0)))
+    cajon_y = 90 + 70 * abre
+    billetes = "".join(rect(-70 + k * 48, cajon_y - 8, 40, 22, P.VERDE, r=3, ancho=3) for k in range(3)) if abre > 0.2 else ""
+    return (rect(-150, 90, 300, 40, "#7a5530", r=6)                                   # base
+            + rect(-130, cajon_y, 260, 50, "#9c6a3d", r=6) + billetes                  # cajón
+            + camino("M-140 90 L-110 -40 L110 -40 L140 90 Z", "#c0392b")             # cuerpo
+            + rect(-90, -120, 180, 80, "#2c3e50", r=10) + rect(-70, -105, 140, 50, "#a8e6a1", r=6, ancho=3)  # visor
+            + "".join(circulo(-80 + (k % 4) * 54, 10 + (k // 4) * 40, 14, "#f4f1ea", ancho=3) for k in range(8)))
+
+
+def prop_papel_firma(fase: float = 0.0, **_) -> str:
+    """Un contrato o un cheque con la firma que se va escribiendo (`fase` 0..1)."""
+    f = max(0.0, min(1.0, float(fase or 0.0)))
+    renglones = "".join(f'<path d="M-120 {-110 + k * 34} L{120 - (k % 3) * 30} {-110 + k * 34}" stroke="#9aa0ab" '
+                        f'stroke-width="6" stroke-linecap="round"/>' for k in range(5))
+    largo = 420 * f
+    firma = (f'<path d="M-110 120 C-80 70 -60 150 -30 100 S20 70 40 120 S90 90 120 100" fill="none" stroke="#1d3a8a" '
+             f'stroke-width="7" stroke-linecap="round" stroke-dasharray="{largo:.0f} 999"/>') if f > 0 else ""
+    return (rect(-150, -170, 300, 340, "#fbf7ec", r=6) + renglones
+            + f'<path d="M-120 140 L120 140" stroke="#5a6070" stroke-width="4"/>' + firma)
+
+
+def prop_lapicera(**_) -> str:
+    """Una lapicera de las de antes, la punta abajo a la izquierda."""
+    return g(rect(-14, -130, 28, 210, "#1f2d4d", r=12) + rect(-16, -130, 32, 40, "#c9a227", r=6, ancho=4)
+             + camino("M-14 80 L0 130 L14 80 Z", "#c9a227", ancho=4), 0, 0, rot=35)
 
 
 def prop_caja(texto: str = "", color: str = P.AMARILLO, **_) -> str:
@@ -1556,7 +1599,8 @@ PROPS = {"reloj_gigante": prop_reloj_gigante, "mano": prop_mano, "mostrador": pr
          "trofeo": prop_trofeo, "megafono": prop_megafono, "calendario": prop_calendario,
          "control": prop_control, "engranaje": prop_engranaje, "camion": prop_camion,
          "celular": prop_celular, "corona": prop_corona, "cohete": prop_cohete,
-         "idea_fallida": prop_bombilla_rota, "rayos": prop_rayos}
+         "idea_fallida": prop_bombilla_rota, "rayos": prop_rayos,
+         "caja_registradora": prop_caja_registradora, "papel_firma": prop_papel_firma, "lapicera": prop_lapicera}
 
 
 def _palabras(t: str) -> set[str]:
@@ -1639,6 +1683,12 @@ def es_prop(nombre: str) -> bool:
 
 
 def prop(nombre: str, **params) -> str:
+    from . import dibujos
+
+    if nombre in dibujos.reemplazos():    # un dibujo de código redibujado con detalle (Santi, 2026-11-16)
+        svg_ = dibujos.svg_de(nombre)
+        if svg_ is not None:
+            return svg_
     f = PROPS.get(nombre)
     if f is None:
         from . import dibujos

@@ -128,3 +128,42 @@ def test_apagado_no_cambia_las_escenas():
     antes = d["escenas"][2].get("accion_escena")
     assert marcas.USO_V4 is False and marcas.completar_v3(Cli(), d)
     assert d["escenas"][2].get("accion_escena") == antes
+
+
+def test_la_plata_con_acciones_reales():
+    """Santi, 2026-11-16: nada de monedas con $ gigantes en las manos ("parece que la están lavando")."""
+    for tipo in uso_v3.PLATA:
+        h = uso_v3.escena_plata(tipo, 3.0)
+        nombres = {el["nombre"] for el in h["elementos"]}
+        assert "mano" in nombres and not nombres & {"moneda", "bolsa_plata"}, tipo
+        Video.desde_dict({"fps": 30, "escenas": [{"duracion": 3.0, "fondo": "oficina", "elementos": h["elementos"]}]})
+    assert "caja_registradora" in {el["nombre"] for el in uso_v3.escena_plata("abrir_caja", 3.0)["elementos"]}
+    d = guion()
+    d["escenas"][3]["objetos"] = [{"prop": "bolsa_plata", "efecto": "quieto", "donde": "centro", "soporte": "mano"}]
+    assert marcas.errores_plata(d) and not marcas.errores_plata(guion())
+    assert lib.CON_V4 is False and "firmar" not in lib.todas_las_acciones()   # sin el OK, el guion no las ve
+
+
+def test_las_etiquetas_no_van_en_blanco_y_el_color_no_ennegrece():
+    from clips_bot.animacion import timeline
+
+    assert "url(#vffffff)" not in esc.prop("botella") or "f4" in esc.prop("botella")
+    el = timeline.Elemento.desde_dict({"tipo": "prop", "nombre": "botella", "color": True}, "e", 3.0)
+    assert "True" not in el.svg(0.5, 1.0, 0)                        # la marca de color no llega como color
+
+
+def test_redibujar_un_objeto_de_la_biblioteca(monkeypatch, tmp_path):
+    from clips_bot.animacion import dibujos
+
+    monkeypatch.setattr(dibujos, "CARPETA", tmp_path)
+    dibujos._CACHE_REEMP.clear()
+
+    def dibujar(cli, nombre, desc, ctx=""):
+        (tmp_path / f"{nombre}.svg").write_text('<circle r="9" fill="#123456"/>', encoding="utf-8")
+        (tmp_path / f"{nombre}.json").write_text(json.dumps({"descripcion": desc}), encoding="utf-8")
+        return "<g/>"
+
+    monkeypatch.setattr(dibujos, "dibujar", dibujar)
+    hecho = marcas.redibujar_objeto(object(), "botella", "vidrio verde con brillo y una etiqueta con dibujo")
+    assert "botella_det" in hecho and "#123456" in esc.prop("botella")
+    dibujos._CACHE_REEMP.clear()

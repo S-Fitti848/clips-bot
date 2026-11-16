@@ -64,11 +64,22 @@ def biblioteca() -> dict[str, str]:
     return out
 
 
+_CACHE_REEMP: dict = {}
+
+
 def reemplazos() -> dict[str, str]:
+    """{viejo: nuevo}. Se lee una vez por cambio del archivo (se consulta en cada cuadro)."""
+    f = CARPETA / REEMPLAZOS
     try:
-        return json.loads((CARPETA / REEMPLAZOS).read_text(encoding="utf-8"))
-    except (OSError, ValueError):
+        clave = (str(f), f.stat().st_mtime)
+    except OSError:
         return {}
+    if _CACHE_REEMP.get("clave") != clave:
+        try:
+            _CACHE_REEMP.update(clave=clave, datos=json.loads(f.read_text(encoding="utf-8")))
+        except (OSError, ValueError):
+            return {}
+    return _CACHE_REEMP.get("datos") or {}
 
 
 def actual(nombre: str) -> str:

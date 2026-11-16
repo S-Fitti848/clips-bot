@@ -117,6 +117,7 @@ ALIAS_ACCION = {"usar": "atrapar", "probar": "saltar"}
 # Reglas_v3 de Así Nació (Santi, 2026-11-16; lo prende marcas.armar_video): usar, probar y fabricar = las manos
 # adelante haciendo algo con el objeto (sostener_a/b), y el objeto en las dos manos, delante del cuerpo.
 MANOS_V3 = False
+SIN_PLATA_SIMBOLO = False   # lo prende marcas con animacion.uso_manos
 CON_MANOS = ("usar", "probar", "fabricar")
 CARAS = ("feliz", "enojado", "sorprendido", "triste", "normal")
 
@@ -1281,7 +1282,9 @@ def escena_accion(spec: dict, dur: float, i: int, primera: bool = False, tono: f
         hecha["elementos"] = [el for el in hecha["elementos"]
                               if el.get("tipo") != "prop" or _de_epoca(str(el.get("nombre") or ""))]
         e.elementos = [el for el in e.elementos if el.get("tipo") != "prop" or _de_epoca(str(el.get("nombre") or ""))]
-    objetos = [] if hecha else [o for o in list(spec.get("objetos") or [])[:3] if _de_epoca(str(o.get("prop") or ""))]
+    objetos = [] if hecha else [o for o in list(spec.get("objetos") or [])[:3] if _de_epoca(str(o.get("prop") or ""))
+                                # con uso_manos: nada de monedas o bolsas de plata gigantes (Santi, 2026-11-16)
+                                and not (SIN_PLATA_SIMBOLO and o.get("prop") in ("moneda", "bolsa_plata"))]
     cadena = [] if hecha else [o for o in (spec.get("cadena") or []) if o.get("prop") and _de_epoca(str(o["prop"]))][:4]
     if cadena:
         proy = next((o for o in objetos if o.get("efecto") in ("vuela", "rebota")), None)

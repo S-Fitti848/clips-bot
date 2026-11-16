@@ -172,3 +172,93 @@ def escena_inspiracion(dur: float, fuente: str, pieza: str, producto: str, seed:
            _k(t_llega + 0.02, zoom=1.22, x=(xp - 540) * 0.4, y=(y_pieza_p - 960) * 0.3, easing="escalon"),
            _k(dur, zoom=1.28, x=(xp - 540) * 0.4, y=(y_pieza_p - 960) * 0.3, easing="suave")]
     return {"elementos": els, "fondo": None, "camara": cam, "sfx": sorted(sfx), "actores": []}
+
+
+# ---- la plata con acciones reales (Santi, 2026-11-16: "nada de monedas con $ gigantes en las manos: parece que la
+# están lavando") ------------------------------------------------------------------------------------------------
+PLATA = ("contar_billetes", "abrir_caja", "apreton_manos", "firmar")
+
+
+def _manos(izq: list[dict], der: list[dict], manga: str, manga2: str = "") -> list[dict]:
+    out = []
+    for lado, kf, color in ((-1, izq, manga), (1, der, manga2 or manga)):
+        out.append(_el("mano", kf[0]["x"], kf[0]["y"], escala=1.05, forma=lado, manga=color or "#3d4f7a", fase=0.0,
+                       detalle=True, rotacion=kf[0].get("rotacion", 0), keyframes=sorted(kf, key=lambda k: k["t"])))
+    return out
+
+
+def escena_plata(tipo: str, dur: float, manga: str = "", seed: int = 0) -> dict:
+    """Una acción de plata que se lee en un segundo: contar billetes, abrir la caja registradora, darse la mano al
+    cerrar un trato, firmar un contrato o un cheque."""
+    rnd = random.Random(seed)
+    els: list[dict] = []
+    sfx: list[tuple[float, str]] = []
+    mesa = _el("mesa", X0, Y0 + 190, escala=3.4, decorado=True)
+    if tipo == "contar_billetes":      # de una pila a la otra, de a uno, con la mano que lo pasa
+        n_ = max(4, min(8, int(dur / 0.4)))
+        els.append(mesa)
+        der, izq = [_k(0, x=X0 + 380, y=Y0 + 300, rotacion=-20, fase=0.0)], [_k(0, x=X0 - 330, y=Y0 + 120, rotacion=24,
+                                                                                fase=1.0)]
+        for k_ in range(n_):
+            t0 = 0.25 + k_ * (dur - 0.5) / n_
+            t1 = t0 + 0.28
+            els.append(_el("billete", X0 + 170, Y0 + 40 - 6 * (n_ - k_), escala=0.85, rotacion=rnd.uniform(-6, 6),
+                           keyframes=[_k(0, x=X0 + 170), _k(t0, x=X0 + 170, y=Y0 + 40 - 6 * (n_ - k_)),
+                                      _k(t1, x=X0 - 170, y=Y0 + 40 - 6 * k_, rotacion=rnd.uniform(-10, 10), easing="salida")]))
+            der += [_k(t0, x=X0 + 250, y=Y0 + 110, rotacion=-26, fase=1.0, easing="suave"),
+                    _k(t1, x=X0 - 40, y=Y0 + 110, rotacion=-34, fase=1.0, easing="salida"),
+                    _k(t1 + 0.1, x=X0 + 250, y=Y0 + 110, rotacion=-26, fase=0.6, easing="suave")]
+            sfx.append((round(t1, 3), "tac"))
+        els += _manos(izq, der, manga)
+    elif tipo == "abrir_caja":         # aprieta la tecla, se abre el cajón con su ruido, saca un billete
+        t_tecla, t_abre = dur * 0.2, dur * 0.35
+        els.append(mesa)
+        els.append(_el("caja_registradora", X0, Y0 - 40, escala=2.0, fase=0.0,
+                       keyframes=[_k(0, fase=0.0), _k(t_abre, fase=0.0), _k(t_abre + 0.25, fase=1.0, easing="rebote")]))
+        der = [_k(0, x=X0 + 380, y=Y0 + 300, rotacion=-20, fase=0.0),
+               _k(t_tecla, x=X0 + 90, y=Y0 + 30, rotacion=-25, fase=0.4, easing="salida"),
+               _k(t_tecla + 0.12, y=Y0 + 50, easing="lineal"), _k(t_tecla + 0.24, y=Y0 + 30, easing="lineal")]
+        izq = [_k(0, x=X0 - 380, y=Y0 + 320, rotacion=20, fase=0.0),
+               _k(t_abre + 0.3, x=X0 - 60, y=Y0 + 300, rotacion=10, fase=0.0, easing="salida"),
+               _k(t_abre + 0.6, x=X0 - 60, y=Y0 + 300, rotacion=10, fase=1.0),
+               _k(dur, x=X0 - 260, y=Y0 + 230, rotacion=20, fase=1.0, easing="suave")]
+        els.append(_el("billete", X0 - 60, Y0 + 280, escala=0.7, desde=round(t_abre + 0.55, 3),
+                       keyframes=[_k(t_abre + 0.55, x=X0 - 60, y=Y0 + 280),
+                                  _k(dur, x=X0 - 260, y=Y0 + 200, rotacion=-12, easing="suave")]))
+        sfx += [(round(t_tecla, 3), "tac"), (round(t_abre, 3), "caja_registradora")]
+        els += _manos(izq, der, manga)
+    elif tipo == "apreton_manos":      # dos manos que se encuentran en el medio y se sacuden: trato cerrado
+        t_toca = dur * 0.3
+        izq = [_k(0, x=X0 - 620, y=Y0, rotacion=90, fase=0.0), _k(t_toca, x=X0 - 95, y=Y0, rotacion=90, fase=0.7,
+                                                                   easing="salida")]
+        der = [_k(0, x=X0 + 620, y=Y0 + 20, rotacion=-90, fase=0.0), _k(t_toca, x=X0 + 95, y=Y0 + 20, rotacion=-90,
+                                                                         fase=0.7, easing="salida")]
+        for k_ in range(3):
+            ta = t_toca + 0.15 + k_ * 0.3
+            for kf, dy in ((izq, 0), (der, 20)):
+                kf += [_k(ta, y=Y0 + dy - 45, easing="suave"), _k(ta + 0.15, y=Y0 + dy + 35, easing="suave")]
+        for kf, dy in ((izq, 0), (der, 20)):
+            kf.append(_k(dur, y=Y0 + dy, easing="suave"))
+        sfx += [(round(t_toca, 3), "tac"), (round(t_toca + 1.1, 3), "ding")]
+        els += _manos(izq, der, manga or "#3d4f7a", "#5a3d2b")
+        els += ac.destellos(t_toca + 1.0, rnd, (X0, Y0 - 150), n_=4)
+    else:                              # firmar: la lapicera escribe la firma mientras la otra mano sostiene el papel
+        t0, t1 = dur * 0.18, dur * 0.85
+        esc_p = 2.1
+        els.append(mesa)
+        els.append(_el("papel_firma", X0, Y0 - 60, escala=esc_p, fase=0.0,
+                       keyframes=[_k(0, fase=0.0), _k(t0, fase=0.0), _k(t1, fase=1.0, easing="lineal")]))
+        pts = [(-110, 120), (-30, 100), (40, 120), (120, 100)]
+        kp = [_k(0, x=X0 + 420, y=Y0 + 300)]
+        for j, (px, py) in enumerate(pts):
+            t = t0 + (t1 - t0) * j / (len(pts) - 1)
+            kp.append(_k(t, x=X0 + px * esc_p + 40, y=Y0 - 60 + py * esc_p - 120, easing="suave" if j else "salida"))
+        els.append(_el("lapicera", X0 + 420, Y0 + 300, escala=1.2, keyframes=kp))
+        der = [_k(k["t"], x=k["x"] + 60, y=k["y"] + 150, rotacion=-30, fase=1.0, easing=k.get("easing", "suave"))
+               for k in kp]
+        izq = [_k(0, x=X0 - 420, y=Y0 + 300, rotacion=30, fase=0.0),
+               _k(t0 * 0.8, x=X0 - 300, y=Y0 + 90, rotacion=40, fase=0.4, easing="salida")]
+        sfx += [(round(t0, 3), "tac"), (round(t1, 3), "ding")]
+        els += _manos(izq, der, manga)
+    cam = [_k(0, zoom=1.0), _k(dur, zoom=1.06, easing="suave")]
+    return {"elementos": els, "fondo": None, "camara": cam, "sfx": sorted(sfx), "actores": []}

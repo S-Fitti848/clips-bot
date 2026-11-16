@@ -47,7 +47,19 @@ ACCIONES = {
                   "tapa, amasar, girar las caras)", ("manos",), None),
     "inspiracion": ("lo que inspiró al producto y el producto, lado a lado: la pieza pasa de uno al otro y encastra "
                     "(la frase que cuenta de dónde salió la idea)", ("cerca",), None),
+    # la PLATA con acciones reales (Santi, 2026-11-16: nada de monedas con $ gigantes en las manos)
+    "contar_billetes": ("dos manos cuentan billetes sobre una mesa, pasándolos de una pila a otra (ganancias, ventas, "
+                        "ahorros, pagos)", ("manos",), None),
+    "abrir_caja": ("una mano aprieta la tecla de la caja registradora, se abre el cajón y saca un billete (las primeras "
+                   "ventas, la plata que entra)", ("manos",), None),
+    "apreton_manos": ("dos manos se dan un apretón para cerrar un trato (un acuerdo, una compra, una sociedad, pactar "
+                      "con los acreedores)", ("manos",), None),
+    "firmar": ("una mano firma un contrato o un cheque con lapicera mientras la otra sostiene el papel (comprar una "
+               "empresa, una deuda, un contrato, una patente)", ("manos",), None),
 }
+# Las de los pedidos del 16/11: solo se ofrecen al guion con `animacion.uso_manos` (las prende marcas.armar_video)
+ACCIONES_V4 = {"uso_manos", "inspiracion", "contar_billetes", "abrir_caja", "apreton_manos", "firmar"}
+CON_V4 = False
 LIBRE = "libre"
 PLANOS = ("arriba", "manos", "lejos", "espaldas", "cerca", "frente")
 SIN_DECO = {"mesa_arriba"}       # fondos propios de la biblioteca (no los elige el guion)
@@ -73,7 +85,7 @@ def guardar_receta(nombre: str, descripcion: str, spec: dict) -> None:
 
 def todas_las_acciones() -> dict[str, str]:
     """{acción: descripción} de la biblioteca (las de código y las guardadas)."""
-    out = {k: v[0] for k, v in ACCIONES.items()}
+    out = {k: v[0] for k, v in ACCIONES.items() if CON_V4 or k not in ACCIONES_V4}
     out.update({k: v.get("descripcion", "") for k, v in recetas().items()})
     return out
 
@@ -181,6 +193,18 @@ def _inspiracion(plano, spec, dur, i, obj, rnd):
     if not (ins.get("fuente") and ins.get("pieza")):
         return _objeto_gira(plano, spec, dur, i, obj, rnd)
     return uso_v3.escena_inspiracion(dur, ins["fuente"], ins["pieza"], ins.get("producto") or obj, seed=i)
+
+
+def _plata(tipo):
+    def f(plano, spec, dur, i, obj, rnd):
+        from . import uso_v3
+
+        return uso_v3.escena_plata(tipo, dur, (spec.get("uso") or {}).get("manga") or "", seed=i)
+    return f
+
+
+_contar_billetes, _abrir_caja, _apreton_manos, _firmar = (_plata(t) for t in
+                                                          ("contar_billetes", "abrir_caja", "apreton_manos", "firmar"))
 
 
 def _vender_tienda(plano, spec, dur, i, obj, rnd):

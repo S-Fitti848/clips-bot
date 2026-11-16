@@ -1075,6 +1075,9 @@ def test_biblioteca_arma_cada_accion_con_sus_planos():
                     "plano": plano, "actores": [_a("inventor", "quieto")], "objetos": [_o("cubo_rubik", "quieto")]}
             d, _ = ac.escena_accion(spec, 3.0, 2, protagonista="cubo_rubik")
             nombres = [el.get("nombre") for el in d["elementos"]]
+            if accion in ("contar_billetes", "abrir_caja", "apreton_manos", "firmar"):   # la plata, con acciones reales
+                assert "mano" in nombres, (accion, plano)
+                continue
             assert "cubo_rubik" in nombres or any(el.get("tipo") == "contador" for el in d["elementos"]), (accion, plano)
     arriba, _ = ac.escena_accion({"frase": "armó el cubo", "parte": "idea", "fondo": "taller", "accion_escena": "armar_mesa",
                                   "plano": "arriba", "actores": [], "objetos": []}, 3.0, 1, protagonista="cubo_rubik")
