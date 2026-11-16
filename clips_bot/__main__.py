@@ -3831,13 +3831,25 @@ def _mejoras_motor_tick(conn, tg: TelegramClient, settings: Settings, ahora=None
     db.set_valor(conn, MEJORAS_DIA, hoy)
     desde = (ahora.date() - timedelta(days=7)).isoformat()
     flojas = {k: v for k, v in json.loads(db.get_valor(conn, ASINACIO_FLOJAS) or "{}").items() if v.get("fecha", "") >= desde}
-    if not flojas:
+    # las escenas que ni la biblioteca de escenas aprobadas pudo arreglar: su regla va PRIMERA (Santi, 2026-11-16)
+    todas_primero = json.loads(db.get_valor(conn, marcas.MEJORAS_PRIMERO) or "[]")
+    primero = [x for x in todas_primero if not x.get("enviada")]
+    if not flojas and not primero:
         return
     from . import stats_fb
 
     stats = {x.get("clip_id"): x for x in stats_fb.cargar(conn).values() if x.get("canal") == "facebook_asinacio"}
     pedidas = [p_ for p_ in json.loads(db.get_valor(conn, MEJORAS_PEDIDAS) or "[]") if not p_.get("hecha")]
     lineas, imagenes, rutas = [], [], []
+    conteo_primero: dict[str, int] = {}
+    for x in primero:
+        for r_ in x.get("reglas") or []:
+            conteo_primero[r_] = conteo_primero.get(r_, 0) + 1
+    if primero:
+        lineas.append("PRIMERO, OBLIGATORIO: la mejora 1 (y las siguientes si hace falta) ataca estas reglas del estándar "
+                      "que quedaron sin cumplir aun reemplazando la escena por una de la biblioteca: "
+                      + " | ".join(f"{x.get('video')} escena {x.get('frase')}: {', '.join(x.get('reglas') or [])} "
+                                   f"({x.get('que')})" for x in primero[:8]))
     if pedidas:
         lineas.append("YA PEDIDAS POR SANTI (no las repitas entre las 5): " + " | ".join(p_["mejora"] for p_ in pedidas))
     for clip, v in sorted(flojas.items()):
@@ -3876,8 +3888,15 @@ def _mejoras_motor_tick(conn, tg: TelegramClient, settings: Settings, ahora=None
     historial = json.loads(db.get_valor(conn, MEJORAS) or "[]")
     historial.append({"fecha": hoy, "mejoras": mejoras})
     db.set_valor(conn, MEJORAS, json.dumps(historial[-20:], ensure_ascii=False))
+    if primero:
+        for x in todas_primero:
+            x["enviada"] = True
+        db.set_valor(conn, marcas.MEJORAS_PRIMERO, json.dumps(todas_primero[-60:], ensure_ascii=False))
     tg.send_message(DUENO, f"🔧 Claude Code: 🛠 <b>Mejoras al motor de Así Nació</b> ({len(flojas)} videos de la semana). "
                            "Ordenadas por impacto; decime cuáles apruebo y las programo."
+                           + ("\n\n<b>Primero, lo que no se pudo corregir solo</b> (ni con una escena de la biblioteca): "
+                              + ", ".join(f"{r_} ({n_} {'vez' if n_ == 1 else 'veces'})" for r_, n_ in
+                                          sorted(conteo_primero.items(), key=lambda kv: -kv[1])) if primero else "")
                            + ("\n\n<b>Ya pedidas por vos, en esta tanda:</b>\n" + "\n".join(
                                f"• {html.escape(p_['mejora'])}" for p_ in pedidas) if pedidas else ""))
     for n, m_ in enumerate(mejoras, 1):

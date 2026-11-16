@@ -7,12 +7,19 @@ Cómo se usa (`clips_bot/calidad.py`):
 
 1. Antes de publicar, la revisión (Claude, mirando los cuadros del video o la hoja de fotos) puntúa cada video contra
    las reglas marcadas **revisión** y corrige sola lo que no pasa (con el `arreglo` de la regla).
-2. Si después de corregir algo sigue sin cumplirse, el video sale igual y el mensaje dice qué regla no cumplió
+2. Así Nació, después de las 2 vueltas (Santi, 2026-11-16; `animacion/reemplazo.py`): una escena que sigue sin pasar
+   se reemplaza SOLO a ella por una de la **biblioteca de escenas aprobadas** (las que pasaron el estándar en otros
+   videos, `data/animacion/escenas_estandar.json`), adaptada a esa frase (mismo protagonista, los mismos personajes,
+   lugar, época y luz), sin dibujos nuevos. Cada candidata la mira Haiku con 3 cuadros. El empalme no mueve nada:
+   misma duración, la misma transición, la voz y los subtítulos intactos, y el resto del video igual (un solo render
+   al final). Si ninguna pasa, el aviso y esa regla va PRIMERA en las mejoras al motor de la semana. Tope: si las
+   correcciones de un video pasan de US$ 0,50, se frena y el mensaje lo dice.
+3. Si después de corregir algo sigue sin cumplirse, el video sale igual y el mensaje dice qué regla no cumplió
    ("📏 Estándar 12/14 · ❌ AN-05 …"). Las reglas marcadas **código** las chequea el código (validación del guion,
    fotos, audio); si una no se cumple, también va en el mensaje.
-3. Cada regla nueva que apruebe Santi se suma ACÁ, con el próximo número libre de su canal. El código lee este archivo:
+4. Cada regla nueva que apruebe Santi se suma ACÁ, con el próximo número libre de su canal. El código lee este archivo:
    una regla nueva de revisión entra en la próxima revisión sin tocar nada más.
-4. Cada falla queda anotada (tabla `calidad_fallas`) y los lunes desde las 09:30 le llega a Santi qué reglas fallaron
+5. Cada falla queda anotada (tabla `calidad_fallas`) y los lunes desde las 09:30 le llega a Santi qué reglas fallaron
    más en la semana, para mejorar el motor (Santi no revisa video por video).
 
 Formato de cada regla (lo lee el código; no cambiarlo):

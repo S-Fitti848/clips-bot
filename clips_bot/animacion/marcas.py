@@ -33,6 +33,8 @@ import yaml
 
 from clips_bot import calidad
 
+from . import reemplazo as _rz
+
 from . import acciones as ac
 from . import escenas as esc
 from . import paleta as P
@@ -2408,6 +2410,23 @@ def revisar_visual(cliente, d: dict, datos: dict, carpeta: Path, capturar=None, 
     return problemas_del_estandar(fallas, problemas, len(claves)), claves
 
 
+MEJORAS_PRIMERO = "mejoras_primero"   # bot_estado: [{fecha, video, frase, reglas, que, enviada}]
+
+
+def _anotar_mejoras_primero(conn, video: str, sin_arreglo: list[dict]) -> None:
+    """Una escena que ni la biblioteca pudo arreglar: su regla va PRIMERA en las mejoras al motor de la semana
+    (Santi, 2026-11-16)."""
+    from clips_bot import db
+
+    try:
+        lista = json.loads(db.get_valor(conn, MEJORAS_PRIMERO) or "[]")
+        for x in sin_arreglo:
+            lista.append({"fecha": date.today().isoformat(), "video": video, **x, "enviada": False})
+        db.set_valor(conn, MEJORAS_PRIMERO, json.dumps(lista[-60:], ensure_ascii=False))
+    except Exception as err:  # noqa: BLE001
+        log.warning("mejoras primero: no pude anotar (%s)", err)
+
+
 def problemas_del_estandar(fallas: list[dict], problemas: list[dict], n_cuadros: int) -> list[dict]:
     """Cada regla del estándar que no se cumple y que la revisión no puso en `problemas` se suma con el arreglo de la
     regla (ESTANDAR_CALIDAD.md), así se corrige igual."""
@@ -2736,8 +2755,17 @@ def armar_video(conn, settings, carpeta: Path, cliente=None, wiki=None, hoy: dat
     # Estándar de calidad (Santi, 2026-11-16): 2 vueltas de corrección y una última que solo mira; lo que no se
     # cumplió después de corregir sale en el mensaje y queda anotado para el resumen de los lunes.
     primeras: list[str] | None = None
+    fila_rev = ultima_fila_uso(conn) if conn is not None else 0
+    tope_rev = _rz.TOPE_CORRECCIONES_USD
+
+    def costo_rev() -> float:
+        return costo_desde(conn, fila_rev) if conn is not None else 0.0
+
+    frenado = 0.0
+    ultima: tuple[list, list] = ([], [])
     for vuelta in range(VUELTAS_REVISION + 1):
         problemas, claves = revisar_visual(cliente, d, datos, carpeta, avisar=avisar, conn=conn)
+        ultima = (claves, problemas)
         if primeras is None and d.get("_estandar_ok"):
             primeras = [f["id"] for f in d.get("_estandar") or []]
         if not problemas:
@@ -2746,6 +2774,11 @@ def armar_video(conn, settings, carpeta: Path, cliente=None, wiki=None, hoy: dat
         if vuelta == VUELTAS_REVISION:
             revision.append(f"vuelta {vuelta + 1}: quedó sin corregir: "
                             + "; ".join(str(pr.get("que") or "")[:80] for pr in problemas[:4]))
+            break
+        if costo_rev() > tope_rev:      # Santi, 2026-11-16: las correcciones de un video, como mucho US$ 0,50
+            frenado = costo_rev()
+            revision.append(f"correcciones frenadas: ya iban US$ {frenado:.2f} (tope {tope_rev:g})")
+            avisar(revision[-1])
             break
         if REGLAS_V3:
             # Santi, 2026-11-16: "nadie parado sin hacer nada, nunca: la revisión lo rechaza siempre"; y el producto
@@ -2796,12 +2829,70 @@ def armar_video(conn, settings, carpeta: Path, cliente=None, wiki=None, hoy: dat
         datos, eventos = linea_de_tiempo(d, inicios, fin, palabras, wav,
                                          subtitulos="viral" if settings.animacion.subtitulos_virales else "clasico",
                                          visual=getattr(cfg, "visual_plus", False))
-    tiempos["revision_s"] = round(time.time() - t0, 1)
+    # Lo que sigue sin pasar después de las 2 vueltas: esa escena se reemplaza por una de la biblioteca de escenas
+    # aprobadas (Santi, 2026-11-16; reemplazo.py), chequeada con Haiku; el resto del video no se toca.
+    reemplazos, sin_arreglo = [], []
+    claves_f, problemas_f = ultima
     revisado = bool(d.get("_estandar_ok"))
+    if revisado and problemas_f and not frenado:
+        from clips_bot import claude as _claude
+
+        haiku = _claude.cliente(_claude.HAIKU, esfuerzo="low")
+        por_frase: dict[int, list[str]] = {}
+        for pr in problemas_f:
+            n_ = int(pr.get("cuadro") or 0) - 1
+            if not 0 <= n_ < len(claves_f):
+                continue
+            esc_t = datos["escenas"][claves_f[n_][1]]
+            k = esc_t.get("frase")
+            if not isinstance(k, int) or k == 0 or esc_t.get("gancho_v3") or esc_t.get("girar"):
+                continue
+            ids = re.findall(r"AN-\d+", str(pr.get("que") or "")) + [
+                f["id"] for f in d.get("_estandar") or [] if f.get("cuadro") == n_ + 1]
+            por_frase.setdefault(k, [])
+            por_frase[k] += [i for i in ids if i not in por_frase[k]]
+
+        def _armar_todo(d_):
+            return linea_de_tiempo(d_, inicios, fin, palabras, wav,
+                                   subtitulos="viral" if settings.animacion.subtitulos_virales else "clasico",
+                                   visual=getattr(cfg, "visual_plus", False))
+
+        clave_video = f"{hoy.isoformat()}/{e.marca.nombre}/{e.angulo}"
+        for k, ids in por_frase.items():
+            if costo_rev() > tope_rev:
+                frenado = costo_rev()
+                revision.append(f"reemplazo de escenas frenado: ya iban US$ {frenado:.2f} (tope {tope_rev:g})")
+                break
+            hecho = _rz.reemplazar(haiku, d, datos, eventos, k, ids, _armar_todo, clave_video, e.marca.nombre,
+                                   carpeta, sigue=lambda: costo_rev() <= tope_rev, avisar=avisar)
+            if hecho:
+                datos, eventos, d, texto_ = hecho
+                reemplazos.append(texto_)
+                revision.append(texto_)
+                cuadros_k = {n + 1 for n, (_t, i, _q) in enumerate(claves_f) if datos["escenas"][i].get("frase") == k}
+                d["_estandar"] = [f for f in d.get("_estandar") or [] if f.get("cuadro") not in cuadros_k]
+                problemas_f = [pr for pr in problemas_f if int(pr.get("cuadro") or 0) not in cuadros_k]
+            else:
+                sin_arreglo.append({"frase": k + 1, "reglas": ids or ["AN-02"],
+                                    "que": "; ".join(str(pr.get("que") or "")[:120] for pr in problemas_f
+                                                     if 0 < int(pr.get("cuadro") or 0) <= len(claves_f)
+                                                     and datos["escenas"][claves_f[int(pr["cuadro"]) - 1][1]].get("frase") == k)})
+        if sin_arreglo and conn is not None:
+            _anotar_mejoras_primero(conn, clave_video, sin_arreglo)
+    if revisado:
+        try:
+            n_ok = _rz.guardar_aprobadas(d, _rz.escenas_que_pasaron(datos, claves_f, problemas_f),
+                                         f"{hoy.isoformat()}/{e.marca.nombre}/{e.angulo}", e.marca.nombre)
+            avisar(f"biblioteca de escenas aprobadas: +{n_ok}")
+        except Exception as err:  # noqa: BLE001 — guardar nunca frena el video
+            avisar(f"biblioteca de escenas aprobadas: no pude guardar ({str(err)[:100]})")
+    tiempos["revision_s"] = round(time.time() - t0, 1)
     finales = list(d.get("_estandar") or []) if revisado else []
     estandar = {"revisado": revisado, "fallas": finales,
                 "corregidas": sorted(set(primeras or []) - {f["id"] for f in finales}),
-                "guion": [str(x) for x in d.get("_estilo_pendiente") or []]}
+                "guion": [str(x) for x in d.get("_estilo_pendiente") or []],
+                "reemplazos": reemplazos, "sin_arreglo": sin_arreglo,
+                "frenado_usd": round(frenado, 3), "costo_correcciones_usd": round(costo_rev(), 3)}
     calidad.anotar(conn, "asinacio", f"{hoy.isoformat()}/{e.marca.nombre}/{e.angulo}", finales,
                    estandar["corregidas"], [("AN-21", g_[:240]) for g_ in estandar["guion"]], revisado,
                    dia=hoy.isoformat())
@@ -2893,6 +2984,12 @@ def texto_mensaje(r: Resultado, encabezado: str = "", subida: bool = False) -> s
     if r.estandar:
         partes += ["", calidad.texto_estandar("asinacio", r.estandar.get("fallas") or [], r.estandar.get("corregidas"),
                                               revisado=bool(r.estandar.get("revisado")))]
+        partes += [f"🔁 {html.escape(x)}" for x in r.estandar.get("reemplazos") or []]
+        partes += [f"⚠️ escena {x['frase']}: ninguna escena de la biblioteca pasó ({', '.join(x['reglas'])}); va primera "
+                   "en las mejoras de la semana" for x in r.estandar.get("sin_arreglo") or []]
+        if r.estandar.get("frenado_usd"):
+            partes.append(f"💸 <b>Correcciones frenadas</b>: llegaron a US$ {r.estandar['frenado_usd']:.2f} "
+                          f"(tope US$ {_rz.TOPE_CORRECCIONES_USD:.2f}); salió con lo que había")
     if r.revision:
         partes += ["", "<b>Revisión visual:</b> " + html.escape("; ".join(r.revision))[:900]]
     if r.niveles:

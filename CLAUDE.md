@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-11-16 | **Versión:** v1.25.0 (desplegado) | **Modo:** Fase 2: corriendo solo en la Pi. **Rots APAGADO.** Pequeña Historia (3 por día, madrugada desde las 04:00) (publicación sin aprobar: llegan con ❌ Cancelar) y **Así Nació** (2 por día, desde las 07:00, publican 13:00 y 20:00 en YouTube y Facebook con ❌ Cancelar), todo al privado de Santi
+**Snapshot:** 2026-11-16 | **Versión:** v1.26.0 (desplegado) | **Modo:** Fase 2: corriendo solo en la Pi. **Rots APAGADO.** Pequeña Historia (3 por día, madrugada desde las 04:00) (publicación sin aprobar: llegan con ❌ Cancelar) y **Así Nació** (2 por día, desde las 07:00, publican 13:00 y 20:00 en YouTube y Facebook con ❌ Cancelar), todo al privado de Santi
 
 > **SI ESTÁS EMPEZANDO UNA SESIÓN NUEVA, LEÉ §10.** Ahí está qué está hecho, qué quedó a medias,
 > qué falta, y las trampas que ya nos mordieron.
@@ -378,6 +378,15 @@ servicio systemd separado: `clips-bot`).
   lunes desde las 09:30 le llega a Santi qué reglas fallaron más (`_calidad_semana_tick`). **Toda regla de calidad nueva
   que apruebe Santi se suma a ESTANDAR_CALIDAD.md** (con el próximo número libre; las de revisión entran solas en la
   próxima revisión). Santi no revisa video por video.
+- **Así Nació: reemplazo por escena aprobada (Santi, 2026-11-16; `animacion/reemplazo.py`).** Las 2 vueltas de corrección
+  siguen igual; después, una escena que sigue sin pasar se reemplaza SOLO a ella por una de la biblioteca de escenas que
+  ya pasaron el estándar en otro video (`data/animacion/escenas_estandar.json`, se llena sola con cada video), adaptada
+  a esa frase (mismo protagonista, sus personajes, lugar, época, luz y decorado), sin dibujos nuevos; hasta 4
+  candidatas, cada una chequeada con Haiku sobre 3 cuadros. Empalme: se pega solo el tramo de esa escena (misma
+  duración, misma transición; la voz, los subtítulos y los efectos de afuera, intactos; un solo render al final). Si
+  ninguna pasa, aviso y esa regla va PRIMERA en las mejoras al motor (`bot_estado.mejoras_primero`). Tope: si las
+  correcciones de un video pasan de US$ 0,50 (`reemplazo.TOPE_CORRECCIONES_USD`, contado desde las vueltas de
+  revisión), se frena y el mensaje lo dice (💸).
 - **Videos largos: NO por ahora (decisión de Santi, 2026-09-28).** No quiere videos largos con voz
   de IA. Si más adelante se hacen, van con SU voz grabada, no con Gemini TTS ni Piper.
 - **Sin música agregada en los clips.** Cualquier música es riesgo de Content ID. Si el clip trae
@@ -978,6 +987,7 @@ clips_bot/animacion_remotion/ + remotion/  prototipo de Así Nació con Remotion
 assets/fuentes/          Montserrat Black + OFL.txt
 clips_bot/locales.py     §3d: historias de Latinoamérica (Wikipedia por día + la web, Haiku, Sonnet)
 clips_bot/web_historias.py §1: búsqueda web con Haiku (diarios, museos, archivos) y verificación con 2 fuentes por dato
+clips_bot/animacion/reemplazo.py §1: la escena que no pasa el estándar → una aprobada de la biblioteca (Haiku, empalme)
 clips_bot/calidad.py     §1: el estándar de calidad (ESTANDAR_CALIDAD.md): revisión, registro y resumen de los lunes
 clips_bot/stats_fb.py    §1: el resumen de cada Reel de Facebook a las 24 h (Pequeña Historia y Así Nació)
 clips_bot/comunidad_fb.py §1: publicaciones de comunidad de Pequeña Historia (foto de época + pregunta)
@@ -989,7 +999,7 @@ clips_bot/voces.py       voces de Gemini de hoy por clave (con Lo Encontré) y e
 clips_bot/prueba_manual.py prueba manual vs API (§1): el clip del día a mano, registro e informe del feed
 clips_bot/envivo.py      modo en vivo (§3b): quién está al aire, momentos por creadores distintos,
                          alertas en la DB (no repetir, tope, vencer) y el resumen de tiempos
-tests/                   1637 tests sin red ni video (conftest.py: nada sale a YouTube, Facebook ni ElevenLabs) (test_reglas_fijas.py: las 3 reglas de §1)
+tests/                   1645 tests sin red ni video (conftest.py: nada sale a YouTube, Facebook ni ElevenLabs) (test_reglas_fijas.py: las 3 reglas de §1)
 ```
 
 Comandos:
@@ -1182,6 +1192,13 @@ Problemas abiertos:
 
 ## 9. CHANGELOG
 
+- v1.26.0 (2026-11-16, noche) — **Así Nació: reemplazo de la escena que sigue sin pasar** (regla en §1):
+  `reemplazo.py` (biblioteca de escenas aprobadas, `candidatas`, `adaptar`, `empalmar`, `chequear` con Haiku,
+  `reemplazar`), el tope de US$ 0,50 en las correcciones, `marcas.MEJORAS_PRIMERO` en las mejoras de los lunes y jueves,
+  y las líneas 🔁 / ⚠️ / 💸 en el mensaje. Probado en la Pi con el guion del tercer Tupper: la candidata empalma y solo
+  cambia esa escena (misma duración); Haiku la rechazó con razón (una firma no muestra "presentó el tazón"). La
+  biblioteca arranca vacía: hasta que haya videos que pasen, una escena sin arreglo sale con el aviso.
+  `tests/test_reemplazo_escenas.py`.
 - v1.25.0 (2026-11-16, noche) — **Estándar de calidad** (Santi; regla en §1): `ESTANDAR_CALIDAD.md` con 19 reglas de
   Así Nació (14 de revisión y 5 de código) y 13 de Pequeña Historia (9 y 4), juntas de lo aprobado en §1, cada una con
   su id y su arreglo. `calidad.py` lo lee (se relee si cambia), arma el pedido, anota las fallas y arma el resumen de

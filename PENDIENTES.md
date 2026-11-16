@@ -22,6 +22,10 @@ Se actualiza al terminar cada tarea.
       puntúa cada video, corrige sola y lo que quede va en el mensaje (📏); registro en `calidad_fallas`.
 - [ ] Mirar los primeros mensajes con 📏 (17/11): que la revisión puntúe todas las reglas y no invente fallas.
 - [ ] Lunes 23/11, 09:30: primer resumen semanal del estándar a Santi (`_calidad_semana_tick`).
+- [x] 2026-11-16: reemplazo por escena aprobada de la biblioteca después de las 2 vueltas (Haiku con 3 cuadros,
+      empalme sin mover nada, tope US$ 0,50, la regla sin arreglo va primera en las mejoras).
+- [ ] La biblioteca de escenas aprobadas arranca VACÍA (`data/animacion/escenas_estandar.json`): mirar que se llene con
+      los primeros videos y el primer reemplazo real (línea 🔁 en el mensaje).
 - [ ] Cada regla nueva que apruebe Santi → sumarla al documento con el próximo número libre.
 
 ## Latinoamérica: prueba de fuentes web (`web_historias.py`, `historias_fb.web`)
