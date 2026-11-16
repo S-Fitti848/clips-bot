@@ -1572,6 +1572,30 @@ def prop_parecido(nombre: str, descripcion: str = "") -> str:
     return parecido(nombre, opciones, descripcion, guardados, defecto="caja")
 
 
+# Desde qué año existe cada objeto de la biblioteca (Santi, 2026-11-16: "hay monitores de computadora en escenas de
+# 1938 y 1958"): nunca aparece en una escena anterior. Los que no están (botella, caja, mesa, moneda…) existen siempre.
+ANIO_DESDE = {
+    "auto": 1886, "camion": 1896, "celular": 1983, "consola": 1972, "control": 1956, "cohete": 1926,
+    "cubo_rubik": 1974, "hamburguesa": 1900, "lamparita": 1879, "idea_fallida": 1879, "megafono": 1878,
+    "microfono": 1876, "radio": 1920, "tele": 1936, "telefono_disco": 1919, "zapatilla": 1916,
+    "pelota_espuma": 1969, "lata": 1810, "grafico_sube": 1786, "grafico_baja": 1786, "chocolate": 1847,
+    "galletitas": 1850, "juego_mesa": 1850, "calendario": 1582, "billete": 1661, "bolsa_plata": 1600,
+    "reloj_bolsillo": 1600, "cartel": 1800, "trofeo": 1850,
+}
+
+
+def existe_en(nombre: str, anio: int) -> bool:
+    """¿El objeto ya existía en `anio`? (0 = hoy). Un dibujo guardado con su `anio_desde` también cuenta."""
+    if not anio:
+        return True
+    desde = ANIO_DESDE.get(nombre)
+    if desde is None:
+        from . import dibujos
+
+        desde = dibujos.anio_desde(nombre)
+    return not desde or anio >= desde
+
+
 def es_prop(nombre: str) -> bool:
     """De la biblioteca de siempre o un dibujo guardado (dibujos.py, 2026-11-15)."""
     from . import dibujos

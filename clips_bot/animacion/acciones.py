@@ -1273,8 +1273,16 @@ def escena_accion(spec: dict, dur: float, i: int, primera: bool = False, tono: f
                 a.get("cara") or "normal", k, x0=a["x0"], x1=a["x1"], genero=a.get("genero") or "",
                 edad=a.get("edad") or "")
     colores = (P.NARANJA, P.AZUL, P.ROJO, P.VERDE, P.VIOLETA)
-    objetos = [] if hecha else list(spec.get("objetos") or [])[:3]
-    cadena = [] if hecha else [o for o in (spec.get("cadena") or []) if o.get("prop")][:4]
+    # Época (Santi, 2026-11-16): ningún objeto aparece antes del año en que existe (el protagonista, siempre).
+    def _de_epoca(nombre: str) -> bool:
+        return nombre == protagonista or _esc.existe_en(nombre, anio if anio < 2026 else 0)
+
+    if hecha:
+        hecha["elementos"] = [el for el in hecha["elementos"]
+                              if el.get("tipo") != "prop" or _de_epoca(str(el.get("nombre") or ""))]
+        e.elementos = [el for el in e.elementos if el.get("tipo") != "prop" or _de_epoca(str(el.get("nombre") or ""))]
+    objetos = [] if hecha else [o for o in list(spec.get("objetos") or [])[:3] if _de_epoca(str(o.get("prop") or ""))]
+    cadena = [] if hecha else [o for o in (spec.get("cadena") or []) if o.get("prop") and _de_epoca(str(o["prop"]))][:4]
     if cadena:
         proy = next((o for o in objetos if o.get("efecto") in ("vuela", "rebota")), None)
         e.cadena(cadena, (proy or {}).get("prop") or proyectil, colores[i % len(colores)])
@@ -1323,7 +1331,7 @@ def escena_accion(spec: dict, dur: float, i: int, primera: bool = False, tono: f
     # estante, la mesa o el piso (nada de mesas vacías). Más chicos y detrás de los personajes.
     interior = fondo in ("casa", "oficina", "taller", "fabrica", "tienda", "laboratorio", "hospital")
     # afuera (calle, campo, puerto) el fondo ya trae su contexto (autos, faroles, vidrieras): nada flotando en la vereda
-    decorado = [str(x) for x in (spec.get("decorado") or []) if x][:3] if interior else []
+    decorado = [str(x) for x in (spec.get("decorado") or []) if x and _de_epoca(str(x))][:3] if interior else []
     for j, nombre in enumerate(decorado):
         from . import escenas as _esc2
 

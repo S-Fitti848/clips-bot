@@ -3808,6 +3808,7 @@ def _comunidad_tick(conn, tg: TelegramClient, settings: Settings, ahora=None, cl
 MEJORAS_DIA = "mejoras_motor_dia"     # bot_estado: el día (AR) en que ya se mandaron las mejoras
 MEJORAS = "mejoras_motor"             # bot_estado: [{fecha, mejoras}] las propuestas (Santi las aprueba)
 MEJORAS_HORA = "10:00"
+MEJORAS_PEDIDAS = "mejoras_pedidas"   # bot_estado: [{fecha, mejora, hecha}] lo que Santi ya pidió (aprobado)
 
 
 def _mejoras_motor_tick(conn, tg: TelegramClient, settings: Settings, ahora=None, cliente=None) -> None:
@@ -3833,7 +3834,10 @@ def _mejoras_motor_tick(conn, tg: TelegramClient, settings: Settings, ahora=None
     from . import stats_fb
 
     stats = {x.get("clip_id"): x for x in stats_fb.cargar(conn).values() if x.get("canal") == "facebook_asinacio"}
+    pedidas = [p_ for p_ in json.loads(db.get_valor(conn, MEJORAS_PEDIDAS) or "[]") if not p_.get("hecha")]
     lineas, imagenes, rutas = [], [], []
+    if pedidas:
+        lineas.append("YA PEDIDAS POR SANTI (no las repitas entre las 5): " + " | ".join(p_["mejora"] for p_ in pedidas))
     for clip, v in sorted(flojas.items()):
         st = stats.get(clip) or {}
         num = (f" [24 h en Facebook: {st.get('vistas')} rep., pasan los 3 s {st.get('pasa_3s')} %, siguen en el 10: "
@@ -3871,7 +3875,9 @@ def _mejoras_motor_tick(conn, tg: TelegramClient, settings: Settings, ahora=None
     historial.append({"fecha": hoy, "mejoras": mejoras})
     db.set_valor(conn, MEJORAS, json.dumps(historial[-20:], ensure_ascii=False))
     tg.send_message(DUENO, f"🔧 Claude Code: 🛠 <b>Mejoras al motor de Así Nació</b> ({len(flojas)} videos de la semana). "
-                           "Ordenadas por impacto; decime cuáles apruebo y las programo.")
+                           "Ordenadas por impacto; decime cuáles apruebo y las programo."
+                           + ("\n\n<b>Ya pedidas por vos, en esta tanda:</b>\n" + "\n".join(
+                               f"• {html.escape(p_['mejora'])}" for p_ in pedidas) if pedidas else ""))
     for n, m_ in enumerate(mejoras, 1):
         caption = (f"{n}. <b>{html.escape(str(m_.get('mejora') or ''))}</b> ({html.escape(str(m_.get('categoria') or ''))})\n"
                    f"{html.escape(str(m_.get('por_que') or ''))}")

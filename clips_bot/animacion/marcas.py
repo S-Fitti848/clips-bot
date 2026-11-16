@@ -1079,7 +1079,8 @@ SISTEMA_V3 = """Te paso el guion de un video corto animado de "Así Nació" (el 
    ("ALGO QUE NADIE ESPERABA", "NO VAS A CREERLO"): el dato concreto más fuerte.
 2. `decorado`: para cada escena (desde la 2), 1 a 3 objetos de la lista que dan CONTEXTO a la historia en ese lugar y
    esa época (una cocina de 1946: botella, jarrón, radio; una oficina: teléfono de disco, calendario). Van atrás, sobre
-   el estante, la mesa o el piso. Solo nombres de la lista. Nada que no tenga relación con la historia.
+   el estante, la mesa o el piso. Solo nombres de la lista. Nada que no tenga relación con la historia ni que no
+   existiera en el año de esa escena (nada de celulares, teles ni monitores en una escena de 1938).
 Respondé solo el JSON."""
 SCHEMA_V3 = {"type": "OBJECT", "properties": {
     "ganchos": {"type": "ARRAY", "items": {"type": "OBJECT", "properties": {
@@ -1356,7 +1357,10 @@ REGLA 16 — ESCENAS VIVAS (Santi, 2026-11-16; las 3 opciones de gancho y el dec
 - El OBJETO PROTAGONISTA tiene que parecerse al real: el Tupper es un recipiente de plástico bajo con tapa
   hermética, no una olla. Si ningún dibujo de la lista ES ese objeto (no uno parecido), `dibujo_nuevo` con una
   descripción precisa de su forma, material y colores.
-- Cada frase dura 3 segundos como mucho al decirla (8 a 10 palabras): el video corta a otra toma cada 3 s."""
+- Cada frase dura 3 segundos como mucho al decirla (8 a 10 palabras): el video corta a otra toma cada 3 s.
+- ÉPOCA DE CADA OBJETO: nada que no existiera en el `anio_escena` (ni un celular, una tele o un monitor en 1938):
+  el código saca lo que no corresponde.
+- Nada de objetos sin relación con la historia ni con etiquetas de texto escritas, salvo que la historia lo pida."""
 
 
 def escribir_guion(cliente, e: Elegido, fuente: str, reintentos: int = 6, avisar=log.info,
@@ -1489,6 +1493,14 @@ def resolver_objetos(cliente, d: dict, e: "Elegido | None" = None, avisar=log.in
 
     def arreglar(o: dict, clave: str = "prop", que_es: str = "") -> None:
         nombre = prop_real(o) if clave == "prop" else str(o.get(clave) or "")
+        vigente = dibujos.actual(nombre) if nombre else nombre   # una versión nueva reemplaza a la vieja (2026-11-16)
+        if vigente != nombre:
+            cambios.append(f"{nombre} → {vigente} (versión nueva)")
+            if o.get(clave) == DIBUJO_NUEVO:
+                o["dibujo"] = vigente
+            else:
+                o[clave] = vigente
+            nombre = vigente
         if not nombre or esc.es_prop(nombre):
             return
         nuevo = resolver(nombre, que_es or str(o.get("que_es") or ""))
@@ -1509,6 +1521,32 @@ def resolver_objetos(cliente, d: dict, e: "Elegido | None" = None, avisar=log.in
     pr = d.get("protagonista")
     if isinstance(pr, dict):
         arreglar(pr)
+        cambios += unificar_protagonista(d)
+    return cambios
+
+
+def unificar_protagonista(d: dict) -> list[str]:
+    """Santi, 2026-11-16: dos dibujos del mismo objeto en un video (el Tupper olla de una prueba vieja y el nuevo):
+    todo dibujo guardado que sea el mismo objeto que el protagonista pasa a ser el del protagonista, en todas las
+    escenas, y el viejo sale de la biblioteca (dibujos.reemplazar)."""
+    from . import dibujos
+
+    pr = d.get("protagonista") or {}
+    prota = prop_real(pr)
+    guardados = dibujos.biblioteca()
+    if prota not in guardados:
+        return []
+    desc = guardados[prota] + " " + str(pr.get("que_es") or "")
+    cambios = []
+    for e_ in d.get("escenas") or []:
+        for o in e_.get("objetos") or []:
+            n_ = prop_real(o)
+            if n_ != prota and n_ in guardados and dibujos.mismo_objeto(guardados[n_], desc):
+                dibujos.reemplazar(n_, prota)
+                guardados.pop(n_, None)
+                cambios.append(f"{n_} → {prota} (el mismo objeto)")
+            if dibujos.actual(n_) == prota and n_ != prota:
+                o["prop"], o["dibujo"] = (DIBUJO_NUEVO, prota) if o.get("prop") == DIBUJO_NUEVO else (prota, "")
     return cambios
 
 
@@ -1596,7 +1634,8 @@ def linea_de_tiempo(d: dict, inicios: list[float], fin: float, palabras: list,
         if v3 and vis is not None and vis.get("rotulo"):
             # el rótulo lleva año y lugar ("1938 · Massachusetts", Santi 2026-11-16)
             partes = [x.strip() for x in str(vis["rotulo"]).split("·") if x.strip()]
-            anio_r = next((x for x in partes if x.isdigit()), "") or str(anio_esc or anio_actual)
+            # el año de la escena manda (es el que decide la decoración): nunca un rótulo de 1958 con monitores de hoy
+            anio_r = str(anio_esc) if anio_esc else (next((x for x in partes if x.isdigit()), "") or str(anio_actual))
             lugar_r = next((x for x in partes if not x.isdigit()), "") or ultimo_lugar
             ultimo_lugar = lugar_r or ultimo_lugar
             vis = {**vis, "rotulo": " · ".join(x for x in (anio_r, lugar_r) if x)}
@@ -2046,6 +2085,8 @@ def redibujar_protagonista(cliente, d: dict, como_es: str, avisar=log.info) -> s
             if prop_real(o) == viejo:
                 o["prop"], o["dibujo"] = DIBUJO_NUEVO, nuevo
     pr["prop"], pr["dibujo"] = DIBUJO_NUEVO, nuevo
+    if viejo in dibujos.biblioteca():      # la versión vieja sale de la biblioteca (Santi, 2026-11-16)
+        dibujos.reemplazar(viejo, nuevo)
     return f"redibujé el protagonista ({viejo} → {nuevo}): {como_es[:100]}"
 
 

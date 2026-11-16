@@ -36,19 +36,27 @@ Devolvé SOLO el contenido de un SVG (sin la etiqueta <svg>): formas <g>, <path>
 - estilo del canal: contorno {P.CONTORNO} de {P.TRAZO} px (stroke-linejoin round), colores planos y saturados
   pero no chillones, 2 a 4 colores, un brillo blanco chico arriba a la izquierda;
 - que se reconozca SIN leer: nada de texto, letras ni números; nada de logos ni marcas reales;
-- simple: 4 a 25 formas, menos de 8.000 caracteres."""
+- simple: 4 a 25 formas, menos de 8.000 caracteres.
+Además `anio_desde`: el año desde el que existe ese objeto tal como lo dibujaste (un celular, 1983; un táper de
+plástico, 1946; una hoja de papel, 0 si existe desde siempre): nunca aparece en una escena anterior."""
 
-SCHEMA = {"type": "OBJECT", "properties": {"svg": {"type": "STRING"}}, "required": ["svg"]}
+SCHEMA = {"type": "OBJECT", "properties": {"svg": {"type": "STRING"}, "anio_desde": {"type": "INTEGER"}},
+          "required": ["svg", "anio_desde"]}
 
 
 def nombre_valido(nombre: str) -> bool:
     return bool(_NOMBRE.match(str(nombre or "")))
 
 
+REEMPLAZOS = "reemplazos.json"     # {viejo: nuevo}: una versión nueva de un objeto reemplaza a la vieja (2026-11-16)
+
+
 def biblioteca() -> dict[str, str]:
-    """{nombre: descripción} de los dibujos guardados."""
+    """{nombre: descripción} de los dibujos guardados (sin los reemplazados)."""
     out = {}
     for f in sorted(CARPETA.glob("*.json")):
+        if f.name == REEMPLAZOS:
+            continue
         try:
             out[f.stem] = json.loads(f.read_text(encoding="utf-8")).get("descripcion", "")
         except (OSError, ValueError):
@@ -56,7 +64,70 @@ def biblioteca() -> dict[str, str]:
     return out
 
 
+def reemplazos() -> dict[str, str]:
+    try:
+        return json.loads((CARPETA / REEMPLAZOS).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+
+
+def actual(nombre: str) -> str:
+    """El nombre vigente de un dibujo: si se dibujó una versión nueva, la nueva (siguiendo la cadena)."""
+    r, vistos = reemplazos(), set()
+    while nombre in r and nombre not in vistos:
+        vistos.add(nombre)
+        nombre = r[nombre]
+    return nombre
+
+
+def reemplazar(viejo: str, nuevo: str) -> None:
+    """Santi, 2026-11-16 ("en la escena de manos volvió el Tupper con forma de olla"): la versión nueva reemplaza a la
+    vieja en todas las escenas y la vieja sale de la biblioteca (se mueve a retirados/, no se pierde)."""
+    if viejo == nuevo or not nombre_valido(viejo) or not nombre_valido(nuevo):
+        return
+    r = reemplazos()
+    r[viejo] = nuevo
+    CARPETA.mkdir(parents=True, exist_ok=True)
+    (CARPETA / REEMPLAZOS).write_text(json.dumps(r, ensure_ascii=False, indent=1), encoding="utf-8")
+    retirados = CARPETA / "retirados"
+    for ext in (".svg", ".json"):
+        f = CARPETA / f"{viejo}{ext}"
+        if f.exists():
+            retirados.mkdir(exist_ok=True)
+            f.replace(retirados / f.name)
+    log.info("dibujo %s reemplazado por %s", viejo, nuevo)
+
+
+_VACIAS = {"sin", "texto", "logos", "logo", "con", "color", "colores", "una", "uno", "del", "las", "los", "que", "muy",
+           "forma", "arriba", "abajo", "chico", "chica", "grande", "simple"}
+
+
+def _clave(t: str) -> set[str]:
+    import unicodedata
+
+    t = unicodedata.normalize("NFKD", str(t or "").lower())
+    t = "".join(ch for ch in t if not unicodedata.combining(ch))
+    return {w for w in re.split(r"[^a-z0-9]+", t) if len(w) >= 4 and w not in _VACIAS}
+
+
+def mismo_objeto(desc_a: str, desc_b: str) -> bool:
+    """¿Dos descripciones son del mismo objeto? (la mitad o más de las palabras de la más corta, al menos 3)."""
+    a, b = _clave(desc_a), _clave(desc_b)
+    comunes = a & b
+    return len(comunes) >= 3 and len(comunes) * 2 >= min(len(a), len(b))
+
+
+def anio_desde(nombre: str) -> int:
+    """Desde qué año existe el objeto de un dibujo guardado (0 = no se sabe: se usa en cualquier época)."""
+    try:
+        d = json.loads((CARPETA / f"{actual(nombre)}.json").read_text(encoding="utf-8"))
+        return int(d.get("anio_desde") or 0)
+    except (OSError, ValueError, TypeError):
+        return 0
+
+
 def svg_de(nombre: str) -> str | None:
+    nombre = actual(str(nombre or ""))
     f = CARPETA / f"{nombre}.svg"
     try:
         return f.read_text(encoding="utf-8") if nombre_valido(nombre) else None
@@ -109,14 +180,17 @@ def dibujar(cliente, nombre: str, descripcion: str, contexto: str = "") -> str:
     ultimo = ""
     for _ in range(2):
         try:
-            svg = limpiar(json.loads(cliente.json(SISTEMA, pedido + ultimo, SCHEMA, 0.6)).get("svg"))
+            r = json.loads(cliente.json(SISTEMA, pedido + ultimo, SCHEMA, 0.6))
+            svg = limpiar(r.get("svg"))
+            anio = int(r.get("anio_desde") or 0) if str(r.get("anio_desde") or "0").lstrip("-").isdigit() else 0
             probar(svg)
         except Exception as err:  # noqa: BLE001 — se reintenta una vez con el error
             ultimo = f"\n\nTu dibujo anterior no sirvió: {str(err)[:200]}. Hacelo más simple."
             continue
         CARPETA.mkdir(parents=True, exist_ok=True)
         (CARPETA / f"{nombre}.svg").write_text(svg, encoding="utf-8")
-        (CARPETA / f"{nombre}.json").write_text(json.dumps({"descripcion": descripcion}, ensure_ascii=False),
+        (CARPETA / f"{nombre}.json").write_text(json.dumps({"descripcion": descripcion, "anio_desde": max(0, anio)},
+                                                           ensure_ascii=False),
                                                encoding="utf-8")
         log.info("dibujo nuevo guardado: %s (%s)", nombre, descripcion)
         return svg

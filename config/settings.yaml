@@ -566,6 +566,9 @@ historias_fb:
   # web_tope_usd ese día, se apaga sola y avisa; si no, queda andando.
   web: true
   web_tope_usd: 0.45
+  # Publicaciones de comunidad (Santi, 2026-11-16): PRENDIDAS, 1 por día a las 13:00 AR (comunidad_fb.py).
+  comunidad: true
+  comunidad_hora: "13:00"
 
 # Lo que pega en otros canales → el clip original (pego.py, 2026-09-29). Una vez por día (y en
 # /buscar): Shorts de OTROS canales que nombran a cada streamer de las carpetas con diarios,

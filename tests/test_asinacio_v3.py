@@ -174,3 +174,45 @@ def test_las_opciones_y_el_decorado_van_en_un_pedido_aparte():
     assert d["ganchos"] == OPS and d["escenas"][1]["decorado"] == ["radio", "botella"]
     assert "DISTINTOS" in cli.prompts[1]            # el segundo pedido lleva el error del primero
     assert not marcas.completar_v3(_Completa(malo, malo, malo), guion())
+
+
+def test_la_version_nueva_de_un_dibujo_reemplaza_a_la_vieja(monkeypatch, tmp_path):
+    """Santi, 2026-11-16: en la escena de manos volvió el Tupper con forma de olla (tazon_maravilla, de una prueba
+    vieja) en vez del nuevo (tazon_tupper)."""
+    from clips_bot.animacion import dibujos
+    from clips_bot.animacion import escenas as esc
+
+    monkeypatch.setattr(dibujos, "CARPETA", tmp_path)
+    for nombre, desc in (("tazon_maravilla", "Recipiente de plástico bajo y redondo, celeste translúcido, con una tapa "
+                                             "blanca hermética"),
+                         ("tazon_tupper", "tazón redondo de plástico celeste translúcido con una tapa blanca ajustada"),
+                         ("documento_quiebra", "hoja de papel blanca con un sello rojo redondo")):
+        (tmp_path / f"{nombre}.svg").write_text("<g/>", encoding="utf-8")
+        (tmp_path / f"{nombre}.json").write_text(json.dumps({"descripcion": desc}), encoding="utf-8")
+    d = guion(protagonista={"prop": "tazon_tupper", "que_es": "un recipiente de plástico con tapa hermética", "dibujo": ""})
+    d["escenas"][3]["objetos"] = [{"prop": "tazon_maravilla", "efecto": "quieto", "donde": "centro", "soporte": "mano"},
+                                  {"prop": "documento_quiebra", "efecto": "quieto", "donde": "derecha", "soporte": "mesa"}]
+    cambios = marcas.resolver_objetos(None, d)
+    assert [o["prop"] for o in d["escenas"][3]["objetos"]] == ["tazon_tupper", "documento_quiebra"]
+    assert any("tazon_maravilla → tazon_tupper" in c for c in cambios)
+    assert "tazon_maravilla" not in dibujos.biblioteca() and (tmp_path / "retirados" / "tazon_maravilla.svg").exists()
+    assert dibujos.actual("tazon_maravilla") == "tazon_tupper" and esc.es_prop("tazon_maravilla")   # un guion viejo, el nuevo
+
+
+def test_ningun_objeto_antes_de_que_exista():
+    """Santi, 2026-11-16: monitores y celulares en escenas de 1938."""
+    from clips_bot.animacion import acciones as ac
+    from clips_bot.animacion import escenas as esc
+
+    assert not esc.existe_en("celular", 1938) and esc.existe_en("celular", 2024) and esc.existe_en("botella", 1700)
+    assert esc.existe_en("celular", 0)                  # hoy
+    spec = {"fondo": "oficina", "actores": [], "objetos": [{"prop": "celular", "efecto": "quieto", "donde": "centro",
+                                                            "soporte": "mesa"},
+                                                           {"prop": "telefono_disco", "efecto": "quieto", "donde": "izquierda",
+                                                            "soporte": "mesa"}],
+            "decorado": ["tele", "calendario"]}
+    esc_d, _ = ac.escena_accion(spec, 3.0, 2, anio=1915)
+    nombres = {el.get("nombre") for el in esc_d["elementos"] if el.get("tipo") == "prop"}
+    assert "celular" not in nombres and "telefono_disco" not in nombres and "tele" not in nombres
+    esc_d, _ = ac.escena_accion({**spec, "objetos": spec["objetos"][:1]}, 3.0, 2, anio=1938, protagonista="celular")
+    assert "celular" in {el.get("nombre") for el in esc_d["elementos"]}     # el protagonista, siempre

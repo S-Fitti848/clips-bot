@@ -72,7 +72,7 @@ def test_el_gancho_sale_de_lo_guardado(tmp_path):
     assert sf.gancho_y_titulo("no_existe", tmp_path) == ("", "")
 
 
-def test_publicacion_de_comunidad_apagada_y_programada(tmp_path, monkeypatch):
+def test_publicacion_de_comunidad_programada(tmp_path, monkeypatch):
     """Santi, 2026-11-16: 1 por día a las 13:00 con la historia de hoy (apagado hasta que apruebe los ejemplos)."""
     from dataclasses import replace
     from pathlib import Path
@@ -84,10 +84,10 @@ def test_publicacion_de_comunidad_apagada_y_programada(tmp_path, monkeypatch):
 
     conn = db.connect(tmp_path / "c.db")
     s = load_settings()
-    assert s.historias_fb.comunidad is False
+    assert s.historias_fb.comunidad is True and s.historias_fb.comunidad_hora == "13:00"   # prendida el 16/11
     tg = _TG()
     ahora = datetime(2026, 11, 17, 10, 30, tzinfo=m.AR)
-    m._comunidad_tick(conn, tg, s, ahora=ahora)
+    m._comunidad_tick(conn, tg, replace(s, historias_fb=replace(s.historias_fb, comunidad=False)), ahora=ahora)
     assert not tg.mensajes                                       # apagado: nada
     s = replace(s, historias_fb=replace(s.historias_fb, comunidad=True))
     monkeypatch.setattr(config, "OUTPUT_DIR", tmp_path)
