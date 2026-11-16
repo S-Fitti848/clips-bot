@@ -2964,6 +2964,10 @@ clips" queda sin uso mientras Rots siga apagado.
 - No tocar el turno de render compartido salvo que lo pida.
 - Mensajes míos por Telegram empiezan con "🔧 Claude Code:". Todo a su privado.
 - Así Nació: dibujos propios, sin logos reales; Tito es el locutor fijo y la cara del canal.
+- **Pruebas del motor de Así Nació (Santi, 2026-11-16, para ahorrar):** nunca un video entero para probar: solo las
+  escenas que cambiaron, con un guion y una voz ya hechos (sin guion nuevo de Claude ni voz de ElevenLabs), y a Santi una
+  hoja de cuadros (6-10 por escena) o un clip corto de esas escenas. El video completo, solo aprobado y antes de prenderlo
+  para todos. (Cada Tupper completo costaba ~US$ 1,3 de Claude, ~450 créditos y 8-9 min de render.)
 
 ### Esperando respuesta de Santi (NO programar sin su OK)
 
