@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-11-16 | **Versión:** v1.17.0 (desplegado) | **Modo:** Fase 2: corriendo solo en la Pi. **Rots APAGADO.** Pequeña Historia (3 por día, madrugada desde las 04:00) (publicación sin aprobar: llegan con ❌ Cancelar) y **Así Nació** (2 por día, desde las 07:00, publican 13:00 y 20:00 en YouTube y Facebook con ❌ Cancelar), todo al privado de Santi
+**Snapshot:** 2026-11-16 | **Versión:** v1.17.1 (desplegado) | **Modo:** Fase 2: corriendo solo en la Pi. **Rots APAGADO.** Pequeña Historia (3 por día, madrugada desde las 04:00) (publicación sin aprobar: llegan con ❌ Cancelar) y **Así Nació** (2 por día, desde las 07:00, publican 13:00 y 20:00 en YouTube y Facebook con ❌ Cancelar), todo al privado de Santi
 
 > **SI ESTÁS EMPEZANDO UNA SESIÓN NUEVA, LEÉ §10.** Ahí está qué está hecho, qué quedó a medias,
 > qué falta, y las trampas que ya nos mordieron.
@@ -201,7 +201,12 @@ servicio systemd separado: `clips-bot`).
   `anio_escena` = la época de cada escena (la decoración sale de ahí: nada de monitores en 1974). Si falta un
   dibujo, el guion pide `dibujo_nuevo` + `dibujos_nuevos` y Sonnet lo dibuja como SVG (`dibujos.py`: solo
   formas, sin texto ni logos, probado en el rasterizador) y queda guardado en `data/animacion/dibujos/` para
-  los próximos; si no se puede, se reformula la escena (corrección puntual) o se saca el objeto.
+  los próximos; si no se puede, se reformula la escena (corrección puntual). **Un objeto que no está NUNCA
+  frena el video (Santi, 2026-11-16):** `marcas.resolver_objetos` corre después de dibujar, después de cada
+  reescritura por duración y antes de cada línea de tiempo: lo que falta se dibuja con Sonnet y, si falla,
+  pasa al más parecido de la biblioteca (`esc.prop_parecido`: palabras en común con el nombre y qué es,
+  después las letras; nunca martillo, engranajes ni efectos; sin nada parecido, una caja). Red final en
+  `timeline`: un objeto, fondo, gesto o pose de Tito desconocidos van con el más parecido y un aviso en el log.
 - **Así Nació: guion y escenas (Santi, 2026-11-15; regla permanente para TODOS los videos; en el guion, la
   validación y la revisión visual):** (a) GANCHO PROPIO: los primeros 3 s muestran el momento más
   sorprendente o visual de ESA historia, del texto y en su lugar; la destrucción en cadena del living era SOLO
@@ -920,7 +925,7 @@ clips_bot/voces.py       voces de Gemini de hoy por clave (con Lo Encontré) y e
 clips_bot/prueba_manual.py prueba manual vs API (§1): el clip del día a mano, registro e informe del feed
 clips_bot/envivo.py      modo en vivo (§3b): quién está al aire, momentos por creadores distintos,
                          alertas en la DB (no repetir, tope, vencer) y el resumen de tiempos
-tests/                   1541 tests sin red ni video (conftest.py: nada sale a YouTube, Facebook ni ElevenLabs) (test_reglas_fijas.py: las 3 reglas de §1)
+tests/                   1548 tests sin red ni video (conftest.py: nada sale a YouTube, Facebook ni ElevenLabs) (test_reglas_fijas.py: las 3 reglas de §1)
 ```
 
 Comandos:
@@ -1113,6 +1118,11 @@ Problemas abiertos:
 
 ## 9. CHANGELOG
 
+- v1.17.1 (2026-11-16, 07:50) — **Así Nació: nada desconocido frena el video** (regla en §1). El primero del
+  16/11 falló a las 07:13: la reescritura por duración (después de dibujar `masa_modelar`) trajo `masa_gris`, que
+  nadie dibujó, y la línea de tiempo lo rechazó después de pagar 447 créditos de voz. `resolver_objetos`,
+  `esc.parecido` / `prop_parecido`, la red de `timeline`. Los roles ya caían en "joven" y las escenas en
+  "libre". `tests/test_objeto_desconocido.py`. 1548 tests OK.
 - v1.17.0 (2026-11-16) — **Latinoamérica con fuentes web y 2 fuentes por dato** (opción C de Santi; regla en
   §1): `web_historias.py` (ClienteWeb, buscar, verificar), `locales.candidatos_web` y la verificación antes de
   cada guion, el banco como última vuelta si ninguna del día sale, `_web_latam` / `_web_latam_tick` /
