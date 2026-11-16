@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-11-16 | **Versión:** v1.18.0 (desplegado) | **Modo:** Fase 2: corriendo solo en la Pi. **Rots APAGADO.** Pequeña Historia (3 por día, madrugada desde las 04:00) (publicación sin aprobar: llegan con ❌ Cancelar) y **Así Nació** (2 por día, desde las 07:00, publican 13:00 y 20:00 en YouTube y Facebook con ❌ Cancelar), todo al privado de Santi
+**Snapshot:** 2026-11-16 | **Versión:** v1.19.0 (desplegado) | **Modo:** Fase 2: corriendo solo en la Pi. **Rots APAGADO.** Pequeña Historia (3 por día, madrugada desde las 04:00) (publicación sin aprobar: llegan con ❌ Cancelar) y **Así Nació** (2 por día, desde las 07:00, publican 13:00 y 20:00 en YouTube y Facebook con ❌ Cancelar), todo al privado de Santi
 
 > **SI ESTÁS EMPEZANDO UNA SESIÓN NUEVA, LEÉ §10.** Ahí está qué está hecho, qué quedó a medias,
 > qué falta, y las trampas que ya nos mordieron.
@@ -174,6 +174,32 @@ servicio systemd separado: `clips-bot`).
   RESTO: 2 planos por frase (de lejos → de cerca a las manos o el objeto, `gv.planos`), ninguna toma de más de 3 s,
   zoom lento siempre; decorado de contexto solo en interiores (estante, mesa, piso; afuera ya hay autos y faroles);
   rótulo con año y lugar; manos haciendo algo y objeto fiel en el prompt y en la revisión (`redibujar_protagonista`).
+  **Segunda vuelta (Santi, 2026-11-16, después del primer Tupper; reglas para TODOS los videos):** los 3 ganchos los
+  elige la revisión sola (a Santi le llega solo el video, con ❌ Cancelar); la revisión juzga el gancho como imagen
+  imposible ("¿frenarías el dedo?", sin pedirle gente) y, si no sirve, se prueba la opción siguiente
+  (`sistema_revision_v3`). El PRODUCTO EN USO en la mayoría de las escenas (el Tupper guardando comida, el Play-Doh
+  amasado, el cubo resuelto), aunque la voz hable de otra cosa; flotando o girando como mucho 2 veces y solo si la frase
+  lo justifica (`errores_uso`: `FLOTA_MAX`, `EN_USO_MIN` 60 %). Nadie parado sin hacer nada (la revisión lo rechaza
+  siempre). Los primeros planos encuadran las MANOS con el objeto (`gv.foco`: el objeto en la mano o apoyado abajo,
+  nunca uno flotando ni las caras; zoom 1,55). Ningún texto se repite ni se pisa (`gv.sin_textos_repetidos`: lo que ya
+  dice el subtítulo no va grande, un solo texto grande a la vez, el rótulo baja a y 420, el texto del gancho a y 600).
+  Nada de decoración sin relación (la revisión la saca del decorado).
+- **Así Nació: mejora continua (Santi, 2026-11-16):** (1) cada video suma algo nuevo a la biblioteca (al menos 1 escena
+  `nueva` con un `accion_nueva` que no exista; con reglas_v3). (2) Después de cada video, la revisión anota las 3 cosas
+  más flojas con un cuadro de ejemplo (`puntos_flojos`, `bot_estado.asinacio_flojas`) y salen al lado de los números en
+  el resumen de 24 h del Reel. (3) Lunes y jueves desde las 10:00, las 5 mejoras al motor más importantes, por impacto,
+  con un cuadro de cada una y al menos una del gancho (`_mejoras_motor_tick`, `bot_estado.mejoras_motor`): Santi las
+  aprueba y se programan.
+- **Pequeña Historia: publicaciones de comunidad en Facebook (Santi, 2026-11-16; `comunidad_fb.py`,
+  `historias_fb.comunidad`, APAGADO hasta que apruebe los 5 ejemplos mandados el 16/11):** 1 por día además de los
+  Reels: la foto principal del artículo de la historia de Latinoamérica del día (reglas de fotos de siempre, con autor
+  y licencia) en 4:5 con una pregunta grande que pide opinión o recuerdos (Haiku), programada para las 13:00 AR
+  (`_comunidad_tick`, desde las 10:00, un intento por día). En el resumen de 24 h: vistas, comentarios, compartidos y
+  reacciones (`stats_fb.metricas_post`).
+- **Latinoamérica: ídolos de antes (Santi, 2026-11-16):** tipo `idolo` (época de oro del cine mexicano y argentino,
+  cantantes, actores, deportistas) como historia real con persona, giro y emoción, puntuada como las demás; también en
+  la búsqueda de personajes y la web. Primer caso: **Jorge Negrete, 30/11** (nació el 30 de noviembre de 1911,
+  verificado en gob.mx, imer.mx y El Siglo de Torreón): `historias_fb_hecho:2026-11-30` = "Jorge Negrete".
 - **Guion de Pequeña Historia desde el 2026-11-13 (Santi, con datos de Facebook: 98 % hasta el
   segundo 3 y 40 % en el 8 en Cartagena; los Reels de 30-45 s promedian 3.800 reproducciones y los
   de 15-30 s, 256):** gancho con una pregunta abierta → la 2.ª frase suma INTRIGA (nada de "En
@@ -945,6 +971,7 @@ assets/fuentes/          Montserrat Black + OFL.txt
 clips_bot/locales.py     §3d: historias de Latinoamérica (Wikipedia por día + la web, Haiku, Sonnet)
 clips_bot/web_historias.py §1: búsqueda web con Haiku (diarios, museos, archivos) y verificación con 2 fuentes por dato
 clips_bot/stats_fb.py    §1: el resumen de cada Reel de Facebook a las 24 h (Pequeña Historia y Así Nació)
+clips_bot/comunidad_fb.py §1: publicaciones de comunidad de Pequeña Historia (foto de época + pregunta)
 clips_bot/animacion/gancho_v3.py §1: reglas_v3 de Así Nació (gancho de 3 cortes, planos, opciones)
 clips_bot/calendario.py  §3d: calendario de 90 días de fechas de Latinoamérica + la lista de los lunes
 clips_bot/medicion_ph.py §1: seguimiento por video (segundo en que se va la mayoría en FB, % que se queda en YT calibrado con Studio, empujones)
@@ -952,7 +979,7 @@ clips_bot/voces.py       voces de Gemini de hoy por clave (con Lo Encontré) y e
 clips_bot/prueba_manual.py prueba manual vs API (§1): el clip del día a mano, registro e informe del feed
 clips_bot/envivo.py      modo en vivo (§3b): quién está al aire, momentos por creadores distintos,
                          alertas en la DB (no repetir, tope, vencer) y el resumen de tiempos
-tests/                   1577 tests sin red ni video (conftest.py: nada sale a YouTube, Facebook ni ElevenLabs) (test_reglas_fijas.py: las 3 reglas de §1)
+tests/                   1580 tests sin red ni video (conftest.py: nada sale a YouTube, Facebook ni ElevenLabs) (test_reglas_fijas.py: las 3 reglas de §1)
 ```
 
 Comandos:
@@ -1145,6 +1172,10 @@ Problemas abiertos:
 
 ## 9. CHANGELOG
 
+- v1.19.0 (2026-11-16, tarde) — Después del primer Tupper con reglas_v3 (gancho bien; objetos flotando, manos sin
+  hacer nada, primer plano cortando caras, textos pegados y la revisión con el criterio viejo del gancho): segunda
+  vuelta de reglas_v3, mejora continua de Así Nació, publicaciones de comunidad (5 ejemplos mandados) e ídolos de antes
+  con Jorge Negrete fijado para el 30/11 (todo en §1). `tests/test_mejora_continua.py`. 1580 tests OK.
 - v1.18.0 (2026-11-16, tarde) — Cinco pedidos de Santi. (1) **Telegram:** el informe de costo de las 09:00 no salió
   ("Unsupported start tag 'module'": el nombre de función `__main__.<module>`); ahora todo mensaje pasa por
   `telegram.html_seguro` (escapa `<`, `>` y `&` que no son etiquetas de Telegram) y, si igual no parsea, se reenvía como
