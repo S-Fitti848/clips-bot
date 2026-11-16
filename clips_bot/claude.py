@@ -26,7 +26,9 @@ log = logging.getLogger(__name__)
 SONNET = "claude-sonnet-5-5"
 HAIKU = "claude-haiku-5-5"
 # US$ por millón de tokens (entrada, salida), precios de la API de Anthropic (2026-11).
-PRECIOS = {SONNET: (2.00, 10.00), HAIKU: (0.10, 0.50)}
+PRECIOS = {SONNET: (2.00, 10.00), HAIKU: (0.10, 0.50),
+           # la búsqueda web (web_historias.py): US$ 10 cada 1.000; se anota una "entrada" por búsqueda
+           "web_search": (10000.0, 0.0)}
 BETA_FALLBACK = "server-side-fallback-2026-07-01"
 MAX_IMAGENES = 100        # tope de la API por pedido
 # Caché de lo ya evaluado (Santi, 2026-11-15: "no pagar dos veces la misma foto"): un pedido CON
@@ -83,7 +85,9 @@ QUE_ES = {"textos.generar": "Rots: textos de los clips", "revision.revisar": "Ro
           "marcas.revisar_visual": "Animación: revisión visual", "marcas.chequear_calidad": "Animación: chequeo (Haiku)",
           "marcas.marcar_claves": "Animación: claves de subtítulos (Haiku)",
           "efemerides.acortar_guion": "Acortar guion",
-          "marcas.elegir": "Animación: elegir y puntuar la marca", "marcas.escribir_guion": "Animación: guion"}
+          "marcas.elegir": "Animación: elegir y puntuar la marca",
+          "web_historias.buscar": "Latinoamérica: buscar en la web (Haiku)",
+          "web_historias.verificar": "Latinoamérica: verificar con 2 fuentes (Haiku)", "marcas.escribir_guion": "Animación: guion"}
 
 
 ORIGENES = (("produccion", "Producción (lo que el bot hace solo)"),

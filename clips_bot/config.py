@@ -435,6 +435,11 @@ class HistoriasFb:
     # país si se puede, en YouTube Y en Facebook (`youtube`).
     por_dia: int = 2
     youtube: bool = True
+    # Fuentes web (Santi, 2026-11-16, opción C): historias de diarios, museos y sitios de historia con Haiku,
+    # y cada dato verificado con 2 fuentes antes del guion (web_historias.py). La prueba de un día real la mide
+    # `_web_latam_tick` y, si se pasa de `web_tope_usd` por día, la apaga sola (bot_estado.web_latam_apagado).
+    web: bool = False
+    web_tope_usd: float = 0.45
 
 
 @dataclass(frozen=True)

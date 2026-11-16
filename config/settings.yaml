@@ -560,6 +560,12 @@ historias_fb:
   # puede), en YouTube Y en Facebook. Si no hay 2 buenas, sale menos y se avisa (nada de relleno).
   por_dia: 2
   youtube: true
+  # Fuentes web (Santi, 2026-11-16, opción C): además de Wikipedia, historias de diarios, museos, archivos y
+  # sitios de historia de cada país (Haiku con la búsqueda web), y cada dato de la elegida verificado con 2
+  # fuentes de sitios distintos antes del guion. Prueba de un día real: si la búsqueda web pasa de
+  # web_tope_usd ese día, se apaga sola y avisa; si no, queda andando.
+  web: true
+  web_tope_usd: 0.45
 
 # Lo que pega en otros canales → el clip original (pego.py, 2026-09-29). Una vez por día (y en
 # /buscar): Shorts de OTROS canales que nombran a cada streamer de las carpetas con diarios,

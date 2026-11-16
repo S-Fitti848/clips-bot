@@ -85,6 +85,9 @@ def _sin_claude(monkeypatch):
     from clips_bot import claude
 
     monkeypatch.setattr(claude, "cliente", lambda *a, **k: None)
+    from clips_bot import web_historias
+
+    monkeypatch.setattr(web_historias, "cliente_web", lambda *a, **k: None)   # ni la búsqueda web (2026-11-16)
 
 
 @pytest.fixture

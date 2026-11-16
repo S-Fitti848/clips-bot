@@ -738,12 +738,50 @@ def local_de(c: Candidato, aviso: str = "") -> dict:
            "puntaje": k.get("puntaje"), "puntajes": k.get("puntajes")}
     if k.get("banco_id"):
         out["banco_id"] = k["banco_id"]
+    out["origen"] = "banco" if k.get("banco_id") else ("web" if c.seccion == "web" else "wikipedia")
+    if k.get("verificados"):
+        out["verificados"] = k["verificados"]
+        from . import bitacora
+
+        bitacora.dato(fuentes=[{"dato": x["dato"], "fuentes": x["fuentes"]} for x in k["verificados"]],
+                      origen_historia=out["origen"])
+    if k.get("fuentes"):
+        out["fuentes_web"] = list(k["fuentes"])
     if aviso:
         out["aviso"] = aviso
     return out
 
 
 PISO_ABSOLUTO = 6.0   # Santi, 2026-11-15: la mejor del día sale si tiene 6 o más; debajo, el banco
+
+
+def candidatos_web(web, dia: date, excluir: set | None = None, avisar=log.info) -> list[Candidato]:
+    """Historias de diarios, sitios de historia, museos y archivos (web_historias.buscar, Santi 2026-11-16),
+    ya clasificadas por la misma búsqueda; pasan las mismas reglas duras que las de Wikipedia."""
+    from . import web_historias as wh
+
+    try:
+        halladas = wh.buscar(web, dia, evitar=sorted(excluir or set())[:10])
+    except wh.WebError as err:
+        avisar(f"búsqueda web: no salió ({err}); sigo con Wikipedia")
+        return []
+    out = []
+    for h in halladas:
+        texto = str(h["texto"]).strip()
+        if texto in (excluir or set()) or h["anio"] > date.today().year or _DURO.search(texto) \
+                or (h["anio"] >= 1945 and ef._GUERRA.search(texto)) or ef._TRAMA.search(texto):
+            continue
+        paginas = [p for p in (str(h.get("articulo_wikipedia") or "").strip(),
+                               str(h.get("articulo_lugar") or "").strip()) if p]
+        lugar = str(h.get("lugar") or h.get("pais") or "").strip()
+        tipo = h.get("tipo") if h.get("tipo") in TIPOS else "otro"
+        clasif = {"humana": True, "lugar": lugar, "region": str(h.get("region") or ""),
+                  "pais": str(h.get("pais") or ""), "tipo": tipo, "tragedia_sola": False, "conmemora": "",
+                  "interes": int(h.get("interes") or 6) if str(h.get("interes") or "").isdigit() else 6,
+                  "fuentes": h["fuentes"], "web": True, "del_dia": wh.es_del_dia(h, dia)}
+        out.append(Candidato("web", h["anio"], texto, paginas or [lugar], clasif))
+    avisar(f"búsqueda web: {len(out)} historias de diarios, museos y sitios de historia")
+    return out
 
 
 def de_banco(banco: list[dict] | None, excluir: set | None = None) -> list[tuple[Candidato, str, str]]:
@@ -766,8 +804,11 @@ def proponer(wiki: ef.Wiki, sonnet, haiku, gemini, dia: date, carpeta: Path, avi
              elector_reintento=None, excluir: set | None = None,
              evitar_paises: set | None = None, mas_video: bool = False,
              piso_alternativo: float | None = None, puntuador=None,
-             banco: list[dict] | None = None, solo_banco: bool = False) -> ef.Propuesta:
-    """`solo_banco`: directo del banco de reserva, sin buscar en el día (a mano, cuando un día quedó sin
+             banco: list[dict] | None = None, solo_banco: bool = False, web=None) -> ef.Propuesta:
+    """`web` (web_historias.ClienteWeb, Santi 2026-11-16): suma historias de la web a las de Wikipedia y
+    verifica CADA dato de la elegida con 2 fuentes antes del guion (el guion sale solo de lo verificado).
+
+    `solo_banco`: directo del banco de reserva, sin buscar en el día (a mano, cuando un día quedó sin
     video: Santi, 2026-11-15). `excluir`: hechos (su texto) que ya salieron hoy; `evitar_paises`: los países de esos (Santi,
     2026-11-12: 2 historias por día, sin repetir país si se puede: van al final, no afuera).
 
@@ -793,7 +834,8 @@ def proponer(wiki: ef.Wiki, sonnet, haiku, gemini, dia: date, carpeta: Path, avi
             haiku = None
         avisar(f"{len(todos)} hechos del {dia:%d/%m} en es.wikipedia; {len(cands)} con lugar de "
                f"Latinoamérica {motivos}")
-        if not cands:
+        web_cands = candidatos_web(web, dia, excluir, avisar) if web is not None and not hecho else []
+        if not cands and not web_cands:
             raise ef.NarrarError("Ningún hecho de hoy tiene un lugar de Latinoamérica" +
                                  (f" (con «{hecho}»)" if hecho else ""))
         clasificar(haiku, cands, conmemoraciones)
@@ -801,6 +843,8 @@ def proponer(wiki: ef.Wiki, sonnet, haiku, gemini, dia: date, carpeta: Path, avi
             if c.seccion == "fundacion" and c.clasif and not str(c.clasif.get("lugar") or "").strip():
                 c.clasif["lugar"] = c.paginas[0]
         lista = buenos(cands)
+        if web_cands:       # las de la web entran siempre a la tanda que se puntúa
+            lista = lista[:max(0, A_PUNTUAR - len(web_cands))] + buenos(web_cands)
         if hecho:
             # Lo eligió una persona (/historia 10/11 Epecuén, o el fijado para el día): Haiku no lo
             # descarta. Medido el 2026-11-09: con Epecuén solo en la lista dijo "no es una historia
@@ -873,31 +917,90 @@ def proponer(wiki: ef.Wiki, sonnet, haiku, gemini, dia: date, carpeta: Path, avi
     avisar("Sonnet eligió: " + " | ".join(f"{c.anio} {c.clasif.get('lugar')}: {c.texto[:50]} [{a}]"
                                           for c, a, _ in elegidos))
     fallas, respaldo, descartes, insuf = [], None, {}, None
-    for c, articulo, art_lugar in elegidos[:ef.MAX_GUIONES]:
+    intentos = [0]
+
+    def cola():
+        """Las elegidas y, si ninguna sale (sin verificar, sin fotos), el banco (Santi, 2026-11-16: "nunca
+        vacía"); el banco también se verifica."""
+        yield from elegidos[:ef.MAX_GUIONES * 2]
+        if hecho or any(c.clasif.get("banco_id") for c, _, _ in elegidos):
+            return
+        extra = de_banco(banco, excluir)
+        if extra:
+            avisar("ninguna de las del día salió: paso al banco de reserva")
+            aviso[0] = "📦 del banco de reserva (las del día no salieron: " + "; ".join(fallas)[:120] + ")"
+            intentos[0] = 0
+            yield from extra[:ef.MAX_GUIONES]
+
+    for c, articulo, art_lugar in cola():
+        if intentos[0] >= ef.MAX_GUIONES:
+            continue
         e = ef.Evento("es", c.anio, c.texto, [articulo] + [x for x in c.paginas if x != articulo])
-        fotos, desc = ef.fotos_del_evento(wiki, e)
+        lugar = str(c.clasif.get("lugar") or "").strip()
+        nombre_c = f"{c.anio} {lugar}: {c.texto[:80]}"
+        verif, fila_v = None, bitacora.fila_actual()
+        if web is not None:
+            # Santi, 2026-11-16: cada dato con al menos 2 fuentes ANTES de usarlo (también las de Wikipedia
+            # y las del banco); el guion se escribe solo con lo verificado.
+            from . import web_historias as wh
+
+            bitacora.paso("verificacion")
+            try:
+                verif = wh.verificar(web, c.texto, c.anio, lugar, str(c.clasif.get("pais") or ""),
+                                     pistas=c.clasif.get("fuentes"))
+            except wh.WebError as err:
+                if c.seccion == "web":      # sin verificar, una de la web no se usa
+                    fallas.append(f"{e.anio}: sin verificar ({err})")
+                    bitacora.descarte(nombre_c, f"no se pudo verificar: {err}", "verificacion", desde_fila=fila_v)
+                    continue
+                avisar(f"  verificación caída ({err}): sigo con el artículo, con aviso")
+                aviso[0] = (aviso[0] + " · " if aviso[0] else "") + "⚠️ sin verificar con 2 fuentes (búsqueda caída)"
+            else:
+                if not verif.ok:
+                    avisar(f"  no se pudo verificar: {verif.motivo}")
+                    fallas.append(f"{e.anio}: no verificada ({verif.motivo[:120]})")
+                    bitacora.descarte(nombre_c, f"no verificada: {verif.motivo}", "verificacion",
+                                      desde_fila=fila_v, encontrado=" ".join(verif.links[:8]))
+                    continue
+                avisar(f"  verificada: {len(verif.datos)} datos con 2+ fuentes")
+                c.clasif["verificados"] = verif.datos       # los links quedan en la propuesta y la bitácora
+        intentos[0] += 1
+        try:
+            fotos, desc = ef.fotos_del_evento(wiki, e)
+        except ef.WikiError as err:      # una de la web puede no tener artículo en Wikipedia
+            if c.seccion != "web":
+                raise
+            avisar(f"  sin artículo para fotos ({err}): solo las búsquedas por frase")
+            fotos, desc = [], {}
         if art_lugar:
             # Fotos primero del lugar real (pedido de Santi): las del artículo del pueblo o la ciudad
             # se suman a las del hecho, con las mismas reglas (licencia, época, contenido).
             lug = ef.Evento("es", c.anio, c.texto, [art_lugar])
-            f_lugar, d2 = ef.fotos_del_evento(wiki, lug)
+            try:
+                f_lugar, d2 = ef.fotos_del_evento(wiki, lug)
+            except ef.WikiError:
+                if c.seccion != "web":
+                    raise
+                f_lugar, d2 = [], {}
             fotos += [f for f in f_lugar if f.archivo not in {x.archivo for x in fotos}]
             for k, v in d2.items():
                 desc[k] = desc.get(k, 0) + v
         for k, v in desc.items():
             descartes[k] = descartes.get(k, 0) + v
-        fuente = ef.texto_fuente(wiki, e)
-        if art_lugar:
-            fuente += "\n" + wiki.texto("es", art_lugar)[:6000]
-        lugar = str(c.clasif.get("lugar") or "").strip()
+        if verif is not None and verif.ok:
+            fuente = verif.texto        # solo lo verificado con 2 fuentes
+        else:
+            fuente = ef.texto_fuente(wiki, e)
+            if art_lugar:
+                fuente += "\n" + wiki.texto("es", art_lugar)[:6000]
         avisar(f"{e.anio} {lugar}: {len(fotos)} fotos del hecho y del lugar")
         fila_h, g = bitacora.fila_actual(), None
-        nombre_c = f"{c.anio} {lugar}: {c.texto[:80]}"
+        no_de_hoy = c.clasif.get("banco_id") or (c.seccion == "web" and not c.clasif.get("del_dia"))
         try:
             bitacora.paso("guion")
             g = ef.escribir_guion(sonnet, e, fuente, sistema=SISTEMA_GUION_CORTO if corto else SISTEMA_GUION_LOCAL,
                                   validar_extra=validar_lugar(lugar, corto),
-                                  contexto=contexto_de(c) + (ef.NO_ES_DE_HOY if c.clasif.get("banco_id") else ""),
+                                  contexto=contexto_de(c) + (ef.NO_ES_DE_HOY if no_de_hoy else ""),
                                   corto=corto, rango=ef.LATAM_PALABRAS if corto else None,
                                   max_s=ef.LATAM_MAX_S if corto else 0.0)
             g.imagen_frase = imagen_frase or corto

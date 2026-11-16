@@ -28,7 +28,7 @@ import sys
 import threading
 import time
 from collections import Counter
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 import requests
@@ -2720,6 +2720,7 @@ def escuchar_telegram(settings: Settings, timeout_poll: int = 50) -> int:
             _seguro(tg, str(chat_ultimo or ""), "el costo de Claude", _costo_claude_tick, conn, tg, settings)
             _seguro(tg, str(chat_ultimo or ""), "los créditos de ElevenLabs", _elevenlabs_tick, conn, tg, settings)
             _seguro(tg, str(chat_ultimo or ""), "el uso del banco de reserva", _banco_usos_tick, conn, tg)
+            _seguro(tg, str(chat_ultimo or ""), "la prueba de la búsqueda web", _web_latam_tick, conn, tg, settings)
             _seguro(tg, str(chat_ultimo or ""), "el resumen semanal de costos", _costos_semana_tick, conn, tg, settings)
             _seguro(tg, str(chat_ultimo or ""), "el reintento de los clips",
                     _auto(_clips_reintento_tick), conn, settings)
@@ -3628,6 +3629,68 @@ def _piso_latam(conn, dia, hecho: str = "") -> dict:
             "banco": banco_mod.leer(conn, "latam")}
 
 
+WEB_APAGADO = "web_latam_apagado"   # bot_estado: la búsqueda web de Latinoamérica la apagó la prueba (motivo)
+WEB_PRUEBA = "web_latam_prueba"     # bot_estado: el día de la prueba ya evaluado (AAAA-MM-DD)
+
+
+def _web_latam(conn, settings: Settings):
+    """El cliente de la búsqueda web (Santi, 2026-11-16, opción C), o None si está apagada."""
+    from . import web_historias
+
+    if not settings.historias_fb.web or db.get_valor(conn, WEB_APAGADO):
+        return None
+    return web_historias.cliente_web()
+
+
+def costo_web_dia(conn, dia: str, origen: str | None = "produccion") -> tuple[float, int, int]:
+    """(US$, búsquedas, pedidos) de la búsqueda web de Latinoamérica en `dia`."""
+    from . import claude
+
+    sql = ("SELECT modelo, entrada, salida FROM gemini_uso WHERE clave = 'claude' AND dia = ? "
+           "AND funcion LIKE 'web_historias.%'")
+    params: tuple = (dia,)
+    if origen is not None:
+        sql += " AND origen = ?"
+        params += (origen,)
+    total, busquedas, pedidos = 0.0, 0, 0
+    for modelo, entrada, salida in conn.execute(sql, params):
+        total += claude.costo(modelo, entrada or 0, salida or 0)
+        if modelo == "web_search":
+            busquedas += entrada or 0
+        else:
+            pedidos += 1
+    return round(total, 4), busquedas, pedidos
+
+
+def _web_latam_tick(conn, tg: TelegramClient, settings: Settings, ahora=None) -> None:
+    """La prueba de un día real (Santi, 2026-11-16: "si da dentro de lo estimado dejala andando"): el primer
+    día de producción con búsqueda web, apenas termina, se mide; dentro de `web_tope_usd` queda prendida y
+    se avisa; si se pasa, se apaga sola (WEB_APAGADO) y se avisa. Una sola vez."""
+    if not settings.historias_fb.web or db.get_valor(conn, WEB_PRUEBA):
+        return
+    ahora = ahora or datetime.now(AR)
+    fila = conn.execute("SELECT MIN(dia) FROM gemini_uso WHERE clave = 'claude' AND origen = 'produccion' "
+                        "AND funcion LIKE 'web_historias.%'").fetchone()
+    dia = fila[0] if fila else None
+    if not dia or ahora.date().isoformat() <= dia:
+        return
+    usd, busq, pedidos = costo_web_dia(conn, dia)
+    db.set_valor(conn, WEB_PRUEBA, dia)
+    ya = _latam_del_dia(conn, date.fromisoformat(dia))
+    origenes = ", ".join(f"{x.get('origen') or '?'} ({float(x.get('puntaje') or 0):.1f})".replace(".", ",")
+                         for x in ya) or "ninguna"
+    tope = settings.historias_fb.web_tope_usd
+    base = (f"🔧 Claude Code: <b>Prueba de la búsqueda web de Latinoamérica ({dia[8:10]}/{dia[5:7]})</b>: "
+            f"US$ {usd:.2f} ({busq} búsquedas, {pedidos} pedidos a Haiku; estimado US$ 0,25-0,40, tope "
+            f"US$ {tope:.2f}). Historias del día: {origenes}.").replace("US$ 0.", "US$ 0,")
+    if usd <= tope:
+        tg.send_message(DUENO, base + " Dentro de lo estimado: <b>queda andando</b>.")
+    else:
+        db.set_valor(conn, WEB_APAGADO, f"{dia}: US$ {usd:.2f} > {tope:.2f}")
+        tg.send_message(DUENO, base + " Se pasó: <b>la apagué</b> (vuelve a Wikipedia sola). Para prenderla "
+                                      "de nuevo hay que borrar web_latam_apagado.")
+
+
 def _fb_proponer(conn, tg: TelegramClient, chats: list[str], dia, settings: Settings,
                  hecho: str = "", auto: bool = False, solo_banco: bool = False) -> str | None:
     """Propone una historia de Latinoamérica (va a YouTube y a Facebook desde el 2026-11-12) y manda
@@ -3659,7 +3722,7 @@ def _fb_proponer(conn, tg: TelegramClient, chats: list[str], dia, settings: Sett
                                       for v in (x.get("texto"), x.get("articulo")) if v},
                              evitar_paises={x["pais"] for x in _latam_del_dia(conn, dia) if x.get("pais")},
                              mas_video=settings.efemerides.estilo_nuevo,
-                             puntuador=_puntuador(settings),
+                             puntuador=_puntuador(settings), web=_web_latam(conn, settings),
                              **(dict(banco=banco_mod.leer(conn, "latam"), solo_banco=True) if solo_banco
                                 else _piso_latam(conn, dia, hecho)))
     except (NarrarError, ef.WikiError, GeminiError) as e:
@@ -3669,7 +3732,8 @@ def _fb_proponer(conn, tg: TelegramClient, chats: list[str], dia, settings: Sett
     banco_mod.sacar(conn, "latam", (p.local or {}).get("banco_id"))
     ya = _latam_del_dia(conn, dia)
     ya.append({"texto": p.evento.get("texto"), "pais": (p.local or {}).get("pais"),
-               "articulo": (p.evento.get("paginas") or [""])[0], "puntaje": (p.local or {}).get("puntaje")})
+               "articulo": (p.evento.get("paginas") or [""])[0], "puntaje": (p.local or {}).get("puntaje"),
+               "origen": (p.local or {}).get("origen", "")})
     db.set_valor(conn, f"{PH_LATAM}:{dia.isoformat()}", json.dumps(ya, ensure_ascii=False))
     estado = {"propuesta": p.__dict__, "carpeta": str(carpeta), "chat_id": chats[0]}
     bitacora.dato(titulo=(p.guion or {}).get("titulo", ""))

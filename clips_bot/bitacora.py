@@ -63,12 +63,13 @@ TABLA_DESCARTES = """CREATE TABLE IF NOT EXISTS candidatos_descartados (
     costo_usd  REAL DEFAULT 0,      -- Claude gastado en ESE candidato hasta que se cayó
     detalle    TEXT DEFAULT '{}'    -- JSON: en fotos, {"buscado": [...], "encontrado": "..."}
 )"""
-PASOS_DESCARTE = ("puntaje", "fotos", "guion", "voz", "render", "otro")
-ETAPA_A_PASO = {"busqueda": "puntaje", "guion": "guion", "fotos": "fotos", "dibujos": "otro", "voz": "voz",
+PASOS_DESCARTE = ("puntaje", "verificacion", "fotos", "guion", "voz", "render", "otro")
+ETAPA_A_PASO = {"busqueda": "puntaje", "verificacion": "verificacion", "guion": "guion", "fotos": "fotos", "dibujos": "otro", "voz": "voz",
                 "whisper": "voz", "revision": "render", "render": "render", "subida": "otro"}
 
 # Paso de cada función que llama a un modelo (el resto cuenta como "otros").
 PASOS = (
+    ("web", ("web_historias.",)),
     ("correccion", ("correcciones.",)),
     ("final", ("final_que_paga",)),
     ("fotos", ("efemerides.pedir", "elegir_fotos", "describir_fotos", "prefiltrar_fotos")),
