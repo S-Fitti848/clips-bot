@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-11-16 | **Versión:** v1.21.0 (desplegado) | **Modo:** Fase 2: corriendo solo en la Pi. **Rots APAGADO.** Pequeña Historia (3 por día, madrugada desde las 04:00) (publicación sin aprobar: llegan con ❌ Cancelar) y **Así Nació** (2 por día, desde las 07:00, publican 13:00 y 20:00 en YouTube y Facebook con ❌ Cancelar), todo al privado de Santi
+**Snapshot:** 2026-11-16 | **Versión:** v1.22.0 (desplegado) | **Modo:** Fase 2: corriendo solo en la Pi. **Rots APAGADO.** Pequeña Historia (3 por día, madrugada desde las 04:00) (publicación sin aprobar: llegan con ❌ Cancelar) y **Así Nació** (2 por día, desde las 07:00, publican 13:00 y 20:00 en YouTube y Facebook con ❌ Cancelar), todo al privado de Santi
 
 > **SI ESTÁS EMPEZANDO UNA SESIÓN NUEVA, LEÉ §10.** Ahí está qué está hecho, qué quedó a medias,
 > qué falta, y las trampas que ya nos mordieron.
@@ -972,6 +972,7 @@ clips_bot/locales.py     §3d: historias de Latinoamérica (Wikipedia por día +
 clips_bot/web_historias.py §1: búsqueda web con Haiku (diarios, museos, archivos) y verificación con 2 fuentes por dato
 clips_bot/stats_fb.py    §1: el resumen de cada Reel de Facebook a las 24 h (Pequeña Historia y Así Nació)
 clips_bot/comunidad_fb.py §1: publicaciones de comunidad de Pequeña Historia (foto de época + pregunta)
+clips_bot/animacion/uso_v3.py §9 v1.22.0: escenas de uso con las manos, plata de verdad e inspiración (uso_manos)
 clips_bot/animacion/gancho_v3.py §1: reglas_v3 de Así Nació (gancho de 3 cortes, planos, opciones)
 clips_bot/calendario.py  §3d: calendario de 90 días de fechas de Latinoamérica + la lista de los lunes
 clips_bot/medicion_ph.py §1: seguimiento por video (segundo en que se va la mayoría en FB, % que se queda en YT calibrado con Studio, empujones)
@@ -979,7 +980,7 @@ clips_bot/voces.py       voces de Gemini de hoy por clave (con Lo Encontré) y e
 clips_bot/prueba_manual.py prueba manual vs API (§1): el clip del día a mano, registro e informe del feed
 clips_bot/envivo.py      modo en vivo (§3b): quién está al aire, momentos por creadores distintos,
                          alertas en la DB (no repetir, tope, vencer) y el resumen de tiempos
-tests/                   1596 tests sin red ni video (conftest.py: nada sale a YouTube, Facebook ni ElevenLabs) (test_reglas_fijas.py: las 3 reglas de §1)
+tests/                   1611 tests sin red ni video (conftest.py: nada sale a YouTube, Facebook ni ElevenLabs) (test_reglas_fijas.py: las 3 reglas de §1)
 ```
 
 Comandos:
@@ -1172,6 +1173,22 @@ Problemas abiertos:
 
 ## 9. CHANGELOG
 
+- v1.22.0 (2026-11-16, noche) — **Así Nació: uso real con las manos, plata de verdad e inspiración animada**
+  (`animacion.uso_manos`, APAGADO hasta el OK de Santi; `uso_v3.py`). Escenas nuevas de la biblioteca (solo se le
+  ofrecen al guion con el interruptor, `escenas_lib.ACCIONES_V4` / `CON_V4`): `uso_manos` (dos manos usan el producto
+  paso a paso: agarrar, abrir_tapa, meter, cerrar_tapa, apretar, amasar, moldear, girar, apilar; el producto por partes,
+  cuerpo/tapa/contenido, dibujadas una vez; las manos siempre tocan el objeto), `inspiracion` (la pieza sale de lo que
+  inspiró al producto, se da vuelta, vuela y encastra, con clic, destellos y flecha), y la plata con acciones reales
+  (`contar_billetes`, `abrir_caja` con la caja registradora, `apreton_manos`, `firmar` con la firma que se escribe); props
+  nuevos `caja_registradora`, `papel_firma`, `lapicera`. Mano con detalle (sombra, arrugas, puño de la camisa con botón,
+  manga del color de la época, los dedos se doblan al agarrar: `prop_mano(detalle=True)`). El pedido aparte del guion
+  (`completar_v3`) trae `uso` e `inspiracion` y `marcas.preparar_uso` dibuja las partes y marca las escenas. Revisión:
+  manos que no se leen en 1 s, plata como símbolo gigante y objetos sin detalle (`redibujar_objeto`: la versión nueva
+  reemplaza también a un dibujo de código). **Arreglado para todos los videos:** `color: True` (quedar a color en sepia)
+  llegaba al dibujo como color y lo pintaba de negro (botellas, latas, el protagonista en el pasado); `manga`/`detalle`
+  no llegaban al dibujo; los carteles sin texto llevan una estrella (en el fondo espejado "OFERTA" salía al revés);
+  etiquetas de botellas y latas con dibujo, no en blanco. Prueba por escena (sin guion ni voz nuevos, ver §10): las hojas
+  de las escenas 5, 7, 8 y 9 del Tupper mandadas a Santi. 1611 tests OK.
 - v1.21.0 (2026-11-16, noche) — **Comunidad prendida** (13:00, la primera el 17/11). **Así Nació:** (1) una versión
   nueva de un dibujo reemplaza a la vieja en todas las escenas y la vieja sale de la biblioteca
   (`dibujos.reemplazar` / `actual` / `mismo_objeto`, `data/animacion/dibujos/reemplazos.json` y `retirados/`;
