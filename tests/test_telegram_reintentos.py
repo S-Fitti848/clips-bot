@@ -51,8 +51,8 @@ def test_si_fallan_los_tres_intentos_recien_ahi_es_error():
 
 def test_un_error_que_contesta_telegram_no_se_reintenta():
     esperas = []
-    s = Sesion(Resp({"ok": False, "error_code": 400, "description": "Bad Request: can't parse entities"}))
-    with pytest.raises(TelegramError, match="400"):
+    s = Sesion(Resp({"ok": False, "error_code": 403, "description": "Forbidden: bot was blocked by the user"}))
+    with pytest.raises(TelegramError, match="403"):
         _cliente(s, esperas).send_message("1", "<b>")
     assert s.llamadas == 1 and esperas == []
 

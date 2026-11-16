@@ -29,6 +29,41 @@ class TelegramError(RuntimeError):
     pass
 
 
+# Etiquetas que entiende el HTML de Telegram. Todo `<`, `>` o `&` que no sea parte de una de estas (o de una
+# entidad ya escrita, &amp; &lt; &#39;…) se escapa antes de mandar (Santi, 2026-11-16: el informe de costo de
+# las 09:00 no salió por "<module>" en el nombre de una función: "Unsupported start tag").
+_TAG_OK = re.compile(r"</?(?:b|strong|i|em|u|ins|s|strike|del|code|pre|a|span|tg-spoiler|tg-emoji|blockquote)"
+                     r"(?:\s[^<>]*)?>", re.I)
+_ENTIDAD = re.compile(r"&(?:[a-zA-Z]+|#\d+|#x[0-9a-fA-F]+);")
+
+
+def _escapar_suelto(t: str) -> str:
+    out, i = [], 0
+    for m in _ENTIDAD.finditer(t):
+        out.append(t[i:m.start()].replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;"))
+        out.append(m.group(0))
+        i = m.end()
+    out.append(t[i:].replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;"))
+    return "".join(out)
+
+
+def html_seguro(texto: str) -> str:
+    """Deja las etiquetas de Telegram y escapa todo lo demás que rompería el parseo."""
+    texto = str(texto or "")
+    out, i = [], 0
+    for m in _TAG_OK.finditer(texto):
+        out.append(_escapar_suelto(texto[i:m.start()]))
+        out.append(m.group(0))
+        i = m.end()
+    out.append(_escapar_suelto(texto[i:]))
+    return "".join(out)
+
+
+def html_a_texto(texto: str) -> str:
+    """Último recurso: sin etiquetas y con las entidades resueltas (va sin parse_mode)."""
+    return html.unescape(re.sub(r"<[^<>]+>", "", str(texto or "")))
+
+
 class TelegramClient:
     # Un corte de conexión (RemoteDisconnected, "Connection aborted", timeout) se reintenta solo, con
     # estas esperas, antes de darlo por fallido: casi siempre es un corte de un segundo de la red de
@@ -74,11 +109,28 @@ class TelegramClient:
 
     def send_message(self, chat_id: str, texto_html: str, teclado: dict | None = None) -> dict:
         """Devuelve el mensaje que armó Telegram (con su `reply_markup`, para verificar los botones)."""
-        data = {"chat_id": chat_id, "text": texto_html, "parse_mode": "HTML",
+        data = {"chat_id": chat_id, "text": html_seguro(texto_html), "parse_mode": "HTML",
                 "disable_web_page_preview": "true"}
         if teclado:
             data["reply_markup"] = json.dumps(teclado)
-        return self._llamar("sendMessage", data)  # type: ignore[return-value]
+        return self._con_html("sendMessage", data, "text")  # type: ignore[return-value]
+
+    def _con_html(self, metodo: str, data: dict, campo: str, files: dict | None = None) -> object:
+        """Manda con parse_mode HTML y, si Telegram igual no lo puede parsear, lo reenvía como texto plano:
+        un mensaje nunca se pierde por un carácter raro."""
+        try:
+            return self._llamar(metodo, data, files)
+        except TelegramError as e:
+            if "can't parse entities" not in str(e):
+                raise
+            log.warning("Telegram %s: %s; lo mando sin formato", metodo, str(e)[:150])
+            plano = {k: v for k, v in data.items() if k != "parse_mode"}
+            plano[campo] = html_a_texto(data.get(campo, ""))
+            for valor in (files or {}).values():
+                f = valor[1] if isinstance(valor, tuple) and len(valor) > 1 else valor
+                if hasattr(f, "seek"):
+                    f.seek(0)
+            return self._llamar(metodo, plano, files)
 
     def answer_callback(self, callback_id: str, texto: str = "", alerta: bool = False) -> None:
         """Le saca el relojito al botón. Si no se contesta, Telegram lo deja girando. `alerta`: el
@@ -95,7 +147,7 @@ class TelegramClient:
     def edit_message(self, chat_id: str, message_id: int, texto_html: str,
                      teclado: dict | None = None) -> None:
         """Reescribe el mensaje en lugar de mandar uno nuevo: así el menú no llena el chat."""
-        data = {"chat_id": chat_id, "message_id": message_id, "text": texto_html,
+        data = {"chat_id": chat_id, "message_id": message_id, "text": html_seguro(texto_html),
                 "parse_mode": "HTML", "disable_web_page_preview": "true"}
         if teclado is not None:
             data["reply_markup"] = json.dumps(teclado)
@@ -109,7 +161,7 @@ class TelegramClient:
         """"message is not modified" (tocar dos veces el mismo botón, o un menú que ya estaba así)
         no es un error: se ignora en silencio y quien llama sigue (y contesta el callback)."""
         try:
-            self._llamar(metodo, data)
+            self._con_html(metodo, data, "text") if "parse_mode" in data else self._llamar(metodo, data)
         except TelegramError as e:
             if "message is not modified" not in str(e):
                 raise
@@ -169,17 +221,17 @@ class TelegramClient:
         """Un audio que se escucha en el reproductor de Telegram (mp3 o m4a)."""
         _chequear_tamano(path)
         with path.open("rb") as f:
-            self._llamar("sendAudio", {"chat_id": chat_id, "title": titulo[:60],
-                                       "caption": caption_html[:MAX_CAPTION], "parse_mode": "HTML"},
-                         {"audio": (path.name, f, "audio/mpeg")})
+            self._con_html("sendAudio", {"chat_id": chat_id, "title": titulo[:60],
+                                         "caption": html_seguro(caption_html)[:MAX_CAPTION], "parse_mode": "HTML"},
+                           "caption", {"audio": (path.name, f, "audio/mpeg")})
 
     def send_photo(self, chat_id: str, path: Path, caption_html: str = "",
                    teclado: dict | None = None) -> None:
-        data = {"chat_id": chat_id, "caption": caption_html[:MAX_CAPTION], "parse_mode": "HTML"}
+        data = {"chat_id": chat_id, "caption": html_seguro(caption_html)[:MAX_CAPTION], "parse_mode": "HTML"}
         if teclado:
             data["reply_markup"] = json.dumps(teclado)
         with path.open("rb") as f:
-            self._llamar("sendPhoto", data, {"photo": (path.name, f, "image/jpeg")})
+            self._con_html("sendPhoto", data, "caption", {"photo": (path.name, f, "image/jpeg")})
 
     def send_document(self, chat_id: str, path: Path, caption: str = "") -> None:
         _chequear_tamano(path)
