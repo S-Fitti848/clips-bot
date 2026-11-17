@@ -67,6 +67,11 @@ ROLES = {
     "deportista": ("pibe", {"ropa": P.ROJO, "sombrero": "ninguno", "pantalon": P.BLANCO}, 0.76),
     "estudiante": ("pibe", {"ropa": P.VERDE, "sombrero": "ninguno", "anteojos": True}, 0.76),
     "inventora": ("mama", {"ropa": P.BLANCO, "anteojos": True, "peinado": "rulos", "pelo": P.PELO[4]}, 0.74),
+    # Personajes según quién es y su rol (Santi, 2026-11-17): los empleados del negocio y los que reparten
+    "cajero": ("narrador", {"ropa": P.BLANCO, "anteojos": False, "peinado": "corto"}, 0.74),
+    "cajera": ("mama", {"ropa": P.BLANCO, "peinado": "largo"}, 0.74),
+    "vendedora": ("vecina", {"ropa": P.BLANCO, "peinado": "largo"}, 0.72),
+    "repartidor": ("pibe", {"ropa": "#b7a58a", "sombrero": "boina", "color_sombrero": "#5a5048"}, 0.76),
 }
 NINOS = {"nene", "nena"}
 
@@ -78,6 +83,72 @@ BASE = {("hombre", "chico"): ("nene", 0.8), ("mujer", "chico"): ("nene", 0.8),
         ("hombre", "joven"): ("pibe", 0.76), ("mujer", "joven"): ("vecina", 0.72),
         ("hombre", "adulto"): ("narrador", 0.74), ("mujer", "adulto"): ("mama", 0.74),
         ("hombre", "mayor"): ("abuelo", 0.72), ("mujer", "mayor"): ("vecina", 0.72)}
+
+
+CLARO = "#f4f1e8"     # lona o algodón claro: delantales, guardapolvos
+
+
+def vestir(rol: str, anio: int, genero: str) -> dict:
+    """La ropa de cada uno según su ROL y la ÉPOCA de la escena (Santi, 2026-11-17: "los obreros con mameluco o
+    delantal y gorra de fábrica, los cajeros con uniforme, los clientes con ropa de calle de la época, los
+    empresarios de traje, los científicos con guardapolvo"). Piezas de la biblioteca (`Personaje.vestuario`) que se
+    combinan; devuelve los cambios que van encima de los del rol."""
+    a = anio if anio and anio < 2026 else 2026
+    m = genero == "mujer"
+    v: dict = {}
+    if rol in ("obrero", "obrera", "repartidor", "granjero"):
+        if rol == "granjero":
+            v = {"vestuario": "mameluco", "color_vestuario": "#3a5a8c", "pantalon": "#3a5a8c", "ropa": "#c0603b",
+                 "sombrero": "boina" if a < 1950 else "gorra", "color_sombrero": "#8d6e63"}
+        elif a < 1940:     # el obrero de antes: camisa, delantal de lona y gorra plana; la obrera, falda y cofia
+            v = {"vestuario": "delantal", "color_vestuario": CLARO, "ropa": "#b7a58a", "pantalon": "#4a4036",
+                 "sombrero": "boina", "color_sombrero": "#5a5048"}
+        else:              # de 1940 en adelante: mameluco azul y gorra
+            v = {"vestuario": "mameluco", "color_vestuario": "#3d6fb6", "pantalon": "#3d6fb6", "ropa": "#d9dde6",
+                 "sombrero": "gorra", "color_sombrero": "#3d6fb6"}
+        if m:
+            v.update({"sombrero": "cofia", "color_sombrero": CLARO})
+            if a < 1950:
+                v.update({"vestuario": v["vestuario"] + "+falda_larga", "pantalon": "#5b4a6e", "ropa": "#9fb3c8"})
+    elif rol in ("cajero", "cajera", "vendedor", "vendedora"):
+        v = {"vestuario": "uniforme", "color_vestuario": "#2f5d50", "ropa": P.BLANCO, "sombrero": "ninguno"}
+        if m and a < 1960:
+            v.update({"vestuario": "uniforme+falda_larga", "pantalon": "#2f3e46"})
+    elif rol in ("empresario", "fundador"):
+        v = {"vestuario": "traje", "ropa": "#2f2f3a", "pantalon": "#2f2f3a",
+             "sombrero": "galera" if a < 1915 else "bombin" if a < 1950 else "ninguno", "color_sombrero": "#2b2b33"}
+        if not m and a < 1940:
+            v["bigote"] = True
+    elif rol in ("inventor", "inventora", "cientifica", "medico"):
+        v = {"vestuario": "guardapolvo", "color_vestuario": CLARO}
+    elif rol == "cocinero":
+        v = {"vestuario": "delantal", "color_vestuario": CLARO}
+    elif rol in ("cliente", "papa", "mama", "abuela", "joven", "rival", "publicista"):
+        if a < 1950:       # ropa de calle de la época: saco y sombrero ellos, falda larga ellas
+            v = ({"vestuario": "falda_larga", "pantalon": "#6d4c6e", "ropa": "#c9a0b4"} if m else
+                 {"vestuario": "calle", "ropa": "#5b4636", "pantalon": "#3b3330",
+                  "sombrero": "bombin" if a < 1935 else "ninguno", "color_sombrero": "#2b2b33"})
+        elif a < 1975 and not m:
+            v = {"vestuario": "calle", "ropa": "#6b5b4b"}
+    if m:
+        v.pop("bigote", None)
+    return v
+
+
+def genero_de(nombre: str, cambios: dict, genero: str = "") -> str:
+    if genero in GENEROS:
+        return genero
+    return "mujer" if nombre in ("mama", "vecina") or (nombre == "nene" and cambios.get("peinado") == "largo") else "hombre"
+
+
+# Lo que tiene en las manos cada rol cuando trabaja (Santi, 2026-11-17: "todos hacen algo según su rol"; nadie con
+# las manos juntas o vacías mirando a cámara). "{prota}" = el producto de la historia.
+TRABAJO_ROL = {"obrero": "caja", "obrera": "{prota}", "repartidor": "caja", "granjero": "caja",
+               "cajero": "billete", "cajera": "billete", "vendedor": "{prota}", "vendedora": "{prota}",
+               "cliente": "{prota}", "cocinero": "{prota}"}
+QUE_HACE_ROL = {"obrero": "carga cajas", "obrera": "empaca el producto", "repartidor": "carga cajas",
+                "granjero": "carga la cosecha", "cajero": "cobra", "cajera": "cobra", "vendedor": "ofrece el producto",
+                "vendedora": "ofrece el producto", "cliente": "elige y compra", "cocinero": "cocina"}
 
 
 def aspecto(rol: str, genero: str = "", edad: str = "") -> tuple[str, dict, float]:
@@ -151,6 +222,7 @@ Y_MESA = PISO_PARED - 226          # la tapa de la mesita
 Y_ESTANTE = 820                    # la tabla del estante
 Y_PARED = 640                      # el centro de lo que cuelga en la pared
 Y_AIRE = 1000
+Y_CINTA = 1650                     # la tapa de la cinta de la línea de producción (a la altura de la cintura)
 ROMPIBLES_VIDRIO = {"ventana", "lampara", "botella", "lamparita", "celular", "jarron", "tele"}
 COLOR_PEDAZOS = {"ventana": "#9fe3ff", "lampara": P.AMARILLO, "botella": "#9fe3ff", "tele": "#5b6b7a",
                  "lamparita": "#fff3b0", "jarron": P.TURQUESA, "celular": "#9fe3ff", "cuadro": P.MADERA}
@@ -329,6 +401,7 @@ class Escena:
         self.mano: tuple[float, float, float] | None = None   # (x, y, t) de un "tirar"
         self.primer_plano_en: tuple[float, float, float] | None = None   # (t, x, y) de la cara en primer plano
         self.actores: list[dict] = []    # el elemento de cada personaje (para lo que llevan en la mano)
+        self.anio = 2026                 # la época de la escena (la ropa de cada rol sale de acá)
         self._soportes: set = set()
 
     # ---- personajes ---------------------------------------------------------------------
@@ -341,6 +414,11 @@ class Escena:
         squash & stretch en saltos y golpes, la cabeza que se inclina y la cara que cambia con la acción.
         `x0`/`x1` (numéricos) los pone el plan de la escena para que nadie se pise."""
         nombre, cambios, escala = aspecto(rol, genero, edad)
+        if edad != "chico" and rol not in NINOS:
+            cambios = {**cambios, **vestir(rol, getattr(self, "anio", 2026), genero_de(nombre, cambios, genero))}
+        # cada rol hace lo suyo: nadie queda quieto con las manos vacías (Santi, 2026-11-17)
+        if accion == "quieto" and rol in TRABAJO_ROL:
+            accion = "trabajar"
         accion_pedida = accion
         accion = "manipular" if (MANOS_V3 and accion in CON_MANOS) else ALIAS_ACCION.get(accion, accion)
         x0 = _x(desde) if x0 is None else x0
@@ -490,6 +568,17 @@ class Escena:
                 kf.append({"t": round(t, 3), "cabeza": 9 + 3 * s_, "estirar": 1.0 - 0.015 * s_, "easing": "suave"})
                 t += 0.38
                 s_ = -s_
+        elif accion == "trabajar":   # el trabajo de su rol, con lo suyo en las manos (TRABAJO_ROL)
+            caras.append({"t": t0, "cara": "feliz" if rol in ("cliente", "vendedor", "vendedora") else "normal"})
+            gestos += _alternar("sostener_a", "sostener_b", t0, fin, 0.42)
+            t, s_ = t0, 1
+            while t < fin:   # mira lo que hace y se mueve con el trabajo (el que carga va y viene un poco)
+                q = {"t": round(t, 3), "cabeza": 10 + 3 * s_, "estirar": 1.0 - 0.02 * s_, "easing": "suave"}
+                if rol in ("obrero", "repartidor", "granjero"):
+                    q["x"] = round(x0 + 22 * s_, 1)
+                kf.append(q)
+                t += 0.6
+                s_ = -s_
         elif accion == "fabricar":   # arma con las manos lo que hace (2026-11-15: nada de martillo genérico)
             caras.append({"t": t0, "cara": "normal"})
             gestos += _alternar("atrapar", "explicar", t0, fin, 0.32)
@@ -516,8 +605,11 @@ class Escena:
             respira(t0, fin, 4.0)
         el["keyframes"] = sorted(kf, key=lambda q: q["t"])
         el["gestos"] = gestos
-        if accion == "manipular":
+        if accion in ("manipular", "trabajar"):
             el["manos"] = True       # el objeto "en la mano" va en las dos, adelante (Escena.objeto)
+        if accion == "trabajar":
+            el["objeto_rol"] = TRABAJO_ROL[rol]
+        el["rol"] = rol
         self.actores.append(el)
         if caras:
             el["caras"] = [c for c in caras if c["cara"] != "normal"] or caras
@@ -590,7 +682,10 @@ class Escena:
         base = {"tipo": "prop", "nombre": prop, "x": x, "y": y}
         if sop == "mano" and self.actores and efecto in ("quieto", "gira"):
             # en la mano del primero que aparece (o del que lo está manipulando): a la altura de la mano y siguiéndolo
-            quien = next((a for a in self.actores if a.get("manos")), self.actores[0])
+            quien = next((a for a in self.actores if a.get("manos") and not a.get("lleva")
+                          and not a.get("objeto_rol")),
+                         next((a for a in self.actores if a.get("manos") and not a.get("lleva")), self.actores[0]))
+            quien["lleva"] = prop
             esc_ = float(quien.get("escala", 1))
             lado = 1 if float(quien["x"]) <= 540 else -1
             off = 125 * esc_ * lado
@@ -599,7 +694,9 @@ class Escena:
                 off, y = 0.0, PISO - 300 * esc_
             kx = [{"t": k["t"], "x": round(float(k["x"]) + off, 1), "easing": k.get("easing", "suave")}
                   for k in quien.get("keyframes", []) if "x" in k]
-            self.elementos.append({**base, "x": float(quien["x"]) + off, "y": y, "escala": 0.55,
+            # lo voluminoso (una caja) se lleva a la altura de la panza y más chico: si no, le tapa la cara
+            esc_mano = 0.42 if prop in ("caja", "bolsa_plata", "caja_registradora") else 0.55
+            self.elementos.append({**base, "x": float(quien["x"]) + off, "y": y, "escala": esc_mano,
                                    "keyframes": kx, "en_mano": True})
             return None
         if color:
@@ -1263,6 +1360,7 @@ def escena_accion(spec: dict, dur: float, i: int, primera: bool = False, tono: f
     if hecha and hecha.get("fondo"):
         fondo = hecha["fondo"]
     e = Escena(dur, semilla=i + 1, fondo=fondo, espejo=_esc.espejado(semilla))
+    e.anio = int(anio or 2026)
     if spec.get("multitud") or (hecha and hecha.get("multitud")):
         e.multitud()
     if hecha:
@@ -1329,12 +1427,52 @@ def escena_accion(spec: dict, dur: float, i: int, primera: bool = False, tono: f
             e.objeto(rompible.get("prop") or "ventana", "se_rompe", rompible.get("donde") or "centro",
                      str(rompible.get("texto") or ""), None, len(objetos), soporte=rompible.get("soporte"))
     # Reglas_v3: quien manipula tiene el producto en las manos (nunca manos vacías ni el objeto flotando al lado)
-    if MANOS_V3 and protagonista and any(a.get("manos") for a in e.actores) \
+    if MANOS_V3 and protagonista and any(a.get("manos") and not a.get("objeto_rol") for a in e.actores) \
             and not any(el.get("en_mano") for el in e.elementos):
         e.objeto(protagonista, "quieto", "centro", soporte="mano")
         for el in e.elementos:
             if el.get("en_mano") and el.get("nombre") == protagonista:
                 el["color"] = True
+    # Lo que tiene en las manos cada uno según su rol (Santi, 2026-11-17): el obrero la caja, el cajero los billetes,
+    # el cliente el producto que compra. Nunca manos vacías.
+    for a in list(e.actores):
+        if a.get("objeto_rol") and not a.get("lleva"):
+            prop = str(a["objeto_rol"]).replace("{prota}", protagonista or "caja")
+            if not _de_epoca(prop):
+                prop = "caja"
+            for b in e.actores:      # que lo agarre ÉL (objeto() elige al primero libre sin objeto de rol)
+                if b is not a:
+                    b["_ocupado"] = b.get("lleva")
+                    b["lleva"] = b.get("lleva") or "_"
+            a_or = a.pop("objeto_rol")
+            e.objeto(prop, "quieto", "centro", soporte="mano")
+            a["objeto_rol"] = a_or
+            for b in e.actores:
+                if b is not a:
+                    b["lleva"] = b.pop("_ocupado")
+                    if not b["lleva"]:
+                        b.pop("lleva")
+            if prop == protagonista:
+                for el in e.elementos:
+                    if el.get("en_mano") and el.get("nombre") == protagonista:
+                        el["color"] = True
+    # La línea de producción (Santi, 2026-11-17): en la fábrica con obreros, una cinta adelante con el producto que
+    # avanza y la gente trabajando en ella; nunca vacía.
+    linea = []
+    if fondo == "fabrica" and not hecha and any(a.get("rol") in ("obrero", "obrera") for a in e.actores):
+        prod = protagonista if protagonista and _de_epoca(protagonista) else "caja"
+        linea.append({"tipo": "prop", "nombre": "cinta_frente", "x": 540, "y": Y_CINTA, "linea": True,
+                      "forma": 1 if e.anio < 1940 else 0})
+        n_ = 6
+        for k in range(n_):
+            t0 = round(-dur + k * 2 * dur / n_, 2)     # ya hay producto en la cinta desde el primer cuadro
+            linea.append({"tipo": "prop", "nombre": prod, "x": -140, "y": Y_CINTA - 46, "escala": 0.4, "linea": True,
+                          "color": prod == protagonista or None,
+                          "keyframes": [{"t": t0, "x": -140}, {"t": t0 + 2 * dur, "x": 1220, "easing": "lineal"}]})
+        e.sfx.append((0.0, "maquina"))
+        for el in linea:
+            if "color" in el and el["color"] is None:
+                el.pop("color")
     # Decorado de contexto (Santi, 2026-11-16, reglas_v3): 1 a 3 objetos de la historia y la época atrás, sobre el
     # estante, la mesa o el piso (nada de mesas vacías). Más chicos y detrás de los personajes.
     interior = fondo in ("casa", "oficina", "taller", "fabrica", "tienda", "laboratorio", "hospital", "cocina")
@@ -1361,6 +1499,7 @@ def escena_accion(spec: dict, dur: float, i: int, primera: bool = False, tono: f
     fondo_cosas = {"ventana", "lampara", "cuadro", "tele", "jarron", "botella", "trofeo"}
     e.elementos.sort(key=lambda el: 0 if (el.get("nombre") in fondo_cosas or el.get("decorado")) and not el.get("keyframes") else
                      1 if el.get("tipo") == "personaje" else 2)
+    e.elementos += linea          # la cinta adelante de la gente (les tapa las piernas: trabajan detrás de la línea)
     elementos = e.fondo_el + e.elementos
     texto = str(spec.get("texto_pantalla") or "").strip()
     if texto:

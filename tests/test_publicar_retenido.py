@@ -24,13 +24,14 @@ def _fallas(ids):
 def test_umbrales():
     an = [r.id for r in calidad.de_revision("asinacio")]
     ph = [r.id for r in calidad.de_revision("pequena_historia")]
-    assert len(an) == 14 and len(ph) == 9
-    assert calidad.retener("asinacio", _fallas(an[:3]), True)            # 11/14 (el mínimo es 12 desde el 17/11)
-    assert not calidad.retener("asinacio", _fallas(an[:2]), True)        # 12/14: sale con aviso
+    assert len(an) == 19 and len(ph) == 9                                # 5 reglas nuevas el 17/11 (AN-15 a AN-19)
+    assert calidad.minimo("asinacio") == 17 and calidad.minimo("pequena_historia") == 7
+    assert calidad.retener("asinacio", _fallas(an[:3]), True)            # 3 sin cumplir (antes 11/14)
+    assert not calidad.retener("asinacio", _fallas(an[:2]), True)        # 2 sin cumplir: sale con aviso
     assert not calidad.retener("asinacio", _fallas(an[:6]), False)       # la revisión no respondió: no se puntuó
     assert calidad.retener("pequena_historia", _fallas(ph[:3]), True)    # 6/9
     assert not calidad.retener("pequena_historia", _fallas(ph[:2]), True)
-    assert "10/14" in calidad.texto_retenido("asinacio", _fallas(an[:4]))
+    assert "15/19" in calidad.texto_retenido("asinacio", _fallas(an[:4]))
 
 
 class R:
@@ -59,7 +60,7 @@ def test_asi_nacio_bajo_no_se_programa(conn, tmp_path, monkeypatch):
 
     m._animacion_armar(conn, TG(), [m.DUENO], s, date(2026, 11, 17))
     assert not programados                                         # nada a YouTube ni a Facebook
-    assert "NO se publica sola" in enviados[0] and "9/14" in enviados[0]
+    assert "NO se publica sola" in enviados[0] and "14/19" in enviados[0]
     botones = [b["callback_data"] for b in mensajes[0][1]["inline_keyboard"][0]]
     assert botones == ["sub:pub:asinacio_20261117", "sub:no:asinacio_20261117"]
     meta = tmp_path / "output" / "animacion" / "20261117" / "asinacio_20261117.json"

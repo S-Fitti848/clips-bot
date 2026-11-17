@@ -122,7 +122,7 @@ FONDOS = ("casa", "taller", "fabrica", "tienda", "oficina", "ciudad", "escenario
           "laboratorio", "hospital", "campo", "puerto", "playa", "estadio", "cocina")
 # mesa y estante no son objetos de la historia: son el APOYO (`soporte`) y el render los pone contra la pared
 # Los efectos que agrega el render (polvo, líneas de movimiento, destellos, primer plano) NO los elige el guion.
-EFECTOS_RENDER = ("polvo", "lineas_mov", "destello", "primer_plano", "rayos")
+EFECTOS_RENDER = ("polvo", "lineas_mov", "destello", "primer_plano", "rayos", "cinta_frente")
 PROPS = tuple(sorted(n for n in esc.PROPS if n not in ("pedazo", "microfono", "mesa", "estante") + EFECTOS_RENDER))
 # Lo que puede pedir el guion: la biblioteca, los dibujos guardados y "dibujo_nuevo" (Claude lo dibuja, dibujos.py)
 DIBUJO_NUEVO = "dibujo_nuevo"
@@ -537,6 +537,13 @@ ESCENA de cada frase:
 - `actores` (1 a 3): `rol` ({_lista(ac.ROLES)}), `accion` ({_lista(ac.ACCIONES)}), `desde` y `hacia`
   (izquierda, centro, derecha, afuera_izq, afuera_der; `hacia` "ninguno" si no se mueve de lugar) y
   `cara` ({_lista(ac.CARAS)}).
+  PERSONAJES SEGÚN QUIÉN ES Y SU ROL (Santi, 2026-11-17): el protagonista es la persona real, con su `genero` y la
+  `edad` que tenía en ESA escena; los demás tienen el rol de lo que hacen ahí: obrero/obrera en la fábrica,
+  cajero/cajera o vendedor/vendedora en el negocio, cliente comprando, empresario/fundador el de traje,
+  inventor/cientifica/medico con guardapolvo, repartidor cargando. Nadie sin rol ni de relleno. La ropa la pone el
+  código según el rol y el año de la escena. Cada uno HACE algo de su rol: `quieto` en un obrero, cajero, vendedor,
+  cliente o repartidor = trabaja con lo suyo en las manos (cajas, billetes, el producto); en cualquier otro rol,
+  `quieto` no vale: elegí la acción de la frase.
 - `objetos` (0 a 3): `prop` ({_lista(PROPS)}), `efecto` ({_lista(ac.EFECTOS)}), `donde` (izquierda,
   centro, derecha), `soporte` ({_lista(ac.SOPORTES)}) y `texto` (etiqueta, máx. 12 letras, o vacío).
   Un "tirar" + un objeto que "vuela" o "rebota" sale de la mano; si además hay uno que "se_rompe",
@@ -1405,6 +1412,15 @@ def completar_v3(cliente, d: dict, avisar=log.info) -> bool:
     return False
 
 
+def errores_quietos(d: dict) -> list[str]:
+    """Nadie parado sin hacer nada (Santi, 2026-11-17): `quieto` solo en los roles que trabajan con algo en las manos
+    (obrero, cajero, vendedor, cliente, repartidor: `ac.TRABAJO_ROL`)."""
+    return [f"escena {i}: {a.get('rol')} queda quieto sin hacer nada (Santi, 2026-11-17): dale una acción de su rol "
+            f"que muestre lo que dice la frase"
+            for i, e in enumerate(d.get("escenas") or []) for a in e.get("actores") or []
+            if a.get("accion") == "quieto" and a.get("rol") in ac.ROLES and a.get("rol") not in ac.TRABAJO_ROL]
+
+
 def validar_guion(d: dict, m: Marca, fuente: str, ganchos_previos: list[dict] | None = None) -> list[str]:
     """Los errores del guion (vacío = sirve): datos contra el artículo (como Pequeña Historia),
     estructura, escenas con acción, locutor y presentación de cada empresa o persona."""
@@ -1478,6 +1494,7 @@ def validar_guion(d: dict, m: Marca, fuente: str, ganchos_previos: list[dict] | 
     errores += errores_protagonista(d)
     errores += errores_fieles(d)
     errores += errores_accion(d)
+    errores += errores_quietos(d)
     errores += errores_viajes(d)
     # El locutor (Tito).
     if not LOCUTOR_MIN <= len(loc) <= LOCUTOR_MAX:
@@ -2045,6 +2062,65 @@ def escena_mapa(dur: float, lat: float, lon: float) -> tuple[dict, list[tuple[fl
             [(0.0, "whoosh"), (round(dur * 0.7, 2), "pop")])
 
 
+LUGARES_TITO = ((150, 640), (930, 640), (150, 860), (930, 860), (150, 480), (930, 480))
+CAJA_TITO = (125, 110)     # medio ancho y medio alto de la ventanita (con el signo de al lado)
+
+
+def cajas_en_pantalla(e: dict, t0: float, t1: float) -> list[tuple[float, float, float, float]]:
+    """(x0, y0, x1, y1) en la pantalla de lo que no se puede tapar entre t0 y t1: las personas (del sombrero a los
+    pies), los objetos (menos los efectos y el decorado del fondo) y los textos grandes, con la cámara aplicada."""
+    from .timeline import Elemento, Escena as _Esc
+
+    try:
+        esc_ = _Esc.desde_dict(e, 0)
+    except Exception:  # noqa: BLE001
+        esc_ = None
+    cajas = []
+    for el_d in e.get("elementos") or []:
+        tipo = el_d.get("tipo")
+        if el_d.get("fijo") or el_d.get("nombre") in esc.NO_REEMPLAZO + ("tito_reaccion",) or el_d.get("decorado"):
+            if tipo != "gancho" and el_d.get("nombre") not in ("rotulo", "cita", "dato", "cartel_comic"):
+                continue
+        try:
+            el = Elemento.desde_dict(el_d, "", float(e["duracion"]))
+        except Exception:  # noqa: BLE001
+            continue
+        for t in (t0, (t0 + t1) / 2, t1):
+            if "desde" in el_d and t < float(el_d["desde"]) or "hasta" in el_d and t > float(el_d["hasta"]):
+                continue
+            x = el.pista.valor("x", t, el.base["x"])
+            y = el.pista.valor("y", t, el.base["y"])
+            k = el.pista.valor("escala", t, el.base.get("escala", 1.0))
+            if tipo == "personaje":
+                caja = (x - 140 * k, y - 820 * k, x + 140 * k, y)
+            elif tipo == "gancho" or el_d.get("nombre") in ("rotulo", "cita", "dato", "cartel_comic"):
+                caja = (40.0, y - 80, 1040.0, y + 80)
+            else:
+                caja = (x - 120 * k, y - 120 * k, x + 120 * k, y + 120 * k)
+            if not el_d.get("fijo") and esc_ is not None:
+                try:
+                    z, dx, dy, _r = esc_.camara_en(t)
+                except Exception:  # noqa: BLE001
+                    z, dx, dy = 1.0, 0.0, 0.0
+                cx, cy = esc.W / 2, esc.H / 2
+                caja = ((caja[0] - cx - dx) * z + cx, (caja[1] - cy - dy) * z + cy,
+                        (caja[2] - cx - dx) * z + cx, (caja[3] - cy - dy) * z + cy)
+            cajas.append(caja)
+    return cajas
+
+
+def lugar_tito(e: dict, tl: float, k: int = 0) -> tuple[float | None, float | None]:
+    """Dónde va la ventanita de Tito para que no tape a ninguna persona ni objeto importante (Santi, 2026-11-17):
+    la primera esquina libre, empezando por la que toca (se alternan). None si no hay ninguna libre."""
+    cajas = cajas_en_pantalla(e, tl, tl + 1.6)
+    hw, hh = CAJA_TITO
+    orden = LUGARES_TITO[k % 2::2] + LUGARES_TITO[1 - k % 2::2]
+    for x, y in orden:
+        if not any(x - hw < c[2] and c[0] < x + hw and y - hh < c[3] and c[1] < y + hh for c in cajas):
+            return x, y
+    return None, None
+
+
 def reacciones_tito(escenas: list[dict]) -> None:
     """Tito en una ventanita, en una esquina de arriba, cada ~9 s (sorprendido, riéndose, señalando), solo en
     las escenas de acción (no en sus pausas, el viaje ni el mapa). Esquinas alternadas."""
@@ -2056,9 +2132,12 @@ def reacciones_tito(escenas: list[dict]) -> None:
         accion = not e.get("congela") and e.get("fondo", {}).get("tipo") not in ("mapa_geo", "color")
         while accion and t <= proxima < t + dur - 1.2:
             tl = round(proxima - t, 2)
-            x = 150 if k % 2 == 0 else 930
+            x, y = lugar_tito(e, tl, k)
+            if x is None:          # no hay lugar libre en la pantalla: esta vez Tito no aparece (nunca tapa a nadie)
+                proxima += 2.0
+                continue
             e["elementos"].append({"tipo": "prop", "nombre": "tito_reaccion", "forma": k % 3, "fijo": True,
-                                   "x": x, "y": 640, "escala": 0.8, "desde": tl, "hasta": round(tl + 1.6, 2),
+                                   "x": x, "y": y, "escala": 0.8, "desde": tl, "hasta": round(tl + 1.6, 2),
                                    "keyframes": [{"t": tl, "escala": 0.05}, {"t": tl + 0.25, "escala": 0.8,
                                                                             "easing": "rebote"},
                                                  {"t": tl + 1.35, "escala": 0.8}, {"t": tl + 1.6, "escala": 0.05,
@@ -2552,6 +2631,62 @@ def aplicar_revision(d: dict, problemas: list[dict], claves: list[tuple[float, i
     return hechos
 
 
+def ficha_escena(esc_k: dict, d: dict) -> dict:
+    """La FICHA de una escena (Santi, 2026-11-17: "cada escena se planifica antes de dibujarla"): quién aparece con
+    su rol y su ropa, dónde, en qué año, qué hace cada uno, con qué objetos y en qué plano. El dibujo sale de acá (la
+    ropa con `ac.vestir`, lo que tiene en las manos con `ac.TRABAJO_ROL`) y la revisión la usa para comparar."""
+    anio = int(esc_k.get("anio_escena") or 0) or 2026
+    prota = (d.get("protagonista") or {})
+    gente = []
+    for a in esc_k.get("actores") or []:
+        rol = str(a.get("rol") or "joven")
+        nombre, cambios, _ = ac.aspecto(rol, a.get("genero") or "", a.get("edad") or "")
+        genero = ac.genero_de(nombre, cambios, a.get("genero") or "")
+        ropa = ac.vestir(rol, anio, genero) if a.get("edad") != "chico" and rol not in ac.NINOS else {}
+        piezas = ropa.get("vestuario") or "ropa común"
+        sombrero = ropa.get("sombrero") or cambios.get("sombrero") or "ninguno"
+        accion = str(a.get("accion") or "quieto")
+        hace = ac.QUE_HACE_ROL.get(rol, "") if accion == "quieto" else accion
+        lleva = ac.TRABAJO_ROL.get(rol, "").replace("{prota}", str(prota.get("prop") or "el producto")) \
+            if accion == "quieto" else ""
+        gente.append({"quien": a.get("persona_real") or rol, "rol": rol, "genero": genero, "edad": a.get("edad") or "",
+                      "ropa": piezas.replace("+", " + "), "sombrero": sombrero, "hace": hace, "en_las_manos": lleva})
+    return {"lugar": esc_k.get("lugar_nuevo") or esc_k.get("fondo") or "", "anio": anio, "gente": gente,
+            "objetos": [o.get("prop") for o in esc_k.get("objetos") or [] if o.get("prop")],
+            "accion_escena": esc_k.get("accion_escena") or "", "plano": esc_k.get("plano") or ""}
+
+
+def texto_ficha(f: dict) -> str:
+    gente = "; ".join(f"{g['quien']} ({g['rol']}, {g['genero']} {g['edad']}, {g['ropa']}, sombrero {g['sombrero']}): "
+                      f"{g['hace']}{' con ' + g['en_las_manos'] if g['en_las_manos'] else ''}" for g in f["gente"])
+    return (f"FICHA: lugar {f['lugar']}, año {f['anio']}; gente: {gente or '-'}; objetos: "
+            f"{', '.join(f['objetos']) or '-'}; plano {f['plano'] or 'normal'}")
+
+
+def guardar_fichas(d: dict, carpeta: Path) -> None:
+    try:
+        (carpeta / "fichas.json").write_text(json.dumps([ficha_escena(e, d) for e in d.get("escenas") or []],
+                                                       ensure_ascii=False, indent=1), encoding="utf-8")
+    except OSError as err:
+        log.warning("fichas: no pude guardarlas (%s)", err)
+
+
+REVISION_FICHA = """
+(Santi, 2026-11-17) Cada cuadro trae la FICHA de su escena (quién aparece con su rol y su ropa, dónde, en qué año, qué
+hace cada uno). Por cada persona del cuadro respondete: ¿QUIÉN ES (se entiende su rol por la ropa y lo que hace)?,
+¿QUÉ ESTÁ HACIENDO?, ¿ESTO PASABA EN ESE AÑO Y EN ESE LUGAR? Si alguna respuesta no es clara, la escena se corrige:
+- una persona sin rol claro, con la ropa equivocada para su rol o su época, o de relleno: `arreglo` = cambiar_accion;
+- alguien con las manos juntas o vacías mirando a cámara, o un obrero que no trabaja, un cajero que no cobra, un
+  cliente que no compra: `arreglo` = cambiar_accion, SIEMPRE;
+- una línea de producción vacía o sin gente trabajando en ella: `arreglo` = cambiar_accion;
+- algo que no existía en ese año o en ese lugar (máquinas modernas de colores en el siglo XIX, un camión o edificios
+  modernos en 1882, pantallas antes de 1980, engranajes sin que la frase hable de una máquina): `arreglo` =
+  sacar_objeto con su nombre en `objeto` o cambiar_accion si es el lugar entero;
+- un fondo pobre: menos de 3 detalles que digan DÓNDE y CUÁNDO (carteles pintados, faroles, carros, adoquines,
+  cajas del producto, ladrillo, ropa de época): `arreglo` = otro, y en `que` cuáles faltan;
+- la ventanita de Tito tapando a una persona o un objeto importante: `arreglo` = otro."""
+
+
 def revisar_visual(cliente, d: dict, datos: dict, carpeta: Path, capturar=None, avisar=log.info,
                    conn=None) -> tuple[list, list]:
     """Claude mira los cuadros clave (JPEG de ~512 px) y dice qué está mal. Devuelve (problemas, claves).
@@ -2575,16 +2710,16 @@ def revisar_visual(cliente, d: dict, datos: dict, carpeta: Path, capturar=None, 
     def qd(i, q):
         k = datos["escenas"][i].get("frase")
         esc_k = (d.get("escenas") or [])[k] if isinstance(k, int) and k < len(d.get("escenas") or []) else {}
-        gente = ", ".join(f"{a.get('persona_real') or a.get('rol')} ({a.get('genero')}, {a.get('edad')})"
-                          for a in esc_k.get("actores") or [])
-        extra = (f" — dice: «{frases[k]}» (lugar: {esc_k.get('fondo')}, año: {esc_k.get('anio_escena') or 'hoy'}; "
-                 f"personajes: {gente or '-'}; protagonista: {(d.get('protagonista') or {}).get('que_es')})"
+        extra = (f" — dice: «{frases[k]}» ({texto_ficha(ficha_escena(esc_k, d))}; protagonista: "
+                 f"{(d.get('protagonista') or {}).get('que_es')})"
                  if isinstance(k, int) and k < len(frases) else "")
         return q + extra
     lista = "\n".join(f"Cuadro {n + 1}: {qd(i, q)}" for n, (_t, i, q) in enumerate(claves))
     lista += ("\n\nARRANQUES ANTERIORES DEL CANAL:\n" + texto_ganchos(ganchos_recientes(conn)[:-1])
               if conn is not None else "")
     sistema = ((sistema_revision_v3() + (REVISION_V4 if USO_V4 else "")) if REGLAS_V3 else SISTEMA_REVISION)
+    sistema += REVISION_FICHA
+    guardar_fichas(d, carpeta)
     sistema += calidad.para_prompt("asinacio") + ("\nToda regla que no se cumple va TAMBIÉN en `problemas`, con su "
                                                    "cuadro y el arreglo que la corrige.")
     try:

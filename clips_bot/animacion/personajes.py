@@ -145,7 +145,7 @@ class Personaje:
     piel: str = P.PIEL[0]
     pelo: str = P.PELO[0]
     peinado: str = "jopo"          # jopo | corto | largo | rulos | pelado
-    sombrero: str = "ninguno"      # ninguno | gorra | galera
+    sombrero: str = "ninguno"      # ninguno | gorra | galera | bombin | boina | cofia
     color_sombrero: str = P.ROJO
     ropa: str = P.TURQUESA
     pantalon: str = "#34405e"
@@ -153,6 +153,10 @@ class Personaje:
     bigote: bool = False
     cachetes: bool = True
     alto_cuerpo: float = 1.0       # 0.85 = más bajo/compacto
+    # Vestuario por rol y época (Santi, 2026-11-17): piezas unidas con "+" (mameluco, delantal, uniforme, traje,
+    # calle, guardapolvo, falda_larga); se dibujan encima del torso. `color_vestuario` = el de la pieza principal.
+    vestuario: str = ""
+    color_vestuario: str = ""
 
     R_CABEZA = 118
     LARGO_BRAZO = 112
@@ -172,7 +176,9 @@ class Personaje:
         hombro_y = tope_torso + 38
         return "".join([
             self._piernas(piso_torso, e),
+            self._falda(piso_torso) if not e.espaldas else "",
             self._torso_espaldas(piso_torso, tope_torso) if e.espaldas else self._torso(piso_torso, tope_torso),
+            self._vestuario(piso_torso, tope_torso) if not e.espaldas else "",
             self._brazo(-1, hombro_y, *e.brazo_izq),
             self._brazo(1, hombro_y, *e.brazo_der),
             g(self._cabeza(e), 0, cy_cabeza, rot=e.inclinacion),
@@ -186,7 +192,7 @@ class Personaje:
         return (8.0 * (e.perfil if e else 0), tope - self.R_CABEZA + 22, float(self.R_CABEZA))
 
     def alto_sombrero(self) -> float:
-        return {"galera": 150.0, "gorra": 40.0}.get(self.sombrero, 0.0)
+        return {"galera": 150.0, "gorra": 40.0, "bombin": 80.0, "boina": 40.0, "cofia": 30.0}.get(self.sombrero, 0.0)
 
     def brazos(self, e: Estado) -> list[list[tuple[float, float]]]:
         """Las dos poligonales hombro → codo → mano, en coordenadas locales."""
@@ -249,6 +255,17 @@ class Personaje:
         # torso de costado (más angosto, la panza hacia adelante)
         p.append(camino(f"M-56 {n(piso_torso)} L64 {n(piso_torso)} Q78 {n(tope + 60)} 50 {n(tope + 8)} "
                         f"Q0 {n(tope - 6)} -48 {n(tope + 12)} Q-66 {n(tope + 80)} -56 {n(piso_torso)} Z", self.ropa))
+        pz = self.piezas()
+        if "falda_larga" in pz:
+            p.append(camino(f"M-60 {n(piso_torso - 10)} L68 {n(piso_torso - 10)} Q90 {n(piso_torso * 0.5)} 110 -40 "
+                            f"L-90 -40 Q-74 {n(piso_torso * 0.5)} -60 {n(piso_torso - 10)} Z", self.pantalon))
+        largo_v = 110 if pz & {"delantal", "guardapolvo"} else 0
+        if pz & {"delantal", "guardapolvo", "mameluco", "uniforme"}:   # el vestuario de costado: el frente
+            cv = self.color_vestuario or self.ropa
+            p.append(camino(f"M8 {n(tope + 60)} L60 {n(tope + 60)} Q80 {n(piso_torso)} 74 {n(piso_torso + largo_v)} "
+                            f"L4 {n(piso_torso + largo_v)} Z", cv, ancho=5))
+        elif pz & {"traje", "calle"}:
+            p.append(camino(f"M30 {n(tope + 10)} L56 {n(tope + 20)} L40 {n(tope + 140)} Z", BLANCO_SUCIO, ancho=4))
         p.append(linea_gruesa(brazos[1], self.ropa, self.ANCHO_BRAZO) + circulo(*brazos[1][-1], 24, self.piel))
         # cabeza de perfil: oreja atrás, nariz adelante, un ojo
         cab = [circulo(-22, 14, 26, self.piel), circulo(8, 0, R, self.piel)]
@@ -303,7 +320,7 @@ class Personaje:
             return (camino(f"M-72 {-R + 10} L-66 {-R - 120} L82 {-R - 120} L88 {-R + 10} Z", c)
                     + f'<rect x="-70" y="{-R - 20}" width="156" height="24" fill="{P.ROJO}" '
                       f'{trazo(ancho=P.TRAZO_FINO)}/>' + elipse(8, -R + 12, 130, 22, c))
-        return ""
+        return self._sombrero_epoca(R, c)
 
     # -- partes --
     def _piernas(self, piso_torso: float, e: Estado | None = None) -> str:
@@ -376,6 +393,70 @@ class Personaje:
         p.append(f'<path d="M-84 {n(tope + 22)} Q-60 {n(tope + 8)} -30 {n(tope + 10)}" fill="none" '
                  f'stroke="{luz}" stroke-width="8" stroke-linecap="round" opacity="0.8"/>')
         return "".join(p)
+
+    # -- vestuario por rol y época (Santi, 2026-11-17) --
+    def piezas(self) -> set[str]:
+        return {x for x in str(self.vestuario or "").split("+") if x}
+
+    def _falda(self, piso: float) -> str:
+        """Falda larga hasta los tobillos (mujeres antes de 1950): encima de las piernas."""
+        if "falda_larga" not in self.piezas():
+            return ""
+        c = self.pantalon
+        d = (f"M-104 {n(piso - 10)} L104 {n(piso - 10)} Q118 {n(piso * 0.5)} 150 -40 Q0 -22 -150 -40 "
+             f"Q-118 {n(piso * 0.5)} -104 {n(piso - 10)} Z")
+        pl = "".join(f'<path d="M{x} {n(piso + 10)} Q{x * 1.15} {n(piso * 0.5)} {x * 1.35} -44" fill="none" '
+                     f'stroke="{oscurecer(c, 0.3)}" stroke-width="5" opacity="0.6"/>' for x in (-60, 0, 60))
+        return camino(d, c) + pl
+
+    def _vestuario(self, piso: float, tope: float) -> str:
+        pz = self.piezas()
+        if not pz:
+            return ""
+        c = self.color_vestuario or self.ropa
+        sombra = oscurecer(c, 0.3)
+        out = []
+        if "guardapolvo" in pz:   # bata larga hasta las rodillas, abierta adelante, con bolsillos
+            for s_ in (-1, 1):
+                out.append(camino(f"M{s_ * 124} {n(tope + 40)} Q{s_ * 130} {n(piso)} {s_ * 128} {n(piso + 110)} "
+                                  f"L{s_ * 12} {n(piso + 110)} L{s_ * 12} {n(tope + 70)} Z", c, ancho=5))
+                out.append(f'<path d="M{s_ * 108} {n(piso + 30)} L{s_ * 48} {n(piso + 30)}" stroke="{sombra}" '
+                           f'stroke-width="5"/>')
+                out.append(camino(f"M{s_ * 12} {n(tope + 70)} L{s_ * 70} {n(tope + 6)} L{s_ * 40} {n(tope + 110)} Z",
+                                  aclarar(c, 0.2), ancho=4))   # solapa
+        if "traje" in pz or "calle" in pz:   # saco con solapas; con traje, corbata
+            out.append(camino(f"M-30 {n(tope + 4)} L0 {n(tope + 150)} L30 {n(tope + 4)} Z", BLANCO_SUCIO, ancho=4))
+            if "traje" in pz:
+                out.append(camino(f"M-12 {n(tope + 20)} L12 {n(tope + 20)} L18 {n(tope + 120)} L0 {n(tope + 146)} "
+                                  f"L-18 {n(tope + 120)} Z", "#7a1f2b", ancho=4))
+            for s_ in (-1, 1):
+                out.append(camino(f"M{s_ * 30} {n(tope + 4)} L{s_ * 76} {n(tope + 20)} L{s_ * 40} {n(tope + 86)} "
+                                  f"L{s_ * 4} {n(tope + 160)} Z", oscurecer(self.ropa, 0.18), ancho=4))
+        if "uniforme" in pz:   # camisa clara, chaleco del negocio y moño
+            for s_ in (-1, 1):
+                out.append(camino(f"M{s_ * 26} {n(tope + 20)} L{s_ * 96} {n(tope + 30)} L{s_ * 112} {n(piso)} "
+                                  f"L{s_ * 6} {n(piso)} L{s_ * 6} {n(tope + 150)} Z", c, ancho=5))
+            for k in range(3):
+                out.append(circulo(-14, tope + 170 + k * 34, 7, aclarar(c, 0.5), ancho=3))
+            out.append(camino(f"M0 {n(tope + 18)} L-34 {n(tope + 2)} L-34 {n(tope + 34)} Z", "#b3263a", ancho=4)
+                       + camino(f"M0 {n(tope + 18)} L34 {n(tope + 2)} L34 {n(tope + 34)} Z", "#b3263a", ancho=4)
+                       + circulo(0, tope + 18, 9, "#8e1b2c", ancho=3))
+        if "mameluco" in pz:   # pechera con tirantes y bolsillo (el pantalón es del mismo color)
+            out.append(camino(f"M-72 {n(tope + 110)} L72 {n(tope + 110)} L80 {n(piso)} L-80 {n(piso)} Z", c, ancho=5))
+            for s_ in (-1, 1):
+                out.append(linea_gruesa([(s_ * 60, tope + 116), (s_ * 74, tope + 4)], c, 22))
+                out.append(circulo(s_ * 60, tope + 122, 9, "#d9c27a", ancho=3))
+            out.append(camino(f"M-34 {n(tope + 140)} L34 {n(tope + 140)} L30 {n(tope + 196)} L-30 {n(tope + 196)} Z",
+                              oscurecer(c, 0.15), ancho=4))
+        if "delantal" in pz:   # delantal de trabajo: del pecho a los muslos, con tira al cuello y atado
+            out.append(camino(f"M-64 {n(tope + 70)} L64 {n(tope + 70)} L82 {n(piso - 20)} L88 {n(piso + 120)} "
+                              f"L-88 {n(piso + 120)} L-82 {n(piso - 20)} Z", c, ancho=5))
+            out.append(f'<path d="M-56 {n(tope + 72)} Q0 {n(tope - 30)} 56 {n(tope + 72)}" fill="none" '
+                       f'stroke="{sombra}" stroke-width="7"/>')
+            out.append(f'<path d="M-110 {n(piso - 30)} L110 {n(piso - 30)}" stroke="{sombra}" stroke-width="9"/>')
+            out.append(camino(f"M-40 {n(piso + 10)} L40 {n(piso + 10)} L40 {n(piso + 60)} L-40 {n(piso + 60)} Z",
+                              oscurecer(c, 0.1), ancho=4))
+        return "".join(out)
 
     def _brazo(self, lado: int, hombro_y: float, hombro: float, codo: float) -> str:
         x0 = lado * 92
@@ -527,6 +608,21 @@ class Personaje:
                     + f'<rect x="-78" y="{-R - 20}" width="156" height="24" fill="{P.ROJO}" '
                       f'{trazo(ancho=P.TRAZO_FINO)}/>'
                     + elipse(0, -R + 12, 130, 22, c))
+        return self._sombrero_epoca(R, c)
+
+    def _sombrero_epoca(self, R: float, c: str) -> str:
+        if self.sombrero == "bombin":    # bombín: copa redonda y ala corta
+            return (camino(f"M-84 {-R + 4} Q-90 {-R - 96} 0 {-R - 100} Q90 {-R - 96} 84 {-R + 4} Z", c)
+                    + f'<rect x="-84" y="{-R - 14}" width="168" height="16" fill="{oscurecer(c, 0.35)}"/>'
+                    + elipse(0, -R + 8, 120, 18, c))
+        if self.sombrero == "boina":     # gorra plana de obrero, de visera corta
+            return (camino(f"M{-R + 2} -34 Q{-R} {-R - 40} 10 {-R - 34} Q{R + 30} {-R - 30} {R + 20} -40 Z", c)
+                    + camino(f"M{R - 40} -44 Q{R + 40} -50 {R + 46} -30 Q{R} -26 {R - 40} -32 Z", oscurecer(c, 0.2)))
+        if self.sombrero == "cofia":     # cofia blanca de trabajo
+            return (camino(f"M{-R + 6} -50 Q{-R + 10} {-R - 20} 0 {-R - 24} Q{R - 10} {-R - 20} {R - 6} -50 "
+                           f"Q0 -70 {-R + 6} -50 Z", c)
+                    + f'<path d="M{-R + 20} -58 Q0 -76 {R - 20} -58" fill="none" stroke="{oscurecer(c, 0.25)}" '
+                      f'stroke-width="5"/>')
         return ""
 
 

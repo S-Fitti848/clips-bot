@@ -50,6 +50,9 @@ def fondo_cielo(semilla: int = 1) -> str:
 
 
 def _fondo_ciudad_base(semilla: int = 2) -> str:
+    decada, _ = epoca_de(semilla)
+    if decada and decada < 193:
+        return _ciudad_antigua(semilla, decada)
     rnd = random.Random(semilla)
     p = [rect(0, 0, W, H, "#ffd9a8", borde=False),
          rect(0, 0, W, H * 0.4, "#ffb98a", borde=False),
@@ -75,6 +78,109 @@ def _fondo_ciudad_base(semilla: int = 2) -> str:
 
 
 GRIS_CALLE = "#5d6270"
+
+
+def _ciudad_antigua(semilla: int, decada: int) -> str:
+    """La calle antes de 1930 (Santi, 2026-11-17: "en 1882 nada de edificios modernos ni camiones"): casas de
+    ladrillo y piedra de 2 a 4 pisos con cornisa y ventanas altas, carteles pintados en las paredes, adoquines y
+    vereda de laja (sin rayas de carril)."""
+    rnd = random.Random(semilla)
+    p = [rect(0, 0, W, H, "#f3dcb8", borde=False), rect(0, 0, W, H * 0.4, "#e9c497", borde=False)]
+    colores = ("#a0522d", "#b5835a", "#c9a27e", "#8d5a44", "#9c6b52")
+    x = -30
+    k = 0
+    while x < W + 30:
+        w = rnd.uniform(200, 280)
+        h = rnd.uniform(560, 900)
+        base = H * 0.8
+        c = colores[k % len(colores)]
+        p.append(rect(x, base - h, w, h + 30, c, r=2))
+        for yb in range(int(base - h + 20), int(base), 46):      # hiladas de ladrillo
+            p.append(f'<path d="M{n(x)} {yb} L{n(x + w)} {yb}" stroke="{oscurecer(c, 0.2)}" stroke-width="3" opacity="0.5"/>')
+        p.append(rect(x - 10, base - h - 26, w + 20, 30, oscurecer(c, 0.25), r=2))      # cornisa
+        for vy in range(int(base - h + 70), int(base - 220), 170):                         # ventanas altas con postigos
+            for vx in range(int(x + 30), int(x + w - 60), 90):
+                p.append(rect(vx, vy, 46, 100, "#3a4a5a", r=18, ancho=4))
+                p.append(f'<path d="M{vx + 23} {vy} L{vx + 23} {vy + 100} M{vx} {vy + 50} L{vx + 46} {vy + 50}" '
+                         f'stroke="#c9b28a" stroke-width="4"/>')
+                p.append(rect(vx - 6, vy + 96, 58, 10, "#e9dcc0", ancho=3))
+        if k % 3 == 1:   # cartel pintado en la pared (sin letras: en el fondo espejado salían al revés)
+            cx, cy = x + w / 2, base - h + 40 + h * 0.2
+            p.append(rect(cx - w * 0.38, cy, w * 0.76, 110, "#f1e3c2", r=6, ancho=5))
+            p.append(rect(cx - w * 0.38 + 12, cy + 12, w * 0.76 - 24, 86, "none", r=4, ancho=4))
+            p.append(circulo(cx, cy + 55, 30, "#8e2c2c", ancho=4))
+            for s_ in (-1, 1):
+                p.append(f'<path d="M{n(cx + s_ * 46)} {n(cy + 55)} L{n(cx + s_ * w * 0.3)} {n(cy + 55)}" '
+                         f'stroke="#2f5d50" stroke-width="10" stroke-linecap="round"/>')
+        x += w + rnd.uniform(-6, 10)
+        k += 1
+    # vereda de laja y calle de adoquines
+    p.append(rect(-20, H * 0.8, W + 40, H * 0.06, "#b9b2a3"))
+    p.append(rect(-20, H * 0.86, W + 40, H * 0.14 + 20, "#7a7064"))
+    for fila, yb in enumerate(range(int(H * 0.86) + 10, H, 34)):
+        for xb in range(-20 + (fila % 2) * 30, W, 60):
+            p.append(rect(xb, yb, 54, 28, "#8d8275", r=8, ancho=3))
+    return "".join(p)
+
+
+def carro_caballo() -> str:
+    """Un carro de reparto tirado por un caballo, de costado, apoyado en y = 60 (antes de 1910)."""
+    rueda = lambda x: (circulo(x, 20, 56, "#6d4c2f", ancho=5) + circulo(x, 20, 12, "#3b2a1a", ancho=3)
+                       + "".join(f'<path d="M{x} 20 L{n(x + 52 * math.cos(a))} {n(20 + 52 * math.sin(a))}" '
+                                 f'stroke="#3b2a1a" stroke-width="5"/>' for a in [k * math.pi / 4 for k in range(8)]))
+    caballo = (camino("M120 -60 Q150 -110 230 -100 Q280 -96 290 -60 L290 0 L270 0 L268 -40 Q220 -30 160 -40 "
+                      "L156 0 L136 0 Z", "#7b4a2d")
+               + camino("M270 -96 Q300 -170 330 -176 Q356 -170 350 -150 Q330 -140 318 -96 Z", "#7b4a2d")
+               + rect(150, -2, 18, 62, "#5a3520", ancho=4) + rect(266, -2, 18, 62, "#5a3520", ancho=4)
+               + camino("M296 -150 Q260 -140 250 -100", "none", ancho=10))
+    return (rueda(-150) + rueda(30) + rect(-230, -150, 330, 150, "#8a5a2b", r=6)
+            + rect(-210, -130, 290, 40, "#c9a24a", ancho=4) + caballo
+            + f'<path d="M100 -70 L150 -60" stroke="#3b2a1a" stroke-width="8"/>')
+
+
+def _fabrica_antigua(semilla: int) -> str:
+    """La fábrica antes de 1940 (Santi, 2026-11-17: "en 1883 nada de máquinas modernas de colores"): pared de
+    ladrillo, vigas de madera, ventanales altos de vidrio repartido, faroles colgados, mesas de trabajo con ollas de
+    cobre, cajones de producto apilados y piso de tablas."""
+    rnd = random.Random(semilla)
+    p = [rect(0, 0, W, H, "#9c5a3c", borde=False)]
+    for fila, yb in enumerate(range(0, int(H * 0.7), 40)):                 # ladrillo
+        for xb in range(-40 + (fila % 2) * 45, W, 90):
+            c = ("#a8613f", "#96553a", "#b06a47")[(fila + xb // 90) % 3]
+            p.append(rect(xb, yb, 86, 36, c, r=3, borde=False))
+    for x in (120, 420, 720):                                                 # ventanales altos, arco arriba
+        p.append(camino(f"M{x} 640 L{x} 330 Q{x + 120} 200 {x + 240} 330 L{x + 240} 640 Z", "#ffe2b0", ancho=6))
+        for k in range(1, 4):
+            p.append(f'<path d="M{x + k * 60} 250 L{x + k * 60} 640" stroke="#4a3426" stroke-width="5"/>')
+        for yy in range(380, 640, 70):
+            p.append(f'<path d="M{x} {yy} L{x + 240} {yy}" stroke="#4a3426" stroke-width="5"/>')
+    for yy in (70, 170):                                                      # vigas de madera
+        p.append(rect(-20, yy, W + 40, 40, "#5d4037"))
+    for x in (270, 810):                                                      # faroles colgados
+        p.append(f'<path d="M{x} 210 L{x} 300" stroke="#2b2b33" stroke-width="5"/>')
+        p.append(camino(f"M{x - 30} 300 L{x + 30} 300 L{x + 22} 370 L{x - 22} 370 Z", "#fff3b0", ancho=5))
+        p.append(camino(f"M{x - 36} 300 L{x + 36} 300 L{x} 276 Z", "#2b2b33", ancho=4))
+    # piso de tablas
+    p.append(rect(0, H * 0.7, W, H * 0.3, "#8a6142", borde=False))
+    for yy in range(int(H * 0.7), H, 60):
+        p.append(f'<path d="M0 {yy} L{W} {yy}" stroke="#6d4a30" stroke-width="5"/>')
+    p.append(f'<path d="M0 {n(H * 0.7)} L{W} {n(H * 0.7)}" {trazo()}/>')
+    # mesas de trabajo con ollas de cobre (atrás, contra la pared)
+    for x0 in (60, 640):
+        p.append(rect(x0, 1090, 380, 34, "#8a5a2b", r=6) + rect(x0 + 20, 1120, 26, 220, "#6d4428")
+                 + rect(x0 + 334, 1120, 26, 220, "#6d4428"))
+        for k in range(2):
+            cx = x0 + 100 + k * 180
+            p.append(camino(f"M{cx - 70} 1010 L{cx + 70} 1010 Q{cx + 66} 1090 {cx} 1092 Q{cx - 66} 1090 {cx - 70} 1010 Z",
+                            "#c87533") + elipse(cx, 1010, 70, 16, "#7a3f17"))
+    # cajones de producto apilados (con el sello pintado)
+    for k, (x, y) in enumerate(((880, 1300), (960, 1300), (920, 1220), (40, 1300))):
+        p.append(rect(x - 40, y - 76, 80, 76, "#b98a5e", r=4) + circulo(x, y - 38, 16, "#8e2c2c", ancho=3)
+                 + f'<path d="M{x - 40} {y - 52} L{x + 40} {y - 52}" stroke="#6d4428" stroke-width="4"/>')
+    # cartel pintado del negocio sobre la puerta (sin letras)
+    p.append(rect(380, 720, 320, 90, "#2f5d50", r=8, ancho=6) + rect(394, 734, 292, 62, "none", r=6, ancho=4)
+             + circulo(540, 765, 22, "#d9b44a", ancho=4))
+    return "".join(p)
 
 
 def fondo_oficina(semilla: int = 3) -> str:
@@ -159,10 +265,10 @@ def _fondo_fabrica_base(semilla: int = 5) -> str:
         p.append(rect(x, 620 - alto, 70, alto, P.GRIS_OSCURO))
         p.append(g(nube(), x + 35 + rnd.uniform(-20, 20), 620 - alto - 70, escala=0.45))
     p.append(f'<path d="M80 410 L1000 410 M540 200 L540 620" {trazo()}/>')
-    # caños y engranajes
+    # caños (nada de engranajes en la pared: solo si la frase habla de una máquina, Santi, 2026-11-17)
     p.append(rect(-20, 700, W + 40, 34, P.ROJO))
-    for x, r in ((170, 90), (330, 60), (880, 110)):
-        p.append(g(prop_engranaje(color=P.GRIS), x, 900, escala=r / 100))
+    for x in (170, 880):
+        p.append(rect(x - 40, 760, 80, 300, "#9aa3b0", r=10) + circulo(x, 820, 26, "#e9eef3", ancho=4))
     # cinta transportadora con cajas
     y = H * 0.66
     p.append(rect(-20, y, W + 40, 60, P.GRIS_OSCURO, r=30))
@@ -271,7 +377,10 @@ def fondo_ciudad(semilla: int = 2) -> str:
                         toldo if k % 2 == 0 else P.BLANCO, ancho=4))
     p.append(g(farol(rango), 980, 1520))
     colores = (P.ROJO, P.AZUL, P.VERDE, P.AMARILLO)
-    p.append(g(auto_epoca(rango, colores[var % 4]), 640, 1500, escala=0.9))
+    if decada and decada < 191:     # antes de los autos: un carro con caballo
+        p.append(g(carro_caballo(), 600, 1500, escala=0.9))
+    else:
+        p.append(g(auto_epoca(rango, colores[var % 4]), 640, 1500, escala=0.9))
     return "".join(p)
 
 
@@ -280,7 +389,7 @@ def fondo_fabrica(semilla: int = 5) -> str:
     50-80, brazo robot y pantallas hoy."""
     decada, _ = epoca_de(semilla)
     rango = _rango(decada)
-    p = [_fondo_fabrica_base(semilla)]
+    p = [_fabrica_antigua(semilla) if decada and decada < 194 else _fondo_fabrica_base(semilla)]
     if rango == "antes":
         p.append(rect(770, 760, 240, 380, "#8d6e63", r=60) + circulo(890, 860, 50, "#e9d8a6", ancho=5)
                  + f'<path d="M890 860 L920 830" {trazo(ancho=6)}/>' + rect(840, 1140, 100, 40, "#5d4037"))
@@ -1767,7 +1876,22 @@ def icono_pausa() -> str:
             + rect(10, -36, 20, 72, P.CONTORNO, r=4, borde=False))
 
 
-PROPS = {"reloj_gigante": prop_reloj_gigante, "mano": prop_mano, "mostrador": prop_mostrador, "fuego": prop_fuego, "cubo_rubik": prop_cubo_rubik,
+def prop_cinta_frente(forma: int = 0, **_) -> str:
+    """La línea de producción adelante (Santi, 2026-11-17): la tapa de la cinta en (0, 0), de punta a punta de la
+    pantalla, con rodillos y patas hasta el piso. forma 1 = de madera (antes de 1940), 0 = de metal."""
+    marco = "#8a5a2b" if forma else "#7d8794"
+    banda = "#4a3a2c" if forma else "#2f3440"
+    out = [rect(-620, 0, 1240, 46, banda, r=20),
+           rect(-620, 40, 1240, 40, marco, r=6)]
+    for x in range(-560, 600, 110):
+        out.append(circulo(x, 23, 15, "#9aa3b0", ancho=4))
+    for x in (-480, -160, 160, 480):
+        out.append(rect(x - 14, 76, 28, 110, marco, ancho=4))
+    out.append(f'<path d="M-620 6 L620 6" stroke="#ffffff" stroke-width="4" opacity="0.25"/>')
+    return "".join(out)
+
+
+PROPS = {"reloj_gigante": prop_reloj_gigante, "cinta_frente": prop_cinta_frente, "mano": prop_mano, "mostrador": prop_mostrador, "fuego": prop_fuego, "cubo_rubik": prop_cubo_rubik,
          "rotulo": prop_rotulo, "dato": prop_dato, "cita": prop_cita, "cartel_comic": prop_cartel_comic,
          "tito_reaccion": prop_tito_reaccion, "primer_plano": prop_primer_plano, "polvo": prop_polvo, "lineas_mov": prop_lineas_mov,
          "destello": prop_destello, "pelota_espuma": prop_pelota_espuma, "juego_mesa": prop_juego_mesa, "hamburguesa": prop_hamburguesa,
@@ -1823,6 +1947,7 @@ def parecido(nombre: str, opciones, descripcion: str = "", descripciones: dict |
 
 # Lo que el código puede poner solo (efectos del render y piezas de las escenas): no reemplazan a un objeto.
 NO_REEMPLAZO = ("polvo", "lineas_mov", "destello", "primer_plano", "rayos", "pedazo", "microfono", "rotulo", "cita", "dato",
+                "cinta_frente",
                 "cartel_comic", "tito_reaccion", "reloj_gigante",
                 # regla de Así Nació: martillo y engranajes solo si la frase habla de un taller o una máquina
                 "martillo", "engranaje")

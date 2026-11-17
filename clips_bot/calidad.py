@@ -3,7 +3,7 @@
 - `reglas(canal)`: las reglas del documento (se relee si cambia: una regla nueva entra sin tocar código).
 - `para_prompt(canal)`: las reglas de revisión, para el pedido a Claude; `SCHEMA_REGLAS`: lo que responde.
 - `fallas_de(respuesta, canal)`: las que no cumplió (solo ids conocidos).
-- `texto_estandar(...)`: la línea del mensaje ("📏 Estándar 12/14 · ❌ AN-05 …").
+- `texto_estandar(...)`: la línea del mensaje ("📏 Estándar 17/19 · ❌ AN-05 …").
 - `anotar(...)` / `resumen_semana(...)`: la tabla `calidad_fallas` y el resumen de los lunes.
 - `revisar_ph(...)`: la revisión de Pequeña Historia sobre la hoja de fotos, con el cambio de foto como arreglo.
 """
@@ -126,7 +126,13 @@ def texto_estandar(canal: str, fallas: list[dict], corregidas: list[str] | None 
 # ---- puntaje mínimo para publicarse solo (Santi, 2026-11-17) -------------------------------------
 # Debajo de esto, después de las correcciones, el video NO se programa: le llega a Santi con ✅ Publicar igual /
 # ❌ Cancelar, y si no responde no sale. El aviso solo alcanza con 1 o 2 reglas sin cumplir.
-MINIMO_PUBLICAR = {"asinacio": 12, "pequena_historia": 7}   # Así Nació 11 → 12 (Santi, 2026-11-17)
+# Mínimo para publicarse sola (Santi, 2026-11-17): como mucho 2 reglas de revisión sin cumplir (era 12/14 en Así Nació
+# y 7/9 en Pequeña Historia); así sumar reglas nuevas no cambia la vara.
+MAX_FALLAS = {"asinacio": 2, "pequena_historia": 2}
+
+
+def minimo(canal: str) -> int:
+    return max(0, len(de_revision(canal)) - MAX_FALLAS.get(canal, 99))
 
 
 def puntaje(canal: str, fallas: list[dict]) -> tuple[int, int]:
@@ -139,14 +145,13 @@ def retener(canal: str, fallas: list[dict], revisado: bool) -> bool:
     if not revisado:
         return False
     ok, total = puntaje(canal, fallas)
-    minimo = MINIMO_PUBLICAR.get(canal, 0)
-    return bool(total) and ok < minimo
+    return bool(total) and ok < minimo(canal)
 
 
 def texto_retenido(canal: str, fallas: list[dict]) -> str:
     ok, total = puntaje(canal, fallas)
     return (f"⏸ <b>NO se publica sola</b>: el estándar de calidad dio {ok}/{total} (mínimo "
-            f"{MINIMO_PUBLICAR.get(canal, 0)}). ✅ Publicar igual la programa en su horario; si no respondés, no sale.")
+            f"{minimo(canal)}). ✅ Publicar igual la programa en su horario; si no respondés, no sale.")
 
 
 # ---- registro y resumen semanal -----------------------------------------------------------------

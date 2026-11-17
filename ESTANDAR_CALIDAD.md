@@ -15,12 +15,13 @@ Cómo se usa (`clips_bot/calidad.py`):
    al final). Si ninguna pasa, el aviso y esa regla va PRIMERA en las mejoras al motor de la semana. Tope: si las
    correcciones de un video pasan de US$ 0,50, se frena y el mensaje lo dice.
 3. Si después de corregir algo sigue sin cumplirse, el video sale igual y el mensaje dice qué regla no cumplió
-   ("📏 Estándar 12/14 · ❌ AN-05 …"). Las reglas marcadas **código** las chequea el código (validación del guion,
+   ("📏 Estándar 17/19 · ❌ AN-05 …"). Las reglas marcadas **código** las chequea el código (validación del guion,
    fotos, audio); si una no se cumple, también va en el mensaje.
 4. **Mínimo para publicarse sola (Santi, 2026-11-17):** en Así Nació, antes de retener un video se intenta el RESCATE: se rehacen enteras las escenas que fallan creando lo que falte (objetos y lugares nuevos) y se vuelve a mirar una vez (tope US$ 0,50 aparte). Si después de eso el video queda debajo de
-   **12/14** (Así Nació, desde el 17/11; antes 11) o **7/9** (Pequeña Historia), NO se programa: le llega a Santi con ✅ Publicar igual /
-   ❌ Cancelar y, si no responde, no sale (`calidad.MINIMO_PUBLICAR`, `retener`). El aviso solo alcanza con 1 o 2
-   reglas sin cumplir.
+   el mínimo, NO se programa: le llega a Santi con ✅ Publicar igual / ❌ Cancelar y, si no responde, no sale
+   (`calidad.MAX_FALLAS`, `retener`). El mínimo es "como mucho 2 reglas de revisión sin cumplir": era 12/14 en Así
+   Nació (desde el 17/11; antes 11) y es 7/9 en Pequeña Historia; con las 5 reglas nuevas del 17/11 Así Nació pasa a
+   17/19 (la misma vara). El aviso solo alcanza con 1 o 2 reglas sin cumplir.
 5. Cada regla nueva que apruebe Santi se suma ACÁ, con el próximo número libre de su canal. El código lee este archivo:
    una regla nueva de revisión entra en la próxima revisión sin tocar nada más.
 6. Cada falla queda anotada (tabla `calidad_fallas`) y los lunes desde las 09:30 le llega a Santi qué reglas fallaron
@@ -48,11 +49,17 @@ Arreglos: `rehacer_gancho` (prueba otra opción de gancho o lo reescribe), `camb
 - **AN-12** · revisión · arreglo: separar_personajes — COMPOSICIÓN: ningún brazo u objeto sobre una cara, nadie tapado por un mueble u otro personaje, cada objeto en un lugar lógico (nada de una pelota sobre un sombrero).
 - **AN-13** · revisión · arreglo: cambiar_accion — LUGAR DE LA HISTORIA REAL Y DECORADO CON SENTIDO: el lugar de cada escena es donde pasó esa parte de la historia (playa, fábrica, tienda, estadio, cocina…), no un living o un taller genéricos (una playa no es un puerto); el decorado tiene que ver con la historia (nada de decoración sin relación ni ventanas o cuadros flotando).
 - **AN-14** · revisión · arreglo: cambiar_accion — ACCIONES ESPECÍFICAS: martillo o engranajes solo si la frase habla de un taller o una máquina; fabricar = las manos trabajando sobre el objeto.
+- **AN-15** · revisión · arreglo: cambiar_accion — PERSONAJES SEGÚN QUIÉN ES Y SU ROL (Santi, 2026-11-17): el protagonista se basa en la persona real (edad en esa escena, bigote, ropa de su época y su clase); los demás se visten según su rol: obreros con mameluco o delantal y gorra de fábrica, cajeros y vendedores con uniforme de empleado, clientes con ropa de calle de la época, empresarios de traje, científicos con guardapolvo, chicos como chicos. Nadie aparece sin un rol ni de relleno.
+- **AN-16** · revisión · arreglo: cambiar_accion — TODOS HACEN ALGO SEGÚN SU ROL (Santi, 2026-11-17): los obreros trabajan en la línea (mezclan, envuelven, empacan, cargan cajas), los cajeros cobran, los clientes eligen y compran, el protagonista hace la acción de la frase. La línea de producción tiene producto que avanza y gente trabajando en ella, nunca vacía. Nadie con las manos juntas o vacías mirando a cámara.
+- **AN-17** · revisión · arreglo: sacar_objeto — ÉPOCA Y LUGAR (Santi, 2026-11-17): máquinas, carteles, ropa y vehículos del año de la escena (en 1883 nada de máquinas modernas de colores, camiones ni edificios modernos); engranajes solo si la frase habla de una máquina.
+- **AN-18** · revisión · arreglo: otro — DETALLE QUE DICE DÓNDE Y CUÁNDO (Santi, 2026-11-17): cada fondo con al menos 3 detalles del lugar y la época (carteles pintados, faroles, carros, adoquines, cajas del producto, ladrillo, ollas, vigas), con texturas y sombras.
+- **AN-19** · revisión · arreglo: otro — TITO NO TAPA (Santi, 2026-11-17): la ventanita de Tito no tapa a ningún personaje ni objeto importante (`marcas.lugar_tito`: va a una esquina libre o esa vez no aparece).
 - **AN-20** · código — DATOS VERDADEROS: todo dato está en el artículo de la fuente (es lo único que frena un video, junto con los temas sensibles).
 - **AN-21** · código — GUION: gancho con el dato concreto (nada de "pasó algo que no esperaban"), empresa o persona presentada la primera vez, orden problema → idea → qué pasó → final sorpresa, al menos 3 lugares y 3 roles distintos.
 - **AN-22** · código — DURACIÓN Y VOZ: 32-38 s; la voz se ajusta como mucho ±8 % sin cambiar el tono, si no se reescribe el guion.
 - **AN-23** · código — AUDIO: nada arriba de −3 dB, fade in y fade out, el audio termina con el video.
 - **AN-25** · código — CADA VIDEO ÚNICO EN ESCENAS (Santi, 2026-11-17): las piezas (personajes, manos, fondos, objetos, efectos) se reusan libremente; lo único es cada escena. Ninguna escena repite ENTERA (lugar, acción, objetos, plano y movimiento) una de los últimos 10 videos, y como mucho un tercio repite lugar y acción, solo si el contexto lo pide; vale también para el reemplazo de escenas de la biblioteca. Lo que falta (un lugar, un objeto, una acción) se crea una vez y queda guardado. Si la frase dice dónde pasó (playa, estadio, cocina, fábrica, tienda…), la escena va en ese lugar.
+- **AN-26** · código — FICHA DE CADA ESCENA (Santi, 2026-11-17): antes de dibujar, cada frase tiene su ficha: quién aparece con su rol y su ropa, dónde, en qué año, qué hace cada uno, con qué objetos y en qué plano (`marcas.ficha_escena`, `fichas.json` en la carpeta del video). El dibujo la sigue (la ropa sale de `acciones.vestir` según rol y año; lo que tiene en las manos, de `acciones.TRABAJO_ROL`; `quieto` solo vale en los roles que trabajan) y la revisión compara cada cuadro contra ella: ¿quién es cada persona?, ¿qué está haciendo?, ¿esto pasaba en ese año y en ese lugar?
 - **AN-24** · código — MARCA DEL CANAL: viaje al pasado (reloj, cuentakilómetros, remolino, sepia) cuando cambia la época; en el pasado todo sepia menos el producto; subtítulos virales en la franja de arriba.
 
 ## Pequeña Historia
