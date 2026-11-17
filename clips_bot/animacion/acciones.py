@@ -1323,30 +1323,29 @@ def despejar_textos(esc_d: dict, vueltas: int = 8) -> list[tuple[float, int, flo
         malos = textos_tapados(esc_d)
         if not malos:
             return []
-        cam = esc_d.get("camara") or []
-        con_zoom = [q for q in cam if float(q.get("zoom", 1.0)) > 1.001]
-        if con_zoom:
-            necesita = max(m[2] for m in malos)
-            movio = False
-            for q in cam:
-                z = max(1.0, float(q.get("zoom", 1.0)))
-                tope = P.ALTO / 2 * (1 - 1 / z)
-                nuevo = max(-tope, float(q.get("y", 0.0)) - necesita / z)
-                if abs(nuevo - float(q.get("y", 0.0))) > 0.5:
-                    q["y"] = round(nuevo, 1)
-                    movio = True
-            if not movio:      # el encuadre ya está lo más arriba que se puede: se acerca menos
-                for q in cam:
-                    if "zoom" in q:
-                        q["zoom"] = round(1 + (float(q["zoom"]) - 1) * 0.7, 3)
-                        if "x" in q:
-                            q["x"] = round(float(q["x"]) * 0.7, 1)
+        els = esc_d["elementos"]
+        # 1) el decorado del fondo (un estante con lo que tiene arriba) se saca: no vale tapar un texto por él
+        deco = {k for _t, k, _p in malos if els[k].get("decorado") or els[k].get("mueble")}
+        if deco:
+            xs = [float(els[k].get("x", 0)) for k in deco if els[k].get("mueble") or els[k].get("nombre") == "estante"]
+            sacar = deco | {k for k, el in enumerate(els) if el.get("decorado") and not el.get("keyframes")
+                            and any(abs(float(el.get("x", 0)) - x) < 160 for x in xs)}
+            esc_d["elementos"] = [el for k, el in enumerate(els) if k not in sacar]
             continue
-        # sin zoom: lo que está encima del texto se baja (en el mundo, con su caminata y sus keyframes)
+        # 2) la cámara se acerca menos (nunca se baja el encuadre: cortaba las caras abajo)
+        cam = esc_d.get("camara") or []
+        if any(float(q.get("zoom", 1.0)) > 1.001 for q in cam):
+            for q in cam:
+                if "zoom" in q:
+                    q["zoom"] = round(1 + (float(q["zoom"]) - 1) * 0.7, 3)
+                for c in ("x", "y"):
+                    if c in q:
+                        q[c] = round(float(q[c]) * 0.7, 1)
+            continue
+        # 3) sin zoom: lo que está encima del texto se baja (en el mundo, con su caminata y sus keyframes)
         bajar: dict[int, float] = {}
         for _t, k, px in malos:
             bajar[k] = max(bajar.get(k, 0.0), px)
-        els = esc_d["elementos"]
         for k, px in bajar.items():
             d = els[k]
             if d.get("tipo") != "prop":
@@ -1477,6 +1476,12 @@ def escena_accion(spec: dict, dur: float, i: int, primera: bool = False, tono: f
     accion_ = str(spec.get("accion_escena") or "")
     if accion_ in lib_.recetas() and accion_ not in lib_.ACCIONES:
         spec = lib_.aplicar_receta(accion_, spec, protagonista)
+    # un "dibujo_nuevo" se dibuja con SU dibujo guardado (las recetas lo traían sin resolver y salía una caja violeta
+    # en la fábrica de 1883 del Hershey, 2026-11-17)
+    for clave in ("objetos", "cadena"):
+        if spec.get(clave):
+            spec = {**spec, clave: [({**o, "prop": o["dibujo"]} if o.get("prop") == "dibujo_nuevo" and o.get("dibujo")
+                                     else o) for o in spec[clave]]}
     hecha = lib_.construir(accion_, str(spec.get("plano") or ""), spec, dur, i, protagonista) \
         if accion_ in lib_.ACCIONES else None
     if hecha and hecha.get("fondo"):

@@ -140,3 +140,23 @@ def test_caja_de_antes_es_un_cajon():
     assert esc.prop("caja", forma=1) != esc.prop("caja")
     d2 = _escena([{"rol": "obrero", "accion": "quieto"}], anio=1960)
     assert all(el.get("forma") != 1 for el in d2["elementos"] if el.get("nombre") == "caja")
+
+
+def test_el_decorado_se_va_antes_que_mover_la_camara():
+    e = {"duracion": 1.0, "fondo": {"tipo": "fabrica", "semilla": 18831},
+         "camara": [{"t": 0, "zoom": 1.5, "x": 0, "y": 300}],
+         "elementos": [{"tipo": "prop", "nombre": "estante", "x": 175, "y": 820, "mueble": True, "decorado": True},
+                       {"tipo": "prop", "nombre": "lata", "x": 175, "y": 700, "decorado": True},
+                       {"tipo": "personaje", "nombre": "narrador", "x": 540, "y": 1830, "escala": 0.74}]}
+    assert ac.textos_tapados(e) and ac.despejar_textos(e) == []
+    assert [el["nombre"] for el in e["elementos"]] == ["narrador"] and e["camara"][0]["zoom"] == 1.5
+
+
+def test_receta_con_dibujo_nuevo_usa_su_dibujo(monkeypatch):
+    from clips_bot.animacion import escenas_lib as lib
+    monkeypatch.setattr(lib, "recetas", lambda: {"verter": {"spec": {"fondo": "fabrica", "actores": [],
+                        "objetos": [{"prop": "dibujo_nuevo", "dibujo": "pelota", "efecto": "quieto", "soporte": "piso"}]}}})
+    d, _ = ac.escena_accion({"fondo": "fabrica", "accion_escena": "verter", "actores": [], "objetos": []}, 2.0, 1,
+                            anio=1883)
+    nombres = [el.get("nombre") for el in d["elementos"] if el.get("tipo") == "prop"]
+    assert "pelota" in nombres and "dibujo_nuevo" not in nombres
