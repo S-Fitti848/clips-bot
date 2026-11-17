@@ -1482,7 +1482,7 @@ def escena_accion(spec: dict, dur: float, i: int, primera: bool = False, tono: f
     # lo que es parte del cuarto o va colgado (ventana, puerta, cuadro) ya lo trae el fondo: como decorado quedaba
     # flotando en el medio de la pared (Frisbee, 2026-11-17)
     decorado = [str(x) for x in (spec.get("decorado") or []) if x and _de_epoca(str(x))
-                and str(x) not in NO_DECORADO
+                and str(x) not in NO_DECORADO and str(x) not in ICONOS and str(x) != "nube"   # adentro, ni nubes ni íconos
                 and not (SIN_PLATA_SIMBOLO and str(x) in ("moneda", "bolsa_plata"))][:3] if interior else []
     for j, nombre in enumerate(decorado):
         from . import escenas as _esc2
