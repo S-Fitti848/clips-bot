@@ -27,6 +27,10 @@ Se actualiza al terminar cada tarea.
 - [ ] La biblioteca de escenas aprobadas arranca VACÍA (`data/animacion/escenas_estandar.json`): mirar que se llene con
       los primeros videos y el primer reemplazo real (línea 🔁 en el mensaje).
 - [ ] Cada regla nueva que apruebe Santi → sumarla al documento con el próximo número libre.
+- [x] 2026-11-17 (Frisbee): la revisión mira cada escena (no el reloj del viaje), rechaza manos vacías y lugares que
+      no son los de la historia; sin ventanas flotando; regla AN-25 (videos únicos, lugares reales); playa, estadio y
+      cocina nuevos.
+- [ ] Mirar los videos del 18/11: que las escenas salgan en los lugares de la historia y que la revisión marque cada una.
 
 ## Latinoamérica: prueba de fuentes web (`web_historias.py`, `historias_fb.web`)
 

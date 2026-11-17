@@ -345,9 +345,9 @@ def test_nada_de_temas_sensibles():
 def test_props_y_fondos_tienen_que_existir():
     d = guion()
     d["escenas"][1]["objetos"] = [_o("logo_de_la_marca", "vuela")]
-    d["escenas"][2]["fondo"] = "playa"
+    d["escenas"][2]["fondo"] = "luna"          # la playa, el estadio y la cocina existen desde el 17/11
     err = " ".join(mk.validar_guion(d, marca(), FUENTE))
-    assert "logo_de_la_marca" in err and "playa" in err
+    assert "logo_de_la_marca" in err and "luna" in err
 
 
 def test_escribir_guion_reintenta_con_los_errores():
@@ -745,8 +745,10 @@ def test_cuadros_clave_y_revision_visual(tmp_path):
     inicios = [i * 3.0 for i in range(len(segs))]
     datos, _ = mk.linea_de_tiempo(d, inicios, inicios[-1] + 3.0, [], None, presente=2026)
     claves = mk.cuadros_clave(datos)
-    assert 6 <= len(claves) <= 8
-    assert claves[0][2] == "gancho" and any(q == "viaje en el tiempo" for _, _, q in claves)
+    # una por escena de la historia (gancho incluido); el reloj del viaje no se mira (Frisbee, 17/11)
+    frases = {e.get("frase") for e in datos["escenas"] if isinstance(e.get("frase"), int)}
+    assert len(claves) == len(frases)
+    assert claves[0][2] == "gancho" and not any(q == "viaje en el tiempo" for _, _, q in claves)
 
     def capturar(_datos, _t, png):
         from PIL import Image

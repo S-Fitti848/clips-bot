@@ -109,7 +109,7 @@ _ARRANQUES_PROHIBIDOS = re.compile(r"^\s*(¿?\s*sab[ií]as|un d[ií]a como hoy|h
 
 # Escenas: lo que puede pedir el guion (la base de animación + lo del canal de marcas).
 FONDOS = ("casa", "taller", "fabrica", "tienda", "oficina", "ciudad", "escenario", "cielo", "globo",
-          "laboratorio", "hospital", "campo", "puerto")
+          "laboratorio", "hospital", "campo", "puerto", "playa", "estadio", "cocina")
 # mesa y estante no son objetos de la historia: son el APOYO (`soporte`) y el render los pone contra la pared
 # Los efectos que agrega el render (polvo, líneas de movimiento, destellos, primer plano) NO los elige el guion.
 EFECTOS_RENDER = ("polvo", "lineas_mov", "destello", "primer_plano", "rayos")
@@ -446,9 +446,12 @@ necesita) es el `protagonista`: elegí el prop que lo DIBUJA ({_lista(sorted(DET
 cadena). NADA de una caja o un cartel con un rótulo ("Juego") en lugar del objeto: si no hay prop
 para algo, elegí otro que se entienda sin leer.
 
-REGLA 8 — ESCENARIOS SEGÚN LA ESCENA. Cada momento pasa DONDE corresponde a la historia (`fondo`):
-fábrica, laboratorio, oficina de época, calle, tienda, hospital, campo, puerto, escenario, casa…; la casa
-y el taller solo si la historia pasa ahí. Cuando cambia el momento, cambia el lugar: al menos 3 lugares
+REGLA 8 — ESCENARIOS DE LA HISTORIA REAL (Santi, 2026-11-17). Cada momento pasa DONDE pasó de verdad según el
+artículo (`fondo`): playa, estadio, cocina, fábrica, tienda, laboratorio, oficina de época, calle, hospital, campo,
+puerto, escenario…; nunca un living o un taller genéricos para algo que pasó en otro lado (si la frase dice "en la
+playa", el fondo es `playa`, no `puerto`). La casa y el taller solo si la historia pasa ahí. CADA VIDEO ES ÚNICO:
+como mucho un tercio de las escenas puede repetir la misma acción y el mismo lugar de los últimos 10 videos del
+canal (te paso cuáles) y solo si la historia lo pide. Cuando cambia el momento, cambia el lugar: al menos 3 lugares
 distintos en el video y nunca más de 2 escenas seguidas en el mismo. Muy visual. Los personajes reaccionan
 con el cuerpo y la cara (`cara`); nunca dos en el mismo lugar (cada uno en su `desde`, sin cruzarse).
 
@@ -954,6 +957,95 @@ def anotar_gancho(conn, d: dict, marca: str) -> None:
     db.set_valor(conn, GANCHOS_RECIENTES, json.dumps(guardados[-GANCHOS_GUARDADOS:], ensure_ascii=False))
 
 
+# ---- cada video único en escenas y los lugares de la historia real (Santi, 2026-11-17, el Frisbee) ---------------
+ESCENAS_RECIENTES = "animacion_escenas"   # bot_estado: [{video, marca, firmas}] de los últimos videos
+VIDEOS_UNICOS = 10                         # contra cuántos videos se compara
+ESCENAS_PREVIAS: list[list[str]] = []      # las firmas de los últimos videos (las carga armar_video)
+# Lo que la frase dice del lugar → el fondo donde tiene que pasar (solo lugares que no tienen otro sentido común).
+def _en(palabras: str) -> re.Pattern:
+    """La frase dice que la acción pasa AHÍ: "en la playa", "a una playa", "en su fábrica" (no "una ciudad de playa")."""
+    return re.compile(r"\b(?:en|a|al|desde|hacia|por)\s+(?:la|las|el|los|una|unas|un|su|sus)?\s*(?:" + palabras + r")\b",
+                      re.I)
+
+
+# Lo que la frase dice del lugar → el fondo donde tiene que pasar (solo lugares que no tienen otro sentido común).
+LUGAR_DE_FRASE = (("playa", _en(r"playas?|orilla del mar")),
+                  ("estadio", _en(r"estadios?|cancha|tribunas?")),
+                  ("cocina", _en(r"cocina")),
+                  ("fabrica", _en(r"f[aá]bricas?|planta industrial")),
+                  ("tienda", _en(r"tiendas?|almac[eé]n|supermercados?|kioscos?")),
+                  ("hospital", _en(r"hospital(?:es)?|cl[ií]nica")),
+                  ("laboratorio", _en(r"laboratorios?")),
+                  ("puerto", _en(r"puertos?|muelles?")))
+
+
+def firma_escena(e: dict) -> str:
+    """Qué es una escena para "¿ya la usamos?": la acción de la biblioteca (o, si es libre, lo que hacen los
+    personajes) y el lugar."""
+    acc = str(e.get("accion_escena") or "libre")
+    if acc in ("libre", "nueva", ""):
+        acc = "libre:" + "+".join(sorted({str(a.get("accion") or "") for a in e.get("actores") or []})) or "libre"
+    return f"{acc}@{e.get('fondo') or ''}"
+
+
+def escenas_recientes(conn) -> list[list[str]]:
+    try:
+        return [list(x.get("firmas") or []) for x in json.loads(_get_valor(conn, ESCENAS_RECIENTES) or "[]")]
+    except ValueError:
+        return []
+
+
+def anotar_escenas(conn, d: dict, video: str, marca: str) -> None:
+    from clips_bot import db
+
+    try:
+        lista = [x for x in json.loads(_get_valor(conn, ESCENAS_RECIENTES) or "[]") if x.get("video") != video]
+    except ValueError:
+        lista = []
+    lista.append({"video": video, "marca": marca, "firmas": [firma_escena(e) for e in (d.get("escenas") or [])[1:]]})
+    db.set_valor(conn, ESCENAS_RECIENTES, json.dumps(lista[-VIDEOS_UNICOS:], ensure_ascii=False))
+
+
+def repetidas(d: dict, previas: list[list[str]]) -> list[int]:
+    """Las escenas (número desde 1, sin el gancho) que repiten acción y lugar de los últimos videos."""
+    usadas = {f for v in previas[-VIDEOS_UNICOS:] for f in v}
+    return [i + 1 for i, e in enumerate(d.get("escenas") or []) if i > 0 and firma_escena(e) in usadas]
+
+
+def tope_repetidas(d: dict) -> int:
+    return max(0, len(d.get("escenas") or []) - 1) // 3
+
+
+def errores_unicas(d: dict, previas: list[list[str]] | None = None) -> list[str]:
+    """Como mucho un tercio de las escenas repite acción y lugar de los últimos 10 videos (AN-25)."""
+    previas = ESCENAS_PREVIAS if previas is None else previas
+    rep = repetidas(d, previas)
+    if len(rep) <= tope_repetidas(d):
+        return []
+    escenas = d.get("escenas") or []
+    return [f"cada video es único: las escenas {rep} repiten la misma acción en el mismo lugar que videos anteriores "
+            f"({', '.join(firma_escena(escenas[i - 1]) for i in rep[:6])}) y pueden ser como mucho "
+            f"{tope_repetidas(d)}: cambiá la acción o el lugar de las que sobran, según dónde y cómo pasó de verdad"]
+
+
+def errores_lugar(d: dict) -> list[str]:
+    """Si la frase dice dónde pasó (playa, estadio, cocina, fábrica, tienda…), la escena va en ese lugar (AN-25)."""
+    malos = []
+    for i, e in enumerate(d.get("escenas") or []):
+        frase = str(e.get("frase") or "")
+        for fondo, rx in LUGAR_DE_FRASE:
+            if rx.search(frase):
+                if e.get("fondo") != fondo:
+                    malos.append(f"escena {i + 1} («{frase[:70]}») dice {fondo} y el fondo es {e.get('fondo')}")
+                break
+    return ([f"el lugar de la escena tiene que ser el de la historia real: {'; '.join(malos)}"] if malos else [])
+
+
+def texto_escenas_recientes(previas: list[list[str]]) -> str:
+    usadas = sorted({f for v in previas[-VIDEOS_UNICOS:] for f in v})
+    return ", ".join(usadas)
+
+
 def _get_valor(conn, clave: str):
     from clips_bot import db
 
@@ -1143,6 +1235,9 @@ def _slug(t: str, largo: int = 22) -> str:
     return out if len(out) >= 3 and out[0].isalpha() else ""
 
 
+PASOS_USO_REAL = ("abrir_tapa", "meter", "cerrar_tapa", "apretar", "amasar", "moldear", "girar", "apilar")
+
+
 def preparar_uso(cliente, d: dict, avisar=log.info) -> list[str]:
     """Santi, 2026-11-16: la escena de USO REAL con las manos (el producto por partes: cuerpo, tapa y lo que se guarda) y
     la de la INSPIRACIÓN (lo que lo inspiró y la pieza que pasa al producto). Dibuja las partes que falten (quedan
@@ -1169,6 +1264,13 @@ def preparar_uso(cliente, d: dict, avisar=log.info) -> list[str]:
 
     u = d.get("uso") or {}
     k = int(u.get("escena") or 0) - 1
+    # Frisbee, 17/11 (Santi: "manos levantadas y vacías en un living"): un uso de solo "agarrar" no muestra ningún uso
+    # (un producto que se tira no se usa sobre una mesa). Sin un paso de uso de verdad, la escena queda como la
+    # escribió el guion (sus personajes haciendo la acción en su lugar).
+    reales = [p_ for p_ in u.get("pasos") or [] if isinstance(p_, str) and p_ in PASOS_USO_REAL]
+    if 1 <= k < len(escenas) and prota and not reales:
+        avisar(f"uso en la escena {k + 1}: sin un paso de uso real ({u.get('pasos')}); queda la escena del guion")
+        k = -1
     if 1 <= k < len(escenas) and prota:
         base = prota[:20]
         partes = {"cuerpo": "", "tapa": "", "contenido": ""}
@@ -1327,6 +1429,7 @@ def validar_guion(d: dict, m: Marca, fuente: str, ganchos_previos: list[dict] | 
         errores.append("falta `pregunta_gancho`")
     errores += errores_escenas_con_sentido(escenas)
     errores += errores_lugares_y_personajes(escenas)
+    errores += errores_lugar(d) + errores_unicas(d)        # la historia real y cada video único (2026-11-17)
     errores += errores_gancho_repetido(escenas, ganchos_previos or [])
     errores += errores_protagonista(d)
     errores += errores_fieles(d)
@@ -1508,7 +1611,10 @@ def escribir_guion(cliente, e: Elegido, fuente: str, reintentos: int = 6, avisar
               f"Dato para el gancho (sugerido): {e.dato}\n\nTEXTO (Wikipedia; los datos salen SOLO de "
               f"acá):\n{fuente[:20000]}" + (f"\n\n{extra}" if extra else "")
               + ("\n\nARRANQUES DE LOS VIDEOS ANTERIORES (el tuyo tiene que ser distinto: otro lugar, otra "
-                 "acción, otro objeto):\n" + texto_ganchos(ganchos_previos) if ganchos_previos else ""))
+                 "acción, otro objeto):\n" + texto_ganchos(ganchos_previos) if ganchos_previos else "")
+              + ("\n\nESCENAS YA USADAS EN LOS ÚLTIMOS 10 VIDEOS (acción@lugar; como mucho un tercio de las tuyas "
+                 "puede repetirse, y solo si la historia lo pide): " + texto_escenas_recientes(ESCENAS_PREVIAS)
+                 if ESCENAS_PREVIAS else ""))
     from clips_bot.gemini import GeminiError
 
     from clips_bot import correcciones
@@ -2059,20 +2165,20 @@ VUELTAS_REVISION = 2      # vueltas de corrección; después, una última que so
 def cuadros_clave(datos: dict, maximo: int = CUADROS_REVISION) -> list[tuple[float, int, str]]:
     """(segundo, índice de escena en `datos`, qué es) de los cuadros a revisar: el gancho, el viaje en
     el tiempo y el medio de cada escena de acción (hasta `maximo`)."""
+    # Frisbee, 17/11: con 4 viajes en el tiempo y el mapa, 5 de los 8 cuadros eran el reloj y el mapa, y la escena de
+    # las manos vacías no la vio nadie. Ahora: UN cuadro por cada escena de la historia (gancho incluido); el viaje y
+    # el mapa (siempre iguales, de la marca del canal) no se miran. Si hay más escenas que `maximo`, se miran todas
+    # igual: la revisión tiene que ver cada frase.
     t, out = 0.0, []
+    vistas: set = set()
     for i, e in enumerate(datos["escenas"]):
         dur = float(e["duracion"])
-        if e.get("girar"):
-            out.append((t + dur * 0.55, i, "viaje en el tiempo"))
-        elif not e.get("congela"):
+        k = e.get("frase")
+        if not e.get("girar") and not e.get("congela") and isinstance(k, int) and k not in vistas:
+            vistas.add(k)
             frac = 0.75 if not out else 0.55
-            out.append((t + dur * frac, i, "gancho" if not out else f"escena {e.get('frase', i) + 1}"))
+            out.append((t + dur * frac, i, "gancho" if not out else f"escena {k + 1}"))
         t += dur
-    if len(out) > maximo:   # el gancho, el viaje y repartidas las demás
-        fijos = [c for c in out if c[2] in ("gancho", "viaje en el tiempo")]
-        resto = [c for c in out if c not in fijos]
-        paso = len(resto) / max(1, maximo - len(fijos))
-        out = sorted(fijos + [resto[int(k * paso)] for k in range(maximo - len(fijos))])
     return out
 
 
@@ -2205,6 +2311,13 @@ REVISION_V3 = """
 - Un TEXTO repetido (la misma cifra o año dos veces, o lo mismo que el subtítulo) o dos textos pisados: `arreglo` =
   sacar_texto.
 - DECORACIÓN sin relación con la historia: `arreglo` = sacar_objeto con su nombre en `objeto`.
+- (Santi, 2026-11-17, el Frisbee) MANOS LEVANTADAS, VACÍAS o que no tocan ningún objeto (dos manos en el aire sin
+  agarrar nada, o el objeto lejos de las manos): `arreglo` = cambiar_accion, SIEMPRE. No se entiende qué hacen.
+- (Santi, 2026-11-17) EL LUGAR NO ES EL DE LA HISTORIA: si la frase o lo que se sabe de la historia dice dónde pasó
+  (una playa, un estadio, una cocina, una fábrica, una tienda), la escena tiene que estar ahí; un living, una casa o un
+  taller genéricos para algo que pasó en otro lado, o un puerto para una playa: `arreglo` = cambiar_accion y en `que`
+  decí cuál es el lugar de la historia.
+- Una ventana, puerta o cuadro flotando en el medio de la pared o delante de los muebles: `arreglo` = sacar_objeto.
 - Una escena que NO SE ENTIENDE SIN LA VOZ (le faltan los elementos que la hacen reconocible): `arreglo` = cambiar_accion;
   un dibujo que no tiene los detalles que dice la frase (una lata que no parece de pintura): `arreglo` =
   redibujar_objeto con su nombre en `objeto`."""
@@ -2630,8 +2743,9 @@ def armar_video(conn, settings, carpeta: Path, cliente=None, wiki=None, hoy: dat
     carpeta = Path(carpeta)
     carpeta.mkdir(parents=True, exist_ok=True)
     cfg = settings.animacion
-    global REGLAS_V3, USO_V4
+    global REGLAS_V3, USO_V4, ESCENAS_PREVIAS
     REGLAS_V3 = bool(getattr(cfg, "reglas_v3", False))
+    ESCENAS_PREVIAS = escenas_recientes(conn) if conn is not None else []
     USO_V4 = REGLAS_V3 and bool(getattr(cfg, "uso_manos", False))
     _lib.CON_V4 = USO_V4
     t_total = time.time()
@@ -2893,6 +3007,10 @@ def armar_video(conn, settings, carpeta: Path, cliente=None, wiki=None, hoy: dat
                 "guion": [str(x) for x in d.get("_estilo_pendiente") or []],
                 "reemplazos": reemplazos, "sin_arreglo": sin_arreglo,
                 "frenado_usd": round(frenado, 3), "costo_correcciones_usd": round(costo_rev(), 3)}
+    try:
+        anotar_escenas(conn, d, f"{hoy.isoformat()}/{e.marca.nombre}/{e.angulo}", e.marca.nombre)
+    except Exception as err:  # noqa: BLE001 — anotar nunca frena el video
+        avisar(f"no pude anotar las escenas: {err}")
     calidad.anotar(conn, "asinacio", f"{hoy.isoformat()}/{e.marca.nombre}/{e.angulo}", finales,
                    estandar["corregidas"], [("AN-21", g_[:240]) for g_ in estandar["guion"]], revisado,
                    dia=hoy.isoformat())

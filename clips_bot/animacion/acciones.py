@@ -118,6 +118,7 @@ ALIAS_ACCION = {"usar": "atrapar", "probar": "saltar"}
 # adelante haciendo algo con el objeto (sostener_a/b), y el objeto en las dos manos, delante del cuerpo.
 MANOS_V3 = False
 SIN_PLATA_SIMBOLO = False   # lo prende marcas con animacion.uso_manos
+NO_DECORADO = {"ventana", "puerta", "cuadro", "cortina", "lampara", "estante", "mesa"}   # parte del cuarto, no decorado
 CON_MANOS = ("usar", "probar", "fabricar")
 CARAS = ("feliz", "enojado", "sorprendido", "triste", "normal")
 
@@ -1336,9 +1337,12 @@ def escena_accion(spec: dict, dur: float, i: int, primera: bool = False, tono: f
                 el["color"] = True
     # Decorado de contexto (Santi, 2026-11-16, reglas_v3): 1 a 3 objetos de la historia y la época atrás, sobre el
     # estante, la mesa o el piso (nada de mesas vacías). Más chicos y detrás de los personajes.
-    interior = fondo in ("casa", "oficina", "taller", "fabrica", "tienda", "laboratorio", "hospital")
+    interior = fondo in ("casa", "oficina", "taller", "fabrica", "tienda", "laboratorio", "hospital", "cocina")
     # afuera (calle, campo, puerto) el fondo ya trae su contexto (autos, faroles, vidrieras): nada flotando en la vereda
+    # lo que es parte del cuarto o va colgado (ventana, puerta, cuadro) ya lo trae el fondo: como decorado quedaba
+    # flotando en el medio de la pared (Frisbee, 2026-11-17)
     decorado = [str(x) for x in (spec.get("decorado") or []) if x and _de_epoca(str(x))
+                and str(x) not in NO_DECORADO
                 and not (SIN_PLATA_SIMBOLO and str(x) in ("moneda", "bolsa_plata"))][:3] if interior else []
     for j, nombre in enumerate(decorado):
         from . import escenas as _esc2

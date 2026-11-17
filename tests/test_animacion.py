@@ -144,10 +144,10 @@ def test_errores_de_guion_dicen_que_esta_mal(cambio, texto):
 
 def test_lo_desconocido_del_guion_no_frena_va_lo_mas_parecido():
     """Santi, 2026-11-16: un fondo, un objeto o un gesto que no existen nunca frenan el video."""
-    v = Video.desde_dict({"escenas": [{"duracion": 1, "fondo": "playa", "elementos": [
+    v = Video.desde_dict({"escenas": [{"duracion": 1, "fondo": "volcan", "elementos": [
         {"tipo": "prop", "nombre": "submarino"},
         {"tipo": "personaje", "gestos": [{"t": 0, "gesto": "bailar"}]}]}]})
-    assert v.escenas[0].fondo[0] != "playa"
+    assert v.escenas[0].fondo[0] != "volcan"
 
 
 def test_cuadros_iguales_se_detectan():

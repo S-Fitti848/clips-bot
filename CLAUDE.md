@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-11-16 | **Versión:** v1.26.0 (desplegado) | **Modo:** Fase 2: corriendo solo en la Pi. **Rots APAGADO.** Pequeña Historia (3 por día, madrugada desde las 04:00) (publicación sin aprobar: llegan con ❌ Cancelar) y **Así Nació** (2 por día, desde las 07:00, publican 13:00 y 20:00 en YouTube y Facebook con ❌ Cancelar), todo al privado de Santi
+**Snapshot:** 2026-11-16 | **Versión:** v1.27.0 (desplegado) | **Modo:** Fase 2: corriendo solo en la Pi. **Rots APAGADO.** Pequeña Historia (3 por día, madrugada desde las 04:00) (publicación sin aprobar: llegan con ❌ Cancelar) y **Así Nació** (2 por día, desde las 07:00, publican 13:00 y 20:00 en YouTube y Facebook con ❌ Cancelar), todo al privado de Santi
 
 > **SI ESTÁS EMPEZANDO UNA SESIÓN NUEVA, LEÉ §10.** Ahí está qué está hecho, qué quedó a medias,
 > qué falta, y las trampas que ya nos mordieron.
@@ -387,6 +387,13 @@ servicio systemd separado: `clips-bot`).
   ninguna pasa, aviso y esa regla va PRIMERA en las mejoras al motor (`bot_estado.mejoras_primero`). Tope: si las
   correcciones de un video pasan de US$ 0,50 (`reemplazo.TOPE_CORRECCIONES_USD`, contado desde las vueltas de
   revisión), se frena y el mensaje lo dice (💸).
+- **Así Nació: cada video único y en los lugares de la historia real (Santi, 2026-11-17, después del Frisbee; regla
+  para TODOS los videos, AN-25 del estándar):** el lugar de cada escena es donde pasó esa parte según el artículo
+  (playa, estadio, cocina, fábrica, tienda…; fondos `playa`, `estadio` y `cocina` nuevos), nunca un living o un taller
+  genéricos; si la frase dice "en la playa", el fondo es `playa` (`marcas.errores_lugar`, `LUGAR_DE_FRASE`). Como mucho
+  un tercio de las escenas (acción@lugar, `firma_escena`) repite los últimos 10 videos, y solo si la historia lo pide
+  (`errores_unicas`, `bot_estado.animacion_escenas`); el guion recibe la lista de las ya usadas. Vale también para el
+  reemplazo de escenas de la biblioteca (`reemplazo.reemplazar` saltea la candidata que pasa el tope).
 - **Videos largos: NO por ahora (decisión de Santi, 2026-09-28).** No quiere videos largos con voz
   de IA. Si más adelante se hacen, van con SU voz grabada, no con Gemini TTS ni Piper.
 - **Sin música agregada en los clips.** Cualquier música es riesgo de Content ID. Si el clip trae
@@ -999,7 +1006,7 @@ clips_bot/voces.py       voces de Gemini de hoy por clave (con Lo Encontré) y e
 clips_bot/prueba_manual.py prueba manual vs API (§1): el clip del día a mano, registro e informe del feed
 clips_bot/envivo.py      modo en vivo (§3b): quién está al aire, momentos por creadores distintos,
                          alertas en la DB (no repetir, tope, vencer) y el resumen de tiempos
-tests/                   1645 tests sin red ni video (conftest.py: nada sale a YouTube, Facebook ni ElevenLabs) (test_reglas_fijas.py: las 3 reglas de §1)
+tests/                   1658 tests sin red ni video (conftest.py: nada sale a YouTube, Facebook ni ElevenLabs) (test_reglas_fijas.py: las 3 reglas de §1)
 ```
 
 Comandos:
@@ -1192,6 +1199,18 @@ Problemas abiertos:
 
 ## 9. CHANGELOG
 
+- v1.27.0 (2026-11-17) — **Lo que salió mal en el Frisbee** (Santi). (1) La escena de las manos levantadas y vacías en
+  el living (frase 4, uso_manos) **no la vio la revisión**: de los 8 cuadros que mira, 4 eran el reloj del viaje en el
+  tiempo y 1 el mapa. El video sacó 4/14 en el estándar (fallaron AN-01 a 06, 09, 11, 12 y 13), pero ninguna falla era
+  de esa escena; la biblioteca de escenas aprobadas estaba vacía (+0), así que nada se reemplazó. Arreglos:
+  `cuadros_clave` mira UN cuadro por cada escena de la historia y nunca el viaje ni el mapa; la revisión rechaza
+  siempre manos levantadas o vacías, el lugar que no es el de la historia y lo que flota en la pared (`REVISION_V3`);
+  `preparar_uso` no arma la escena de manos si el uso es solo "agarrar" (`PASOS_USO_REAL`: un producto que se tira no
+  se usa sobre una mesa). (2) La ventana flotando: el decorado ponía `ventana` apoyada en el piso del medio; ventana,
+  puerta, cuadro, cortina, lámpara, mesa y estante ya no son decorado (`acciones.NO_DECORADO`). (3) Regla nueva en §1
+  (cada video único, lugares reales; AN-25, y AN-06 / AN-13 más precisas en el estándar); fondos nuevos `playa` (con
+  sombrilla), `estadio` (tribunas llenas, torres de luz, cancha) y `cocina` (azulejos, mesada, cocina a gas, heladera
+  según la década). `tests/test_frisbee.py`.
 - v1.26.0 (2026-11-16, noche) — **Así Nació: reemplazo de la escena que sigue sin pasar** (regla en §1):
   `reemplazo.py` (biblioteca de escenas aprobadas, `candidatas`, `adaptar`, `empalmar`, `chequear` con Haiku,
   `reemplazar`), el tope de US$ 0,50 en las correcciones, `marcas.MEJORAS_PRIMERO` en las mejoras de los lunes y jueves,

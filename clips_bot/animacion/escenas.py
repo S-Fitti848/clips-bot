@@ -604,10 +604,107 @@ def fondo_puerto(semilla: int = 13) -> str:
     return "".join(p)
 
 
+def fondo_playa(semilla: int = 15) -> str:
+    """Una playa (Santi, 2026-11-17: "los lugares salen de la historia real"; el Frisbee pasó en una playa y salió en
+    un puerto): cielo, sol, mar con olas y espuma en la orilla, arena, una sombrilla a rayas, una toalla y gaviotas."""
+    rnd = random.Random(semilla)
+    p = [rect(0, 0, W, H, P.CIELO, borde=False), rect(0, H * 0.3, W, H * 0.2, P.CIELO_BAJO, borde=False),
+         circulo(800, 330, 110, P.AMARILLO)]
+    for i in range(3):
+        p.append(g(nube(), rnd.uniform(100, W - 100), 160 + i * 150, escala=rnd.uniform(0.6, 1.0)))
+    p.append(rect(0, H * 0.46, W, H * 0.16, P.OCEANO, borde=False))
+    for k in range(4):        # olas
+        y = H * 0.49 + k * 60
+        p.append(f'<path d="M0 {n(y)} Q135 {n(y - 16)} 270 {n(y)} T540 {n(y)} T810 {n(y)} T1080 {n(y)}" '
+                 f'fill="none" stroke="#ffffff" stroke-opacity="0.4" stroke-width="6"/>')
+    p.append(rect(-20, H * 0.6, W + 40, H * 0.4 + 20, "#f2d49b", borde=False))   # arena
+    p.append(f'<path d="M0 {n(H * 0.6)} Q180 {n(H * 0.6 + 28)} 360 {n(H * 0.6 + 6)} T720 {n(H * 0.6 + 10)} '
+             f'T1080 {n(H * 0.6 + 4)} L1080 {n(H * 0.6 - 10)} L0 {n(H * 0.6 - 10)} Z" fill="#ffffff" opacity="0.8"/>')
+    for k in range(18):       # granitos de arena
+        p.append(circulo(rnd.uniform(20, W - 20), rnd.uniform(H * 0.66, H - 30), rnd.uniform(4, 8), "#dcb877",
+                         borde=False))
+    # la sombrilla a rayas clavada en la arena y una toalla
+    cx, cy = 250, H * 0.64          # la sombrilla: un domo de gajos a rayas sobre el palo, clavado en la arena
+    p.append(linea_gruesa([(cx, cy - 10), (cx - 20, H * 0.84)], "#e9d8a6", 14))
+    for k, c in enumerate((P.ROJO, P.BLANCO, P.ROJO, P.BLANCO, P.ROJO, P.BLANCO)):
+        a0, a1 = math.radians(180 + k * 30), math.radians(180 + (k + 1) * 30)
+        p.append(camino(f"M{cx} {n(cy - 150)} L{n(cx + 210 * math.cos(a0))} {n(cy + 60 * math.sin(a0))} "
+                        f"Q{n(cx + 210 * math.cos((a0 + a1) / 2))} {n(cy + 40 + 60 * math.sin((a0 + a1) / 2))} "
+                        f"{n(cx + 210 * math.cos(a1))} {n(cy + 60 * math.sin(a1))} Z", c, ancho=5))
+    p.append(circulo(cx, cy - 152, 10, P.ROJO, ancho=4))
+    p.append(g(rect(-150, -40, 300, 80, P.TURQUESA, r=10, ancho=5)
+               + "".join(rect(-150 + k * 60, -40, 30, 80, P.AMARILLO, borde=False) for k in range(5)),
+               820, H * 0.86, rot=-6))
+    for x, y in ((150, 250), (240, 310), (600, 200)):  # gaviotas
+        p.append(f'<path d="M{x - 30} {y} Q{x - 15} {y - 18} {x} {y} Q{x + 15} {y - 18} {x + 30} {y}" '
+                 f'fill="none" {trazo(ancho=6)}/>')
+    return "".join(p)
+
+
+def fondo_estadio(semilla: int = 16) -> str:
+    """Un estadio (2026-11-17): cielo, las tribunas llenas de gente (puntitos de colores), las torres de luz y la
+    cancha con sus líneas."""
+    rnd = random.Random(semilla)
+    p = [rect(0, 0, W, H, P.CIELO, borde=False)]
+    p.append(rect(-20, H * 0.18, W + 40, H * 0.38, "#7a8597", ancho=6))           # la tribuna
+    colores = [P.ROJO, P.AZUL, P.AMARILLO, P.VERDE, P.BLANCO, P.NARANJA, P.ROSA, P.TURQUESA]
+    for fila in range(9):
+        y = H * 0.2 + fila * 78
+        p.append(f'<path d="M0 {n(y + 60)} L{W} {n(y + 60)}" stroke="#5b6170" stroke-width="6"/>')
+        for k in range(16):
+            x = 30 + k * 66 + (fila % 2) * 30
+            p.append(circulo(x, y + 30, 16, rnd.choice(colores), ancho=3) + circulo(x, y + 12, 11, rnd.choice(P.PIEL),
+                                                                                    ancho=3))
+    for x in (90, 990):        # torres de luz
+        p.append(rect(x - 10, 40, 20, H * 0.16, P.GRIS_OSCURO, ancho=4) + rect(x - 70, 20, 140, 60, P.GRIS, r=6)
+                 + "".join(circulo(x - 45 + j * 30, 50, 11, P.VENTANA, ancho=3) for j in range(4)))
+    p.append(rect(-20, H * 0.56, W + 40, H * 0.44 + 20, "#4fae5a", borde=False))   # la cancha
+    for k in range(7):
+        p.append(rect(-20, H * 0.56 + k * 120, W + 40, 60, "#5cbd67", borde=False))
+    p.append(f'<path d="M0 {n(H * 0.6)} L{W} {n(H * 0.6)} M540 {n(H * 0.6)} L540 {H}" stroke="#ffffff" '
+             f'stroke-width="10" fill="none"/>')
+    p.append(f'<ellipse cx="540" cy="{n(H * 0.8)}" rx="230" ry="90" fill="none" stroke="#ffffff" stroke-width="10"/>')
+    return "".join(p)
+
+
+def fondo_cocina(semilla: int = 17) -> str:
+    """Una cocina con la DÉCADA de la escena (2026-11-17): azulejos, mesada con alacenas, cocina a gas con horno,
+    heladera (redondeada antes de 1960, cuadrada después), estante con frascos y una ventana."""
+    decada, _ = epoca_de(semilla)
+    rnd = random.Random(semilla)
+    py = H * PISO_Y["cocina"]
+    p = [rect(0, 0, W, H, "#eaf2ef", borde=False), rect(0, py, W, H - py, "#d9c3a0", borde=False)]
+    p.append(rect(600, 230, 300, 300, "#bfe9ff", r=6, ancho=8) + f'<path d="M750 230 L750 530 M600 380 L900 380" '
+             f'{trazo(ancho=6)}/>')                                                     # ventana (parte del cuarto)
+    p.append(rect(40, 600, 400, 50, P.MADERA, r=4))                                    # estante con frascos
+    for k in range(5):
+        c = rnd.choice((P.ROJO, P.AMARILLO, P.VERDE, P.NARANJA))
+        p.append(rect(60 + k * 75, 520, 56, 80, "#e6f4ff", r=10, ancho=5) + rect(64 + k * 75, 545, 48, 50, c,
+                                                                                 borde=False)
+                 + rect(58 + k * 75, 508, 60, 18, P.GRIS_OSCURO, r=4, ancho=4))
+    # mesada con alacenas
+    p.append(rect(0, py - 330, 640, 40, "#c8cdd6", ancho=6) + rect(0, py - 290, 640, 290, "#f0dcb4", ancho=6))
+    for x in (40, 240, 440):
+        p.append(rect(x, py - 260, 160, 230, "#f6e7c7", r=6, ancho=5) + circulo(x + 140, py - 150, 9, P.GRIS, ancho=3))
+    # cocina a gas con horno
+    p.append(rect(660, py - 330, 200, 330, P.BLANCO, r=8) + rect(680, py - 250, 160, 150, P.GRIS_OSCURO, r=6, ancho=5))
+    for x in (700, 760, 820):
+        p.append(circulo(x, py - 300, 18, "#444a55", ancho=4))
+    # heladera
+    if decada and decada < 196:
+        p.append(rect(890, py - 560, 190, 560, "#f8f4e8", r=50) + rect(1040, py - 420, 14, 110, P.GRIS, r=6, ancho=4))
+    else:
+        p.append(rect(890, py - 600, 190, 600, "#f2f4f7", r=10) + f'<path d="M890 {n(py - 400)} L1080 {n(py - 400)}" '
+                 f'{trazo(ancho=6)}/>' + rect(1050, py - 560, 12, 120, P.GRIS, r=6, ancho=4)
+                 + rect(1050, py - 360, 12, 160, P.GRIS, r=6, ancho=4))
+    return "".join(p)
+
+
 FONDOS = {"mapa_geo": None, "laboratorio": fondo_laboratorio, "hospital": fondo_hospital, "campo": fondo_campo,
           "puerto": fondo_puerto, "casa": fondo_casa, "taller": fondo_taller, "cielo": fondo_cielo, "ciudad": fondo_ciudad, "oficina": fondo_oficina,
           "globo": fondo_globo, "mapa": fondo_globo, "fabrica": fondo_fabrica,
-          "tienda": fondo_tienda, "escenario": fondo_escenario}
+          "tienda": fondo_tienda, "escenario": fondo_escenario, "playa": fondo_playa, "estadio": fondo_estadio,
+          "cocina": fondo_cocina}
 
 
 # ---- ambiente de los fondos (Santi, 2026-11-15: "escenarios ricos: profundidad, texturas simples (madera,
@@ -617,11 +714,11 @@ FONDOS = {"mapa_geo": None, "laboratorio": fondo_laboratorio, "hospital": fondo_
 # de los muebles, y una bruma suave arriba (lo lejano, más claro). La línea del piso y la ventana de cada
 # lugar están acá; si un fondo cambia de lugar la ventana, se cambia esta tabla.
 PISO_Y = {"casa": 0.72, "oficina": 0.72, "taller": 0.72, "fabrica": 0.70, "tienda": 0.74, "escenario": 0.72,
-          "laboratorio": 0.72, "hospital": 0.72}
+          "laboratorio": 0.72, "hospital": 0.72, "cocina": 0.72}
 VENTANA = {"casa": (640, 250, 300, 330), "oficina": (560, 260, 400, 480), "fabrica": (80, 200, 920, 420),
-           "hospital": (560, 260, 380, 360)}
+           "hospital": (560, 260, 380, 360), "cocina": (600, 230, 300, 300)}
 PARED_TEXTURA = {"casa": "empapelado", "oficina": "empapelado", "taller": "ladrillo", "fabrica": "ladrillo",
-                 "tienda": "azulejo", "laboratorio": "azulejo", "hospital": "azulejo"}
+                 "tienda": "azulejo", "laboratorio": "azulejo", "hospital": "azulejo", "cocina": "azulejo"}
 MUEBLES_SOMBRA = {"casa": [(790, 1385, 270, 26), (130, 1385, 110, 18)], "oficina": [(390, 1520, 330, 30),
                   (920, 1408, 80, 16)], "taller": [(540, 1540, 470, 30)], "fabrica": [(540, 1330, 560, 26)],
                   "tienda": [(190, 1425, 160, 22)]}
@@ -690,7 +787,7 @@ def ambiente(tipo: str) -> str:
     elif tipo == "ciudad":
         out.append(f'<rect x="0" y="0" width="{W}" height="{n(H * 0.6)}" fill="url(#amb_bruma)"/>')
         out.append(f'<rect x="0" y="{n(H * 0.8)}" width="{W}" height="120" fill="url(#amb_piso)"/>')
-    elif tipo in ("cielo", "campo", "puerto"):
+    elif tipo in ("cielo", "campo", "puerto", "playa", "estadio"):
         out.append(f'<rect x="0" y="0" width="{W}" height="{n(H * 0.5)}" fill="url(#amb_bruma)"/>')
     return (_patrones() + "".join(out)) if out else ""
 
@@ -703,7 +800,8 @@ TINTE = {"laboratorio": ("#bfe3ff", 0.05), "hospital": ("#d8fff4", 0.05), "campo
          "puerto": ("#ff9f6b", 0.08), "casa": ("#ffb36b", 0.07), "oficina": ("#ffd59a", 0.06), "taller": ("#ffad5c", 0.07),
          "fabrica": ("#ff9a5c", 0.06), "tienda": ("#ffd28a", 0.05), "ciudad": ("#ff8f5c", 0.08),
          "cielo": ("#ffd08a", 0.05), "escenario": ("#ff6b8a", 0.06), "globo": ("#7c6bff", 0.05),
-         "mapa": ("#7c6bff", 0.05)}
+         "mapa": ("#7c6bff", 0.05), "playa": ("#ffd28a", 0.07), "estadio": ("#ffe08a", 0.05),
+         "cocina": ("#ffd59a", 0.05)}
 VINETA = 0.34
 
 
