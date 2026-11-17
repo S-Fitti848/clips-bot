@@ -35,10 +35,13 @@ SCHEMA = {"type": "OBJECT", "properties": {"pregunta": {"type": "STRING"}, "text
           "required": ["pregunta", "texto"]}
 
 
-def escribir(cliente, historia: dict) -> dict:
-    """{pregunta, texto} para la historia ({titulo, texto, lugar, pais, anio})."""
+def escribir(cliente, historia: dict, se_ve: str = "") -> dict:
+    """{pregunta, texto} para la historia ({titulo, texto, lugar, pais, anio}). `se_ve`: lo que muestra la foto ya
+    verificada; el texto habla de ESO (Santi, 2026-11-17: primero la foto, después el texto)."""
     prompt = (f"Historia ({historia.get('anio')}, {historia.get('lugar')}, {historia.get('pais')}): "
-              f"{historia.get('titulo')}\n{historia.get('texto')}")
+              f"{historia.get('titulo')}\n{historia.get('texto')}"
+              + (f"\n\nLA FOTO MUESTRA: {se_ve}. El texto y la pregunta hablan de lo que se ve en la foto (la persona, "
+                 "el lugar o el hecho), ligado a la historia; nada que la foto contradiga." if se_ve else ""))
     errores = []
     for _ in range(3):
         d = json.loads(cliente.json(SISTEMA, prompt + ("\n\nCorregí: " + "; ".join(errores) if errores else ""),
@@ -110,7 +113,8 @@ Te paso el texto de la historia y varias fotos numeradas. Por cada foto decí:
 - `coincide`: true SOLO si la foto muestra lo que cuenta el texto: la persona de la historia, el hecho, el objeto, el
   club/la institución, o el LUGAR PUNTUAL donde pasó (el puerto al que llegaron, el estadio, la plaza, la fábrica:
   vale una vista de ese lugar, de la época o no). Una foto de otra cosa del mismo país o ciudad (un paisaje, una
-  catedral, otro edificio) NO coincide. Un mapa, un plano, un logo, un escudo o una captura NO coinciden nunca.
+  catedral, otro edificio) NO coincide. Un mapa, un plano, un logo, un escudo, una captura o una imagen con marca de agua o texto sobreimpreso NO
+  coinciden nunca.
 - `politico`: true si muestra políticos, presidentes, funcionarios o un acto de gobierno (una cumbre, una firma, un
   discurso oficial, una foto protocolar).
 - `protagonista`: true si la persona principal de la foto ES de quien trata la historia.
@@ -123,22 +127,62 @@ SCHEMA_FOTO = {"type": "OBJECT", "properties": {
     "mejor": {"type": "INTEGER"}}, "required": ["fotos", "mejor"]}
 
 
+def articulos_de(historia: dict) -> list[str]:
+    """Los artículos del tema, sin repetir: el del hecho, el del lugar y las otras páginas que nombra."""
+    vistos = [historia.get("articulo"), historia.get("articulo_lugar")] + list(historia.get("paginas") or [])
+    return [a for a in dict.fromkeys(str(x or "").strip() for x in vistos) if a][:3]
+
+
 def fotos_candidatas(wiki, historia: dict, carpeta: Path, n: int = FOTOS_CANDIDATAS) -> list[tuple[Path, str]]:
-    """Hasta `n` fotos del artículo del hecho (y del lugar), con las reglas de siempre, bajadas. [(ruta, crédito)]."""
+    """Hasta `n` fotos del tema, con las reglas de siempre, bajadas: las de sus artículos y, si faltan, las de su
+    categoría en Commons (Santi, 2026-11-17: "elegí el tema empezando por las fotos"). [(ruta, crédito)]."""
     from . import efemerides as ef
 
     out: list[tuple[Path, str]] = []
-    for articulo in [a for a in (historia.get("articulo"), historia.get("articulo_lugar")) if a]:
-        e = ef.Evento("es", int(historia.get("anio") or 0), str(historia.get("texto") or ""), [articulo])
-        try:
-            fotos, _ = ef.fotos_del_evento(wiki, e)
-        except ef.WikiError:
-            continue
-        bajadas, _ = ef.bajar_fotos(wiki, fotos[: n * 2], carpeta, f"comunidad_{len(out)}", n - len(out))
-        out += [(Path(f.ruta), f"Foto: {f.autor} · {f.licencia}") for f in bajadas]
+    anio = int(historia.get("anio") or 0)
+
+    def sumar(fotos) -> None:
+        bajadas, _ = ef.bajar_fotos(wiki, fotos[: (n - len(out)) * 2], carpeta, f"comunidad_{len(out)}", n - len(out))
+        out.extend((Path(f.ruta), f"Foto: {f.autor} · {f.licencia}") for f in bajadas)
+
+    for articulo in articulos_de(historia):
         if len(out) >= n:
             break
+        try:
+            fotos, _ = ef.fotos_del_evento(wiki, ef.Evento("es", anio, str(historia.get("texto") or ""), [articulo]))
+        except ef.WikiError:
+            continue
+        sumar(fotos)
+    principal = next(iter(articulos_de(historia)), "")
+    if len(out) < n and principal:
+        try:
+            fotos, _ = ef.filtrar_infos(wiki, "commons", wiki.buscar_commons(principal), f"Commons: {principal}",
+                                        anio or None)
+            sumar(fotos)
+        except Exception as err:  # noqa: BLE001 — Commons es un extra
+            log.info("comunidad: Commons para %s no respondió (%s)", principal, err)
     return out[:n]
+
+
+TIPOS_CON_FOTOS = ("idolo", "heroe_de_pueblo", "gente_comun", "lugar_curioso", "fundacion", "costumbre", "record")
+
+
+def temas(historias_dia: list[dict], banco_latam: list[dict], usados: set[str], maximo: int = 6) -> list[dict]:
+    """Los temas a probar, en orden: las historias de hoy (van con el Reel del día) y después las del banco de
+    Latinoamérica que suelen tener buenas fotos (ídolos, personajes, lugares). Nunca uno ya usado."""
+    out = []
+    for h in historias_dia:
+        out.append({"id": str(h.get("articulo") or h.get("texto") or "")[:80], "texto": h.get("texto"),
+                    "anio": int(str(h.get("texto") or "0")[:4]) if str(h.get("texto") or "")[:4].isdigit() else 0,
+                    "pais": h.get("pais"), "articulo": h.get("articulo"), "paginas": h.get("paginas") or []})
+    prioridad = {t: k for k, t in enumerate(TIPOS_CON_FOTOS)}
+    for b in sorted(banco_latam, key=lambda b: (prioridad.get((b.get("clasif") or {}).get("tipo"), 99),
+                                                -float(b.get("puntaje") or 0))):
+        out.append({"id": str(b.get("id") or b.get("articulo") or "")[:80], "texto": b.get("texto"),
+                    "anio": int(b.get("anio") or 0), "pais": (b.get("clasif") or {}).get("pais"),
+                    "articulo": b.get("articulo"), "articulo_lugar": b.get("articulo_lugar"),
+                    "paginas": b.get("paginas") or []})
+    return [t for t in out if t["id"] and t["id"] not in usados][:maximo]
 
 
 def _jpeg_chico(ruta: Path) -> bytes:

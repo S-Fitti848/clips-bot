@@ -961,6 +961,7 @@ def anotar_gancho(conn, d: dict, marca: str) -> None:
 ESCENAS_RECIENTES = "animacion_escenas"   # bot_estado: [{video, marca, firmas}] de los últimos videos
 VIDEOS_UNICOS = 10                         # contra cuántos videos se compara
 ESCENAS_PREVIAS: list[list[str]] = []      # las firmas de los últimos videos (las carga armar_video)
+COMPLETAS_PREVIAS: list[list[str]] = []    # las escenas enteras de los últimos videos (ídem)
 # Lo que la frase dice del lugar → el fondo donde tiene que pasar (solo lugares que no tienen otro sentido común).
 def _en(palabras: str) -> re.Pattern:
     """La frase dice que la acción pasa AHÍ: "en la playa", "a una playa", "en su fábrica" (no "una ciudad de playa")."""
@@ -988,6 +989,21 @@ def firma_escena(e: dict) -> str:
     return f"{acc}@{e.get('fondo') or ''}"
 
 
+def firma_completa(e: dict, prota: str = "") -> str:
+    """La escena entera (Santi, 2026-11-17: "lo único es la combinación de lugar, acción, objetos, plano y
+    movimiento"): las piezas se reusan, la combinación no. El protagonista cuenta como `{prota}`."""
+    objs = sorted({("{prota}" if prota and prop_real(o) == prota else prop_real(o)) for o in e.get("objetos") or []
+                   if prop_real(o)})
+    return f"{firma_escena(e)}|{e.get('plano') or ''}|{e.get('camara') or ''}|{'+'.join(objs)}"
+
+
+def completas_recientes(conn) -> list[list[str]]:
+    try:
+        return [list(x.get("completas") or []) for x in json.loads(_get_valor(conn, ESCENAS_RECIENTES) or "[]")]
+    except ValueError:
+        return []
+
+
 def escenas_recientes(conn) -> list[list[str]]:
     try:
         return [list(x.get("firmas") or []) for x in json.loads(_get_valor(conn, ESCENAS_RECIENTES) or "[]")]
@@ -1002,7 +1018,9 @@ def anotar_escenas(conn, d: dict, video: str, marca: str) -> None:
         lista = [x for x in json.loads(_get_valor(conn, ESCENAS_RECIENTES) or "[]") if x.get("video") != video]
     except ValueError:
         lista = []
-    lista.append({"video": video, "marca": marca, "firmas": [firma_escena(e) for e in (d.get("escenas") or [])[1:]]})
+    prota = prop_real(d.get("protagonista") or {})
+    lista.append({"video": video, "marca": marca, "firmas": [firma_escena(e) for e in (d.get("escenas") or [])[1:]],
+                  "completas": [firma_completa(e, prota) for e in (d.get("escenas") or [])[1:]]})
     db.set_valor(conn, ESCENAS_RECIENTES, json.dumps(lista[-VIDEOS_UNICOS:], ensure_ascii=False))
 
 
@@ -1016,14 +1034,23 @@ def tope_repetidas(d: dict) -> int:
     return max(0, len(d.get("escenas") or []) - 1) // 3
 
 
-def errores_unicas(d: dict, previas: list[list[str]] | None = None) -> list[str]:
-    """Como mucho un tercio de las escenas repite acción y lugar de los últimos 10 videos (AN-25)."""
+def errores_unicas(d: dict, previas: list[list[str]] | None = None,
+                   completas: list[list[str]] | None = None) -> list[str]:
+    """Ninguna escena repite ENTERA (lugar, acción, objetos, plano y movimiento) una de los últimos 10 videos, y como
+    mucho un tercio repite acción y lugar (AN-25)."""
     previas = ESCENAS_PREVIAS if previas is None else previas
+    completas = COMPLETAS_PREVIAS if completas is None else completas
+    escenas = d.get("escenas") or []
+    prota = prop_real(d.get("protagonista") or {})
+    usadas = {f for v in completas[-VIDEOS_UNICOS:] for f in v}
+    iguales = [i + 1 for i, e in enumerate(escenas) if i > 0 and firma_completa(e, prota) in usadas]
+    errs = ([f"cada escena es única: las escenas {iguales} son IGUALES (lugar, acción, objetos, plano y movimiento) a "
+             "escenas de videos anteriores: diseñalas para esta historia (otro plano, otros objetos de la historia, "
+             "otro movimiento o el lugar real)"] if iguales else [])
     rep = repetidas(d, previas)
     if len(rep) <= tope_repetidas(d):
-        return []
-    escenas = d.get("escenas") or []
-    return [f"cada video es único: las escenas {rep} repiten la misma acción en el mismo lugar que videos anteriores "
+        return errs
+    return errs + [f"cada video es único: las escenas {rep} repiten la misma acción en el mismo lugar que videos anteriores "
             f"({', '.join(firma_escena(escenas[i - 1]) for i in rep[:6])}) y pueden ser como mucho "
             f"{tope_repetidas(d)}: cambiá la acción o el lugar de las que sobran, según dónde y cómo pasó de verdad"]
 
@@ -2743,9 +2770,10 @@ def armar_video(conn, settings, carpeta: Path, cliente=None, wiki=None, hoy: dat
     carpeta = Path(carpeta)
     carpeta.mkdir(parents=True, exist_ok=True)
     cfg = settings.animacion
-    global REGLAS_V3, USO_V4, ESCENAS_PREVIAS
+    global REGLAS_V3, USO_V4, ESCENAS_PREVIAS, COMPLETAS_PREVIAS
     REGLAS_V3 = bool(getattr(cfg, "reglas_v3", False))
     ESCENAS_PREVIAS = escenas_recientes(conn) if conn is not None else []
+    COMPLETAS_PREVIAS = completas_recientes(conn) if conn is not None else []
     USO_V4 = REGLAS_V3 and bool(getattr(cfg, "uso_manos", False))
     _lib.CON_V4 = USO_V4
     t_total = time.time()

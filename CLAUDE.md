@@ -198,8 +198,10 @@ servicio systemd separado: `clips-bot`).
   reacciones (`stats_fb.metricas_post`).
 - **Publicación de comunidad: la foto se mira (Santi, 2026-11-17, PH-24 del estándar):** Sonnet compara hasta 6 fotos
   del artículo con el texto (`comunidad_fb.fotos_candidatas` / `foto_que_coincide`); nunca políticos ni actos de
-  gobierno salvo que la historia sea de esa persona, nunca mapas ni logos; si ninguna coincide, la otra historia del día;
-  si tampoco, no sale y aviso a Santi.
+  gobierno salvo que la historia sea de esa persona, nunca mapas, logos ni marcas de agua. **El tema empieza por la foto**
+  (Santi, misma tarde): las historias del día y después las del banco de Latinoamérica con buenas fotos (ídolos,
+  personajes, lugares; artículos + categoría de Commons, `cf.temas`, `bot_estado.comunidad_usados` para no repetir), y
+  el texto habla de lo que muestra la foto. Si ningún tema tiene foto, no sale y aviso a Santi.
 - **Latinoamérica: ídolos de antes (Santi, 2026-11-16):** tipo `idolo` (época de oro del cine mexicano y argentino,
   cantantes, actores, deportistas) como historia real con persona, giro y emoción, puntuada como las demás; también en
   la búsqueda de personajes y la web. Primer caso: **Jorge Negrete, 30/11** (nació el 30 de noviembre de 1911,

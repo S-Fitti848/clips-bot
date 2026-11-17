@@ -3756,6 +3756,9 @@ COMUNIDAD_DIA = "comunidad_fb_dia"    # bot_estado: el día (AR) en que ya se pr
 COMUNIDAD_DESDE = "10:00"
 
 
+COMUNIDAD_USADOS = "comunidad_usados"   # bot_estado: los temas ya publicados en comunidad (no se repiten)
+
+
 def _comunidad_tick(conn, tg: TelegramClient, settings: Settings, ahora=None, cliente=None, wiki=None,
                     programar=None, revisor=None) -> None:
     """Pequeña Historia en Facebook (Santi, 2026-11-16): 1 publicación de comunidad por día, foto de época + pregunta,
@@ -3782,27 +3785,29 @@ def _comunidad_tick(conn, tg: TelegramClient, settings: Settings, ahora=None, cl
     # Santi, 2026-11-17 (Colón con los presidentes del Mercosur): Claude mira las fotos contra el texto; nunca un
     # político ni un acto de gobierno salvo que la historia sea de esa persona. Si ninguna foto coincide, se cambia de
     # tema (la otra historia del día); si tampoco, ese día no sale y se avisa.
+    # Santi, 2026-11-17 (más tarde): el tema se elige EMPEZANDO POR LAS FOTOS: las historias de hoy y después las del
+    # banco de Latinoamérica con buenas fotos (ídolos, personajes, lugares), sin repetir; no hace falta que sea la del día.
     revisor_ = revisor if revisor is not None else claude.cliente(claude.SONNET)
-    foto, historia, motivos = None, None, []
-    for h in historias:
-        cand = {"titulo": "", "texto": h.get("texto"), "anio": int(str(h.get("texto") or "0")[:4] or 0)
-                if str(h.get("texto") or "")[:4].isdigit() else 0,
-                "lugar": "", "pais": h.get("pais"), "articulo": h.get("articulo")}
+    usados = json.loads(db.get_valor(conn, COMUNIDAD_USADOS) or "[]")
+    foto, historia, motivos, se_ve = None, None, [], ""
+    for cand in cf.temas(historias, banco_mod.leer(conn, "latam"), set(usados)):
+        cand = {"titulo": "", "lugar": "", **cand}
         try:
             foto, por_que = cf.foto_que_coincide(revisor_, cand, cf.fotos_candidatas(wiki or ef.Wiki(), cand, carpeta))
-        except Exception as e:  # noqa: BLE001 — una historia que falla deja probar la otra
+        except Exception as e:  # noqa: BLE001 — un tema que falla deja probar el siguiente
             foto, por_que = None, f"no se pudo mirar ({str(e)[:100]})"
         if foto:
-            historia = cand
+            historia, se_ve = cand, por_que
             log.info("comunidad: foto elegida (%s) para «%s»", por_que[:100], str(cand["texto"])[:60])
+            db.set_valor(conn, COMUNIDAD_USADOS, json.dumps((usados + [cand["id"]])[-90:], ensure_ascii=False))
             break
         motivos.append(f"«{str(cand['texto'] or '')[:70]}»: {por_que}")
     if not foto:
-        tg.send_message(DUENO, "🔧 Claude Code: hoy NO sale la publicación de comunidad: ninguna foto coincide con las "
-                               "historias del día.\n" + html.escape("\n".join(motivos))[:900])
+        tg.send_message(DUENO, "🔧 Claude Code: hoy NO sale la publicación de comunidad: ninguna foto coincide con los "
+                               "temas que probé.\n" + html.escape("\n".join(motivos))[:900])
         return
     try:
-        txt = cf.escribir(cliente or claude.cliente(claude.HAIKU), historia)
+        txt = cf.escribir(cliente or claude.cliente(claude.HAIKU), historia, se_ve)
         img = cf.armar_imagen(foto[0], txt["pregunta"], foto[1], carpeta / f"{clip_id}.jpg")
         hh, mm = (int(x) for x in cfg.comunidad_hora.split(":"))
         cuando = datetime(dia.year, dia.month, dia.day, hh, mm, tzinfo=AR)

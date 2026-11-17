@@ -195,3 +195,18 @@ def test_comunidad_cambia_de_tema_y_si_no_hay_no_sale(tmp_path, monkeypatch):
                       programar=lambda *a: pytest.fail("no se publica"))
     assert any("NO sale la publicación de comunidad" in t for _, t in tg2.mensajes)
     assert not [x for x in db.subidas(conn2) if x["canal"] == cf.CANAL]
+
+
+def test_comunidad_temas_primero_hoy_despues_el_banco_con_fotos():
+    """Santi, 2026-11-17: el tema empieza por las fotos; no hace falta que sea la historia del día."""
+    from clips_bot import comunidad_fb as cf
+
+    hoy = [{"texto": "Colón campeón", "articulo": "Argentina"}]
+    banco = [{"id": "latam:a", "texto": "una batalla", "articulo": "Batalla X", "clasif": {"tipo": "otro"}, "puntaje": 9},
+             {"id": "latam:b", "texto": "Jorge Negrete", "articulo": "Jorge Negrete", "clasif": {"tipo": "idolo"},
+              "puntaje": 8},
+             {"id": "latam:c", "texto": "un pueblo", "articulo": "Pueblo", "clasif": {"tipo": "lugar_curioso"},
+              "puntaje": 8.5}]
+    t = cf.temas(hoy, banco, usados={"latam:c"})
+    assert [x["id"] for x in t] == ["Argentina", "latam:b", "latam:a"]     # el ídolo antes; el ya usado, afuera
+    assert cf.articulos_de({"articulo": "A", "paginas": ["A", "B", "C", "D"]}) == ["A", "B", "C"]
