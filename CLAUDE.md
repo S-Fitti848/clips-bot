@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-11-16 | **Versión:** v1.30.0 (desplegado) | **Modo:** Fase 2: corriendo solo en la Pi. **Rots APAGADO.** Pequeña Historia (3 por día, madrugada desde las 04:00) (publicación sin aprobar: llegan con ❌ Cancelar) y **Así Nació** (2 por día, desde las 07:00, publican 13:00 y 20:00 en YouTube y Facebook con ❌ Cancelar), todo al privado de Santi
+**Snapshot:** 2026-11-17 | **Versión:** v1.31.0 (desplegado) | **Modo:** Fase 2: corriendo solo en la Pi. **Rots APAGADO.** Pequeña Historia (3 por día, madrugada desde las 04:00) (publicación sin aprobar: llegan con ❌ Cancelar) y **Así Nació** (2 por día, desde las 07:00, publican 13:00 y 20:00 en YouTube y Facebook con ❌ Cancelar), todo al privado de Santi
 
 > **SI ESTÁS EMPEZANDO UNA SESIÓN NUEVA, LEÉ §10.** Ahí está qué está hecho, qué quedó a medias,
 > qué falta, y las trampas que ya nos mordieron.
@@ -412,6 +412,21 @@ servicio systemd separado: `clips-bot`).
   video: se rehacen enteras las escenas que fallan creando lo que falte y se vuelve a mirar (`RESCATE_USD` 0,50 aparte);
   recién si sigue debajo de 12/14, ✅/❌. /costos muestra por video el total y las piezas nuevas
   (`bitacora.texto_piezas`); si un video pasa de US$ 1,50, aviso a Santi.
+- **Así Nació: personajes por rol, trabajo por rol, época y ficha (Santi, 2026-11-17; regla para TODOS los videos,
+  AN-15 a AN-19 y AN-26 del estándar):** el protagonista es la persona real (edad de esa escena, ropa de su época y
+  clase); los demás se visten por ROL y AÑO (`acciones.vestir`, piezas `Personaje.vestuario`: mameluco, delantal,
+  uniforme, traje, calle, guardapolvo, falda_larga; sombreros bombín, boina, cofia): obreros con delantal y gorra
+  plana antes de 1940 y mameluco después, cajeros y vendedores con uniforme, clientes con ropa de calle de la época,
+  empresarios de traje (galera antes de 1915, bombín hasta 1950), científicos con guardapolvo. Todos HACEN algo de su
+  rol: `quieto` en obrero, cajero, vendedor, cliente o repartidor = trabaja con lo suyo en las manos
+  (`TRABAJO_ROL`); en otros roles no valida (`errores_quietos`). En la fábrica con obreros, la línea de producción
+  adelante con el producto que avanza (`cinta_frente`). Fondos de época: fábrica de ladrillo con vigas, ventanales,
+  ollas de cobre y cajones antes de 1940, sin engranajes nunca en la pared; calle con casas de ladrillo, carteles
+  pintados y adoquines antes de 1930 y carro con caballo antes de 1910; los dibujos nuevos salen de la época.
+  Cada escena tiene su FICHA (`marcas.ficha_escena`, `fichas.json`), que la revisión usa para preguntar quién es cada
+  uno, qué hace y si eso pasaba en ese año y lugar (`REVISION_FICHA`). La ventanita de Tito va a una esquina libre o
+  esa vez no aparece (`lugar_tito`). El mínimo para publicarse sola pasa a "como mucho 2 reglas sin cumplir"
+  (`calidad.MAX_FALLAS`): Así Nació 17/19, Pequeña Historia 7/9.
 - **Videos largos: NO por ahora (decisión de Santi, 2026-09-28).** No quiere videos largos con voz
   de IA. Si más adelante se hacen, van con SU voz grabada, no con Gemini TTS ni Piper.
 - **Sin música agregada en los clips.** Cualquier música es riesgo de Content ID. Si el clip trae
@@ -1024,7 +1039,7 @@ clips_bot/voces.py       voces de Gemini de hoy por clave (con Lo Encontré) y e
 clips_bot/prueba_manual.py prueba manual vs API (§1): el clip del día a mano, registro e informe del feed
 clips_bot/envivo.py      modo en vivo (§3b): quién está al aire, momentos por creadores distintos,
                          alertas en la DB (no repetir, tope, vencer) y el resumen de tiempos
-tests/                   1671 tests sin red ni video (conftest.py: nada sale a YouTube, Facebook ni ElevenLabs) (test_reglas_fijas.py: las 3 reglas de §1)
+tests/                   1681 tests sin red ni video (conftest.py: nada sale a YouTube, Facebook ni ElevenLabs) (test_reglas_fijas.py: las 3 reglas de §1)
 ```
 
 Comandos:
@@ -1216,6 +1231,13 @@ Problemas abiertos:
 ---
 
 ## 9. CHANGELOG
+
+- v1.31.0 (2026-11-17) — **Así Nació: personajes por rol y época, todos trabajando, línea de producción, fondos de
+  época, ficha por escena y Tito sin tapar** (regla en §1, AN-15 a AN-19 y AN-26). Probado en la Pi con 3 escenas del
+  Hershey (mismo guion, sin voz: `output/animacion/prueba_roles_hershey/hoja_hershey_roles.jpg`, mandada a Santi).
+  Visto y arreglado con la prueba: el jopo asomaba sobre la galera, la cinta muy cargada, una nube como decorado
+  adentro. Sigue flojo: la máquina violeta es un dibujo guardado de antes (la revisión la marca por la época) y el
+  gráfico tapa el texto grande cuando la cámara se acerca (motor de antes). `tests/test_roles_epoca.py`.
 
 - v1.30.0 (2026-11-17) — **Así Nació: piezas reusables, escenas únicas, lugares nuevos, rescate y costo de las piezas**
   (regla en §1). Probado en la Pi: el schema del guion con `lugar_nuevo` compila en Claude (8 s) y Sonnet dibujó "una
