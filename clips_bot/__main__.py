@@ -4556,6 +4556,11 @@ def _animacion_armar(conn, tg: TelegramClient, chats: list[str], settings: Setti
     marcas.registrar(conn, r.marca, r.angulo, hoy, r.promedio, r.titulo, r.video)
     log.info("animación %d: %s / %s (%.1f) en %.0f s, Claude US$ %.3f", k + 1, r.marca, r.angulo, r.promedio,
              r.total_s, r.costo_usd)
+    if (r.costo_usd or 0) > bitacora.AVISO_VIDEO_USD:     # Santi, 2026-11-17
+        piezas = float(getattr(r, "piezas_usd", 0) or 0)
+        tg.send_message(DUENO, f"🔧 Claude Code: 💸 el video de Así Nació «{html.escape(r.titulo)}» costó US$ "
+                               f"{r.costo_usd:.2f} de Claude (aviso desde US$ {bitacora.AVISO_VIDEO_USD:.2f})"
+                               + (f"; piezas nuevas US$ {piezas:.2f}" if piezas else "") + ".")
 
 
 def _hora_asinacio(settings: Settings, hora: str, ahora: datetime | None = None) -> datetime:

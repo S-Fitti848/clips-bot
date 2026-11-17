@@ -17,7 +17,7 @@ Cómo se usa (`clips_bot/calidad.py`):
 3. Si después de corregir algo sigue sin cumplirse, el video sale igual y el mensaje dice qué regla no cumplió
    ("📏 Estándar 12/14 · ❌ AN-05 …"). Las reglas marcadas **código** las chequea el código (validación del guion,
    fotos, audio); si una no se cumple, también va en el mensaje.
-4. **Mínimo para publicarse sola (Santi, 2026-11-17):** si después de las correcciones el video queda debajo de
+4. **Mínimo para publicarse sola (Santi, 2026-11-17):** en Así Nació, antes de retener un video se intenta el RESCATE: se rehacen enteras las escenas que fallan creando lo que falte (objetos y lugares nuevos) y se vuelve a mirar una vez (tope US$ 0,50 aparte). Si después de eso el video queda debajo de
    **12/14** (Así Nació, desde el 17/11; antes 11) o **7/9** (Pequeña Historia), NO se programa: le llega a Santi con ✅ Publicar igual /
    ❌ Cancelar y, si no responde, no sale (`calidad.MINIMO_PUBLICAR`, `retener`). El aviso solo alcanza con 1 o 2
    reglas sin cumplir.
@@ -52,7 +52,7 @@ Arreglos: `rehacer_gancho` (prueba otra opción de gancho o lo reescribe), `camb
 - **AN-21** · código — GUION: gancho con el dato concreto (nada de "pasó algo que no esperaban"), empresa o persona presentada la primera vez, orden problema → idea → qué pasó → final sorpresa, al menos 3 lugares y 3 roles distintos.
 - **AN-22** · código — DURACIÓN Y VOZ: 32-38 s; la voz se ajusta como mucho ±8 % sin cambiar el tono, si no se reescribe el guion.
 - **AN-23** · código — AUDIO: nada arriba de −3 dB, fade in y fade out, el audio termina con el video.
-- **AN-25** · código — CADA VIDEO ÚNICO EN ESCENAS (Santi, 2026-11-17): como mucho un tercio de las escenas (acción y lugar) se repite de los últimos 10 videos, y solo si el contexto lo pide; vale también para el reemplazo de escenas de la biblioteca. Si la frase dice dónde pasó (playa, estadio, cocina, fábrica, tienda…), la escena va en ese lugar.
+- **AN-25** · código — CADA VIDEO ÚNICO EN ESCENAS (Santi, 2026-11-17): las piezas (personajes, manos, fondos, objetos, efectos) se reusan libremente; lo único es cada escena. Ninguna escena repite ENTERA (lugar, acción, objetos, plano y movimiento) una de los últimos 10 videos, y como mucho un tercio repite lugar y acción, solo si el contexto lo pide; vale también para el reemplazo de escenas de la biblioteca. Lo que falta (un lugar, un objeto, una acción) se crea una vez y queda guardado. Si la frase dice dónde pasó (playa, estadio, cocina, fábrica, tienda…), la escena va en ese lugar.
 - **AN-24** · código — MARCA DEL CANAL: viaje al pasado (reloj, cuentakilómetros, remolino, sepia) cuando cambia la época; en el pasado todo sepia menos el producto; subtítulos virales en la franja de arriba.
 
 ## Pequeña Historia

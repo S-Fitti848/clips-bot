@@ -112,3 +112,26 @@ def test_pequena_historia_publicar_igual_usa_la_subida_de_siempre(conn, monkeypa
     monkeypatch.setattr(m, "_subir", lambda c, st, meta, canal: llamados.append(canal) or ["📤 ok"])
     m._subidas_callback(conn, TG2(), _cb("pub", "historia_fb_1117_1937"), s)
     assert llamados == ["pequena_historia"]
+
+
+def test_aviso_si_el_video_pasa_de_1_50(conn, tmp_path, monkeypatch):
+    from clips_bot.animacion import marcas
+
+    class Caro(R):
+        costo_usd, piezas_usd = 1.72, 0.06
+        estandar = {"revisado": True, "fallas": []}
+
+    s = load_settings()
+    mensajes = []
+    monkeypatch.setattr(marcas, "armar_video", lambda *a, **k: Caro())
+    monkeypatch.setattr(marcas, "registrar", lambda *a, **k: None)
+    monkeypatch.setattr(marcas, "enviar", lambda *a, **k: None)
+    monkeypatch.setattr(m, "_animacion_subir", lambda *a: [])
+    monkeypatch.setattr(m, "DATA_DIR", tmp_path / "data")
+
+    class TG:
+        def send_message(self, chat, texto, teclado=None):
+            mensajes.append(texto)
+
+    m._animacion_armar(conn, TG(), [m.DUENO], s, date(2026, 11, 17))
+    assert any("1.72" in t and "piezas nuevas US$ 0.06" in t for t in mensajes)

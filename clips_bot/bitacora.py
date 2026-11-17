@@ -477,6 +477,28 @@ def resumen(filas: list[dict]) -> dict:
                        for d in filas if d.get("estado") == "fallido"]}
 
 
+AVISO_VIDEO_USD = 1.50     # Santi, 2026-11-17: un video de Así Nació que pase de esto, se avisa
+
+
+def piezas_usd(fila: dict) -> float:
+    """Lo que se gastó en piezas nuevas (dibujos de objetos y lugares) en ese video."""
+    return round(sum(x.get("usd") or 0 for x in ((fila.get("detalle") or {}).get("claude") or [])
+                     if x.get("paso") == "dibujos"), 3)
+
+
+def texto_piezas(filas: list[dict], n: int = 10) -> str:
+    """Así Nació, video por video (Santi, 2026-11-17): el total y cuánto fue en piezas nuevas."""
+    an = [d for d in filas if d.get("canal") == "asinacio"][-n:]
+    if not an:
+        return ""
+    lineas = ["<b>Así Nació por video</b> (total · piezas nuevas):"]
+    for d in an:
+        total = d.get("costo_usd") or 0
+        lineas.append(f"• {(d.get('titulo') or d.get('clip_id') or '?')[:45]}: US$ {total:.2f} · piezas "
+                      f"US$ {piezas_usd(d):.2f}" + (" ⚠️ pasó de US$ 1,50" if total > AVISO_VIDEO_USD else ""))
+    return "\n".join(lineas)
+
+
 def _mmss(s: float) -> str:
     s = int(round(s or 0))
     return f"{s // 60}:{s % 60:02d}"
@@ -496,6 +518,9 @@ def texto(filas: list[dict], dias: int = 7, descartes: list[dict] | None = None)
                       + (f" · {g['cancelados']} cancelados" if g["cancelados"] else "")
                       + (f" · frenó por calor en {g['frenados']}" if g["frenados"] else "")
                       + (f" · máx {g['temp_max']:.0f} °C" if g["temp_max"] else ""))
+    por_video = texto_piezas(filas)
+    if por_video:
+        lineas += ["", por_video]
     lineas += ["", "<b>Las 3 etapas más caras</b> (Claude, total de la semana):"]
     lineas += [f"• {k}: US$ {usd:.2f} ({intentos} pedidos)" for k, usd, intentos in r["caras"][:3]]
     lineas += ["", "<b>Las 3 más lentas</b> (promedio por video):"]

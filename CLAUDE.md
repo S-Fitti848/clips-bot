@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-11-16 | **Versión:** v1.29.0 (desplegado) | **Modo:** Fase 2: corriendo solo en la Pi. **Rots APAGADO.** Pequeña Historia (3 por día, madrugada desde las 04:00) (publicación sin aprobar: llegan con ❌ Cancelar) y **Así Nació** (2 por día, desde las 07:00, publican 13:00 y 20:00 en YouTube y Facebook con ❌ Cancelar), todo al privado de Santi
+**Snapshot:** 2026-11-16 | **Versión:** v1.30.0 (desplegado) | **Modo:** Fase 2: corriendo solo en la Pi. **Rots APAGADO.** Pequeña Historia (3 por día, madrugada desde las 04:00) (publicación sin aprobar: llegan con ❌ Cancelar) y **Así Nació** (2 por día, desde las 07:00, publican 13:00 y 20:00 en YouTube y Facebook con ❌ Cancelar), todo al privado de Santi
 
 > **SI ESTÁS EMPEZANDO UNA SESIÓN NUEVA, LEÉ §10.** Ahí está qué está hecho, qué quedó a medias,
 > qué falta, y las trampas que ya nos mordieron.
@@ -403,6 +403,15 @@ servicio systemd separado: `clips-bot`).
   un tercio de las escenas (acción@lugar, `firma_escena`) repite los últimos 10 videos, y solo si la historia lo pide
   (`errores_unicas`, `bot_estado.animacion_escenas`); el guion recibe la lista de las ya usadas. Vale también para el
   reemplazo de escenas de la biblioteca (`reemplazo.reemplazar` saltea la candidata que pasa el tope).
+- **Así Nació único sin hacerlo todo desde cero (Santi, 2026-11-17; AN-25):** las piezas (personajes, manos, fondos,
+  objetos, efectos) se reusan; lo único es cada escena: ninguna repite entera (lugar, acción, objetos, plano y
+  movimiento, `firma_completa`) una de los últimos 10 videos, y como mucho un tercio repite lugar y acción. El guion
+  diseña cada escena para su historia y la arma con piezas; lo que falta se crea y queda guardado: objetos
+  (`dibujo_nuevo`) y LUGARES (`lugar_nuevo` → `marcas.crear_lugares` → `dibujos.dibujar_fondo`, en
+  `data/animacion/fondos/`; entran en la lista de `fondo` desde el próximo arranque). **Rescate** antes de retener un
+  video: se rehacen enteras las escenas que fallan creando lo que falte y se vuelve a mirar (`RESCATE_USD` 0,50 aparte);
+  recién si sigue debajo de 12/14, ✅/❌. /costos muestra por video el total y las piezas nuevas
+  (`bitacora.texto_piezas`); si un video pasa de US$ 1,50, aviso a Santi.
 - **Videos largos: NO por ahora (decisión de Santi, 2026-09-28).** No quiere videos largos con voz
   de IA. Si más adelante se hacen, van con SU voz grabada, no con Gemini TTS ni Piper.
 - **Sin música agregada en los clips.** Cualquier música es riesgo de Content ID. Si el clip trae
@@ -1015,7 +1024,7 @@ clips_bot/voces.py       voces de Gemini de hoy por clave (con Lo Encontré) y e
 clips_bot/prueba_manual.py prueba manual vs API (§1): el clip del día a mano, registro e informe del feed
 clips_bot/envivo.py      modo en vivo (§3b): quién está al aire, momentos por creadores distintos,
                          alertas en la DB (no repetir, tope, vencer) y el resumen de tiempos
-tests/                   1665 tests sin red ni video (conftest.py: nada sale a YouTube, Facebook ni ElevenLabs) (test_reglas_fijas.py: las 3 reglas de §1)
+tests/                   1671 tests sin red ni video (conftest.py: nada sale a YouTube, Facebook ni ElevenLabs) (test_reglas_fijas.py: las 3 reglas de §1)
 ```
 
 Comandos:
@@ -1208,6 +1217,13 @@ Problemas abiertos:
 
 ## 9. CHANGELOG
 
+- v1.30.0 (2026-11-17) — **Así Nació: piezas reusables, escenas únicas, lugares nuevos, rescate y costo de las piezas**
+  (regla en §1). Probado en la Pi: el schema del guion con `lugar_nuevo` compila en Claude (8 s) y Sonnet dibujó "una
+  bolera de los años 50" que se entiende sin leer (73 s, ~US$ 0,08, guardada solo en la copia de prueba). También:
+  **comunidad elige el tema por la foto** (historias del día y después el banco de Latinoamérica con buenas fotos, en
+  sus artículos y en Commons; texto sobre lo que muestra la foto; `comunidad_usados`). Probado con las historias reales
+  del 17/11: Colón y Veracruz sin foto que sirva → Carmen de Patagones (pintura de dominio público). Sin marcas de agua.
+  `tests/test_piezas_nuevas.py`.
 - v1.29.0 (2026-11-17) — (1) **Comunidad con la foto verificada** (regla en §1, PH-24). Probado con las historias
   reales del 17/11: en Colón el artículo era "Argentina" (por eso la cumbre del Mercosur) y Sonnet descartó las 6 fotos
   (presidentes, paisajes); en Veracruz descartó la catedral y una fuente, y después de sumar "nada de mapas" también el

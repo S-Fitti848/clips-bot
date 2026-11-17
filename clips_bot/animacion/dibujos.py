@@ -206,3 +206,92 @@ def dibujar(cliente, nombre: str, descripcion: str, contexto: str = "") -> str:
         log.info("dibujo nuevo guardado: %s (%s)", nombre, descripcion)
         return svg
     raise ValueError(f"no pude dibujar {nombre}{ultimo[:150]}")
+
+
+# ---- lugares nuevos (Santi, 2026-11-17: "solo creá lo que falte —un lugar, un objeto o una acción— y queda guardado") ----
+CARPETA_FONDOS = DATA_DIR / "animacion" / "fondos"
+MAX_BYTES_FONDO = 24000
+SISTEMA_FONDO = f"""Dibujás el FONDO de un lugar para un canal de videos animados verticales (dibujos simples de dibujo
+animado), de 1080 de ancho por 1920 de alto. Devolvé SOLO el contenido de un SVG (sin la etiqueta <svg>): formas <g>,
+<path>, <circle>, <ellipse>, <rect>, <polygon>, <line>. Reglas:
+- ocupa todo el cuadro (de 0 a 1080 en x y de 0 a 1920 en y): primero el cielo o la pared, después el piso;
+- el PISO (donde se paran los personajes) arranca alrededor de y = 1380 y llega abajo: la mitad de abajo queda
+  despejada (los personajes van ahí, entre y 1300 y 1850); los detalles van atrás, entre y 200 y 1350;
+- estilo del canal: contorno {P.CONTORNO} de {P.TRAZO} px en lo de adelante, colores planos y cálidos, sin degradés;
+- que se reconozca el lugar SIN leer: nada de texto, letras, números, logos ni marcas reales;
+- de la época que te digo (los objetos del lugar, de ese año);
+- 20 a 80 formas, menos de 20.000 caracteres."""
+SCHEMA_FONDO = {"type": "OBJECT", "properties": {"svg": {"type": "STRING"}, "interior": {"type": "BOOLEAN"}},
+                "required": ["svg", "interior"]}
+
+
+def fondo_guardado(nombre: str) -> str | None:
+    if not nombre_valido(str(nombre or "")):
+        return None
+    try:
+        return (CARPETA_FONDOS / f"{nombre}.svg").read_text(encoding="utf-8")
+    except OSError:
+        return None
+
+
+def fondos_guardados() -> list[str]:
+    try:
+        return sorted(p.stem for p in CARPETA_FONDOS.glob("*.svg") if nombre_valido(p.stem))
+    except OSError:
+        return []
+
+
+def fondo_es_interior(nombre: str) -> bool:
+    try:
+        return bool(json.loads((CARPETA_FONDOS / f"{nombre}.json").read_text(encoding="utf-8")).get("interior"))
+    except (OSError, ValueError):
+        return False
+
+
+def probar_fondo(svg: str) -> None:
+    from . import render as rd
+    from .svg import documento
+
+    r = rd.crear("auto")
+    r.rgba(documento(f'<g transform="scale(0.25)">{svg}</g>', 270, 480), 270, 480)
+
+
+def dibujar_fondo(cliente, nombre: str, descripcion: str, anio: int = 0) -> str:
+    """Dibuja y guarda un lugar que no existe. Devuelve el SVG; ValueError si no se pudo."""
+    if not nombre_valido(nombre):
+        raise ValueError(f"nombre inválido: {nombre!r}")
+    ya = fondo_guardado(nombre)
+    if ya:
+        return ya
+    pedido = f"El lugar: {descripcion}." + (f"\nÉpoca: {anio}." if anio else "")
+    ultimo = ""
+    for _ in range(2):
+        try:
+            r = json.loads(cliente.json(SISTEMA_FONDO, pedido + ultimo, SCHEMA_FONDO, 0.6))
+            contenido = re.sub(r"</?svg[^>]*>", "", str(r.get("svg") or "")).strip()
+            if len(contenido) > MAX_BYTES_FONDO:
+                raise ValueError("demasiado grande")
+            svg = limpiar_fondo(contenido)
+            probar_fondo(svg)
+        except Exception as err:  # noqa: BLE001 — se reintenta una vez con el error
+            ultimo = f"\n\nTu dibujo anterior no sirvió: {str(err)[:200]}. Hacelo más simple."
+            continue
+        CARPETA_FONDOS.mkdir(parents=True, exist_ok=True)
+        (CARPETA_FONDOS / f"{nombre}.svg").write_text(svg, encoding="utf-8")
+        (CARPETA_FONDOS / f"{nombre}.json").write_text(json.dumps(
+            {"descripcion": descripcion, "anio": anio, "interior": bool(r.get("interior"))}, ensure_ascii=False),
+            encoding="utf-8")
+        log.info("lugar nuevo guardado: %s (%s)", nombre, descripcion)
+        return svg
+    raise ValueError(f"no pude dibujar el lugar {nombre}{ultimo[:150]}")
+
+
+def limpiar_fondo(contenido: str) -> str:
+    """Como `limpiar`, con el tope de tamaño de un fondo."""
+    global MAX_BYTES
+    viejo = MAX_BYTES
+    MAX_BYTES = MAX_BYTES_FONDO
+    try:
+        return limpiar(contenido)
+    finally:
+        MAX_BYTES = viejo

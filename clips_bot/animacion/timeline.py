@@ -378,7 +378,7 @@ class Escena:
             f = {"tipo": f}
         if f.get("tipo") == "color":
             fondo = ("color", f.get("color", P.BLANCO))
-        elif f.get("tipo") in esc.FONDOS:
+        elif esc.es_fondo(f.get("tipo")):
             fondo = (f["tipo"], int(f.get("semilla", 1)))
             if f.get("momento"):      # la luz del momento (visuales, 2026-11-15)
                 fondo = fondo + (str(f["momento"]),)

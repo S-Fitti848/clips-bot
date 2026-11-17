@@ -861,13 +861,27 @@ def fondo(tipo: str, semilla: int | None = None) -> str:
         return visuales.svg_mapa(int(semilla or 0))
     f = FONDOS.get(tipo)
     if f is None:
-        raise ValueError(f"Fondo desconocido: {tipo!r} (hay {', '.join(sorted(FONDOS))})")
+        from . import dibujos
+
+        guardado = dibujos.fondo_guardado(tipo)       # un lugar nuevo, dibujado una vez y guardado (2026-11-17)
+        if guardado is None:
+            raise ValueError(f"Fondo desconocido: {tipo!r} (hay {', '.join(sorted(FONDOS))})")
+        if semilla is not None and espejado(semilla):
+            return f'<g transform="translate({W} 0) scale(-1 1)">{guardado}</g>'
+        return guardado
     if semilla is None:
         return f() + (ambiente(tipo) if P.VOLUMEN else "")
     svg_ = f(semilla) + (ambiente(tipo) if P.VOLUMEN else "")
     if semilla >= 1000 and (semilla % 100) % 2 == 1:
         return f'<g transform="translate({W} 0) scale(-1 1)">{svg_}</g>'
     return svg_
+
+
+def es_fondo(tipo: str) -> bool:
+    """De la biblioteca de siempre o un lugar nuevo guardado."""
+    from . import dibujos
+
+    return tipo in FONDOS or dibujos.fondo_guardado(str(tipo or "")) is not None
 
 
 def espejado(semilla: int) -> bool:

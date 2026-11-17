@@ -108,6 +108,16 @@ _ARRANQUES_PROHIBIDOS = re.compile(r"^\s*(¿?\s*sab[ií]as|un d[ií]a como hoy|h
                                    r"hola\b|bienvenid)", re.I)
 
 # Escenas: lo que puede pedir el guion (la base de animación + lo del canal de marcas).
+def _fondos_nuevos() -> list[str]:
+    """Los lugares dibujados y guardados (entran en la lista del guion desde el próximo arranque)."""
+    try:
+        from . import dibujos
+
+        return [f for f in dibujos.fondos_guardados()][:40]
+    except Exception:  # noqa: BLE001
+        return []
+
+
 FONDOS = ("casa", "taller", "fabrica", "tienda", "oficina", "ciudad", "escenario", "cielo", "globo",
           "laboratorio", "hospital", "campo", "puerto", "playa", "estadio", "cocina")
 # mesa y estante no son objetos de la historia: son el APOYO (`soporte`) y el render los pone contra la pared
@@ -451,7 +461,13 @@ artículo (`fondo`): playa, estadio, cocina, fábrica, tienda, laboratorio, ofic
 puerto, escenario…; nunca un living o un taller genéricos para algo que pasó en otro lado (si la frase dice "en la
 playa", el fondo es `playa`, no `puerto`). La casa y el taller solo si la historia pasa ahí. CADA VIDEO ES ÚNICO:
 como mucho un tercio de las escenas puede repetir la misma acción y el mismo lugar de los últimos 10 videos del
-canal (te paso cuáles) y solo si la historia lo pide. Cuando cambia el momento, cambia el lugar: al menos 3 lugares
+canal (te paso cuáles) y solo si la historia lo pide, y NINGUNA escena puede ser igual entera (lugar, acción,
+objetos, plano y movimiento) a una de esos videos. DISEÑÁ CADA ESCENA PARA ESTA HISTORIA y armala con las piezas que
+ya existen (personajes, manos, fondos, objetos, efectos: se reusan libremente); lo único que tiene que ser nuevo es
+la combinación. Si el LUGAR real no está en la lista de `fondo`, poné el más parecido en `fondo` y describilo en
+`lugar_nuevo` (ej. "bolera de los años 50 con pistas de madera y pinos al fondo"): se dibuja una vez y queda guardado
+para los próximos videos; si está en la lista, `lugar_nuevo` vacío. Si falta un objeto, `dibujo_nuevo` (REGLA 13).
+Cuando cambia el momento, cambia el lugar: al menos 3 lugares
 distintos en el video y nunca más de 2 escenas seguidas en el mismo. Muy visual. Los personajes reaccionan
 con el cuerpo y la cara (`cara`); nunca dos en el mismo lugar (cada uno en su `desde`, sin cruzarse).
 
@@ -570,7 +586,8 @@ SCHEMA_GUION = {
             "properties": {
                 "frase": {"type": "STRING"},
                 "parte": {"type": "STRING", "enum": list(PARTES)},
-                "fondo": {"type": "STRING", "enum": list(FONDOS)},
+                "fondo": {"type": "STRING", "enum": list(FONDOS) + _fondos_nuevos()},
+                "lugar_nuevo": {"type": "STRING"},
                 "actores": {"type": "ARRAY", "items": _ACTOR},
                 "objetos": {"type": "ARRAY", "items": _OBJETO},
                 "camara": {"type": "STRING", "enum": list(ac.CAMARAS)},
@@ -1475,7 +1492,7 @@ def validar_guion(d: dict, m: Marca, fuente: str, ganchos_previos: list[dict] | 
     for i, e in enumerate(escenas, 1):
         if len(str(e.get("texto_pantalla") or "").split()) > 4:
             errores.append(f"escena {i}: `texto_pantalla` de 4 palabras como mucho")
-        if e.get("fondo") not in FONDOS:
+        if e.get("fondo") not in FONDOS and not esc.es_fondo(str(e.get("fondo") or "")):
             errores.append(f"escena {i}: fondo {e.get('fondo')!r} no existe")
         actores, objetos = e.get("actores") or [], e.get("objetos") or []
         if len(actores) > 3 or len(objetos) > 3:
@@ -1757,16 +1774,49 @@ def asegurar_dibujos(cliente, d: dict, e: "Elegido", fuente: str, avisar=log.inf
     return d
 
 
+def crear_lugares(cliente, d: dict, avisar=log.info) -> list[str]:
+    """Santi, 2026-11-17: un lugar que no existe (`lugar_nuevo` en la escena) se dibuja UNA vez con Claude y queda
+    guardado para los próximos videos; la escena pasa a ese lugar. Si no se puede, queda el `fondo` más parecido que
+    eligió el guion. Devuelve lo que creó o reusó."""
+    from . import dibujos
+
+    hechos = []
+    for i, e in enumerate(d.get("escenas") or []):
+        desc = str(e.get("lugar_nuevo") or "").strip()
+        if not desc:
+            continue
+        nombre = ("lugar_" + _slug(desc, 22))[:30].rstrip("_")
+        if not dibujos.nombre_valido(nombre):
+            continue
+        if dibujos.fondo_guardado(nombre) is None:
+            if cliente is None:
+                continue
+            try:
+                dibujos.dibujar_fondo(cliente, nombre, desc, int(e.get("anio_escena") or 0))
+                hechos.append(f"lugar nuevo: {nombre} ({desc[:60]})")
+            except Exception as err:  # noqa: BLE001 — sin el lugar nuevo queda el más parecido
+                avisar(f"no pude dibujar el lugar {nombre}: {str(err)[:100]}; queda {e.get('fondo')}")
+                e["lugar_nuevo"] = ""
+                continue
+        else:
+            hechos.append(f"lugar reusado: {nombre}")
+        e["fondo"] = nombre
+    if hechos:
+        avisar("; ".join(hechos))
+    return hechos
+
+
 def resolver_objetos(cliente, d: dict, e: "Elegido | None" = None, avisar=log.info) -> list[str]:
     """Santi, 2026-11-16 ('masa_gris' frenó el video del 16/11: lo trajo la reescritura por duración, después de
     dibujar): TODO objeto del guion que no está en la biblioteca se dibuja con Claude (queda guardado) y, si no
     se puede (o no hay cliente), pasa a ser el más parecido de la biblioteca. Corre después de dibujar, después
-    de cada reescritura y antes de armar la línea de tiempo. Devuelve lo que cambió."""
+    de cada reescritura y antes de armar la línea de tiempo. Devuelve lo que cambió. Los lugares nuevos también
+    (`crear_lugares`, 2026-11-17)."""
     from . import dibujos
 
     descr = {str(x.get("nombre") or "").strip(): str(x.get("descripcion") or "") for x in d.get("dibujos_nuevos") or []}
     resueltos: dict[str, str] = {}
-    cambios: list[str] = []
+    cambios: list[str] = crear_lugares(cliente, d, avisar)
     contexto = f"{e.marca.nombre}: {e.angulo}" if e is not None else ""
 
     def resolver(nombre: str, que_es: str = "") -> str:
@@ -2187,6 +2237,8 @@ ARREGLOS = ("mover_objeto", "cambiar_soporte", "sacar_objeto", "separar_personaj
             "rehacer_gancho", "redibujar_objeto", "otro")
 CUADROS_REVISION = 8
 VUELTAS_REVISION = 2      # vueltas de corrección; después, una última que solo mira (estándar de calidad)
+RESCATE_USD = 0.50        # el rescate de un video que quedaría retenido, aparte del tope de las correcciones
+AVISO_VIDEO_USD = 1.50    # Santi, 2026-11-17: si un video pasa de esto en total, se le avisa
 
 
 def cuadros_clave(datos: dict, maximo: int = CUADROS_REVISION) -> list[tuple[float, int, str]]:
@@ -2603,6 +2655,7 @@ class Resultado:
     revision: list = field(default_factory=list)      # lo que vio la revisión visual y lo que se corrigió
     flojas: list = field(default_factory=list)        # las 3 cosas más flojas, con su cuadro (mejora continua, 2026-11-16)
     estandar: dict = field(default_factory=dict)      # el estándar de calidad: fallas finales, corregidas (2026-11-16)
+    piezas_usd: float = 0.0                           # Claude en piezas nuevas (objetos y lugares dibujados), 2026-11-17
     niveles: dict = field(default_factory=dict)       # dB de la voz, la música, los SFX y la mezcla
     aviso: str = ""        # puntaje bajo o banco de reserva (nunca un día sin video, 2026-11-15)
     banco_id: str = ""
@@ -2621,6 +2674,18 @@ def costo_desde(conn, fila: int) -> float:
 
     return round(sum(claude.costo(mod, e or 0, s or 0) for mod, e, s in conn.execute(
         "SELECT modelo, entrada, salida FROM gemini_uso WHERE clave = 'claude' AND rowid > ?", (fila,))), 4)
+
+
+def piezas_desde(conn, fila: int) -> float:
+    """US$ de Claude en piezas nuevas (dibujos de objetos y de lugares) después de la fila `fila` (Santi, 2026-11-17)."""
+    from clips_bot import claude
+
+    try:
+        return round(sum(claude.costo(mod, e or 0, s or 0) for mod, e, s in conn.execute(
+            "SELECT modelo, entrada, salida FROM gemini_uso WHERE clave = 'claude' AND rowid > ? AND funcion LIKE "
+            "'%dibujos.%'", (fila,))), 4)
+    except Exception:  # noqa: BLE001
+        return 0.0
 
 
 def ultima_fila_uso(conn) -> int:
@@ -3021,6 +3086,35 @@ def armar_video(conn, settings, carpeta: Path, cliente=None, wiki=None, hoy: dat
                                                      and datos["escenas"][claves_f[int(pr["cuadro"]) - 1][1]].get("frase") == k)})
         if sin_arreglo and conn is not None:
             _anotar_mejoras_primero(conn, clave_video, sin_arreglo)
+    # Rescate (Santi, 2026-11-17): antes de mandarle a Santi un video que no se publicaría solo, se rehacen ENTERAS las
+    # escenas que fallan, creando lo que falte (objetos y lugares nuevos quedan guardados), y se vuelve a mirar una
+    # vez. Con su propio tope de costo, aparte del de las correcciones.
+    rescate = ""
+    if revisado and calidad.retener("asinacio", d.get("_estandar") or [], True) and conn is not None and cliente is not None:
+        fila_res = ultima_fila_uso(conn)
+        malas = []
+        for pr in problemas_f:
+            n_ = int(pr.get("cuadro") or 0) - 1
+            if 0 <= n_ < len(claves_f) and not datos["escenas"][claves_f[n_][1]].get("gancho_v3"):
+                malas.append((n_, "REHACÉ LA ESCENA ENTERA para esta historia (acción, objetos, plano, movimiento y el "
+                                  "lugar real; si falta un objeto, dibujo_nuevo; si falta el lugar, lugar_nuevo): "
+                              + str(pr.get("que") or "")))
+        if malas:
+            avisar(f"rescate: el estándar quedó en {calidad.puntaje('asinacio', d.get('_estandar') or [])}; "
+                   f"rehago {len(malas)} escenas")
+            d, hecho = corregir_acciones(cliente, d, e, fuente, malas[:4], claves_f, datos, avisar,
+                                         ganchos=texto_ganchos(ganchos_recientes(conn)[:-1]))
+            resolver_objetos(cliente, d, e, avisar)
+            datos, eventos = linea_de_tiempo(d, inicios, fin, palabras, wav,
+                                             subtitulos="viral" if settings.animacion.subtitulos_virales else "clasico",
+                                             visual=getattr(cfg, "visual_plus", False))
+            if costo_desde(conn, fila_res) <= RESCATE_USD:
+                problemas_f, claves_f = revisar_visual(cliente, d, datos, carpeta, avisar=avisar, conn=conn)
+                revisado = bool(d.get("_estandar_ok"))
+            ok_, total_ = calidad.puntaje("asinacio", d.get("_estandar") or [])
+            rescate = (f"rescate: rehice {len(malas[:4])} escenas"
+                       + (f" ({hecho})" if hecho else "") + f"; el estándar quedó en {ok_}/{total_}")
+            revision.append(rescate)
     if revisado:
         try:
             n_ok = _rz.guardar_aprobadas(d, _rz.escenas_que_pasaron(datos, claves_f, problemas_f),
@@ -3034,7 +3128,7 @@ def armar_video(conn, settings, carpeta: Path, cliente=None, wiki=None, hoy: dat
                 "corregidas": sorted(set(primeras or []) - {f["id"] for f in finales}),
                 "guion": [str(x) for x in d.get("_estilo_pendiente") or []],
                 "reemplazos": reemplazos, "sin_arreglo": sin_arreglo,
-                "frenado_usd": round(frenado, 3), "costo_correcciones_usd": round(costo_rev(), 3)}
+                "frenado_usd": round(frenado, 3), "costo_correcciones_usd": round(costo_rev(), 3), "rescate": rescate}
     try:
         anotar_escenas(conn, d, f"{hoy.isoformat()}/{e.marca.nombre}/{e.angulo}", e.marca.nombre)
     except Exception as err:  # noqa: BLE001 — anotar nunca frena el video
@@ -3099,7 +3193,7 @@ def armar_video(conn, settings, carpeta: Path, cliente=None, wiki=None, hoy: dat
         motor_voz=motor, musica=tema.ruta if tema else "", credito_musica=tema.credito() if tema else "",
         articulo=f"https://es.wikipedia.org/wiki/{e.marca.wiki_es.replace(' ', '_')}",
         render_s=tiempos["render_s"], total_s=round(time.time() - t_total, 1),
-        costo_usd=costo_desde(conn, fila0), tiempos=tiempos, revision=revision, flojas=flojas, niveles=niv,
+        costo_usd=costo_desde(conn, fila0), piezas_usd=piezas_desde(conn, fila0), tiempos=tiempos, revision=revision, flojas=flojas, niveles=niv,
         estandar=estandar,
         aviso=" · ".join(x for x in (e.aviso, aviso_estilo(d)) if x), banco_id=e.banco_id)
 
@@ -3118,7 +3212,8 @@ def texto_mensaje(r: Resultado, encabezado: str = "", subida: bool = False) -> s
     partes += [
         f"🎨 <b>Marcas animadas</b> · <b>{html.escape(r.marca)}</b> · ángulo: {html.escape(r.angulo.replace('_', ' '))}",
         f"⭐ Puntaje {r.promedio:g} ({notas})",
-        f"⏱ {r.duracion_s:.0f} s · render {r.render_s:.0f} s · Claude US$ {r.costo_usd:.3f} · "
+        f"⏱ {r.duracion_s:.0f} s · render {r.render_s:.0f} s · Claude US$ {r.costo_usd:.3f}"
+        + (f" (piezas nuevas US$ {r.piezas_usd:.3f})" if r.piezas_usd else "") + " · "
         f"{html.escape(r.motor_voz)}",
         "",
         f"<b>Título:</b>\n<code>{html.escape(r.titulo)}</code>",

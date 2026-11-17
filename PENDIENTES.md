@@ -18,6 +18,10 @@ Se actualiza al terminar cada tarea.
 
 ## Estándar de calidad (`ESTANDAR_CALIDAD.md`, `clips_bot/calidad.py`)
 
+- [x] 2026-11-17: Así Nació único (AN-25 con la escena entera), lugares nuevos que se crean y guardan, rescate antes de
+      retener, /costos con piezas nuevas por video y aviso desde US$ 1,50.
+- [ ] Mirar el primer video con un `lugar_nuevo` real: que el lugar se lea y que los personajes queden bien parados.
+
 - [x] 2026-11-16: documento con las reglas de Así Nació (AN-01…AN-24) y Pequeña Historia (PH-01…PH-23); la revisión
       puntúa cada video, corrige sola y lo que quede va en el mensaje (📏); registro en `calidad_fallas`.
 - [ ] Mirar los primeros mensajes con 📏 (17/11): que la revisión puntúe todas las reglas y no invente fallas.
