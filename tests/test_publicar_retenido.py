@@ -1,4 +1,4 @@
-"""Un video con el estándar muy bajo no se publica solo (Santi, 2026-11-17): debajo de 11/14 (Así Nació) o 7/9
+"""Un video con el estándar muy bajo no se publica solo (Santi, 2026-11-17): debajo de 12/14 (Así Nació) o 7/9
 (Pequeña Historia) después de las correcciones, llega con ✅ Publicar igual / ❌ Cancelar y, sin respuesta, no sale."""
 import json
 from datetime import date
@@ -25,8 +25,8 @@ def test_umbrales():
     an = [r.id for r in calidad.de_revision("asinacio")]
     ph = [r.id for r in calidad.de_revision("pequena_historia")]
     assert len(an) == 14 and len(ph) == 9
-    assert calidad.retener("asinacio", _fallas(an[:4]), True)            # 10/14
-    assert not calidad.retener("asinacio", _fallas(an[:3]), True)        # 11/14: sale con aviso
+    assert calidad.retener("asinacio", _fallas(an[:3]), True)            # 11/14 (el mínimo es 12 desde el 17/11)
+    assert not calidad.retener("asinacio", _fallas(an[:2]), True)        # 12/14: sale con aviso
     assert not calidad.retener("asinacio", _fallas(an[:6]), False)       # la revisión no respondió: no se puntuó
     assert calidad.retener("pequena_historia", _fallas(ph[:3]), True)    # 6/9
     assert not calidad.retener("pequena_historia", _fallas(ph[:2]), True)

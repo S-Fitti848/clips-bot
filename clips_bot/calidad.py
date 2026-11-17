@@ -126,7 +126,7 @@ def texto_estandar(canal: str, fallas: list[dict], corregidas: list[str] | None 
 # ---- puntaje mínimo para publicarse solo (Santi, 2026-11-17) -------------------------------------
 # Debajo de esto, después de las correcciones, el video NO se programa: le llega a Santi con ✅ Publicar igual /
 # ❌ Cancelar, y si no responde no sale. El aviso solo alcanza con 1 o 2 reglas sin cumplir.
-MINIMO_PUBLICAR = {"asinacio": 11, "pequena_historia": 7}
+MINIMO_PUBLICAR = {"asinacio": 12, "pequena_historia": 7}   # Así Nació 11 → 12 (Santi, 2026-11-17)
 
 
 def puntaje(canal: str, fallas: list[dict]) -> tuple[int, int]:

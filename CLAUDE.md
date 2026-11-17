@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-11-16 | **Versión:** v1.28.0 (desplegado) | **Modo:** Fase 2: corriendo solo en la Pi. **Rots APAGADO.** Pequeña Historia (3 por día, madrugada desde las 04:00) (publicación sin aprobar: llegan con ❌ Cancelar) y **Así Nació** (2 por día, desde las 07:00, publican 13:00 y 20:00 en YouTube y Facebook con ❌ Cancelar), todo al privado de Santi
+**Snapshot:** 2026-11-16 | **Versión:** v1.29.0 (desplegado) | **Modo:** Fase 2: corriendo solo en la Pi. **Rots APAGADO.** Pequeña Historia (3 por día, madrugada desde las 04:00) (publicación sin aprobar: llegan con ❌ Cancelar) y **Así Nació** (2 por día, desde las 07:00, publican 13:00 y 20:00 en YouTube y Facebook con ❌ Cancelar), todo al privado de Santi
 
 > **SI ESTÁS EMPEZANDO UNA SESIÓN NUEVA, LEÉ §10.** Ahí está qué está hecho, qué quedó a medias,
 > qué falta, y las trampas que ya nos mordieron.
@@ -196,6 +196,10 @@ servicio systemd separado: `clips-bot`).
   y licencia) en 4:5 con una pregunta grande que pide opinión o recuerdos (Haiku), programada para las 13:00 AR
   (`_comunidad_tick`, desde las 10:00, un intento por día). En el resumen de 24 h: vistas, comentarios, compartidos y
   reacciones (`stats_fb.metricas_post`).
+- **Publicación de comunidad: la foto se mira (Santi, 2026-11-17, PH-24 del estándar):** Sonnet compara hasta 6 fotos
+  del artículo con el texto (`comunidad_fb.fotos_candidatas` / `foto_que_coincide`); nunca políticos ni actos de
+  gobierno salvo que la historia sea de esa persona, nunca mapas ni logos; si ninguna coincide, la otra historia del día;
+  si tampoco, no sale y aviso a Santi.
 - **Latinoamérica: ídolos de antes (Santi, 2026-11-16):** tipo `idolo` (época de oro del cine mexicano y argentino,
   cantantes, actores, deportistas) como historia real con persona, giro y emoción, puntuada como las demás; también en
   la búsqueda de personajes y la web. Primer caso: **Jorge Negrete, 30/11** (nació el 30 de noviembre de 1911,
@@ -378,7 +382,7 @@ servicio systemd separado: `clips-bot`).
   lunes desde las 09:30 le llega a Santi qué reglas fallaron más (`_calidad_semana_tick`). **Toda regla de calidad nueva
   que apruebe Santi se suma a ESTANDAR_CALIDAD.md** (con el próximo número libre; las de revisión entran solas en la
   próxima revisión). Santi no revisa video por video.
-  **Mínimo para publicarse sola (Santi, 2026-11-17):** debajo de 11/14 (Así Nació) o 7/9 (Pequeña Historia) después
+  **Mínimo para publicarse sola (Santi, 2026-11-17):** debajo de 12/14 (Así Nació; era 11 hasta la tarde del 17/11) o 7/9 (Pequeña Historia) después
   de las correcciones, el video NO se programa: llega con ✅ Publicar igual / ❌ Cancelar (`sub:pub` / `sub:no`,
   `_retenido_callback`) y, si no responde, no sale. Con 1 o 2 reglas sin cumplir, solo el aviso.
 - **Así Nació: reemplazo por escena aprobada (Santi, 2026-11-16; `animacion/reemplazo.py`).** Las 2 vueltas de corrección
@@ -1009,7 +1013,7 @@ clips_bot/voces.py       voces de Gemini de hoy por clave (con Lo Encontré) y e
 clips_bot/prueba_manual.py prueba manual vs API (§1): el clip del día a mano, registro e informe del feed
 clips_bot/envivo.py      modo en vivo (§3b): quién está al aire, momentos por creadores distintos,
                          alertas en la DB (no repetir, tope, vencer) y el resumen de tiempos
-tests/                   1663 tests sin red ni video (conftest.py: nada sale a YouTube, Facebook ni ElevenLabs) (test_reglas_fijas.py: las 3 reglas de §1)
+tests/                   1665 tests sin red ni video (conftest.py: nada sale a YouTube, Facebook ni ElevenLabs) (test_reglas_fijas.py: las 3 reglas de §1)
 ```
 
 Comandos:
@@ -1202,6 +1206,10 @@ Problemas abiertos:
 
 ## 9. CHANGELOG
 
+- v1.29.0 (2026-11-17) — (1) **Comunidad con la foto verificada** (regla en §1, PH-24). Probado con las historias
+  reales del 17/11: en Colón el artículo era "Argentina" (por eso la cumbre del Mercosur) y Sonnet descartó las 6 fotos
+  (presidentes, paisajes); en Veracruz descartó la catedral y una fuente, y después de sumar "nada de mapas" también el
+  grabado coloreado del puerto: ese día no habría salido (con aviso). (2) **Mínimo de Así Nació 11 → 12 de 14.**
 - v1.28.0 (2026-11-17) — (1) **Video con el estándar bajo = no se publica solo** (regla en §1): `calidad.MINIMO_PUBLICAR`
   / `retener` / `texto_retenido`; Así Nació separa el meta de la subida (`_animacion_meta`, `_animacion_programar`) y,
   retenido, manda el video con ✅ Publicar igual / ❌ Cancelar; Pequeña Historia igual en `_efe_armar`. ✅ programa en su

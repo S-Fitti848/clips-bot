@@ -35,8 +35,9 @@ Se actualiza al terminar cada tarea.
 ## Publicación de comunidad (`comunidad_fb.py`)
 
 - [x] 2026-11-17: la de Colón salió con la foto de los presidentes del Mercosur; borrada de la página.
-- [ ] Propuesto, sin OK de Santi: que la foto la mire Claude contra el texto antes de programarla (como PH-02) y, si
-      ninguna sirve, no publicar ese día y avisar.
+- [x] 2026-11-17: la foto la mira Claude contra el texto (PH-24); sin foto, la otra historia; sin ninguna, no sale y aviso.
+- [ ] 18/11 13:00: mirar la primera publicación (o el aviso de que no salió). Si muchos días no sale, buscar fotos
+      también en Commons por el tema (hoy solo el artículo, y a veces es el del país).
 
 ## Latinoamérica: prueba de fuentes web (`web_historias.py`, `historias_fb.web`)
 

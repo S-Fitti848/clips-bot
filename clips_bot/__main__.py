@@ -3757,7 +3757,7 @@ COMUNIDAD_DESDE = "10:00"
 
 
 def _comunidad_tick(conn, tg: TelegramClient, settings: Settings, ahora=None, cliente=None, wiki=None,
-                    programar=None) -> None:
+                    programar=None, revisor=None) -> None:
     """Pequeña Historia en Facebook (Santi, 2026-11-16): 1 publicación de comunidad por día, foto de época + pregunta,
     programada para las 13:00 AR, con la historia de Latinoamérica de hoy (comunidad_fb.py). Un intento por día."""
     from . import claude
@@ -3777,16 +3777,31 @@ def _comunidad_tick(conn, tg: TelegramClient, settings: Settings, ahora=None, cl
     if not historias:
         return          # todavía no salió la historia de hoy: se espera (hasta la hora de publicar)
     db.set_valor(conn, COMUNIDAD_DIA, dia.isoformat())
-    h = historias[0]
-    historia = {"titulo": "", "texto": h.get("texto"), "anio": int(str(h.get("texto") or "0")[:4] or 0)
-                if str(h.get("texto") or "")[:4].isdigit() else 0,
-                "lugar": "", "pais": h.get("pais"), "articulo": h.get("articulo")}
     clip_id = f"comunidad_{dia:%Y%m%d}"
     carpeta = OUTPUT_DIR / "comunidad" / clip_id
+    # Santi, 2026-11-17 (Colón con los presidentes del Mercosur): Claude mira las fotos contra el texto; nunca un
+    # político ni un acto de gobierno salvo que la historia sea de esa persona. Si ninguna foto coincide, se cambia de
+    # tema (la otra historia del día); si tampoco, ese día no sale y se avisa.
+    revisor_ = revisor if revisor is not None else claude.cliente(claude.SONNET)
+    foto, historia, motivos = None, None, []
+    for h in historias:
+        cand = {"titulo": "", "texto": h.get("texto"), "anio": int(str(h.get("texto") or "0")[:4] or 0)
+                if str(h.get("texto") or "")[:4].isdigit() else 0,
+                "lugar": "", "pais": h.get("pais"), "articulo": h.get("articulo")}
+        try:
+            foto, por_que = cf.foto_que_coincide(revisor_, cand, cf.fotos_candidatas(wiki or ef.Wiki(), cand, carpeta))
+        except Exception as e:  # noqa: BLE001 — una historia que falla deja probar la otra
+            foto, por_que = None, f"no se pudo mirar ({str(e)[:100]})"
+        if foto:
+            historia = cand
+            log.info("comunidad: foto elegida (%s) para «%s»", por_que[:100], str(cand["texto"])[:60])
+            break
+        motivos.append(f"«{str(cand['texto'] or '')[:70]}»: {por_que}")
+    if not foto:
+        tg.send_message(DUENO, "🔧 Claude Code: hoy NO sale la publicación de comunidad: ninguna foto coincide con las "
+                               "historias del día.\n" + html.escape("\n".join(motivos))[:900])
+        return
     try:
-        foto = cf.foto_de_la_historia(wiki or ef.Wiki(), historia, carpeta)
-        if not foto:
-            raise ValueError("la historia de hoy no tiene una foto que sirva")
         txt = cf.escribir(cliente or claude.cliente(claude.HAIKU), historia)
         img = cf.armar_imagen(foto[0], txt["pregunta"], foto[1], carpeta / f"{clip_id}.jpg")
         hh, mm = (int(x) for x in cfg.comunidad_hora.split(":"))

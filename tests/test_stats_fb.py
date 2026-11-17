@@ -97,7 +97,8 @@ def test_publicacion_de_comunidad_programada(tmp_path, monkeypatch):
                                                                 "pais": "México"}]))
     foto = tmp_path / "f.jpg"
     Image.new("RGB", (900, 700), "gray").save(foto)
-    monkeypatch.setattr(cf, "foto_de_la_historia", lambda wiki, h, c: (foto, "Foto: X · Dominio público"))
+    monkeypatch.setattr(cf, "fotos_candidatas", lambda wiki, h, c: [(foto, "Foto: X · Dominio público")])
+    monkeypatch.setattr(cf, "foto_que_coincide", lambda cli, h, cand: (cand[0], "el maquinista"))
 
     class Cli:
         def json(self, *a, **k):
@@ -105,7 +106,7 @@ def test_publicacion_de_comunidad_programada(tmp_path, monkeypatch):
 
     hechos = []
     tg.send_photo = lambda chat, path, caption="": hechos.append((Path(path), caption))
-    m._comunidad_tick(conn, tg, s, ahora=ahora, cliente=Cli(), wiki=object(),
+    m._comunidad_tick(conn, tg, s, ahora=ahora, cliente=Cli(), wiki=object(), revisor=object(),
                       programar=lambda img, msg, cuando, v, p, t: hechos.append((cuando, msg)) or "post_1")
     cuando, msg = hechos[0]
     assert cuando.hour == 13 and "¿Tu abuelo te contó esta historia?" in msg and "Foto: X" in msg
@@ -114,3 +115,83 @@ def test_publicacion_de_comunidad_programada(tmp_path, monkeypatch):
     assert hechos[1][0].exists()
     m._comunidad_tick(conn, tg, s, ahora=ahora.replace(hour=11))
     assert len([x for x in db.subidas(conn) if x["canal"] == cf.CANAL]) == 1      # una por día
+
+
+class _Revisor:
+    def __init__(self, *respuestas):
+        self.respuestas = list(respuestas)
+        self.imagenes = []
+
+    def json(self, sistema, prompt, schema, temp, imagenes=None):
+        self.imagenes.append(len(imagenes or []))
+        return json.dumps(self.respuestas.pop(0))
+
+
+def _fotos(tmp_path, n):
+    from PIL import Image
+
+    out = []
+    for k in range(n):
+        p = tmp_path / f"c{k}.jpg"
+        Image.new("RGB", (900, 700), "gray").save(p)
+        out.append((p, f"Foto: autor{k} · CC BY"))
+    return out
+
+
+def test_comunidad_nunca_politicos_salvo_el_protagonista(tmp_path):
+    """Santi, 2026-11-17: la de Colón salió con los presidentes del Mercosur."""
+    from clips_bot import comunidad_fb as cf
+
+    cand = _fotos(tmp_path, 3)
+    h = {"texto": "Colón de Santa Fe salió campeón por primera vez en 116 años."}
+    r = _Revisor({"mejor": 1, "fotos": [
+        {"n": 1, "se_ve": "presidentes en una cumbre", "coincide": True, "politico": True, "protagonista": False},
+        {"n": 2, "se_ve": "hinchas de Colón festejando", "coincide": True, "politico": False, "protagonista": False},
+        {"n": 3, "se_ve": "un río", "coincide": False, "politico": False, "protagonista": False}]})
+    foto, por_que = cf.foto_que_coincide(r, h, cand)
+    assert foto == cand[1] and "hinchas" in por_que and r.imagenes == [3]
+    # la historia ES de ese político: vale
+    r = _Revisor({"mejor": 1, "fotos": [{"n": 1, "se_ve": "Perón", "coincide": True, "politico": True,
+                                          "protagonista": True}]})
+    assert cf.foto_que_coincide(r, {"texto": "Perón…"}, cand[:1])[0] == cand[0]
+    r = _Revisor({"mejor": 0, "fotos": [{"n": 1, "se_ve": "presidentes", "coincide": False, "politico": True,
+                                          "protagonista": False}]})
+    foto, por_que = cf.foto_que_coincide(r, h, cand[:1])
+    assert foto is None and "político" in por_que
+
+
+def test_comunidad_cambia_de_tema_y_si_no_hay_no_sale(tmp_path, monkeypatch):
+    from clips_bot import comunidad_fb as cf
+    from clips_bot import config
+
+    conn = db.connect(tmp_path / "c.db")
+    s = load_settings()
+    monkeypatch.setattr(config, "OUTPUT_DIR", tmp_path)
+    ahora = datetime(2026, 11, 18, 10, 30, tzinfo=m.AR)
+    db.set_valor(conn, f"{m.PH_LATAM}:2026-11-18", json.dumps([
+        {"texto": "Colón campeón", "articulo": "Colón", "pais": "Argentina"},
+        {"texto": "1907 Nacozari: el maquinista", "articulo": "Jesús García", "pais": "México"}]))
+    fotos = _fotos(tmp_path, 1)
+    monkeypatch.setattr(cf, "fotos_candidatas", lambda wiki, h, c: fotos)
+    vistos = []
+    monkeypatch.setattr(cf, "foto_que_coincide", lambda cli, h, cand: (
+        vistos.append(h["texto"]), (None, "presidentes") if "Colón" in h["texto"] else (cand[0], "el tren"))[1])
+
+    class Cli:
+        def json(self, *a, **k):
+            return json.dumps({"pregunta": "¿Tu abuelo te contó esta historia?", "texto": "En 1907 un maquinista."})
+
+    tg = _TG()
+    hechos = []
+    tg.send_photo = lambda chat, path, caption="": hechos.append(caption)
+    m._comunidad_tick(conn, tg, s, ahora=ahora, cliente=Cli(), wiki=object(), revisor=object(),
+                      programar=lambda img, msg, cuando, v, p, t: hechos.append(msg) or "post_2")
+    assert vistos == ["Colón campeón", "1907 Nacozari: el maquinista"] and "maquinista" in hechos[0]
+    # ninguna coincide: no sale y avisa
+    conn2 = db.connect(tmp_path / "d.db")
+    db.set_valor(conn2, f"{m.PH_LATAM}:2026-11-18", json.dumps([{"texto": "Colón campeón", "articulo": "Colón"}]))
+    tg2 = _TG()
+    m._comunidad_tick(conn2, tg2, s, ahora=ahora, cliente=Cli(), wiki=object(), revisor=object(),
+                      programar=lambda *a: pytest.fail("no se publica"))
+    assert any("NO sale la publicación de comunidad" in t for _, t in tg2.mensajes)
+    assert not [x for x in db.subidas(conn2) if x["canal"] == cf.CANAL]

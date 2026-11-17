@@ -18,7 +18,7 @@ Cómo se usa (`clips_bot/calidad.py`):
    ("📏 Estándar 12/14 · ❌ AN-05 …"). Las reglas marcadas **código** las chequea el código (validación del guion,
    fotos, audio); si una no se cumple, también va en el mensaje.
 4. **Mínimo para publicarse sola (Santi, 2026-11-17):** si después de las correcciones el video queda debajo de
-   **11/14** (Así Nació) o **7/9** (Pequeña Historia), NO se programa: le llega a Santi con ✅ Publicar igual /
+   **12/14** (Así Nació, desde el 17/11; antes 11) o **7/9** (Pequeña Historia), NO se programa: le llega a Santi con ✅ Publicar igual /
    ❌ Cancelar y, si no responde, no sale (`calidad.MINIMO_PUBLICAR`, `retener`). El aviso solo alcanza con 1 o 2
    reglas sin cumplir.
 5. Cada regla nueva que apruebe Santi se suma ACÁ, con el próximo número libre de su canal. El código lee este archivo:
@@ -71,4 +71,5 @@ Arreglos: `cambiar_foto` (pasa a la siguiente foto que sirve para esa frase), `o
 - **PH-20** · código — DATOS VERDADEROS: todo nombre, cifra y fecha está en el artículo; en Latinoamérica, cada dato en 2 fuentes de sitios distintos.
 - **PH-21** · código — FOTOS: al menos 6 distintas (4 de época como mínimo), ninguna más de 6 s seguidos (4 s en el corto), ninguna en más de 2 cortes, y 70 % o más del tiempo con fotos reales (no tarjetas).
 - **PH-22** · código — AUDIO LIMPIO: fade in 0,1 s y fade out 0,5 s, nada arriba de −3 dB, el audio termina con el video.
+- **PH-24** · código — PUBLICACIÓN DE COMUNIDAD (Santi, 2026-11-17, la de Colón con los presidentes del Mercosur): antes de programarla, Claude mira las fotos candidatas contra el texto de la historia (`comunidad_fb.foto_que_coincide`): solo una que muestre la persona, el hecho, el objeto, el club o el lugar puntual donde pasó; nunca políticos ni actos de gobierno salvo que la historia sea de esa persona; nunca mapas, logos ni capturas. Si ninguna coincide, se prueba la otra historia del día; si tampoco, ese día no sale y se le avisa a Santi.
 - **PH-23** · código — DURACIÓN Y TEMA: tecnología 20-30 s, Latinoamérica 30-40 s; nada fuera de los temas del canal; Latinoamérica con 8 o más de puntaje (7 para una por día).

@@ -102,6 +102,81 @@ def armar_imagen(foto: Path, pregunta: str, credito: str, salida: Path) -> Path:
     return salida
 
 
+# ---- la foto la mira Claude contra el texto (Santi, 2026-11-17: la de Colón salió con los presidentes del Mercosur) ----
+FOTOS_CANDIDATAS = 6
+SISTEMA_FOTO = """Elegís la foto de una publicación de Facebook de "Pequeña Historia" (historias reales de Latinoamérica).
+Te paso el texto de la historia y varias fotos numeradas. Por cada foto decí:
+- `se_ve`: qué se ve, corto y concreto.
+- `coincide`: true SOLO si la foto muestra lo que cuenta el texto: la persona de la historia, el hecho, el objeto, el
+  club/la institución, o el LUGAR PUNTUAL donde pasó (el puerto al que llegaron, el estadio, la plaza, la fábrica:
+  vale una vista de ese lugar, de la época o no). Una foto de otra cosa del mismo país o ciudad (un paisaje, una
+  catedral, otro edificio) NO coincide. Un mapa, un plano, un logo, un escudo o una captura NO coinciden nunca.
+- `politico`: true si muestra políticos, presidentes, funcionarios o un acto de gobierno (una cumbre, una firma, un
+  discurso oficial, una foto protocolar).
+- `protagonista`: true si la persona principal de la foto ES de quien trata la historia.
+`mejor`: el número de la foto que mejor muestra la historia entre las que coinciden (0 si ninguna sirve)."""
+SCHEMA_FOTO = {"type": "OBJECT", "properties": {
+    "fotos": {"type": "ARRAY", "items": {"type": "OBJECT", "properties": {
+        "n": {"type": "INTEGER"}, "se_ve": {"type": "STRING"}, "coincide": {"type": "BOOLEAN"},
+        "politico": {"type": "BOOLEAN"}, "protagonista": {"type": "BOOLEAN"}},
+        "required": ["n", "se_ve", "coincide", "politico", "protagonista"]}},
+    "mejor": {"type": "INTEGER"}}, "required": ["fotos", "mejor"]}
+
+
+def fotos_candidatas(wiki, historia: dict, carpeta: Path, n: int = FOTOS_CANDIDATAS) -> list[tuple[Path, str]]:
+    """Hasta `n` fotos del artículo del hecho (y del lugar), con las reglas de siempre, bajadas. [(ruta, crédito)]."""
+    from . import efemerides as ef
+
+    out: list[tuple[Path, str]] = []
+    for articulo in [a for a in (historia.get("articulo"), historia.get("articulo_lugar")) if a]:
+        e = ef.Evento("es", int(historia.get("anio") or 0), str(historia.get("texto") or ""), [articulo])
+        try:
+            fotos, _ = ef.fotos_del_evento(wiki, e)
+        except ef.WikiError:
+            continue
+        bajadas, _ = ef.bajar_fotos(wiki, fotos[: n * 2], carpeta, f"comunidad_{len(out)}", n - len(out))
+        out += [(Path(f.ruta), f"Foto: {f.autor} · {f.licencia}") for f in bajadas]
+        if len(out) >= n:
+            break
+    return out[:n]
+
+
+def _jpeg_chico(ruta: Path) -> bytes:
+    import io
+
+    from PIL import Image
+
+    im = Image.open(ruta).convert("RGB")
+    im.thumbnail((512, 512))
+    b = io.BytesIO()
+    im.save(b, "JPEG", quality=80)
+    return b.getvalue()
+
+
+def foto_que_coincide(cliente, historia: dict, candidatas: list[tuple[Path, str]]) -> tuple[tuple[Path, str] | None, str]:
+    """((ruta, crédito) de la foto que muestra la historia, por qué). Nunca un político ni un acto de gobierno, salvo
+    que esa persona sea el protagonista de la historia. (None, motivo) si ninguna sirve."""
+    if not candidatas:
+        return None, "el artículo no tiene fotos que pasen las reglas"
+    if cliente is None:
+        return None, "sin Claude no se puede mirar la foto"
+    lista = "\n".join(f"Foto {k + 1}" for k in range(len(candidatas)))
+    r = json.loads(cliente.json(SISTEMA_FOTO, f"La historia: {historia.get('texto')}\n\n{lista}", SCHEMA_FOTO, 0.1,
+                                imagenes=[_jpeg_chico(p) for p, _ in candidatas]))
+    validas = {}
+    for f in r.get("fotos") or []:
+        k = int(f.get("n") or 0)
+        if 1 <= k <= len(candidatas) and f.get("coincide") and (not f.get("politico") or f.get("protagonista")):
+            validas[k] = str(f.get("se_ve") or "")
+    if not validas:
+        vistas = "; ".join(f"{int(f.get('n') or 0)}: {str(f.get('se_ve') or '')[:60]}"
+                           + (" (político)" if f.get("politico") else "") for f in (r.get("fotos") or [])[:4])
+        return None, f"ninguna foto muestra la historia ({vistas})"
+    mejor = int(r.get("mejor") or 0)
+    k = mejor if mejor in validas else min(validas)
+    return candidatas[k - 1], validas[k]
+
+
 def foto_de_la_historia(wiki, historia: dict, carpeta: Path) -> tuple[Path, str] | None:
     """La foto principal del artículo del hecho (o del lugar), con las reglas de siempre, bajada. (ruta, crédito)."""
     from . import efemerides as ef
