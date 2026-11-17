@@ -1239,6 +1239,126 @@ def arreglar_composicion(esc_d: dict, vueltas: int = 3) -> list[tuple[float, str
     return composicion(esc_d)
 
 
+# ---- nada tapa el texto grande ni los subtítulos (Santi, 2026-11-17) ------------------------------------------
+FRANJA_SUBTITULOS = (0.0, 150.0, 1080.0, 310.0)     # donde van los subtítulos virales (y 168-294), en la pantalla
+EFECTOS_SUELTOS = {"pedazo", "polvo", "lineas_mov", "destello", "rayos", "primer_plano", "cinta_frente"}
+TEXTOS_FIJOS = {"rotulo", "dato", "cita", "cartel_comic"}
+
+
+def _caja_texto(d: dict) -> tuple[float, float, float, float] | None:
+    """La caja en la pantalla de un texto grande (fijo): el del gancho o la frase, el rótulo, el dato, la cita, el cartel."""
+    y = float(d.get("y", 0))
+    if d.get("tipo") in ("gancho", "texto"):
+        alto = float(d.get("tam", 100)) * 1.0
+        return (30.0, y - alto, 1050.0, y + alto)
+    nombre = d.get("nombre")
+    x = float(d.get("x", 540))
+    if nombre == "rotulo":
+        return (x - 20, y - 64, x + 760, y + 64)
+    if nombre in ("dato", "cita"):
+        return (40.0, y - 140, 1040.0, y + 140)
+    if nombre == "cartel_comic":
+        return (x - 270, y - 160, x + 270, y + 160)
+    return None
+
+
+def _caja_mundo(d: dict, el, t: float) -> tuple[float, float, float, float]:
+    x = el.pista.valor("x", t, el.base["x"])
+    y = el.pista.valor("y", t, el.base["y"])
+    k = el.pista.valor("escala", t, el.base.get("escala", 1.0))
+    if d.get("tipo") == "personaje":
+        alto = 680 * k * per_alto(str(d.get("nombre") or ""), d.get("cambios") or {}) + 150 * k   # con el sombrero
+        return (x - 130 * k, y - alto, x + 130 * k, y)
+    hw, arriba, abajo = CAJAS.get(d.get("nombre"), (100, -100, 100))
+    return (x - hw * k, y + arriba * k, x + hw * k, y + abajo * k)
+
+
+def textos_tapados(esc_d: dict, paso: float = 0.1) -> list[tuple[float, int, float]]:
+    """(segundo, elemento, cuántos px de pantalla hay que bajarlo) para todo lo que, con la cámara de ese momento,
+    queda encima de un texto grande o de la franja de los subtítulos."""
+    from .timeline import Elemento, Escena as _Esc
+
+    dur = float(esc_d["duracion"])
+    try:
+        cam = _Esc.desde_dict({**esc_d, "camara": esc_d.get("camara") or []}, 0)
+    except Exception:  # noqa: BLE001
+        return []
+    textos, cosas = [], []
+    for k, d in enumerate(esc_d.get("elementos") or []):
+        caja = _caja_texto(d) if (d.get("tipo") in ("gancho", "texto") or d.get("nombre") in TEXTOS_FIJOS) else None
+        if caja and (d.get("fijo") or d.get("tipo") in ("gancho", "texto")):
+            textos.append((caja, float(d.get("desde", 0.0)), float(d.get("hasta", dur + 1))))
+            continue
+        if d.get("fijo") or d.get("tipo") not in ("prop", "personaje") or d.get("nombre") in EFECTOS_SUELTOS:
+            continue
+        try:
+            cosas.append((k, d, Elemento.desde_dict(d, "", dur)))
+        except Exception:  # noqa: BLE001
+            continue
+    out = []
+    t = 0.0
+    while t <= dur:
+        z, dx, dy, _r = cam.camara_en(t)
+        activos = [c for c, a, b in textos if a <= t <= b] + [FRANJA_SUBTITULOS]
+        for k, d, el in cosas:
+            if not el.visible(t) or el.pista.valor("opacidad", t, 1.0) < 0.2:
+                continue
+            x0, y0, x1, y1 = _caja_mundo(d, el, t)
+            cx, cy = P.ANCHO / 2, P.ALTO / 2
+            sx0, sy0 = (x0 - cx - dx) * z + cx, (y0 - cy - dy) * z + cy
+            sx1, sy1 = (x1 - cx - dx) * z + cx, (y1 - cy - dy) * z + cy
+            for tx0, ty0, tx1, ty1 in activos:
+                if sx0 < tx1 and tx0 < sx1 and sy0 < ty1 and ty0 < sy1:
+                    out.append((round(t, 2), k, ty1 - sy0 + 12))
+        t += paso
+    return out
+
+
+def despejar_textos(esc_d: dict, vueltas: int = 8) -> list[tuple[float, int, float]]:
+    """Ningún gráfico, objeto ni personaje tapa el texto grande ni los subtítulos, tampoco cuando la cámara se acerca
+    (Santi, 2026-11-17: en el Hershey el gráfico tapaba "3 FRACASOS" al acercarse). Primero se baja el encuadre (la
+    cámara mira un poco más arriba y todo baja en la pantalla), después se acerca menos; si sin cámara igual tapa,
+    se bajan esas cosas. Devuelve lo que quede tapado (vacío = bien)."""
+    for _ in range(vueltas):
+        malos = textos_tapados(esc_d)
+        if not malos:
+            return []
+        cam = esc_d.get("camara") or []
+        con_zoom = [q for q in cam if float(q.get("zoom", 1.0)) > 1.001]
+        if con_zoom:
+            necesita = max(m[2] for m in malos)
+            movio = False
+            for q in cam:
+                z = max(1.0, float(q.get("zoom", 1.0)))
+                tope = P.ALTO / 2 * (1 - 1 / z)
+                nuevo = max(-tope, float(q.get("y", 0.0)) - necesita / z)
+                if abs(nuevo - float(q.get("y", 0.0))) > 0.5:
+                    q["y"] = round(nuevo, 1)
+                    movio = True
+            if not movio:      # el encuadre ya está lo más arriba que se puede: se acerca menos
+                for q in cam:
+                    if "zoom" in q:
+                        q["zoom"] = round(1 + (float(q["zoom"]) - 1) * 0.7, 3)
+                        if "x" in q:
+                            q["x"] = round(float(q["x"]) * 0.7, 1)
+            continue
+        # sin zoom: lo que está encima del texto se baja (en el mundo, con su caminata y sus keyframes)
+        bajar: dict[int, float] = {}
+        for _t, k, px in malos:
+            bajar[k] = max(bajar.get(k, 0.0), px)
+        els = esc_d["elementos"]
+        for k, px in bajar.items():
+            d = els[k]
+            if d.get("tipo") != "prop":
+                continue
+            d["y"] = round(min(1800.0, float(d.get("y", 0)) + px), 1)
+            for q in d.get("keyframes", []):
+                if "y" in q:      # lo que cae y sale de cuadro (más de 1800) sigue cayendo igual
+                    yq = float(q["y"])
+                    q["y"] = round(yq + px if yq > 1800 else min(1800.0, yq + px), 1)
+    return textos_tapados(esc_d)
+
+
 def per_alto(nombre: str, cambios: dict) -> float:
     from . import personajes as per
 
@@ -1550,6 +1670,11 @@ def escena_accion(spec: dict, dur: float, i: int, primera: bool = False, tono: f
                                     **({"momento": visual["momento"]} if visual and visual.get("momento") else {})},
          "transicion": {"tipo": "corte" if primera else tr, "duracion": 0.3 if tr == "iris" else 0.25},
          "camara": camara, "elementos": elementos, "tono": tono}
+    if e.anio < 1920:   # antes de 1920 una caja es un cajón de madera, no un paquete de colores con ventana
+        for el in elementos:
+            if el.get("tipo") == "prop" and el.get("nombre") == "caja" and el.get("nombre") != protagonista:
+                el["forma"] = 1
+                el.pop("color", None)
     sfx = sorted((round(t, 3), s) for t, s in e.sfx if 0 <= t < dur)
     arreglar_composicion(d)
     return d, sfx

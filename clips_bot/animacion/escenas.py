@@ -1127,8 +1127,18 @@ def prop_lapicera(**_) -> str:
              + camino("M-14 80 L0 130 L14 80 Z", "#c9a227", ancho=4), 0, 0, rot=35)
 
 
-def prop_caja(texto: str = "", color: str = P.AMARILLO, **_) -> str:
-    """Un paquete (galletitas, cereal, alfajores) con una ventana y el texto al frente."""
+def prop_caja(texto: str = "", color: str = P.AMARILLO, forma: int = 0, **_) -> str:
+    """Un paquete (galletitas, cereal, alfajores) con una ventana y el texto al frente. forma 1 = cajón de madera de
+    antes de 1920 (Santi, 2026-11-17: el paquete violeta con ventana parecía una máquina moderna en 1883)."""
+    if forma == 1:
+        madera, oscura = "#b98a5e", "#7a5232"
+        tablas = "".join(f'<path d="M-110 {y} L110 {y}" stroke="{oscura}" stroke-width="5"/>' for y in (-70, 10, 90))
+        return (camino("M-110 -150 L110 -150 L140 -180 L-80 -180 Z", "#c9a074")
+                + camino("M110 -150 L140 -180 L140 140 L110 170 Z", oscura)
+                + rect(-110, -150, 220, 320, madera) + tablas
+                + f'<path d="M-110 -150 L110 170 M110 -150 L-110 170" stroke="{oscura}" stroke-width="7" opacity="0.5"/>'
+                + circulo(0, 10, 42, "none", ancho=6) + circulo(0, 10, 16, "#8e2c2c", ancho=4)
+                + "".join(circulo(x, y, 6, "#3b2a1a", borde=False) for x in (-92, 92) for y in (-132, 152)))
     return (camino("M-110 -150 L110 -150 L140 -180 L-80 -180 Z", color)
             + camino("M110 -150 L140 -180 L140 140 L110 170 Z", color)
             + rect(-110, -150, 220, 320, color)

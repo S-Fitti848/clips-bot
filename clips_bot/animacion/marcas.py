@@ -2033,6 +2033,11 @@ def linea_de_tiempo(d: dict, inicios: list[float], fin: float, palabras: list,
         escenas.append(esc_d)
         sfx += [(round(t + x, 3), s) for x, s in fx]
         t += dur
+    for esc_d in escenas:       # nada tapa el texto grande ni los subtítulos, tampoco con la cámara cerca (2026-11-17)
+        if not esc_d.get("congela") and esc_d.get("elementos"):
+            quedan = ac.despejar_textos(esc_d)
+            if quedan:
+                log.warning("escena: %d cosas siguen tapando un texto", len({k for _t, k, _ in quedan}))
     if visual:
         reacciones_tito(escenas)
     out = {"fps": P.FPS, "escenas": escenas, "subtitulos_y": SUBTITULOS_Y, "subtitulos_tam": SUBTITULOS_TAM,
@@ -2072,7 +2077,7 @@ def cajas_en_pantalla(e: dict, t0: float, t1: float) -> list[tuple[float, float,
     from .timeline import Elemento, Escena as _Esc
 
     try:
-        esc_ = _Esc.desde_dict(e, 0)
+        esc_ = _Esc.desde_dict({**e, "camara": e.get("camara") or []}, 0)
     except Exception:  # noqa: BLE001
         esc_ = None
     cajas = []
@@ -2112,7 +2117,7 @@ def cajas_en_pantalla(e: dict, t0: float, t1: float) -> list[tuple[float, float,
 def lugar_tito(e: dict, tl: float, k: int = 0) -> tuple[float | None, float | None]:
     """Dónde va la ventanita de Tito para que no tape a ninguna persona ni objeto importante (Santi, 2026-11-17):
     la primera esquina libre, empezando por la que toca (se alternan). None si no hay ninguna libre."""
-    cajas = cajas_en_pantalla(e, tl, tl + 1.6)
+    cajas = cajas_en_pantalla(e, tl, tl + 1.6) + [ac.FRANJA_SUBTITULOS]
     hw, hh = CAJA_TITO
     orden = LUGARES_TITO[k % 2::2] + LUGARES_TITO[1 - k % 2::2]
     for x, y in orden:
@@ -2545,7 +2550,9 @@ def redibujar_protagonista(cliente, d: dict, como_es: str, avisar=log.info) -> s
     if not dibujos.nombre_valido(nuevo):
         nuevo = f"{viejo}_real"[:30]
     try:
-        dibujos.dibujar(cliente, nuevo, f"{pr.get('que_es') or viejo}. Cómo es el real: {como_es}")
+        # lo que viene del estándar ("AN-09: el mapa…") habla de otra cosa: no va en la descripción del dibujo
+        como = "" if re.match(r"^\s*(AN|PH)-\d+", str(como_es or "")) else str(como_es or "")
+        dibujos.dibujar(cliente, nuevo, f"{pr.get('que_es') or viejo}" + (f". Cómo es el real: {como}" if como else ""))
     except Exception as err:  # noqa: BLE001 — si no sale, queda el de antes
         avisar(f"no pude redibujar {viejo}: {str(err)[:120]}")
         return ""

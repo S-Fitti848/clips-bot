@@ -104,3 +104,39 @@ def test_tito_no_tapa_a_nadie():
     lleno = {**e, "elementos": [{"tipo": "prop", "nombre": "caja", "x": x_, "y": y_, "escala": 1.0}
                                 for x_, y_ in mk.LUGARES_TITO]}
     assert mk.lugar_tito(lleno, 1.0, 0) == (None, None)
+
+
+def _escena_texto(camara):
+    return {"duracion": 2.0, "fondo": {"tipo": "ciudad", "semilla": 18821}, "camara": camara,
+            "elementos": [{"tipo": "gancho", "texto": "3 FRACASOS", "y": 430, "tam": 100},
+                          {"tipo": "prop", "nombre": "grafico_baja", "x": 820, "y": 900, "escala": 0.8}]}
+
+
+def test_nada_tapa_el_texto_con_la_camara_cerca():
+    # como en el Hershey: sin zoom el gráfico está debajo del texto, pero al acercarse la cámara lo tapa
+    e = _escena_texto([{"t": 0, "zoom": 1.0, "x": 0, "y": 0}, {"t": 2.0, "zoom": 1.9, "x": 120, "y": 300}])
+    assert ac.textos_tapados(e)
+    assert ac.despejar_textos(e) == []
+    assert ac.textos_tapados(e) == []
+
+
+def test_sin_camara_se_baja_lo_que_tapa():
+    e = _escena_texto(None)
+    e["elementos"][1]["y"] = 470
+    assert ac.textos_tapados(e)
+    assert ac.despejar_textos(e) == [] and e["elementos"][1]["y"] > 470
+
+
+def test_la_franja_de_subtitulos_tambien():
+    e = {"duracion": 1.0, "fondo": {"tipo": "ciudad", "semilla": 1}, "camara": None,
+         "elementos": [{"tipo": "prop", "nombre": "cartel", "x": 540, "y": 330, "escala": 1.0}]}
+    assert ac.textos_tapados(e) and ac.despejar_textos(e) == []
+
+
+def test_caja_de_antes_es_un_cajon():
+    d = _escena([{"rol": "obrero", "accion": "quieto"}], anio=1883)
+    cajas = [el for el in d["elementos"] if el.get("nombre") == "caja"]
+    assert cajas and all(el.get("forma") == 1 and "color" not in el for el in cajas)
+    assert esc.prop("caja", forma=1) != esc.prop("caja")
+    d2 = _escena([{"rol": "obrero", "accion": "quieto"}], anio=1960)
+    assert all(el.get("forma") != 1 for el in d2["elementos"] if el.get("nombre") == "caja")
