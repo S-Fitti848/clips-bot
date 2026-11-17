@@ -32,6 +32,12 @@ Se actualiza al terminar cada tarea.
       cocina nuevos.
 - [ ] Mirar los videos del 18/11: que las escenas salgan en los lugares de la historia y que la revisión marque cada una.
 
+## Publicación de comunidad (`comunidad_fb.py`)
+
+- [x] 2026-11-17: la de Colón salió con la foto de los presidentes del Mercosur; borrada de la página.
+- [ ] Propuesto, sin OK de Santi: que la foto la mire Claude contra el texto antes de programarla (como PH-02) y, si
+      ninguna sirve, no publicar ese día y avisar.
+
 ## Latinoamérica: prueba de fuentes web (`web_historias.py`, `historias_fb.web`)
 
 - [ ] 17/11: primer día de producción con búsqueda web. Al terminar el día, `_web_latam_tick` mide el costo: hasta

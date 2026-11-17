@@ -4501,7 +4501,17 @@ def _animacion_armar(conn, tg: TelegramClient, chats: list[str], settings: Setti
     banco_mod.sacar(conn, "asinacio", getattr(r, "banco_id", ""))
     bitacora.dato(clip_id=clip_asinacio(hoy, k), titulo=r.titulo)
     bitacora.paso("subida")
-    avisos = _animacion_subir(conn, settings, r, carpeta, hoy, k) if settings.animacion.subir else []
+    from . import calidad
+
+    est = getattr(r, "estandar", None) or {}
+    # Santi, 2026-11-17: con el estándar debajo del mínimo después de las correcciones, NO se programa
+    retenido = settings.animacion.subir and calidad.retener("asinacio", est.get("fallas") or [],
+                                                              bool(est.get("revisado")))
+    if retenido:
+        _animacion_meta(settings, r, carpeta, hoy, k)
+        avisos = []
+    else:
+        avisos = _animacion_subir(conn, settings, r, carpeta, hoy, k) if settings.animacion.subir else []
     bitacora.paso(None)
     clip_id = clip_asinacio(hoy, k)
     if getattr(r, "flojas", None):     # mejora continua (Santi, 2026-11-16): lo más flojo de cada video, con su cuadro
@@ -4509,9 +4519,14 @@ def _animacion_armar(conn, tg: TelegramClient, chats: list[str], settings: Setti
         flojas[clip_id] = {"fecha": hoy.isoformat(), "titulo": r.titulo, "flojas": r.flojas}
         db.set_valor(conn, ASINACIO_FLOJAS, json.dumps(flojas, ensure_ascii=False))
     programado = any(a.startswith(("📤", "📘")) for a in avisos)
-    encabezado = (("🤖 <b>Se publica sola</b>: si no tocás nada sale a su hora; ❌ Cancelar la frena.\n"
-                   if programado else "") + "\n".join(avisos + ([html.escape(r.aviso)] if getattr(r, "aviso", "") else [])))
-    marcas.enviar(tg, chats, r, encabezado=encabezado, subida=programado)
+    encabezado = ((calidad.texto_retenido("asinacio", est.get("fallas") or []) + "\n" if retenido else "")
+                  + ("🤖 <b>Se publica sola</b>: si no tocás nada sale a su hora; ❌ Cancelar la frena.\n"
+                     if programado else "")
+                  + "\n".join(avisos + ([html.escape(r.aviso)] if getattr(r, "aviso", "") else [])))
+    marcas.enviar(tg, chats, r, encabezado=encabezado, subida=programado or retenido)
+    if retenido:
+        for chat in chats:
+            tg.send_message(chat, "⏸ ¿Lo publico igual?", botones_retenido(clip_id))
     if programado:
         for chat in chats:
             tg.send_message(chat, "¿La frenás?", {"inline_keyboard": [[
@@ -4537,9 +4552,8 @@ def _hora_asinacio(settings: Settings, hora: str, ahora: datetime | None = None)
     return cuando
 
 
-def _animacion_subir(conn, settings: Settings, r, carpeta: Path, hoy, k: int = 0) -> list[str]:
-    """Programa el video de Así Nació en YouTube (y en Facebook, si está conectado) para su horario (el
-    k-ésimo de horas_asinacio). Guarda el meta al lado del video (para ❌ Cancelar). Devuelve los avisos."""
+def _animacion_meta(settings: Settings, r, carpeta: Path, hoy, k: int = 0) -> dict:
+    """El meta del video de Así Nació, guardado al lado del video (para programarlo o cancelarlo después)."""
     horas = horas_asinacio(settings)
     hora = horas[min(k, len(horas) - 1)]
     descripcion = (f"{r.descripcion}\n\nFuente: {r.articulo}"
@@ -4551,10 +4565,27 @@ def _animacion_subir(conn, settings: Settings, r, carpeta: Path, hoy, k: int = 0
     carpeta.mkdir(parents=True, exist_ok=True)
     (carpeta / f"{meta['clip_id']}.json").write_text(json.dumps(meta, ensure_ascii=False, indent=1),
                                                     encoding="utf-8")
-    avisos = [_programar_subida(conn, settings, meta, "animacion", hora)]
+    return meta
+
+
+def _animacion_programar(conn, settings: Settings, meta: dict) -> list[str]:
+    """YouTube (y Facebook, si está conectado) en su horario. Devuelve los avisos."""
+    avisos = [_programar_subida(conn, settings, meta, "animacion", meta.get("hora") or horas_asinacio(settings)[0])]
     if settings.animacion.facebook:
         avisos.append(_subir_facebook_asinacio(conn, settings, meta))
     return [a for a in avisos if a]
+
+
+def _animacion_subir(conn, settings: Settings, r, carpeta: Path, hoy, k: int = 0) -> list[str]:
+    """Programa el video de Así Nació en YouTube (y en Facebook, si está conectado) para su horario (el
+    k-ésimo de horas_asinacio). Guarda el meta al lado del video (para ❌ Cancelar). Devuelve los avisos."""
+    return _animacion_programar(conn, settings, _animacion_meta(settings, r, carpeta, hoy, k))
+
+
+def botones_retenido(clip_id: str) -> dict:
+    """Un video con el estándar debajo del mínimo (Santi, 2026-11-17): no sale si no se aprueba."""
+    return {"inline_keyboard": [[{"text": "✅ Publicar igual", "callback_data": f"sub:pub:{clip_id}"},
+                                 {"text": "❌ Cancelar", "callback_data": f"sub:no:{clip_id}"}]]}
 
 
 ASINACIO_FB = "facebook_asinacio"   # canal en la tabla subidas: el Reel en la página de Así Nació
@@ -4986,7 +5017,16 @@ def _efe_armar(conn, tg: TelegramClient, chat_id, token: str, settings: Settings
     # cuando vuelva la cuota. Por eso la propuesta se guarda hasta que salga con Laomedeia.
     extra = ([[{"text": "🔁 Rehacer con Laomedeia", "callback_data": f"efe:voz:{token}"}]]
              if ef.es_piper(motor) and not auto else [])
-    if auto:
+    # Santi, 2026-11-17: con el estándar debajo del mínimo (7 de 9) después de las correcciones, NO se programa:
+    # llega con ✅ Publicar igual / ❌ Cancelar y, si no responde, no sale
+    retenido = auto and calidad.retener("pequena_historia", cal_fallas, cal_revisado)
+    if retenido:
+        titulo = (_encabezado_fb(prop.local) if fb else
+                  _encabezado_tec(prop.local or {}) if (prop.local or {}).get("puntaje") is not None
+                  else "📅 <b>Pequeña Historia</b>")
+        encabezado = f"{titulo}\n{calidad.texto_retenido('pequena_historia', cal_fallas)}"
+        extra = extra + botones_retenido(meta["clip_id"])["inline_keyboard"]
+    elif auto:
         bitacora.paso("subida")
         avisos = _subir(conn, settings, meta, "pequena_historia")
         bitacora.paso(None)
@@ -5010,8 +5050,8 @@ def _efe_armar(conn, tg: TelegramClient, chat_id, token: str, settings: Settings
                                                 [f"{i} {q}" for i, q in codigo], revisado=cal_revisado)
     enviar_clip(tg, chat_id, conn, meta["clip_id"], meta, 1, None,
                 encabezado=f"{encabezado}\n🎙 {html.escape(ef.texto_voz(motor))}", extra_filas=extra)
-    bitacora.cerrar(conn, "programado" if auto else "entregado")
-    if not extra:
+    bitacora.cerrar(conn, "retenido" if retenido else "programado" if auto else "entregado")
+    if not extra or retenido:
         db.borrar_valor(conn, f"efe:{token}")
     # El ✅ arma el video; subirlo es aparte, con "📤 Subir" debajo del video (2026-09-30).
     return None
@@ -5974,11 +6014,38 @@ def _subir_facebook(conn, settings: Settings, meta: dict, ahora: datetime | None
     return f"📘 Programado en Facebook para las {cuando:%H:%M}."
 
 
+def _retenido_callback(conn, tg: TelegramClient, cb: dict, settings: Settings, d: dict) -> None:
+    """✅ Publicar igual / ❌ Cancelar de un video con el estándar debajo del mínimo (Santi, 2026-11-17). ✅ lo programa
+    en su horario (o en 30 min si ya pasó, nunca al día siguiente); ❌ (o no responder) = no sale."""
+    clip_id = ":".join(d["crudos"])
+    meta = _meta_de(clip_id)
+    if not meta:
+        return tg.answer_callback(cb["callback_id"], "Ese video ya no está.")
+    if d["accion"] == "no":
+        db.set_valor(conn, f"{NO_SUBIR}:{clip_id}", "1")
+        tg.answer_callback(cb["callback_id"], "Cancelado: no se publica.")
+        tg.edit_reply_markup(cb["chat_id"], cb["message_id"], {"inline_keyboard": []})
+        return tg.send_message(cb["chat_id"], "❌ Cancelado: ese video no se publica.")
+    if db.subidas(conn, ("programada", "publicada"), clip_id=clip_id):
+        return tg.answer_callback(cb["callback_id"], "Ya estaba programado.")
+    tg.answer_callback(cb["callback_id"], "📤 Programando…")
+    db.borrar_valor(conn, f"{NO_SUBIR}:{clip_id}")
+    if clip_id.startswith(PREFIJO_ASINACIO):
+        avisos = _animacion_programar(conn, settings, meta)
+    else:
+        avisos = _subir(conn, settings, meta, _canal_de(clip_id, meta) or "pequena_historia")
+    tg.edit_reply_markup(cb["chat_id"], cb["message_id"], {"inline_keyboard": [[
+        {"text": "❌ Cancelar la publicación", "callback_data": f"sub:x:{clip_id}"}]]})
+    tg.send_message(cb["chat_id"], "\n".join(avisos) or "No se programó nada (la subida está apagada).")
+
+
 def _subidas_callback(conn, tg: TelegramClient, cb: dict, settings: Settings) -> None:
     from . import youtube
     from .menu import parse_callback
 
     d = parse_callback(cb["data"])
+    if d and d["menu"] == "sub" and d["accion"] in ("pub", "no") and d["crudos"]:
+        return _retenido_callback(conn, tg, cb, settings, d)
     if d and d["menu"] == "sub" and d["accion"] in ("u", "n", "x", "r", "i") and d["crudos"]:
         return _subir_callback(conn, tg, cb, settings, d)
     if not d or d["menu"] != "sub" or d["accion"] != "c" or not d["crudos"]:

@@ -123,6 +123,32 @@ def texto_estandar(canal: str, fallas: list[dict], corregidas: list[str] | None 
     return "\n".join(partes)
 
 
+# ---- puntaje mínimo para publicarse solo (Santi, 2026-11-17) -------------------------------------
+# Debajo de esto, después de las correcciones, el video NO se programa: le llega a Santi con ✅ Publicar igual /
+# ❌ Cancelar, y si no responde no sale. El aviso solo alcanza con 1 o 2 reglas sin cumplir.
+MINIMO_PUBLICAR = {"asinacio": 11, "pequena_historia": 7}
+
+
+def puntaje(canal: str, fallas: list[dict]) -> tuple[int, int]:
+    total = len(de_revision(canal))
+    return max(0, total - len({f.get("id") for f in fallas})), total
+
+
+def retener(canal: str, fallas: list[dict], revisado: bool) -> bool:
+    """True si el video no puede publicarse solo (la revisión respondió y quedó debajo del mínimo)."""
+    if not revisado:
+        return False
+    ok, total = puntaje(canal, fallas)
+    minimo = MINIMO_PUBLICAR.get(canal, 0)
+    return bool(total) and ok < minimo
+
+
+def texto_retenido(canal: str, fallas: list[dict]) -> str:
+    ok, total = puntaje(canal, fallas)
+    return (f"⏸ <b>NO se publica sola</b>: el estándar de calidad dio {ok}/{total} (mínimo "
+            f"{MINIMO_PUBLICAR.get(canal, 0)}). ✅ Publicar igual la programa en su horario; si no respondés, no sale.")
+
+
 # ---- registro y resumen semanal -----------------------------------------------------------------
 
 def _tabla(conn) -> None:

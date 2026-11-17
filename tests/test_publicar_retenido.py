@@ -1,0 +1,114 @@
+"""Un video con el estándar muy bajo no se publica solo (Santi, 2026-11-17): debajo de 11/14 (Así Nació) o 7/9
+(Pequeña Historia) después de las correcciones, llega con ✅ Publicar igual / ❌ Cancelar y, sin respuesta, no sale."""
+import json
+from datetime import date
+
+import pytest
+
+import clips_bot.__main__ as m
+from clips_bot import calidad, db
+from clips_bot.config import load_settings
+
+
+@pytest.fixture
+def conn(tmp_path):
+    c = db.connect(tmp_path / "t.db")
+    yield c
+    c.close()
+
+
+def _fallas(ids):
+    return [{"id": i, "cuadro": 1, "que": "x"} for i in ids]
+
+
+def test_umbrales():
+    an = [r.id for r in calidad.de_revision("asinacio")]
+    ph = [r.id for r in calidad.de_revision("pequena_historia")]
+    assert len(an) == 14 and len(ph) == 9
+    assert calidad.retener("asinacio", _fallas(an[:4]), True)            # 10/14
+    assert not calidad.retener("asinacio", _fallas(an[:3]), True)        # 11/14: sale con aviso
+    assert not calidad.retener("asinacio", _fallas(an[:6]), False)       # la revisión no respondió: no se puntuó
+    assert calidad.retener("pequena_historia", _fallas(ph[:3]), True)    # 6/9
+    assert not calidad.retener("pequena_historia", _fallas(ph[:2]), True)
+    assert "10/14" in calidad.texto_retenido("asinacio", _fallas(an[:4]))
+
+
+class R:
+    marca, angulo, promedio, titulo = "Frisbee", "nombre", 8.5, "Frisbee: el nombre"
+    descripcion, hashtags, articulo = "d", ["#Shorts"], "Frisbee"
+    credito_musica, duracion_s, video, total_s, costo_usd = "", 34.0, "v.mp4", 400, 0.2
+    estandar = {"revisado": True, "fallas": _fallas(["AN-01", "AN-02", "AN-03", "AN-04", "AN-05"])}
+
+
+def test_asi_nacio_bajo_no_se_programa(conn, tmp_path, monkeypatch):
+    from clips_bot.animacion import marcas
+
+    s = load_settings()
+    enviados, mensajes, programados = [], [], []
+    monkeypatch.setattr(marcas, "armar_video", lambda *a, **k: R())
+    monkeypatch.setattr(marcas, "registrar", lambda *a, **k: None)
+    monkeypatch.setattr(marcas, "enviar", lambda tg, chats, r, encabezado="", subida=False:
+                        enviados.append(encabezado))
+    monkeypatch.setattr(m, "_programar_subida", lambda *a: programados.append(a) or "📤 x")
+    monkeypatch.setattr(m, "_subir_facebook_asinacio", lambda *a: programados.append(a) or "📘 x")
+    monkeypatch.setattr(m, "DATA_DIR", tmp_path / "data")
+
+    class TG:
+        def send_message(self, chat, texto, teclado=None):
+            mensajes.append((texto, teclado))
+
+    m._animacion_armar(conn, TG(), [m.DUENO], s, date(2026, 11, 17))
+    assert not programados                                         # nada a YouTube ni a Facebook
+    assert "NO se publica sola" in enviados[0] and "9/14" in enviados[0]
+    botones = [b["callback_data"] for b in mensajes[0][1]["inline_keyboard"][0]]
+    assert botones == ["sub:pub:asinacio_20261117", "sub:no:asinacio_20261117"]
+    meta = tmp_path / "output" / "animacion" / "20261117" / "asinacio_20261117.json"
+    assert json.loads(meta.read_text(encoding="utf-8"))["clip_id"] == "asinacio_20261117"
+
+
+class TG2:
+    def __init__(self):
+        self.respuestas, self.mensajes, self.teclados = [], [], []
+
+    def answer_callback(self, cid, texto="", alerta=False):
+        self.respuestas.append(texto)
+
+    def edit_reply_markup(self, chat, mid, teclado):
+        self.teclados.append(teclado)
+
+    def send_message(self, chat, texto, teclado=None):
+        self.mensajes.append(texto)
+
+
+def _cb(accion, clip="asinacio_20261117"):
+    return {"callback_id": "1", "chat_id": m.DUENO, "message_id": 5, "user_id": m.DUENO,
+            "data": f"sub:{accion}:{clip}"}
+
+
+def test_publicar_igual_lo_programa(conn, monkeypatch):
+    s = load_settings()
+    monkeypatch.setattr(m, "_meta_de", lambda c: {"clip_id": c, "hora": "13:00"})
+    llamados = []
+    monkeypatch.setattr(m, "_animacion_programar", lambda c, st, meta: llamados.append(meta) or ["📤 Programado."])
+    tg = TG2()
+    m._subidas_callback(conn, tg, _cb("pub"), s)
+    assert llamados and tg.mensajes == ["📤 Programado."]
+    assert tg.teclados[-1]["inline_keyboard"][0][0]["callback_data"] == "sub:x:asinacio_20261117"
+
+
+def test_cancelar_no_lo_publica(conn, monkeypatch):
+    s = load_settings()
+    monkeypatch.setattr(m, "_meta_de", lambda c: {"clip_id": c})
+    monkeypatch.setattr(m, "_animacion_programar", lambda *a: pytest.fail("no se programa"))
+    tg = TG2()
+    m._subidas_callback(conn, tg, _cb("no"), s)
+    assert db.get_valor(conn, f"{m.NO_SUBIR}:asinacio_20261117") == "1" and "no se publica" in tg.mensajes[0]
+
+
+def test_pequena_historia_publicar_igual_usa_la_subida_de_siempre(conn, monkeypatch):
+    s = load_settings()
+    monkeypatch.setattr(m, "_meta_de", lambda c: {"clip_id": c})
+    llamados = []
+    monkeypatch.setattr(m, "_subir", lambda c, st, meta, canal: llamados.append(canal) or ["📤 ok"])
+    m._subidas_callback(conn, TG2(), _cb("pub", "historia_fb_1117_1937"), s)
+    assert llamados == ["pequena_historia"]

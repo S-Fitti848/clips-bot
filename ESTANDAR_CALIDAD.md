@@ -17,9 +17,13 @@ Cómo se usa (`clips_bot/calidad.py`):
 3. Si después de corregir algo sigue sin cumplirse, el video sale igual y el mensaje dice qué regla no cumplió
    ("📏 Estándar 12/14 · ❌ AN-05 …"). Las reglas marcadas **código** las chequea el código (validación del guion,
    fotos, audio); si una no se cumple, también va en el mensaje.
-4. Cada regla nueva que apruebe Santi se suma ACÁ, con el próximo número libre de su canal. El código lee este archivo:
+4. **Mínimo para publicarse sola (Santi, 2026-11-17):** si después de las correcciones el video queda debajo de
+   **11/14** (Así Nació) o **7/9** (Pequeña Historia), NO se programa: le llega a Santi con ✅ Publicar igual /
+   ❌ Cancelar y, si no responde, no sale (`calidad.MINIMO_PUBLICAR`, `retener`). El aviso solo alcanza con 1 o 2
+   reglas sin cumplir.
+5. Cada regla nueva que apruebe Santi se suma ACÁ, con el próximo número libre de su canal. El código lee este archivo:
    una regla nueva de revisión entra en la próxima revisión sin tocar nada más.
-5. Cada falla queda anotada (tabla `calidad_fallas`) y los lunes desde las 09:30 le llega a Santi qué reglas fallaron
+6. Cada falla queda anotada (tabla `calidad_fallas`) y los lunes desde las 09:30 le llega a Santi qué reglas fallaron
    más en la semana, para mejorar el motor (Santi no revisa video por video).
 
 Formato de cada regla (lo lee el código; no cambiarlo):

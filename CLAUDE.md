@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-11-16 | **Versión:** v1.27.0 (desplegado) | **Modo:** Fase 2: corriendo solo en la Pi. **Rots APAGADO.** Pequeña Historia (3 por día, madrugada desde las 04:00) (publicación sin aprobar: llegan con ❌ Cancelar) y **Así Nació** (2 por día, desde las 07:00, publican 13:00 y 20:00 en YouTube y Facebook con ❌ Cancelar), todo al privado de Santi
+**Snapshot:** 2026-11-16 | **Versión:** v1.28.0 (desplegado) | **Modo:** Fase 2: corriendo solo en la Pi. **Rots APAGADO.** Pequeña Historia (3 por día, madrugada desde las 04:00) (publicación sin aprobar: llegan con ❌ Cancelar) y **Así Nació** (2 por día, desde las 07:00, publican 13:00 y 20:00 en YouTube y Facebook con ❌ Cancelar), todo al privado de Santi
 
 > **SI ESTÁS EMPEZANDO UNA SESIÓN NUEVA, LEÉ §10.** Ahí está qué está hecho, qué quedó a medias,
 > qué falta, y las trampas que ya nos mordieron.
@@ -378,6 +378,9 @@ servicio systemd separado: `clips-bot`).
   lunes desde las 09:30 le llega a Santi qué reglas fallaron más (`_calidad_semana_tick`). **Toda regla de calidad nueva
   que apruebe Santi se suma a ESTANDAR_CALIDAD.md** (con el próximo número libre; las de revisión entran solas en la
   próxima revisión). Santi no revisa video por video.
+  **Mínimo para publicarse sola (Santi, 2026-11-17):** debajo de 11/14 (Así Nació) o 7/9 (Pequeña Historia) después
+  de las correcciones, el video NO se programa: llega con ✅ Publicar igual / ❌ Cancelar (`sub:pub` / `sub:no`,
+  `_retenido_callback`) y, si no responde, no sale. Con 1 o 2 reglas sin cumplir, solo el aviso.
 - **Así Nació: reemplazo por escena aprobada (Santi, 2026-11-16; `animacion/reemplazo.py`).** Las 2 vueltas de corrección
   siguen igual; después, una escena que sigue sin pasar se reemplaza SOLO a ella por una de la biblioteca de escenas que
   ya pasaron el estándar en otro video (`data/animacion/escenas_estandar.json`, se llena sola con cada video), adaptada
@@ -1006,7 +1009,7 @@ clips_bot/voces.py       voces de Gemini de hoy por clave (con Lo Encontré) y e
 clips_bot/prueba_manual.py prueba manual vs API (§1): el clip del día a mano, registro e informe del feed
 clips_bot/envivo.py      modo en vivo (§3b): quién está al aire, momentos por creadores distintos,
                          alertas en la DB (no repetir, tope, vencer) y el resumen de tiempos
-tests/                   1658 tests sin red ni video (conftest.py: nada sale a YouTube, Facebook ni ElevenLabs) (test_reglas_fijas.py: las 3 reglas de §1)
+tests/                   1663 tests sin red ni video (conftest.py: nada sale a YouTube, Facebook ni ElevenLabs) (test_reglas_fijas.py: las 3 reglas de §1)
 ```
 
 Comandos:
@@ -1199,6 +1202,14 @@ Problemas abiertos:
 
 ## 9. CHANGELOG
 
+- v1.28.0 (2026-11-17) — (1) **Video con el estándar bajo = no se publica solo** (regla en §1): `calidad.MINIMO_PUBLICAR`
+  / `retener` / `texto_retenido`; Así Nació separa el meta de la subida (`_animacion_meta`, `_animacion_programar`) y,
+  retenido, manda el video con ✅ Publicar igual / ❌ Cancelar; Pequeña Historia igual en `_efe_armar`. ✅ programa en su
+  horario (o en 30 min si ya pasó); ❌ marca "no subir". (2) **La publicación de comunidad de Colón del 17/11** salió a
+  las 13:00 con la foto de la cumbre del Mercosur (presidentes, Puerto Iguazú 2023): `comunidad_fb.foto_de_la_historia`
+  toma la PRIMERA foto del artículo sin mirar qué muestra. Borrada de la página por pedido de Santi (Graph DELETE,
+  verificado: ya no existe) y marcada cancelada en `subidas`. El arreglo de la foto queda propuesto (PENDIENTES).
+  `tests/test_publicar_retenido.py`.
 - v1.27.0 (2026-11-17) — **Lo que salió mal en el Frisbee** (Santi). (1) La escena de las manos levantadas y vacías en
   el living (frase 4, uso_manos) **no la vio la revisión**: de los 8 cuadros que mira, 4 eran el reloj del viaje en el
   tiempo y 1 el mapa. El video sacó 4/14 en el estándar (fallaron AN-01 a 06, 09, 11, 12 y 13), pero ninguna falla era
