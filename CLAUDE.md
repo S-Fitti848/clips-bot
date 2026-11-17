@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-11-17 | **Versión:** v1.31.0 (desplegado) | **Modo:** Fase 2: corriendo solo en la Pi. **Rots APAGADO.** Pequeña Historia (3 por día, madrugada desde las 04:00) (publicación sin aprobar: llegan con ❌ Cancelar) y **Así Nació** (2 por día, desde las 07:00, publican 13:00 y 20:00 en YouTube y Facebook con ❌ Cancelar), todo al privado de Santi
+**Snapshot:** 2026-11-17 | **Versión:** v1.32.0 (desplegado) | **Modo:** Fase 2: corriendo solo en la Pi. **Rots APAGADO.** Pequeña Historia (3 por día, madrugada desde las 04:00) (publicación sin aprobar: llegan con ❌ Cancelar) y **Así Nació** (2 por día, desde las 07:00, publican 13:00 y 20:00 en YouTube y Facebook con ❌ Cancelar), todo al privado de Santi
 
 > **SI ESTÁS EMPEZANDO UNA SESIÓN NUEVA, LEÉ §10.** Ahí está qué está hecho, qué quedó a medias,
 > qué falta, y las trampas que ya nos mordieron.
@@ -426,7 +426,10 @@ servicio systemd separado: `clips-bot`).
   Cada escena tiene su FICHA (`marcas.ficha_escena`, `fichas.json`), que la revisión usa para preguntar quién es cada
   uno, qué hace y si eso pasaba en ese año y lugar (`REVISION_FICHA`). La ventanita de Tito va a una esquina libre o
   esa vez no aparece (`lugar_tito`). El mínimo para publicarse sola pasa a "como mucho 2 reglas sin cumplir"
-  (`calidad.MAX_FALLAS`): Así Nació 17/19, Pequeña Historia 7/9.
+  (`calidad.MAX_FALLAS`): Así Nació 17/19, Pequeña Historia 7/9 (OK de Santi, 2026-11-17).
+- **Así Nació: nada tapa el texto grande ni los subtítulos (Santi, 2026-11-17; AN-27):** tampoco con la cámara cerca
+  (`acciones.despejar_textos`, al final de `linea_de_tiempo`): primero sale el decorado, después la cámara se acerca
+  menos; sin cámara, se baja lo que tapa. Antes de 1920 una caja es un cajón de madera (`prop_caja(forma=1)`).
 - **Videos largos: NO por ahora (decisión de Santi, 2026-09-28).** No quiere videos largos con voz
   de IA. Si más adelante se hacen, van con SU voz grabada, no con Gemini TTS ni Piper.
 - **Sin música agregada en los clips.** Cualquier música es riesgo de Content ID. Si el clip trae
@@ -1039,7 +1042,7 @@ clips_bot/voces.py       voces de Gemini de hoy por clave (con Lo Encontré) y e
 clips_bot/prueba_manual.py prueba manual vs API (§1): el clip del día a mano, registro e informe del feed
 clips_bot/envivo.py      modo en vivo (§3b): quién está al aire, momentos por creadores distintos,
                          alertas en la DB (no repetir, tope, vencer) y el resumen de tiempos
-tests/                   1681 tests sin red ni video (conftest.py: nada sale a YouTube, Facebook ni ElevenLabs) (test_reglas_fijas.py: las 3 reglas de §1)
+tests/                   1687 tests sin red ni video (conftest.py: nada sale a YouTube, Facebook ni ElevenLabs) (test_reglas_fijas.py: las 3 reglas de §1)
 ```
 
 Comandos:
@@ -1231,6 +1234,15 @@ Problemas abiertos:
 ---
 
 ## 9. CHANGELOG
+
+- v1.32.0 (2026-11-17) — **Los dos pendientes del Hershey.** (1) La "máquina violeta" de 1883 no era un dibujo
+  guardado: las recetas de la biblioteca de escenas pasaban el objeto como `dibujo_nuevo` sin resolver y salía una caja
+  de colores; ahora `escena_accion` usa el dibujo guardado (el caramelo). Revisadas las 22 piezas de
+  `data/animacion/dibujos/`: año puesto a `masa_modelar` (1956), `tazon_tupper` (1946) y `documento_quiebra` (1890);
+  limpias las descripciones de `barra_de_chocolate_con_l_real` y `un_disco_volador_plano_y_real`, que tenían el texto de
+  la revisión ("AN-09: el mapa…"), y `redibujar_protagonista` ya no lo mete. (2) Nada tapa el texto grande ni los
+  subtítulos (AN-27). La primera versión bajaba el encuadre y cortaba las caras: ahora sale el decorado y la cámara se
+  acerca menos. Hoja del Hershey otra vez a Santi.
 
 - v1.31.0 (2026-11-17) — **Así Nació: personajes por rol y época, todos trabajando, línea de producción, fondos de
   época, ficha por escena y Tito sin tapar** (regla en §1, AN-15 a AN-19 y AN-26). Probado en la Pi con 3 escenas del

@@ -22,7 +22,8 @@ Se actualiza al terminar cada tarea.
       Tito sin tapar (AN-15 a AN-19, AN-26; mínimo = como mucho 2 reglas sin cumplir). Hoja del Hershey mandada a Santi.
 - [ ] Mirar los primeros videos con esto (18/11): ropa y trabajo por rol, que la revisión use la ficha y marque lo que
       no es de época (la máquina violeta guardada, por ejemplo).
-- [ ] Flojo del motor de antes: el gráfico tapa el texto grande cuando la cámara se acerca (Nueva York del Hershey).
+- [x] 2026-11-17: nada tapa el texto grande ni los subtítulos (AN-27); la caja violeta era una receta sin su dibujo;
+      piezas guardadas con año y descripciones limpias. Mínimo 17/19 confirmado por Santi.
 - [x] 2026-11-17: Así Nació único (AN-25 con la escena entera), lugares nuevos que se crean y guardan, rescate antes de
       retener, /costos con piezas nuevas por video y aviso desde US$ 1,50.
 - [ ] Mirar el primer video con un `lugar_nuevo` real: que el lugar se lea y que los personajes queden bien parados.
