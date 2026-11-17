@@ -38,7 +38,9 @@ Devolvé SOLO el contenido de un SVG (sin la etiqueta <svg>): formas <g>, <path>
 - que se reconozca SIN leer: nada de texto, letras ni números; nada de logos ni marcas reales;
 - simple: 4 a 25 formas, menos de 8.000 caracteres.
 Además `anio_desde`: el año desde el que existe ese objeto tal como lo dibujaste (un celular, 1983; un táper de
-plástico, 1946; una hoja de papel, 0 si existe desde siempre): nunca aparece en una escena anterior."""
+plástico, 1946; una hoja de papel, 0 si existe desde siempre): nunca aparece en una escena anterior.
+ÉPOCA (Santi, 2026-11-17): si el pedido dice un año, el objeto es como era ESE año: antes de 1940, madera, hierro,
+bronce y cobre, con colores apagados; nada de plástico de colores, pantallas, luces ni botones modernos."""
 
 SCHEMA = {"type": "OBJECT", "properties": {"svg": {"type": "STRING"}, "anio_desde": {"type": "INTEGER"}},
           "required": ["svg", "anio_desde"]}

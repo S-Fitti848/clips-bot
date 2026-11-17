@@ -53,7 +53,7 @@ def test_linea_de_produccion_con_producto_que_avanza():
     linea = [el for el in d["elementos"] if el.get("linea")]
     assert linea[0]["nombre"] == "cinta_frente" and linea[0]["forma"] == 1        # de madera en 1883
     prods = [el for el in linea[1:] if el["nombre"] == "chocolate"]
-    assert len(prods) >= 5 and all(el["keyframes"][-1]["x"] > 1000 for el in prods)
+    assert len(prods) >= 4 and all(el["keyframes"][-1]["x"] > 1000 for el in prods)
     # sin obreros, no hay cinta
     assert not [el for el in _escena([{"rol": "empresario", "accion": "senalar"}])["elementos"] if el.get("linea")]
 

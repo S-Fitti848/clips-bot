@@ -2078,7 +2078,7 @@ def cajas_en_pantalla(e: dict, t0: float, t1: float) -> list[tuple[float, float,
     cajas = []
     for el_d in e.get("elementos") or []:
         tipo = el_d.get("tipo")
-        if el_d.get("fijo") or el_d.get("nombre") in esc.NO_REEMPLAZO + ("tito_reaccion",) or el_d.get("decorado"):
+        if el_d.get("fijo") or el_d.get("nombre") in esc.NO_REEMPLAZO + ("tito_reaccion",) or el_d.get("mueble"):
             if tipo != "gancho" and el_d.get("nombre") not in ("rotulo", "cita", "dato", "cartel_comic"):
                 continue
         try:

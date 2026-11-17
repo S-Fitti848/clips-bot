@@ -132,6 +132,8 @@ def vestir(rol: str, anio: int, genero: str) -> dict:
             v = {"vestuario": "calle", "ropa": "#6b5b4b"}
     if m:
         v.pop("bigote", None)
+    elif v.get("sombrero") not in (None, "ninguno"):
+        v["peinado"] = "corto"          # el jopo asomaba por encima de la galera (Hershey, 2026-11-17)
     return v
 
 
@@ -1463,10 +1465,10 @@ def escena_accion(spec: dict, dur: float, i: int, primera: bool = False, tono: f
         prod = protagonista if protagonista and _de_epoca(protagonista) else "caja"
         linea.append({"tipo": "prop", "nombre": "cinta_frente", "x": 540, "y": Y_CINTA, "linea": True,
                       "forma": 1 if e.anio < 1940 else 0})
-        n_ = 6
+        n_ = 4
         for k in range(n_):
             t0 = round(-dur + k * 2 * dur / n_, 2)     # ya hay producto en la cinta desde el primer cuadro
-            linea.append({"tipo": "prop", "nombre": prod, "x": -140, "y": Y_CINTA - 46, "escala": 0.4, "linea": True,
+            linea.append({"tipo": "prop", "nombre": prod, "x": -140, "y": Y_CINTA - 34, "escala": 0.3, "linea": True,
                           "color": prod == protagonista or None,
                           "keyframes": [{"t": t0, "x": -140}, {"t": t0 + 2 * dur, "x": 1220, "easing": "lineal"}]})
         e.sfx.append((0.0, "maquina"))
