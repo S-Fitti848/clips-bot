@@ -4607,9 +4607,11 @@ def _animacion_subir(conn, settings: Settings, r, carpeta: Path, hoy, k: int = 0
     return _animacion_programar(conn, settings, _animacion_meta(settings, r, carpeta, hoy, k))
 
 
-def botones_retenido(clip_id: str) -> dict:
-    """Un video con el estándar debajo del mínimo (Santi, 2026-11-17): no sale si no se aprueba."""
-    return {"inline_keyboard": [[{"text": "✅ Publicar igual", "callback_data": f"sub:pub:{clip_id}"},
+def botones_retenido(clip_id: str, igual: bool = True) -> dict:
+    """Un video que no sale si no se aprueba (Santi, 2026-11-17): con el estándar debajo del mínimo ("Publicar igual")
+    o porque Pequeña Historia ya no se publica sola."""
+    return {"inline_keyboard": [[{"text": "✅ Publicar igual" if igual else "✅ Publicar",
+                                  "callback_data": f"sub:pub:{clip_id}"},
                                  {"text": "❌ Cancelar", "callback_data": f"sub:no:{clip_id}"}]]}
 
 
@@ -5044,13 +5046,17 @@ def _efe_armar(conn, tg: TelegramClient, chat_id, token: str, settings: Settings
              if ef.es_piper(motor) and not auto else [])
     # Santi, 2026-11-17: con el estándar debajo del mínimo (7 de 9) después de las correcciones, NO se programa:
     # llega con ✅ Publicar igual / ❌ Cancelar y, si no responde, no sale
-    retenido = auto and calidad.retener("pequena_historia", cal_fallas, cal_revisado)
+    bajo = calidad.retener("pequena_historia", cal_fallas, cal_revisado)
+    # Santi, 2026-11-17 (Colón): Pequeña Historia ya no se publica sola: siempre ✅ Publicar / ❌ Cancelar
+    retenido = auto and (bajo or not settings.efemerides.publicar_sola)
     if retenido:
         titulo = (_encabezado_fb(prop.local) if fb else
                   _encabezado_tec(prop.local or {}) if (prop.local or {}).get("puntaje") is not None
                   else "📅 <b>Pequeña Historia</b>")
-        encabezado = f"{titulo}\n{calidad.texto_retenido('pequena_historia', cal_fallas)}"
-        extra = extra + botones_retenido(meta["clip_id"])["inline_keyboard"]
+        espera = ("⏸ <b>Esperando tu OK</b>: ✅ Publicar la programa en su horario (o en 30 min si ya pasó); "
+                  "❌ Cancelar o no responder = NO sale.")
+        encabezado = f"{titulo}\n" + (calidad.texto_retenido("pequena_historia", cal_fallas) if bajo else espera)
+        extra = extra + botones_retenido(meta["clip_id"], igual=bajo)["inline_keyboard"]
     elif auto:
         bitacora.paso("subida")
         avisos = _subir(conn, settings, meta, "pequena_historia")

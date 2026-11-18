@@ -343,6 +343,10 @@ class EfemeridesCfg:
     # Sin aprobar (Santi, 2026-11-14): las 3 diarias se arman y se programan solas; el video llega a
     # Telegram horas antes de publicarse con ❌ Cancelar. Los controles de calidad siguen igual.
     sin_aprobar: bool = False
+    # Publicar sola (Santi, 2026-11-17, después del Short de Colón con fotos que no tenían nada que ver): APAGADO.
+    # Con esto en false, todo video de Pequeña Historia llega con ✅ Publicar / ❌ Cancelar y, si no responde, no sale
+    # (aunque pase el estándar). Se vuelve a prender SOLO cuando Santi lo diga.
+    publicar_sola: bool = False
     # Estilo nuevo (Santi, 2026-11-14): arranque que se mueve (clip real, mapa con zoom en
     # Latinoamérica o montaje de 3 imágenes con golpe de zoom), gancho y subtítulos animados, más video.
     estilo_nuevo: bool = False

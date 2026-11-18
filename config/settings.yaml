@@ -341,7 +341,10 @@ efemerides:
   # las 2 de Latinoamérica) se arman y se programan solas; el video llega a Telegram horas antes de
   # publicarse con ❌ Cancelar, y si no se toca nada sale a su hora. /efemeride e /historia a mano
   # siguen con ✅. Los controles de calidad automáticos no cambian.
-  sin_aprobar: true          # PRENDIDO por Santi el 2026-11-15
+  sin_aprobar: true          # PRENDIDO por Santi el 2026-11-15 (se arman solos, sin aprobar el guion)
+  # Publicar sola: APAGADO por Santi el 2026-11-17 (Colón con fotos de Cristina Kirchner y una tribuna de otro año).
+  # Todo video llega con ✅ Publicar / ❌ Cancelar y, si no responde, NO sale. Prenderlo solo si Santi lo dice.
+  publicar_sola: false
   # Estilo nuevo (Santi, 2026-11-14; PRENDIDO por Santi el 2026-11-15, con el feedback de La Pola): el gancho como montaje de
   # 3 imágenes con golpe de zoom y whoosh (o un clip real si lo hay), el mapa a pantalla completa
   # acercándose al lugar en la de Latinoamérica, el gancho escrito entrando palabra por palabra con

@@ -31,7 +31,9 @@ def test_prendido_por_santi():
 
 @pytest.mark.parametrize("destino", ["", "facebook"])
 def test_arma_programa_y_manda_con_cancelar(conn, tmp_path, monkeypatch, destino):
-    s = load_settings()
+    import dataclasses
+    s0 = load_settings()     # publicar_sola: solo si Santi lo vuelve a prender
+    s = dataclasses.replace(s0, efemerides=dataclasses.replace(s0.efemerides, publicar_sola=True))
     orden, enviados = [], []
     meta = {"clip_id": "efemeride_x", "efemeride": {"voz": "gemini:Laomedeia"}}
     monkeypatch.setattr(ef, "hacer_video", lambda *a, **k: (orden.append("video"), meta)[1])
@@ -70,3 +72,28 @@ def test_la_falla_de_calidad_no_se_sube(conn, tmp_path, monkeypatch):
     monkeypatch.setattr(m, "_gemini", lambda st: None)
     r = m._efe_auto(conn, None, ["1"], "abc", _estado(tmp_path), load_settings())
     assert "70" in r
+
+
+def test_publicar_sola_apagado_por_santi():
+    assert load_settings().efemerides.publicar_sola is False     # 2026-11-17, el Short de Colón
+
+
+@pytest.mark.parametrize("destino", ["", "facebook"])
+def test_sin_ok_no_se_publica(conn, tmp_path, monkeypatch, destino):
+    """Santi, 2026-11-17: todo video de Pequeña Historia llega con ✅ Publicar / ❌ Cancelar; sin respuesta no sale."""
+    s = load_settings()
+    enviados = []
+    meta = {"clip_id": "efemeride_x", "efemeride": {"voz": "gemini:Laomedeia"}}
+    monkeypatch.setattr(ef, "hacer_video", lambda *a, **k: meta)
+    monkeypatch.setattr(m, "_subir", lambda *a, **k: pytest.fail("no se programa sin el OK"))
+    monkeypatch.setattr(m, "_claude_textos", lambda st: (None, None))
+    monkeypatch.setattr(m, "_texto_efemeride", lambda st, g: None)
+    monkeypatch.setattr(m, "_gemini", lambda st: None)
+    monkeypatch.setattr(m, "enviar_clip", lambda *a, encabezado="", extra_filas=None, **k:
+                        enviados.append((encabezado, extra_filas)))
+    assert m._efe_auto(conn, None, ["1"], "abc", _estado(tmp_path, destino), s) is None
+    encabezado, extra = enviados[0]
+    assert "Esperando tu OK" in encabezado and "Se publica sola" not in encabezado
+    datos = [b["callback_data"] for fila in extra for b in fila]
+    textos = [b["text"] for fila in extra for b in fila]
+    assert "sub:pub:efemeride_x" in datos and "sub:no:efemeride_x" in datos and "✅ Publicar" in textos
