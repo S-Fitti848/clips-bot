@@ -126,3 +126,37 @@ def test_capas_origen_texto_e_imagen_solo_finalistas(tmp_path):
     keep = ef.prefiltrar_fotos(Haiku(), ["frase 1: Colón campeón\n  candidatas: 1, 2, 3, 4"], pool,
                                [b"x"] * 4, [[0, 1, 2, 3]], None, 2021, carpeta=tmp_path, historia="Colón campeón")
     assert keep <= {0, 2} and vistos["n"] <= 3
+
+
+def test_la_foto_mal_se_reemplaza_y_solo_se_revisa_ese_corte(tmp_path, monkeypatch):
+    """Santi, 2026-11-18: el mosaico encuentra una foto mal → la siguiente finalista (o una tarjeta), se rehace solo
+    ese tramo y se revisa solo ese corte; el video se frena únicamente si no hay reemplazo."""
+    g = ef.Guion(titulo="t", descripcion="d", hashtags=[], frases=["a", "b"], fotos=[0, 1], descartadas=[])
+    g.ranking = [[0], [1, 5]]
+    plan = [(0, 0, 3.0), (1, 1, 3.0)]
+    revisiones = []
+
+    def revisar(cliente, meta, avisar=None):
+        cortes = meta["efemeride"]["cortes"]
+        revisiones.append(len(cortes))
+        if len(revisiones) == 1:
+            return [{"id": "PH-10", "cuadro": 2, "que": "Cristina en Atucha"}], True
+        return [], True
+
+    monkeypatch.setattr(calidad, "revisar_video_ph", revisar)
+    rehechos = []
+    e = ef.Evento("es", 2021, "Colón campeón", ["Club Atlético Colón"])
+    out = calidad.revisar_y_reemplazar(object(), tmp_path / "v.mp4", plan, g, ef.cortes_de(plan, None.__class__) if False
+                                       else [{"frase": 0, "inicio": 0, "dur": 3}, {"frase": 1, "inicio": 3, "dur": 3}],
+                                       e, {}, lambda r: (rehechos.append(r), tmp_path / "v.mp4")[1],
+                                       lambda i: None)
+    assert plan[1][1] == 5 and rehechos == [{1}] and revisiones == [2, 1] and out["fallas"] == []
+    assert out["reemplazos"] and "finalista" in out["reemplazos"][0]
+    # sin otra finalista ni tarjeta: queda la falla (el video se frena)
+    revisiones.clear()
+    plan2 = [(0, 0, 3.0), (1, 5, 3.0)]
+    g.ranking = [[0], [5]]
+    out = calidad.revisar_y_reemplazar(object(), tmp_path / "v.mp4", plan2, g,
+                                       [{"frase": 0, "inicio": 0, "dur": 3}, {"frase": 1, "inicio": 3, "dur": 3}],
+                                       e, {}, lambda r: tmp_path / "v.mp4", lambda i: None)
+    assert [f["id"] for f in out["fallas"]] == ["PH-10"] and calidad.retener("pequena_historia", out["fallas"], True)

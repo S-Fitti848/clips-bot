@@ -168,3 +168,11 @@ def _sin_presupuesto_de_otro_video():
     marcas._PRESUPUESTO.clear()
     yield
     marcas._PRESUPUESTO.clear()
+
+
+
+@pytest.fixture(autouse=True)
+def _claude_falso_permitido(monkeypatch):
+    """Los tests corren con origen "prueba", donde el bot no usa Claude de verdad (Santi, 2026-11-18); acá Claude
+    nunca es de verdad (`_sin_claude` y los clientes falsos), así que el bloqueo no hace falta."""
+    monkeypatch.setenv("CLIPS_CLAUDE_REAL", "1")

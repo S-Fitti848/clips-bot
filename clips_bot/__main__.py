@@ -5091,7 +5091,8 @@ def _efe_armar(conn, tg: TelegramClient, chat_id, token: str, settings: Settings
     try:
         meta = ef.hacer_video(prop, settings, Path(estado["carpeta"]), avisar=log.info, conn=conn,
                               cliente=(_claude_textos(settings)[0] if fb else
-                                       _texto_efemeride(settings, _gemini(settings))))
+                                       _texto_efemeride(settings, _gemini(settings))),
+                              revisor=_claude_textos(settings)[0])
     except Exception as e:
         bitacora.fallo("", str(e))
         bitacora.cerrar(conn, "fallido")
@@ -5102,11 +5103,10 @@ def _efe_armar(conn, tg: TelegramClient, chat_id, token: str, settings: Settings
     # La revisión del video TERMINADO (Santi, 2026-11-17, Colón): un cuadro de cada corte, con su frase, contra las
     # reglas de fotos y rótulos; las que bloquean (políticos, retratos, foto que no es de su frase, borrosas, años o
     # lugares que no coinciden) frenan el video aunque lo demás se cumpla.
-    try:
-        fin_fallas, fin_revisado = calidad.revisar_video_ph(_claude_textos(settings)[0], meta, avisar=log.info)
-    except Exception as err:  # noqa: BLE001
-        log.warning("revisión del video terminado: %s", err)
-        fin_fallas, fin_revisado = [], False
+    rf = (meta.get("efemeride") or {}).get("revision_final") or {}
+    fin_fallas, fin_revisado = rf.get("fallas") or [], bool(rf.get("revisado"))
+    if rf.get("reemplazos"):
+        cal_corregidas = ["🔁 " + x for x in rf["reemplazos"]]
     if fin_revisado:
         cal_fallas = calidad.juntar_fallas(cal_fallas, fin_fallas)
         cal_revisado = True

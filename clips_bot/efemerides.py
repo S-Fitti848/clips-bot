@@ -2790,7 +2790,7 @@ def filtro_tramo(ancho: int, alto: int, W: int, H: int, frames: int, fx: float, 
 def armar_video(tramos: list[tuple[Path, float]], voz: Path, dir_subs: Path, salida: Path,
                 render, fps: int = 30, parallax: bool = False,
                 mapa: tuple[Path, float, float] | None = None, encuadres: dict | None = None,
-                efecto: str = "", movimientos: list[str] | None = None) -> Path:
+                efecto: str = "", movimientos: list[str] | None = None, rehacer: set[int] | None = None) -> Path:
     """Una foto por frase (cada tramo dura lo que su frase), la voz, y los subtítulos + el año que
     ya están en `dir_subs/subs.ass`. Cada tramo se encodea aparte y al final se pegan."""
     from PIL import Image
@@ -2801,6 +2801,10 @@ def armar_video(tramos: list[tuple[Path, float]], voz: Path, dir_subs: Path, sal
     partes = []
     for i, (foto, dur) in enumerate(tramos):
         frames = max(1, int(round(dur * fps)))
+        ya = dir_subs / f"tramo_{i:02d}.mp4"
+        if rehacer is not None and i not in rehacer and ya.exists():
+            partes.append(ya)       # el corte no cambió (Santi, 2026-11-18): no se vuelve a encodear
+            continue
         if Path(foto).suffix.lower() in (".mp4", ".webm", ".mov", ".mkv"):
             # Un tramo de video: dura EXACTO lo de su frase (si es más corto, se repite).
             parte = dir_subs / f"tramo_{i:02d}.mp4"
@@ -3838,8 +3842,22 @@ def ajustar_duracion(wav: Path, duraciones: list[float] | None, max_s: float, ma
     return ([d / factor for d in duraciones] if duraciones else duraciones), factor
 
 
+def cortes_de(plan, p: Propuesta) -> list[dict]:
+    """Cada corte tal como sale (Santi, 2026-11-17, Colón): la revisión final mira un cuadro de cada uno en el video
+    terminado, no la hoja de antes de la voz."""
+    cortes, t_c = [], 0.0
+    for i, f, s in plan:
+        d_c = round(s * 30) / 30
+        tipo = "video" if f == VIDEO else "mapa" if f == MAPA else "foto"
+        archivo = p.fotos[f].get("archivo", "") if tipo == "foto" and 0 <= f < len(p.fotos) else ""
+        cortes.append({"frase": i, "inicio": round(t_c, 2), "dur": round(d_c, 2), "tipo": tipo, "foto": f,
+                       "archivo": archivo})
+        t_c += d_c
+    return cortes
+
+
 def hacer_video(p: Propuesta, settings, carpeta: Path, avisar=log.info, conn=None,
-                cliente=None) -> dict:
+                cliente=None, revisor=None) -> dict:
     """Propuesta aprobada → mp4 + meta listo para `enviar_clip`. Esto es lo que gasta la Pi:
     Piper, Whisper sobre la voz y un encode por foto.
 
@@ -4060,20 +4078,31 @@ def hacer_video(p: Propuesta, settings, carpeta: Path, avisar=log.info, conn=Non
                          efecto="mov" if g.corto else cfg_ef.efecto_fotos, movimientos=movimientos)
     avisar(f"video: {time.time() - t0:.0f} s, {len(tramos)} tramos, "
            f"{len({f for _, f, _ in plan if f != VIDEO})} fotos distintas, {len(rutas_video)} videos")
+    revision_final = None
+    if revisor is not None:
+        # Santi, 2026-11-18: cuando el mosaico final encuentra una foto mal, NO se frena el video: se reemplaza solo esa
+        # foto por la siguiente finalista de su frase (o una tarjeta) y se vuelve a revisar solo ese corte. Se frena
+        # únicamente si no hay reemplazo posible.
+        from . import calidad
+
+        def armar(rehacer):
+            tr = [(rutas_video[i] if f == VIDEO else ruta_mapa if f == MAPA else Path(p.fotos[f]["ruta"]), s_)
+                  for i, f, s_ in plan]
+            return armar_video(tr, audio, carpeta, carpeta / f"{clip_id}.mp4", settings.render,
+                               parallax=cfg_ef.parallax, mapa=mapa, encuadres=encuadres,
+                               efecto="mov" if g.corto else cfg_ef.efecto_fotos, movimientos=movimientos,
+                               rehacer=rehacer)
+
+        tarjeta_nueva = fabrica_tarjetas(g, e.anio, carpeta, lambda k: Foto.de_dict(p.fotos[k]),
+                                         lambda f: (p.fotos.append(f.a_dict()), len(p.fotos) - 1)[1])
+        revision_final = calidad.revisar_y_reemplazar(
+            revisor, salida, plan, g, cortes_de(plan, p), e, p.local or {}, armar, tarjeta_nueva, avisar)
+        salida = Path(revision_final.get("salida") or salida)
     for problema in chequear_audio(salida):
         avisar(f"⚠️ audio: {problema}")
     from .videos_libres import creditos as creditos_videos
 
-    # Cada corte tal como salió (Santi, 2026-11-17, Colón): la revisión final mira un cuadro de cada uno en el video
-    # terminado, no la hoja de antes de la voz (los cortes del formato corto agregaban fotos que nadie había mirado).
-    cortes, t_c = [], 0.0
-    for i, f, s in plan:
-        d_c = round(s * 30) / 30
-        tipo = "video" if f == VIDEO else "mapa" if f == MAPA else "foto"
-        archivo = p.fotos[f].get("archivo", "") if tipo == "foto" and 0 <= f < len(p.fotos) else ""
-        cortes.append({"frase": i, "inicio": round(t_c, 2), "dur": round(d_c, 2), "tipo": tipo, "foto": f,
-                       "archivo": archivo})
-        t_c += d_c
+    cortes = cortes_de(plan, p)
     cred = creditos(usadas_en_orden(p, plan))
     if rutas_video:
         cred += "\n" + creditos_videos(videos_en_orden(p, plan))
@@ -4091,7 +4120,7 @@ def hacer_video(p: Propuesta, settings, carpeta: Path, avisar=log.info, conn=Non
                           "articulo": e.paginas[0], "lang": e.lang, "guion": g.frases,
                           "musica": tema.ruta if tema else None, "tono": g.tono, "voz": motor,
                           "destino": p.destino, "local": p.local, "aviso_fotos": aviso_fotos(g),
-                          "cortes": cortes}}
+                          "cortes": cortes, "revision_final": revision_final}}
 
 
 def _jpeg_chico(ruta: Path, ancho: int = 512) -> bytes:

@@ -99,6 +99,12 @@ class ClienteWeb:
         """(texto final, links que aparecieron en los resultados). Anota tokens y búsquedas."""
         import anthropic
 
+        from .claude import ClaudeError, prueba_sin_claude
+
+        try:
+            prueba_sin_claude()
+        except ClaudeError as e:
+            raise WebError(str(e)) from e
         funcion = _llamador()
         herramientas = [{"type": HERRAMIENTA_BUSCAR, "name": "web_search", "max_uses": busquedas}]
         if lecturas:

@@ -68,3 +68,15 @@ def test_al_tope_y_debajo_del_estandar_hoy_no_sale_con_una_linea(conn):
     assert texto.startswith("💸 Así Nació") and "hoy no sale" in texto and "\n" not in texto
     m._animacion_tick(conn, tg, _settings(), _ahora("08:30"), armar=armar)      # sin reintento del primero
     assert llamadas == [0, 1]
+
+
+def test_las_pruebas_no_usan_claude_de_verdad(monkeypatch):
+    """Santi, 2026-11-18: en una prueba o medición, Claude no responde salvo con CLIPS_CLAUDE_REAL=1."""
+    from clips_bot import claude, gemini
+
+    monkeypatch.delenv("CLIPS_CLAUDE_REAL", raising=False)
+    monkeypatch.setattr(gemini, "ORIGEN", gemini.PRUEBA)
+    with pytest.raises(claude.ClaudeError, match="prueba sin Claude"):
+        claude.prueba_sin_claude()
+    monkeypatch.setattr(gemini, "ORIGEN", gemini.PRODUCCION)
+    claude.prueba_sin_claude()           # producción, como siempre

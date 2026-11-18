@@ -191,6 +191,7 @@ class ClaudeClient:
             if self.uso:
                 self.uso(funcion, modelo, "claude", 0, 0, True)
             return guardado
+        prueba_sin_claude()
         contenido = [{"type": "image", "source": {"type": "base64", "media_type": "image/jpeg",
                                                   "data": base64.standard_b64encode(img).decode()}}
                      for img in imagenes or []]
@@ -275,6 +276,17 @@ class ClaudeClient:
                     viejo.unlink(missing_ok=True)
         except OSError as e:
             log.warning("Claude: no pude guardar en la caché: %s", e)
+
+
+def prueba_sin_claude() -> None:
+    """Santi, 2026-11-18: las pruebas y mediciones (origen "prueba": scripts y CLI a mano) NO usan Claude de verdad,
+    salvo que él lo pida: entonces se corre con CLIPS_CLAUDE_REAL=1 (y antes se le avisa cuánto va a costar)."""
+    import os
+
+    from . import gemini
+
+    if gemini.ORIGEN == gemini.PRUEBA and os.environ.get("CLIPS_CLAUDE_REAL") != "1":
+        raise ClaudeError("prueba sin Claude real (Santi, 2026-11-18): para usarlo, CLIPS_CLAUDE_REAL=1")
 
 
 class ConRespaldo:

@@ -416,6 +416,77 @@ def revisar_video_ph(cliente, meta: dict, avisar=log.info) -> tuple[list[dict], 
     return out, True
 
 
+# las reglas que se arreglan cambiando la foto de un corte (Santi, 2026-11-18)
+REGLAS_FOTO = ("PH-02", "PH-03", "PH-04", "PH-05", "PH-06", "PH-10", "PH-11", "PH-12")
+VUELTAS_REEMPLAZO = 2
+
+
+def revisar_y_reemplazar(revisor, salida: Path, plan: list, g, cortes: list[dict], e, local: dict, armar,
+                         tarjeta_nueva, avisar=log.info) -> dict:
+    """El mosaico de todo el video (un pedido); por cada corte con una foto mal, la siguiente finalista de su frase
+    que todavía no falló, o una tarjeta; se rehace SOLO ese tramo y se revisa SOLO ese corte (un pedido con esos
+    cuadros). Devuelve {fallas, revisado, reemplazos, salida}. Las fallas que quedan son las que no tuvieron arreglo."""
+    from . import efemerides as ef
+
+    meta = {"salida": str(salida), "efemeride": {"cortes": cortes, "guion": list(g.frases), "anio": e.anio,
+                                                 "evento": e.texto, "local": local}}
+    fallas, revisado = revisar_video_ph(revisor, meta, avisar)
+    out = {"fallas": fallas, "revisado": revisado, "reemplazos": [], "salida": str(salida)}
+    if not revisado:
+        return out
+    malas: set[int] = set()
+    rk = g.rankings()
+    for _vuelta in range(VUELTAS_REEMPLAZO):
+        de_foto = [f for f in fallas if f["id"] in REGLAS_FOTO and 1 <= int(f.get("cuadro") or 0) <= len(plan)]
+        if not de_foto:
+            break
+        cambiados: dict[int, str] = {}
+        for f in de_foto:
+            k = int(f["cuadro"]) - 1
+            if k in cambiados:
+                continue
+            i, vieja, s_ = plan[k]
+            if vieja not in (ef.VIDEO, ef.MAPA):
+                malas.add(vieja)
+            usadas = {x for _, x, _ in plan}
+            nueva = next((x for x in (rk[i] if i < len(rk) else []) if x not in malas and x not in usadas
+                          and x not in (ef.VIDEO, ef.MAPA)), None)
+            como = "la siguiente finalista"
+            if nueva is None:
+                nueva = tarjeta_nueva(i)
+                como = "una tarjeta de texto"
+            if nueva is None:
+                continue
+            plan[k] = (i, nueva, s_)
+            cambiados[k] = f"corte {k + 1} ({f['id']}): {como}"
+        if not cambiados:
+            break
+        salida = armar(set(cambiados))
+        out["salida"] = str(salida)
+        out["reemplazos"] += list(cambiados.values())
+        avisar("revisión final: reemplacé " + "; ".join(cambiados.values()))
+        nuevos = ef.cortes_de(plan, _Prop(cortes, plan))
+        for k in cambiados:
+            cortes[k] = nuevos[k] if k < len(nuevos) else cortes[k]
+        sub = {"salida": str(salida), "efemeride": {**meta["efemeride"],
+                                                    "cortes": [cortes[k] for k in sorted(cambiados)]}}
+        nuevas, ok = revisar_video_ph(revisor, sub, avisar)
+        orden = sorted(cambiados)
+        nuevas = [{**x, "cuadro": orden[x["cuadro"] - 1] + 1} for x in nuevas
+                  if 1 <= int(x.get("cuadro") or 0) <= len(orden) and x["id"] in REGLAS_FOTO] if ok else []
+        fallas = [x for x in fallas if not (x["id"] in REGLAS_FOTO and int(x.get("cuadro") or 0) - 1 in cambiados)]
+        fallas += nuevas
+    out["fallas"] = fallas
+    return out
+
+
+class _Prop:
+    """Lo mínimo que necesita `cortes_de` (los archivos de las fotos ya están en los cortes)."""
+
+    def __init__(self, cortes, plan):
+        self.fotos = []
+
+
 def juntar_fallas(antes: list[dict], final: list[dict]) -> list[dict]:
     """Las fallas de la revisión de la hoja más las del video terminado (la del video manda en sus reglas)."""
     # la del video terminado es la revisión (capa 5): manda en todas las reglas

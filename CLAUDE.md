@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-11-17 | **Versión:** v1.36.0 (desplegado) | **Modo:** Fase 2: corriendo solo en la Pi. **Rots APAGADO.** Pequeña Historia (3 por día, madrugada desde las 04:00) (**NO se publica sola desde el 17/11**: llega con ✅ Publicar / ❌ Cancelar y sin respuesta no sale) y **Así Nació** (2 por día, desde las 07:00, publican 13:00 y 20:00 en YouTube y Facebook con ❌ Cancelar), todo al privado de Santi
+**Snapshot:** 2026-11-17 | **Versión:** v1.37.0 (desplegado) | **Modo:** Fase 2: corriendo solo en la Pi. **Rots APAGADO.** Pequeña Historia (3 por día, madrugada desde las 04:00) (**NO se publica sola desde el 17/11**: llega con ✅ Publicar / ❌ Cancelar y sin respuesta no sale) y **Así Nació** (2 por día, desde las 07:00, publican 13:00 y 20:00 en YouTube y Facebook con ❌ Cancelar), todo al privado de Santi
 
 > **SI ESTÁS EMPEZANDO UNA SESIÓN NUEVA, LEÉ §10.** Ahí está qué está hecho, qué quedó a medias,
 > qué falta, y las trampas que ya nos mordieron.
@@ -250,6 +250,12 @@ servicio systemd separado: `clips-bot`).
   las 2-3 finalistas por frase se miran con imagen, con Haiku (`describir_fotos` + `elegir_fotos`; `_elector_fotos`
   es Haiku); (5) una sola revisión, la del video terminado, con todos los cortes en UN mosaico y todas las reglas
   (`calidad.mosaico`); la de la hoja de antes de la voz ya no corre.
+- **Pruebas sin Claude real (Santi, 2026-11-18):** con origen "prueba" (scripts y CLI a mano) Claude y la búsqueda
+  web no responden (`claude.prueba_sin_claude`) salvo con `CLIPS_CLAUDE_REAL=1`, y eso solo si Santi lo pide, avisándole
+  antes cuánto va a costar.
+- **Revisión final que arregla (Santi, 2026-11-18):** si el mosaico encuentra una foto mal, se cambia SOLO esa foto por
+  la siguiente finalista de su frase (o una tarjeta), se rehace solo ese tramo y se revisa solo ese corte
+  (`calidad.revisar_y_reemplazar`, dentro de `hacer_video`, 2 vueltas); el video se frena únicamente si no hay reemplazo.
 - **Saldo de Claude hasta el 14/12 (Santi, 2026-11-18): US$ 70** (`presupuesto.py`, desde la fila de gemini_uso del
   deploy, `bot_estado.presupuesto_fila`). Cada día desde las 06:30: promedio de los días completos (7 como mucho) y
   proyección al 14/12; si no alcanza, Así Nació a 1 video por día (`asinacio_un_video`) y vuelve a 2 cuando con el
@@ -1273,6 +1279,9 @@ Problemas abiertos:
 
 ## 9. CHANGELOG
 
+- v1.37.0 (2026-11-18, tarde) — Pruebas sin Claude real; la revisión final reemplaza la foto mala en vez de frenar.
+  Gasto del 18/11 hasta las 11:07: US$ 8,73 (Así Nació 5,67 con los 2 videos de antes del tope, Pequeña Historia 2,41,
+  búsqueda web 0,34, pruebas y mediciones 0,31; bancos 0).
 - v1.36.0 (2026-11-18, tarde) — Fotos de Pequeña Historia por capas (§1). Antes: Latinoamérica US$ 0,53 por video y
   tecnología US$ 0,25 (promedio del 11 al 18/11, bitácora). Medido después en la Pi (Belice, 19/11, de punta a punta con la voz de prueba):
   US$ 0,31 en total; las fotos US$ 0,02 (antes ~US$ 0,20), la revisión del mosaico US$ 0,04, la búsqueda web US$ 0,15.
