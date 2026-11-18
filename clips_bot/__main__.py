@@ -2729,6 +2729,7 @@ def escuchar_telegram(settings: Settings, timeout_poll: int = 50) -> int:
             _seguro(tg, str(chat_ultimo or ""), "el resumen semanal del estándar de calidad", _calidad_semana_tick,
                     conn, tg)
             _seguro(tg, str(chat_ultimo or ""), "el resumen semanal de vistas", _resumen_semana_tick, conn, tg)
+            _seguro(tg, str(chat_ultimo or ""), "el control del saldo de Claude", _presupuesto_tick, conn, tg)
             _seguro(tg, str(chat_ultimo or ""), "el reintento de los clips",
                     _auto(_clips_reintento_tick), conn, settings)
             _seguro(tg, str(chat_ultimo or ""), "la búsqueda de lo que pegó",
@@ -4311,6 +4312,13 @@ CALIDAD_SEMANA = "calidad_semana_enviado"   # bot_estado: el lunes (AR) cuyo res
 CALIDAD_SEMANA_HORA = (9, 30)                # los lunes, desde las 09:30 AR (después del de costos)
 
 
+def _presupuesto_tick(conn, tg: TelegramClient, ahora=None) -> None:
+    """Santi, 2026-11-18: el saldo de Claude hasta el 14/12 (presupuesto.py); si no alcanza, Así Nació a 1 por día."""
+    from . import presupuesto
+
+    presupuesto.tick(conn, lambda texto: tg.send_message(DUENO, texto), ahora or datetime.now(AR))
+
+
 SEMANA_RESUMEN = "resumen_semana_vistas"     # bot_estado: el lunes en que ya se mandó
 SEMANA_RESUMEN_HORA = (10, 0)
 
@@ -4721,6 +4729,10 @@ def _animacion_tick(conn, tg: TelegramClient, settings: Settings, ahora=None, ar
     estado = json.loads(db.get_valor(conn, clave) or "{}")
     hechos, reint, fallas = estado.get("hechos", []), estado.get("reintento", {}), estado.get("fallas", {})
     n = len(horas_asinacio(settings))
+    from . import presupuesto
+
+    if db.get_valor(conn, presupuesto.UN_VIDEO) == "1":      # Santi, 2026-11-18: el saldo no alcanza al 14/12
+        n = 1
     k = next((i for i in range(n) if i not in hechos), None)
     if k is None:
         db.set_valor(conn, ANIM_DIA, hoy)

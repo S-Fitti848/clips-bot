@@ -25,8 +25,8 @@ def _uso(c, entrada, salida, n=1):
     c.commit()
 
 
-def test_tope_de_1_50():
-    assert mk.TOPE_USD_VIDEO == 1.50
+def test_tope_de_1_20():
+    assert mk.TOPE_USD_VIDEO == 1.20
 
 
 def test_pasado_el_tope_se_frena(conn):

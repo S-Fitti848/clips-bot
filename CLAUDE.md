@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-11-17 | **Versión:** v1.34.0 (desplegado) | **Modo:** Fase 2: corriendo solo en la Pi. **Rots APAGADO.** Pequeña Historia (3 por día, madrugada desde las 04:00) (**NO se publica sola desde el 17/11**: llega con ✅ Publicar / ❌ Cancelar y sin respuesta no sale) y **Así Nació** (2 por día, desde las 07:00, publican 13:00 y 20:00 en YouTube y Facebook con ❌ Cancelar), todo al privado de Santi
+**Snapshot:** 2026-11-17 | **Versión:** v1.35.0 (desplegado) | **Modo:** Fase 2: corriendo solo en la Pi. **Rots APAGADO.** Pequeña Historia (3 por día, madrugada desde las 04:00) (**NO se publica sola desde el 17/11**: llega con ✅ Publicar / ❌ Cancelar y sin respuesta no sale) y **Así Nació** (2 por día, desde las 07:00, publican 13:00 y 20:00 en YouTube y Facebook con ❌ Cancelar), todo al privado de Santi
 
 > **SI ESTÁS EMPEZANDO UNA SESIÓN NUEVA, LEÉ §10.** Ahí está qué está hecho, qué quedó a medias,
 > qué falta, y las trampas que ya nos mordieron.
@@ -237,11 +237,15 @@ servicio systemd separado: `clips-bot`).
   registra el primero antes de armar el segundo). Si un video falla por algo que no es "no hay candidato"
   (Claude cortado, Gemini caído), otro intento en 1 h, hasta las 22:00 y 4 intentos por video: no se pierde el
   día. Un guion cortado por max_tokens se reintenta solo con el doble de límite (hasta 64.000).
-- **Así Nació: tope duro de US$ 1,50 por video y escenas con sentido (Santi, 2026-11-18; AN-28 y AN-29):** todo lo
-  de Claude de un video como mucho US$ 1,50 (`marcas.TOPE_USD_VIDEO`, `pasado_tope`): al llegar se frena todo; si llega
+- **Así Nació: tope duro de US$ 1,20 por video (1,50 a la mañana del 18/11) y escenas con sentido (Santi, 2026-11-18; AN-28 y AN-29):** todo lo
+  de Claude de un video como mucho US$ 1,20 (`marcas.TOPE_USD_VIDEO`, `pasado_tope`): al llegar se frena todo; si llega
   al estándar mínimo sale, si no, ese día no se publica (`TopeCosto`, una línea). Antes de dibujar, el director
   (`animacion/director.py`) escribe qué ve el espectador en cada frase y se corrigen solas las escenas que no se
   entienden sin la voz; los ejemplos de Santi van en el prompt del guion (REGLA 18).
+- **Saldo de Claude hasta el 14/12 (Santi, 2026-11-18): US$ 70** (`presupuesto.py`, desde la fila de gemini_uso del
+  deploy, `bot_estado.presupuesto_fila`). Cada día desde las 06:30: promedio de los días completos (7 como mucho) y
+  proyección al 14/12; si no alcanza, Así Nació a 1 video por día (`asinacio_un_video`) y vuelve a 2 cuando con el
+  segundo (~US$ 0,90) igual alcanza. Cada cambio, una línea a Santi.
 - **Menos texto (Santi, 2026-11-18):** mensajes de 2-3 líneas. El resumen de cada Reel a las 24 h ya NO se manda: se
   guarda y alimenta los guiones (`aprendizaje.py`: los ganchos que más y menos retuvieron entran en el prompt de cada
   canal); los lunes desde las 10:00, un resumen de 5 líneas con qué cambió y cómo vienen las vistas
@@ -1261,6 +1265,8 @@ Problemas abiertos:
 
 ## 9. CHANGELOG
 
+- v1.35.0 (2026-11-18, tarde) — Saldo de US$ 70 hasta el 14/12 con Así Nació a 1 por día si no alcanza; tope por video
+  de Así Nació a US$ 1,20. `tests/test_presupuesto.py`.
 - v1.34.0 (2026-11-18) — Tope de US$ 1,50 por video de Así Nació, director de escenas, menos texto (aprendizaje y
   resumen semanal), Latinoamérica con menos banco y plan B de tecnología (§1). Pasados a privado en YouTube 9 videos de
   Pequeña Historia (Colón, que seguía público, CDMX no tiene YouTube); en Facebook la API no deja ocultar ni hacer

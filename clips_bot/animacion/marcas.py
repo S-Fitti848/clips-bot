@@ -2858,9 +2858,9 @@ class Resultado:
 
 NUMERO_CHICO = 12
 # TOPE DURO por video (Santi, 2026-11-18, el Atari costó US$ 3,43): todo lo de Claude de un video (elegir, guion, piezas,
-# correcciones, reemplazos y rescate) como mucho US$ 1,50. Al llegarlo se frena todo: si el video ya llega al estándar
+# correcciones, reemplazos y rescate) como mucho US$ 1,20 (era 1,50 a la mañana). Al llegarlo se frena todo: si el video ya llega al estándar
 # mínimo sale; si no, ese día no se publica (TopeCosto: sin reintento) y se avisa con una línea.
-TOPE_USD_VIDEO = 1.50
+TOPE_USD_VIDEO = 1.20      # Santi, 2026-11-18 (tarde): 1,50 → 1,20
 _PRESUPUESTO: dict = {}      # {"conn", "fila"}: lo pone armar_video al empezar cada video
 
 
