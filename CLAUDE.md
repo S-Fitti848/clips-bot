@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-11-17 | **Versión:** v1.32.0 (desplegado) | **Modo:** Fase 2: corriendo solo en la Pi. **Rots APAGADO.** Pequeña Historia (3 por día, madrugada desde las 04:00) (publicación sin aprobar: llegan con ❌ Cancelar) y **Así Nació** (2 por día, desde las 07:00, publican 13:00 y 20:00 en YouTube y Facebook con ❌ Cancelar), todo al privado de Santi
+**Snapshot:** 2026-11-17 | **Versión:** v1.33.0 (desplegado) | **Modo:** Fase 2: corriendo solo en la Pi. **Rots APAGADO.** Pequeña Historia (3 por día, madrugada desde las 04:00) (**NO se publica sola desde el 17/11**: llega con ✅ Publicar / ❌ Cancelar y sin respuesta no sale) y **Así Nació** (2 por día, desde las 07:00, publican 13:00 y 20:00 en YouTube y Facebook con ❌ Cancelar), todo al privado de Santi
 
 > **SI ESTÁS EMPEZANDO UNA SESIÓN NUEVA, LEÉ §10.** Ahí está qué está hecho, qué quedó a medias,
 > qué falta, y las trampas que ya nos mordieron.
@@ -237,7 +237,19 @@ servicio systemd separado: `clips-bot`).
   registra el primero antes de armar el segundo). Si un video falla por algo que no es "no hay candidato"
   (Claude cortado, Gemini caído), otro intento en 1 h, hasta las 22:00 y 4 intentos por video: no se pierde el
   día. Un guion cortado por max_tokens se reintenta solo con el doble de límite (hasta 64.000).
-- **Pequeña Historia sin aprobar: PRENDIDO (Santi, 2026-11-15):** los 3 videos llegan ya programados con
+- **Pequeña Historia NO se publica sola (Santi, 2026-11-17, después del Short de Colón con Cristina Kirchner en
+  Atucha):** `efemerides.publicar_sola: false`: los 3 videos se siguen armando solos (`sin_aprobar`), pero llegan con
+  ✅ Publicar / ❌ Cancelar y, si Santi no responde, NO salen. Se vuelve a prender SOLO cuando Santi lo diga.
+- **Fotos: reglas fijas para todos los videos y publicaciones (Santi, 2026-11-17, Colón; PH-02, PH-10 a PH-13 y
+  PH-25 del estándar):** nunca políticos ni actos de gobierno salvo que la historia sea de esa persona; nunca retratos
+  de personas que la historia no nombra (Haiku marca `politico`/`retrato`/`quien` de cada foto y el código decide con
+  el guion, `efemerides.motivo_persona`; Sonnet y la publicación de comunidad tienen la misma regla); cada foto muestra
+  lo que dice SU frase: los cortes del formato corto y las frases sin foto ya no usan fotos "del tema general" del
+  artículo (`generales` vacío): alargar la anterior o tarjeta; nada de fotos de menos de 800 px (sin la excepción de
+  500 para las de época) ni borrosas (nitidez < 150, `motivo_calidad`, medido con las de Colón); el año en pantalla es
+  el del hecho desde el primer cuadro (ya no cuenta desde otra fecha). Con el video terminado, Claude mira un cuadro de
+  cada corte con su frase (`calidad.revisar_video_ph`): PH-02 y PH-10 a PH-13 frenan el video (`calidad.BLOQUEANTES`).
+- **Pequeña Historia sin aprobar: PRENDIDO (Santi, 2026-11-15; desde el 17/11 se arma solo pero NO se publica solo):** los 3 videos llegan ya programados con
   ❌ Cancelar y, si no se toca nada, salen a su hora. Latinoamérica: si ninguna llega a 8, sale la mejor del día
   si tiene 7 o más (una sola por día).
 - **Corregir solo lo que falla (Santi, 2026-11-15):** cuando la validación rechaza una frase o escena (Así Nació
@@ -1235,6 +1247,15 @@ Problemas abiertos:
 
 ## 9. CHANGELOG
 
+- v1.33.0 (2026-11-17, noche) — **El Short de Colón** (`historia_fb_1117_2021`, pasado a privado por Santi). Por qué
+  no lo frenó el estándar: la revisión SÍ lo miró y le dio 7/9 (marcó el retrato de un señor mayor y un estadio de
+  2024), justo el mínimo, y salió solo. Pero miró la HOJA de antes de la voz (una foto por frase, en miniatura): el
+  video real tenía 15 cortes y los del formato corto se llenaban con fotos "del tema general" del artículo del hecho,
+  que era "Argentina" (vino del banco, `latam:Argentina`): así entraron Arturo Illia (1965) en "le ganó 3-0 a Racing" y
+  en "¿cuánto duró la fiesta?" y Cristina Kirchner en Atucha (`Atucha_presidencia_02.jpg`) en "caravanas y banderas
+  rojinegras", que nadie había mirado. Los recortes de diario borrosos medían 500 px (la excepción para fotos de
+  época). Los "1993/2020" eran el año contando hacia 2021. Arreglos: no se publica sola, reglas de fotos y revisión del
+  video terminado (§1). `tests/test_fotos_colon.py`.
 - v1.32.0 (2026-11-17) — **Los dos pendientes del Hershey.** (1) La "máquina violeta" de 1883 no era un dibujo
   guardado: las recetas de la biblioteca de escenas pasaban el objeto como `dibujo_nuevo` sin resolver y salía una caja
   de colores; ahora `escena_accion` usa el dibujo guardado (el caramelo). Revisadas las 22 piezas de

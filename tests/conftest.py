@@ -143,3 +143,18 @@ def _sin_elevenlabs(monkeypatch):
     monkeypatch.setattr(elevenlabs, "clave", lambda: "")
     monkeypatch.setattr(elevenlabs, "anotar", lambda *a, **k: None)
     monkeypatch.setattr(sfx, "GENERAR", False)
+
+
+@pytest.fixture(autouse=True)
+def _fotos_falsas_pasan(monkeypatch, request):
+    """Los tests bajan "fotos" que no son imágenes de verdad: el filtro de resolución y nitidez (Santi, 2026-11-17) se
+    prueba aparte, con imágenes reales (marca `calidad_real`)."""
+    if request.node.get_closest_marker("calidad_real"):
+        return
+    from clips_bot import efemerides as ef
+
+    monkeypatch.setattr(ef, "motivo_calidad", lambda ruta: None)
+
+
+def pytest_configure(config):
+    config.addinivalue_line("markers", "calidad_real: el test usa el filtro real de resolución y nitidez de las fotos")

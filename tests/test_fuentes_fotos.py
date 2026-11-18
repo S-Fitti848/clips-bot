@@ -106,7 +106,9 @@ def test_una_foto_chica_de_la_epoca_pasa_y_una_moderna_no():
                 "extmetadata": {"LicenseShortName": {"value": "Public domain"},
                                 "DateTimeOriginal": {"value": fecha}}}
 
-    assert ef.motivo_foto(info(694, "1925"), anio_hecho=1924) is None          # Onzari, 694 px
+    # Santi, 2026-11-17 (Colón, recortes de diario de 500 px): ya no hay excepción para las de época
+    assert ef.motivo_foto(info(694, "1925"), anio_hecho=1924).startswith("menos de 800")
+    assert ef.motivo_foto(info(900, "1925"), anio_hecho=1924) is None
     assert ef.motivo_foto(info(694, "2012", "File:Estadio.jpg"), anio_hecho=1924).startswith("menos de 800")
     assert ef.motivo_foto(info(400, "1924"), anio_hecho=1924).startswith("menos de 800")   # muy chica
     assert ef.motivo_foto(info(694, "1925")).startswith("menos de 800")                     # sin hecho, como antes

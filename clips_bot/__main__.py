@@ -5037,6 +5037,17 @@ def _efe_armar(conn, tg: TelegramClient, chat_id, token: str, settings: Settings
             raise
         return f"No pude armar el video: {html.escape(str(e)[:300])}"
     bitacora.dato(clip_id=meta.get("clip_id", ""), titulo=(meta.get("textos") or {}).get("titulo", ""))
+    # La revisión del video TERMINADO (Santi, 2026-11-17, Colón): un cuadro de cada corte, con su frase, contra las
+    # reglas de fotos y rótulos; las que bloquean (políticos, retratos, foto que no es de su frase, borrosas, años o
+    # lugares que no coinciden) frenan el video aunque lo demás se cumpla.
+    try:
+        fin_fallas, fin_revisado = calidad.revisar_video_ph(_claude_textos(settings)[0], meta, avisar=log.info)
+    except Exception as err:  # noqa: BLE001
+        log.warning("revisión del video terminado: %s", err)
+        fin_fallas, fin_revisado = [], False
+    if fin_revisado:
+        cal_fallas = calidad.juntar_fallas(cal_fallas, fin_fallas)
+        cal_revisado = True
     motor = meta.get("efemeride", {}).get("voz", "")
     relajado = "\n".join(x for x in ((getattr(prop, "local", None) or {}).get("aviso"),
                                       meta.get("efemeride", {}).get("aviso_fotos")) if x)

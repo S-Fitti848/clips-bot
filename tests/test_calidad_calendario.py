@@ -285,7 +285,8 @@ def test_sonnet_no_puede_saltear_el_calendario():
 
 def test_ninguna_foto_mas_de_4_s_y_el_gancho_2_5():
     g = _guion(frases=["a", "b"], ranking=[[0], [1]], del_hecho=[5, 6])
-    plan, _ = ef.plan_rapido([(0, 0, 6.0), (1, 1, 4.1)], g)
+    tarjetas = iter(range(100, 120))     # sin fotos "generales" (2026-11-17): si no hay otra, tarjeta
+    plan, _ = ef.plan_rapido([(0, 0, 6.0), (1, 1, 4.1)], g, nueva_tarjeta=lambda i: next(tarjetas))
     seguido, primera = ef.seguidos_max(plan)
     assert seguido <= ef.FOTO_MAX_S and primera <= ef.GANCHO_MAX_S
     assert sum(s for *_, s in plan) == pytest.approx(10.1)

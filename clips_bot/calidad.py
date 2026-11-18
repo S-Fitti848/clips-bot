@@ -140,16 +140,32 @@ def puntaje(canal: str, fallas: list[dict]) -> tuple[int, int]:
     return max(0, total - len({f.get("id") for f in fallas})), total
 
 
+# Reglas que frenan el video aunque el resto se cumpla (Santi, 2026-11-17, el Short de Colón): una sola sin cumplir
+# en la revisión del video terminado y no se publica solo.
+BLOQUEANTES = {"pequena_historia": {"PH-02", "PH-10", "PH-11", "PH-12", "PH-13"}}
+
+
+def bloqueantes(canal: str, fallas: list[dict]) -> list[dict]:
+    return [f for f in fallas if f.get("id") in BLOQUEANTES.get(canal, set())]
+
+
 def retener(canal: str, fallas: list[dict], revisado: bool) -> bool:
-    """True si el video no puede publicarse solo (la revisión respondió y quedó debajo del mínimo)."""
+    """True si el video no puede publicarse solo (la revisión respondió y quedó debajo del mínimo, o falló una regla
+    que bloquea)."""
     if not revisado:
         return False
+    if bloqueantes(canal, fallas):
+        return True
     ok, total = puntaje(canal, fallas)
     return bool(total) and ok < minimo(canal)
 
 
 def texto_retenido(canal: str, fallas: list[dict]) -> str:
     ok, total = puntaje(canal, fallas)
+    bl = bloqueantes(canal, fallas)
+    if bl:
+        return (f"🚫 <b>NO se publica sola</b>: no cumple {', '.join(f['id'] for f in bl)} (reglas que frenan el "
+                f"video; detalle abajo). ✅ Publicar igual la programa en su horario; si no respondés, no sale.")
     return (f"⏸ <b>NO se publica sola</b>: el estándar de calidad dio {ok}/{total} (mínimo "
             f"{minimo(canal)}). ✅ Publicar igual la programa en su horario; si no respondés, no sale.")
 
@@ -295,6 +311,92 @@ def revisar_ph(cliente, p, carpeta: Path, wiki=None, avisar=log.info):
         finales = [f for f in fallas if reglas_.get(f["id"]) and reglas_[f["id"]].arreglo != "cambiar_foto"]
     corregidas = sorted({f["id"] for f in fallas} - {f["id"] for f in finales})
     return p, finales, corregidas, True
+
+
+# ---- Pequeña Historia: la revisión del video TERMINADO (Santi, 2026-11-17) -------------------------------------
+# En Colón la revisión miró la hoja de antes de la voz (una foto por frase, en miniatura) y el video salió con fotos
+# que nadie había mirado (los cortes del formato corto) y con un año contando que mostraba 1993 y 2020. Ahora, con el
+# video armado, Claude mira UN cuadro de cada corte, en grande, con su frase al lado.
+REGLAS_VIDEO_PH = ("PH-02", "PH-03", "PH-04", "PH-05", "PH-06", "PH-10", "PH-11", "PH-12", "PH-13")
+
+SISTEMA_VIDEO_PH = """Revisás un video corto de "Pequeña Historia" YA TERMINADO, antes de publicarlo. Te paso un cuadro
+de cada corte del video, en orden (la imagen k es el corte k), con la frase que la voz dice en ese momento, y los datos
+reales de la historia (año y lugar). Mirá cada cuadro de verdad: quién aparece, qué se ve, si se ve nítido, y qué dicen
+los textos escritos en pantalla (el año, el lugar). Sé estricto con las personas: un político, un funcionario o un acto
+de gobierno, o el retrato de alguien que la historia no nombra, NO cumple. No inventes problemas: si se cumple, true."""
+
+SCHEMA_VIDEO_PH = {"type": "OBJECT", "properties": {"reglas": {"type": "ARRAY", "items": {"type": "OBJECT", "properties": {
+    "id": {"type": "STRING"}, "cumple": {"type": "BOOLEAN"}, "corte": {"type": "INTEGER"}, "que": {"type": "STRING"}},
+    "required": ["id", "cumple", "corte", "que"]}}}, "required": ["reglas"]}
+
+
+def cuadros_de_cortes(video: Path, cortes: list[dict], carpeta: Path, ancho: int = 480) -> list[Path]:
+    """Un cuadro del medio de cada corte del video terminado."""
+    import subprocess
+
+    from .media import find_bin
+
+    carpeta.mkdir(parents=True, exist_ok=True)
+    out = []
+    for k, c in enumerate(cortes):
+        t = float(c["inicio"]) + float(c["dur"]) / 2
+        destino = carpeta / f"corte_{k + 1:02d}.jpg"
+        subprocess.run([find_bin("ffmpeg"), "-y", "-loglevel", "error", "-ss", f"{t:.2f}", "-i", str(video), "-frames:v",
+                        "1", "-vf", f"scale={ancho}:-2", "-q:v", "4", str(destino)], check=True, timeout=60)
+        out.append(destino)
+    return out
+
+
+def revisar_video_ph(cliente, meta: dict, avisar=log.info) -> tuple[list[dict], bool]:
+    """(fallas, revisado) del video terminado contra las reglas de fotos y de rótulos (REGLAS_VIDEO_PH)."""
+    ef_ = meta.get("efemeride") or {}
+    cortes = ef_.get("cortes") or []
+    if cliente is None or not cortes:
+        return [], False
+    video = Path(meta["salida"])
+    try:
+        cuadros = cuadros_de_cortes(video, cortes, video.parent / "revision_final")
+    except Exception as err:  # noqa: BLE001
+        avisar(f"revisión del video terminado: no pude sacar los cuadros ({str(err)[:120]})")
+        return [], False
+    frases = ef_.get("guion") or []
+    lineas = []
+    for k, c in enumerate(cortes, 1):
+        i = int(c.get("frase", 0))
+        frase = frases[i] if 0 <= i < len(frases) else ""
+        lineas.append(f"Corte {k} ({c.get('tipo')}, {c.get('inicio')} s): frase {i + 1}: {frase}")
+    local = ef_.get("local") or {}
+    ids = por_id("pequena_historia")
+    reglas_txt = "\n".join(f"- {rid}: {ids[rid].texto}" for rid in REGLAS_VIDEO_PH if rid in ids)
+    prompt = (f"DATOS REALES: el hecho es de {ef_.get('anio')}"
+              + (f", en {local.get('lugar')} ({local.get('pais')})" if local.get("lugar") else "")
+              + f". {ef_.get('evento', '')[:400]}\n\nLOS CORTES:\n" + "\n".join(lineas)
+              + "\n\nPuntuá el video contra CADA regla: en `reglas`, una entrada por regla con su `id`, `cumple` "
+                "(true/false) y, si no cumple, el `corte` donde se ve (desde 1) y `que` (concreto: qué se ve y qué "
+                f"tendría que verse).\n{reglas_txt}")
+    try:
+        imgs = [c.read_bytes() for c in cuadros]
+        r = json.loads(cliente.json(SISTEMA_VIDEO_PH, prompt, SCHEMA_VIDEO_PH, 0.1, imagenes=imgs))
+    except Exception as err:  # noqa: BLE001
+        avisar(f"revisión del video terminado: no respondió ({str(err)[:120]})")
+        return [], False
+    validos = set(REGLAS_VIDEO_PH)
+    out, vistos = [], set()
+    for x in r.get("reglas") or []:
+        rid = str(x.get("id") or "").strip().upper()
+        if rid in validos and rid not in vistos and x.get("cumple") is False:
+            vistos.add(rid)
+            k = int(x.get("corte") or 0)
+            seg = f" (corte {k}, {cortes[k - 1]['inicio']} s)" if 1 <= k <= len(cortes) else ""
+            out.append({"id": rid, "cuadro": k, "que": (str(x.get("que") or "") + seg)[:260]})
+    avisar(f"revisión del video terminado: {len(cortes)} cortes, fallan {[f['id'] for f in out] or 'ninguna'}")
+    return out, True
+
+
+def juntar_fallas(antes: list[dict], final: list[dict]) -> list[dict]:
+    """Las fallas de la revisión de la hoja más las del video terminado (la del video manda en sus reglas)."""
+    ids_final = {f["id"] for f in final}
+    return final + [f for f in antes if f["id"] not in ids_final and f["id"] not in REGLAS_VIDEO_PH]
 
 
 def semana_anterior(hoy: date) -> tuple[str, str]:

@@ -33,13 +33,17 @@ def test_la_misma_foto_de_commons_no_entra_dos_veces():
     assert ef.clave_archivo("https://images.pexels.com/a.jpg") != ef.clave_archivo("https://images.pexels.com/b.jpg")
 
 
-def test_el_montaje_toma_la_mejor_de_las_frases_siguientes():
+def test_el_montaje_usa_solo_las_fotos_del_gancho():
     from clips_bot import efemerides as ef
 
     g = ef.Guion(frases=["a", "b", "c"], fotos=[0, 1, 2], descartadas=[], titulo="t", descripcion="d",
                  hashtags=[], ranking=[[0], [1, 4], [2]], corto=True)
     plan, movs = ef.plan_rapido([(0, 0, 3.0), (1, 1, 3.0), (2, 2, 3.0)], g, montaje=True)
-    assert [f for i, f, _ in plan if i == 0] == [0, 1, 2] and movs[:3] == ["golpe"] * 3
+    # Santi, 2026-11-17 (Colón): cada foto muestra lo que dice SU frase: nada de adelantos de las siguientes
+    assert [f for i, f, _ in plan if i == 0] == [0] and movs[0] == "golpe"
+    g.ranking = [[0, 5, 6], [1, 4], [2]]
+    plan, movs = ef.plan_rapido([(0, 0, 3.0), (1, 1, 3.0), (2, 2, 3.0)], g, montaje=True)
+    assert [f for i, f, _ in plan if i == 0] == [0, 5, 6] and movs[:3] == ["golpe"] * 3
 
 
 def test_el_mapa_llega_cuando_se_dice_el_lugar():

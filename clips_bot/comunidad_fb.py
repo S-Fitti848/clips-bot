@@ -118,12 +118,16 @@ Te paso el texto de la historia y varias fotos numeradas. Por cada foto decí:
 - `politico`: true si muestra políticos, presidentes, funcionarios o un acto de gobierno (una cumbre, una firma, un
   discurso oficial, una foto protocolar).
 - `protagonista`: true si la persona principal de la foto ES de quien trata la historia.
+- `retrato`: true si el tema principal es una persona concreta (o dos o tres) posando o en primer plano (no una
+  multitud, un equipo ni gente de fondo). Un retrato de alguien que la historia no nombra NO sirve nunca.
+- `nitida`: false si la foto se ve borrosa, ilegible o de muy baja calidad (un recorte de diario que no se lee).
 `mejor`: el número de la foto que mejor muestra la historia entre las que coinciden (0 si ninguna sirve)."""
 SCHEMA_FOTO = {"type": "OBJECT", "properties": {
     "fotos": {"type": "ARRAY", "items": {"type": "OBJECT", "properties": {
         "n": {"type": "INTEGER"}, "se_ve": {"type": "STRING"}, "coincide": {"type": "BOOLEAN"},
-        "politico": {"type": "BOOLEAN"}, "protagonista": {"type": "BOOLEAN"}},
-        "required": ["n", "se_ve", "coincide", "politico", "protagonista"]}},
+        "politico": {"type": "BOOLEAN"}, "protagonista": {"type": "BOOLEAN"},
+        "retrato": {"type": "BOOLEAN"}, "nitida": {"type": "BOOLEAN"}},
+        "required": ["n", "se_ve", "coincide", "politico", "protagonista", "retrato", "nitida"]}},
     "mejor": {"type": "INTEGER"}}, "required": ["fotos", "mejor"]}
 
 
@@ -210,7 +214,8 @@ def foto_que_coincide(cliente, historia: dict, candidatas: list[tuple[Path, str]
     validas = {}
     for f in r.get("fotos") or []:
         k = int(f.get("n") or 0)
-        if 1 <= k <= len(candidatas) and f.get("coincide") and (not f.get("politico") or f.get("protagonista")):
+        if (1 <= k <= len(candidatas) and f.get("coincide") and (not f.get("politico") or f.get("protagonista"))
+                and (not f.get("retrato") or f.get("protagonista")) and f.get("nitida") is not False):
             validas[k] = str(f.get("se_ve") or "")
     if not validas:
         vistas = "; ".join(f"{int(f.get('n') or 0)}: {str(f.get('se_ve') or '')[:60]}"

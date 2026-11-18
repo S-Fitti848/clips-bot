@@ -39,7 +39,12 @@ def test_una_figura_con_agujeros_queda_llena():
 
 
 def test_el_anio_cuenta_hasta_el_anio_y_se_queda():
+    # Santi, 2026-11-17 (Colón): sin contar; solo el año real desde el primer cuadro
     ev = gr.anio_contando(1957)
+    valores = [int(e.rsplit(",", 1)[1].split("}")[-1]) for e in ev]
+    assert valores == [1957]
+    # si alguien pide contar a propósito, todavía cuenta
+    ev = gr.anio_contando(1957, desde=1897)
     valores = [int(e.rsplit(",", 1)[1].split("}")[-1]) for e in ev]
     assert 1897 < valores[0] < 1957 and valores[-1] == 1957 and valores == sorted(valores)
 

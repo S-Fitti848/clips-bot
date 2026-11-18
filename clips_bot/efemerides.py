@@ -496,7 +496,48 @@ def licencia_libre(corta: str) -> bool:
     return bool(re.match(r"^(public domain|pd\b|cc0|cc by( sa)?\b)", c))
 
 
-MIN_ANCHO_EPOCA = 500   # las fotos de la época del hecho (las viejas son chicas): ver motivo_foto
+# Santi, 2026-11-17 (Colón: recortes de diario de 500 px agrandados a 1080, borrosos e ilegibles): nada de fotos de
+# baja resolución, tampoco las de época. Era 500 para las de la época del hecho desde el 2026-10-02.
+MIN_ANCHO_EPOCA = MIN_ANCHO
+# Nitidez: la varianza del laplaciano en la zona más nítida de la foto (percentil 90 de cuadros de 100 px, con la foto
+# a 800 de ancho). Medido con las 57 fotos del Short de Colón: los recortes de diario dan 87-493 (y miden 500 px), las
+# fotos buenas 1.000-19.000; un retrato de fondo liso, 159. Debajo de esto la foto no se usa.
+NITIDEZ_MIN = 150
+
+
+def nitidez(ruta) -> float:
+    import cv2
+    import numpy as np
+
+    im = cv2.imread(str(ruta), cv2.IMREAD_GRAYSCALE)
+    if im is None:
+        return 0.0
+    h, w = im.shape
+    esc = 800 / max(1, w)
+    im = cv2.resize(im, (800, max(1, int(h * esc))), interpolation=cv2.INTER_AREA if esc < 1 else cv2.INTER_CUBIC)
+    lap = cv2.Laplacian(im, cv2.CV_64F)
+    H, W = lap.shape
+    t = 100
+    vs = [lap[y:y + t, x:x + t].var() for y in range(0, H - t + 1, t) for x in range(0, W - t + 1, t)]
+    return float(np.percentile(vs, 90)) if vs else float(lap.var())
+
+
+def motivo_calidad(ruta) -> str | None:
+    """Regla fija (Santi, 2026-11-17): nada de fotos de baja resolución ni borrosas. Mira el archivo bajado de verdad
+    (no lo que dice la fuente): menos de MIN_ANCHO px de ancho o menos de NITIDEZ_MIN de nitidez = afuera."""
+    try:
+        from PIL import Image
+
+        with Image.open(ruta) as im:
+            ancho = im.size[0]
+    except OSError as err:
+        return f"no se puede abrir ({err})"
+    if ancho < MIN_ANCHO:
+        return f"baja resolución ({ancho} px, mínimo {MIN_ANCHO})"
+    n = nitidez(ruta)
+    if n < NITIDEZ_MIN:
+        return f"borrosa (nitidez {n:.0f}, mínimo {NITIDEZ_MIN})"
+    return None
 
 
 def motivo_foto(info: dict, anio_hecho: int | None = None) -> str | None:
@@ -645,6 +686,10 @@ def bajar_fotos(wiki: Wiki, fotos: list[Foto], carpeta: Path, prefijo: str, cuan
                                 "seguidas)", 429) from err
             continue
         seguidos = 0
+        malo = motivo_calidad(f.ruta)
+        if malo:
+            avisar(f"  foto salteada ({f.archivo[:60]}): {malo}")
+            continue
         bajadas.append(f)
     return bajadas, []
 
@@ -1297,6 +1342,12 @@ se dice, dejá la lista vacía: es mejor vacía que una foto que no tiene nada q
 una máquina de otro tema, un edificio cualquiera). Buscá variedad: si otra foto sirve igual, no
 pongas primera la misma foto en frases distintas.
 
+PERSONAS (regla fija de Santi, 2026-11-17): NUNCA fotos de políticos ni de actos de gobierno (presidentes,
+funcionarios, inauguraciones, fotos oficiales), salvo que la historia sea de esa persona; NUNCA retratos de
+personas que la historia no nombra (un señor mayor cualquiera, un presidente de otra época). Tampoco fotos
+borrosas, ilegibles o recortes de diario que no se leen. Si una frase no tiene foto que muestre lo que
+dice, dejala vacía: va una tarjeta de texto.
+
 ÉPOCA Y LUGAR: te digo el año del hecho y, al lado de cada foto, cuándo se sacó (si se sabe). Para
 una frase del pasado, elegí fotos DE ESA ÉPOCA y de ese lugar: un avión de 2008 no sirve para
 contar un choque de 1940, aunque sea del mismo modelo. En `de_epoca` confirmá si la foto que
@@ -1539,7 +1590,13 @@ SISTEMA_DESCRIBIR = """Describís fotos para un primer filtro. La imagen k es la
 cruzando un puente de hierro, blanco y negro, unas 1900"); `tipo`: "foto" (fotografía, pintura o
 grabado de algo real), "captura", "interfaz", "documento", "planilla", "grafico", "diagrama", "mapa",
 "logo" u "otro"; `otro_idioma`: si se lee texto en un idioma que no es castellano ni inglés; `dura`:
-si muestra muertos, heridos o violencia real. Respondé solo con el JSON pedido."""
+si muestra muertos, heridos o violencia real; `politico`: si muestra a un político, un funcionario o un
+acto de gobierno (presidentes, ministros, legisladores, una inauguración oficial, un acto de campaña,
+una foto oficial), aunque no sepas quién es; `retrato`: si el tema principal es una persona concreta
+(o dos o tres) posando o en primer plano (retrato, foto oficial, foto de prensa de alguien), no una
+multitud, un equipo entero ni gente haciendo algo de fondo; `quien`: los nombres de las personas
+identificables, por el epígrafe o el nombre del archivo que te paso, o porque es alguien muy conocido
+("" si no se sabe). Respondé solo con el JSON pedido."""
 
 SCHEMA_DESCRIBIR = {
     "type": "OBJECT",
@@ -1549,8 +1606,10 @@ SCHEMA_DESCRIBIR = {
                        "tipo": {"type": "STRING", "enum": ["foto", "captura", "interfaz", "documento",
                                                           "planilla", "grafico", "diagrama", "mapa",
                                                           "logo", "otro"]},
-                       "otro_idioma": {"type": "BOOLEAN"}, "dura": {"type": "BOOLEAN"}},
-        "required": ["foto", "se_ve", "tipo", "otro_idioma", "dura"]}}},
+                       "otro_idioma": {"type": "BOOLEAN"}, "dura": {"type": "BOOLEAN"},
+                       "politico": {"type": "BOOLEAN"}, "retrato": {"type": "BOOLEAN"},
+                       "quien": {"type": "STRING"}},
+        "required": ["foto", "se_ve", "tipo", "otro_idioma", "dura", "politico", "retrato", "quien"]}}},
     "required": ["fotos"],
 }
 
@@ -1579,30 +1638,41 @@ def _huella_jpeg(img: bytes) -> str:
     return hashlib.sha256(img).hexdigest()[:32]
 
 
+DESCRIPCION_V = 2      # 2026-11-17: con `politico`, `retrato` y `quien` (las de antes se vuelven a describir)
+
+
 def describir_fotos(haiku, imagenes: list[bytes], carpeta: Path | None = None,
-                    avisar=log.info) -> list[dict]:
-    """Una descripción por imagen ({se_ve, tipo, otro_idioma, dura}). Las ya descriptas se leen de
-    `carpeta` (por huella del JPEG): solo las nuevas van a Haiku, en UN pedido."""
+                    avisar=log.info, textos: list[str] | None = None) -> list[dict]:
+    """Una descripción por imagen ({se_ve, tipo, otro_idioma, dura, politico, retrato, quien}). Las ya descriptas se
+    leen de `carpeta` (por huella del JPEG): solo las nuevas van a Haiku, en UN pedido. `textos`: el epígrafe o el
+    nombre del archivo de cada una (para saber quién es)."""
     carpeta = CACHE_DESCRIPCIONES if carpeta is None else carpeta
     out: list = []
     faltan = []
     for k, img in enumerate(imagenes):
         f = carpeta / f"{_huella_jpeg(img)}.json"
         try:
-            out.append(json.loads(f.read_text(encoding="utf-8")))
+            x = json.loads(f.read_text(encoding="utf-8"))
+            if x.get("v") != DESCRIPCION_V:
+                raise ValueError("descripción vieja")
+            out.append(x)
         except (OSError, ValueError):
             out.append(None)
             faltan.append(k)
     if faltan:
+        lista = "\n".join(f"foto {j}: {(textos[k] if textos and k < len(textos) else '')[:140]}"
+                          for j, k in enumerate(faltan, 1))
         d = json.loads(haiku.json(SISTEMA_DESCRIBIR,
-                                  f"Son {len(faltan)} fotos, numeradas de 1 a {len(faltan)}.",
+                                  f"Son {len(faltan)} fotos, numeradas de 1 a {len(faltan)}. Epígrafe o archivo de "
+                                  f"cada una:\n{lista}",
                                   SCHEMA_DESCRIBIR, imagenes=[imagenes[k] for k in faltan]))
         por_num = {x.get("foto"): x for x in d.get("fotos") or [] if isinstance(x, dict)}
         for j, k in enumerate(faltan, 1):
             x = por_num.get(j)
             if not x:
                 continue
-            x = {c: x.get(c) for c in ("se_ve", "tipo", "otro_idioma", "dura")}
+            x = {c: x.get(c) for c in ("se_ve", "tipo", "otro_idioma", "dura", "politico", "retrato", "quien")}
+            x["v"] = DESCRIPCION_V
             out[k] = x
             try:
                 carpeta.mkdir(parents=True, exist_ok=True)
@@ -1614,10 +1684,34 @@ def describir_fotos(haiku, imagenes: list[bytes], carpeta: Path | None = None,
     return [x or {} for x in out]
 
 
+def _sin_tildes(t: str) -> str:
+    import unicodedata
+
+    return "".join(c for c in unicodedata.normalize("NFD", t) if unicodedata.category(c) != "Mn")
+
+
+def _palabras_nombre(texto: str) -> set[str]:
+    return set(re.findall(r"[a-zñ]{4,}", _sin_tildes(texto.lower())))
+
+
+def motivo_persona(desc: dict, historia: str) -> str | None:
+    """Regla fija (Santi, 2026-11-17, Colón con Cristina Kirchner en Atucha y un retrato de Illia): nunca fotos de
+    políticos ni de actos de gobierno, ni retratos de personas que la historia no nombra, salvo que la historia sea de
+    esa persona (su nombre está en el guion). `desc`: la de `describir_fotos`."""
+    quien = str(desc.get("quien") or "")
+    nombrada = bool(_palabras_nombre(quien) & _palabras_nombre(historia)) if quien else False
+    if desc.get("politico") and not nombrada:
+        return f"político o acto de gobierno ({quien or 'sin nombre'}) que la historia no nombra"
+    if desc.get("retrato") and not nombrada:
+        return f"retrato de alguien que la historia no nombra ({quien or 'sin nombre'})"
+    return None
+
+
 def prefiltrar_fotos(haiku, lineas: list[str], pool: list[Foto], imagenes: list[bytes],
                      candidatas: list[list[int]], propias: list[list[int]] | None,
                      anio: int | None, avisar=log.info, carpeta: Path | None = None,
-                     videos: dict | None = None) -> set[int]:
+                     videos: dict | None = None, historia: str = "",
+                     fuera: set | None = None) -> set[int]:
     """Las fotos (índices del pool) que va a mirar Sonnet: por frase, las mejores PREFILTRO_POR_FRASE de
     sus candidatas según Haiku (la frase 1, una más), completando con las de su búsqueda si Haiku
     devuelve menos. Lo que Haiku ve como duro (muertos, heridos) no pasa. `videos` ({frase: [Video]}) se
@@ -1625,9 +1719,17 @@ def prefiltrar_fotos(haiku, lineas: list[str], pool: list[Foto], imagenes: list[
     videos = {i: vs for i, vs in (videos or {}).items() if len(vs) > VIDEOS_POR_FRASE}
     medios = [(i, k, v) for i, vs in sorted(videos.items()) for k, v in enumerate(vs) if v.frames]
     imgs_v = [_jpeg_chico(Path(v.frames[len(v.frames) // 2]), 384) for _, _, v in medios]
-    desc_todas = describir_fotos(haiku, imagenes + imgs_v, carpeta, avisar)
+    textos = [f"{f.archivo} — {f.epigrafe}" for f in pool] + [v.titulo for _, _, v in medios]
+    desc_todas = describir_fotos(haiku, imagenes + imgs_v, carpeta, avisar, textos=textos)
     desc, desc_v = desc_todas[:len(imagenes)], desc_todas[len(imagenes):]
     duras = {k for k, x in enumerate(desc) if x.get("dura")}
+    for k, x in enumerate(desc):
+        malo = motivo_persona(x, historia)
+        if malo:
+            duras.add(k)
+            avisar(f"    foto {k + 1} afuera: {malo}")
+    if fuera is not None:
+        fuera.update(duras)
     fotos = "\n".join(f"foto {k} ({f.anio or 'sin fecha'}): {f.epigrafe[:100]} — se ve: "
                       f"{desc[k - 1].get('se_ve') or '?'} [{desc[k - 1].get('tipo') or '?'}]"
                       for k, f in enumerate(pool, 1))
@@ -1699,8 +1801,10 @@ def elegir_fotos(cliente, g: Guion, pool: list[Foto], candidatas: list[list[int]
     haiku = getattr(elector, "prefiltro", None) if elector is not None else None
     if haiku is not None and not prefiltrado and len(pool) >= PREFILTRO_MIN:
         try:
+            fuera: set = set()
             keep = prefiltrar_fotos(haiku, lineas, pool, [_jpeg_chico(Path(f.ruta), 384) for f in pool],
-                                    candidatas, propias, anio, avisar, videos=videos)
+                                    candidatas, propias, anio, avisar, videos=videos,
+                                    historia=" ".join([g.titulo] + list(g.frases)), fuera=fuera)
         except Exception as e:    # el filtro solo ahorra: si falla, Sonnet mira todas, como antes
             avisar(f"    primer filtro: falló ({str(e)[:80]}), Sonnet mira todas")
             keep = None
@@ -1720,7 +1824,7 @@ def elegir_fotos(cliente, g: Guion, pool: list[Foto], candidatas: list[list[int]
                 extra.update({k: v for k, v in sub_extra.items() if k != "tipos"})
                 if "tipos" in sub_extra:
                     extra["tipos"] = {idx[k]: v for k, v in sub_extra["tipos"].items()}
-            return [[idx[x] for x in r] for r in rk], {idx[x] for x in malas}
+            return [[idx[x] for x in r] for r in rk], {idx[x] for x in malas} | fuera
 
     def origen(f: Foto) -> str:
         if not orden:
@@ -2450,11 +2554,10 @@ def de_reserva(g: Guion, n_pool: int) -> list[int]:
 
 
 def generales(g: Guion) -> list[int]:
-    """Las fotos del tema general del video: las del artículo del hecho (sin descartadas ni
-    modernas). Son las únicas que puede usar una frase sin foto propia, además de alargar la de la
-    frase anterior (regla de Santi, 2026-11-09)."""
-    malas, modernas = set(g.descartadas), set(g.modernas)
-    return [x for x in g.del_hecho if x not in malas and x not in modernas]
+    """Las fotos "del tema general" que puede usar una frase sin foto propia. Desde el 2026-11-17 (Santi, el Short de
+    Colón: el artículo del hecho era "Argentina" y salieron Illia y Cristina Kirchner en Atucha) NINGUNA: cada foto
+    tiene que mostrar lo que dice su frase; una frase sin foto alarga la de la frase anterior o va con una tarjeta."""
+    return []
 
 
 def duraciones_estimadas(g: Guion) -> list[float]:
@@ -3046,7 +3149,8 @@ def plan_rapido(plan: list[tuple[int, int, float]], g: Guion,
     `faltas`. Devuelve el plan y el movimiento de cada corte ("" en los videos)."""
     rk = g.rankings()
     hechas = [x for x in (g.tarjetas_fotos or [])]
-    gen = [x for x in generales(g) if x not in set(hechas)]
+    # Santi, 2026-11-17 (Colón): cada foto muestra lo que dice SU frase. Nada de fotos "del tema general" en los cortes.
+    gen: list[int] = []
     out, movs = [], []
     veces: dict[int, int] = {}
     m = 0
@@ -3078,8 +3182,7 @@ def plan_rapido(plan: list[tuple[int, int, float]], g: Guion,
             # frase o del tema general. Cada una cuenta como aparición (ninguna en más de 2 cortes).
             n = max(1, min(MONTAJE_CORTES, int(s // MONTAJE_MIN_S)))
             # Si la frase del gancho tiene pocas, la mejor de cada frase siguiente (un adelanto).
-            cand = list(dict.fromkeys([f] + [x for x in (rk[i] if i < len(rk) else []) if x != VIDEO]
-                                      + gen + [r[0] for r in rk[1:] if r and r[0] != VIDEO]))
+            cand = list(dict.fromkeys([f] + [x for x in (rk[i] if i < len(rk) else []) if x != VIDEO]))
             cand = [x for x in cand if x is not None and x >= 0][:n] or [f]
             trozos = [round(s / len(cand), 3)] * len(cand)
             for x, t in zip(cand, trozos):
@@ -3107,7 +3210,7 @@ def plan_rapido(plan: list[tuple[int, int, float]], g: Guion,
             if quiere is None:      # no queda nada: la que menos se usó (y queda anotado)
                 if faltas is not None:
                     faltas.append(i)
-                opciones = [x for x in dict.fromkeys(propias + gen + hechas) if x != previa] or [f]
+                opciones = [x for x in dict.fromkeys(propias + hechas) if x != previa] or [f]
                 quiere = min(opciones, key=lambda x: veces.get(x, 0))
             veces[quiere] = veces.get(quiere, 0) + 1
             if quiere != previa:
@@ -3898,6 +4001,16 @@ def hacer_video(p: Propuesta, settings, carpeta: Path, avisar=log.info, conn=Non
         avisar(f"⚠️ audio: {problema}")
     from .videos_libres import creditos as creditos_videos
 
+    # Cada corte tal como salió (Santi, 2026-11-17, Colón): la revisión final mira un cuadro de cada uno en el video
+    # terminado, no la hoja de antes de la voz (los cortes del formato corto agregaban fotos que nadie había mirado).
+    cortes, t_c = [], 0.0
+    for i, f, s in plan:
+        d_c = round(s * 30) / 30
+        tipo = "video" if f == VIDEO else "mapa" if f == MAPA else "foto"
+        archivo = p.fotos[f].get("archivo", "") if tipo == "foto" and 0 <= f < len(p.fotos) else ""
+        cortes.append({"frase": i, "inicio": round(t_c, 2), "dur": round(d_c, 2), "tipo": tipo, "foto": f,
+                       "archivo": archivo})
+        t_c += d_c
     cred = creditos(usadas_en_orden(p, plan))
     if rutas_video:
         cred += "\n" + creditos_videos(videos_en_orden(p, plan))
@@ -3914,7 +4027,8 @@ def hacer_video(p: Propuesta, settings, carpeta: Path, avisar=log.info, conn=Non
             "efemeride": {"fecha": p.fecha, "anio": e.anio, "evento": e.texto,
                           "articulo": e.paginas[0], "lang": e.lang, "guion": g.frases,
                           "musica": tema.ruta if tema else None, "tono": g.tono, "voz": motor,
-                          "destino": p.destino, "local": p.local, "aviso_fotos": aviso_fotos(g)}}
+                          "destino": p.destino, "local": p.local, "aviso_fotos": aviso_fotos(g),
+                          "cortes": cortes}}
 
 
 def _jpeg_chico(ruta: Path, ancho: int = 512) -> bytes:

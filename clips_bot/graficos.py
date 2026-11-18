@@ -164,7 +164,13 @@ def anio_contando(anio: int, desde: int | None = None, pasos: int = 18, inicio: 
     """El año corriendo de `desde` (unas décadas antes) hasta `anio` en CONTAR_S, frenando al final,
     y quieto hasta AÑO_HASTA_S. `inicio`: desde cuándo (2026-11-12: cuando arranca la segunda frase,
     la del año; el principio es del gancho)."""
-    desde = desde if desde is not None else max(0, anio - 60)
+    # Santi, 2026-11-17 (Colón: la final de 2021 se veía con "1993" y "2020" mientras contaba): el rótulo del año
+    # muestra SOLO el año real del hecho desde el primer cuadro, sin contar. `desde` queda para quien lo pida.
+    desde = anio if desde is None else desde
+    if desde == anio:
+        fin = max(inicio + AÑO_HASTA_S, hasta or 0.0)
+        return [f"Dialogue: 2,{_t(inicio)},{_t(fin)},Anio,,0,0,0,,"
+                f"{{\\t(0,120,\\fscx112\\fscy112)\\t(120,260,\\fscx100\\fscy100)\\fad(0,250)}}{anio}"]
     ev = []
     for k in range(pasos):
         x = (k + 1) / pasos

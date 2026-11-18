@@ -53,11 +53,11 @@ def test_tramos_de_una_frase_sin_foto_larga_no_usan_la_de_otra_frase():
     assert not ilustrar.errores_plan(plan, minimo=4)
 
 
-def test_generales_son_las_del_articulo_sin_descartadas_ni_modernas():
+def test_ya_no_hay_fotos_generales():
     g = efemerides.Guion(frases=["a"] * 6, fotos=[0] * 6, descartadas=[1], titulo="t",
                          descripcion="d", hashtags=[], ranking=RANKINGS, del_hecho=[0, 1, 2, 7],
                          modernas=[7])
-    assert efemerides.generales(g) == [0, 2]
+    assert efemerides.generales(g) == []          # Santi, 2026-11-17 (Colón): alargar la anterior o tarjeta
 
 
 def test_plan_de_la_propuesta_respeta_la_regla():
