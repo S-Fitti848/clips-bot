@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-11-17 | **Versión:** v1.35.0 (desplegado) | **Modo:** Fase 2: corriendo solo en la Pi. **Rots APAGADO.** Pequeña Historia (3 por día, madrugada desde las 04:00) (**NO se publica sola desde el 17/11**: llega con ✅ Publicar / ❌ Cancelar y sin respuesta no sale) y **Así Nació** (2 por día, desde las 07:00, publican 13:00 y 20:00 en YouTube y Facebook con ❌ Cancelar), todo al privado de Santi
+**Snapshot:** 2026-11-17 | **Versión:** v1.36.0 (desplegado) | **Modo:** Fase 2: corriendo solo en la Pi. **Rots APAGADO.** Pequeña Historia (3 por día, madrugada desde las 04:00) (**NO se publica sola desde el 17/11**: llega con ✅ Publicar / ❌ Cancelar y sin respuesta no sale) y **Así Nació** (2 por día, desde las 07:00, publican 13:00 y 20:00 en YouTube y Facebook con ❌ Cancelar), todo al privado de Santi
 
 > **SI ESTÁS EMPEZANDO UNA SESIÓN NUEVA, LEÉ §10.** Ahí está qué está hecho, qué quedó a medias,
 > qué falta, y las trampas que ya nos mordieron.
@@ -242,6 +242,14 @@ servicio systemd separado: `clips-bot`).
   al estándar mínimo sale, si no, ese día no se publica (`TopeCosto`, una línea). Antes de dibujar, el director
   (`animacion/director.py`) escribe qué ve el espectador en cada frase y se corrigen solas las escenas que no se
   entienden sin la voz; los ejemplos de Santi van en el prompt del guion (REGLA 18).
+- **Fotos de Pequeña Historia por capas (Santi, 2026-11-18; para gastar menos):** (1) origen: las de un artículo
+  general (un país, `ef.es_general`, o el artículo de la ciudad en Latinoamérica) quedan marcadas `general` y solo
+  sirven como paisaje de ese lugar; no hay más "reserva" (`de_reserva` vacío: cada frase usa solo las fotos elegidas
+  para ella, o tarjeta); (2) calidad: 800 px y nitidez; (3) Haiku lee SOLO el nombre y la descripción de cada foto y
+  descarta otra persona, otro lugar u otro año (`SISTEMA_PREFILTRO`; lo descartado no vuelve por relleno); (4) solo
+  las 2-3 finalistas por frase se miran con imagen, con Haiku (`describir_fotos` + `elegir_fotos`; `_elector_fotos`
+  es Haiku); (5) una sola revisión, la del video terminado, con todos los cortes en UN mosaico y todas las reglas
+  (`calidad.mosaico`); la de la hoja de antes de la voz ya no corre.
 - **Saldo de Claude hasta el 14/12 (Santi, 2026-11-18): US$ 70** (`presupuesto.py`, desde la fila de gemini_uso del
   deploy, `bot_estado.presupuesto_fila`). Cada día desde las 06:30: promedio de los días completos (7 como mucho) y
   proyección al 14/12; si no alcanza, Así Nació a 1 video por día (`asinacio_un_video`) y vuelve a 2 cuando con el
@@ -1265,6 +1273,9 @@ Problemas abiertos:
 
 ## 9. CHANGELOG
 
+- v1.36.0 (2026-11-18, tarde) — Fotos de Pequeña Historia por capas (§1). Antes: Latinoamérica US$ 0,53 por video y
+  tecnología US$ 0,25 (promedio del 11 al 18/11, bitácora). Medido después en la Pi (Belice, 19/11, de punta a punta con la voz de prueba):
+  US$ 0,31 en total; las fotos US$ 0,02 (antes ~US$ 0,20), la revisión del mosaico US$ 0,04, la búsqueda web US$ 0,15.
 - v1.35.0 (2026-11-18, tarde) — Saldo de US$ 70 hasta el 14/12 con Así Nació a 1 por día si no alcanza; tope por video
   de Así Nació a US$ 1,20. `tests/test_presupuesto.py`.
 - v1.34.0 (2026-11-18) — Tope de US$ 1,50 por video de Así Nació, director de escenas, menos texto (aprendizaje y
