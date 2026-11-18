@@ -222,3 +222,20 @@ def test_costos_del_dia_incluyen_la_busqueda(tmp_path):
     _uso(conn, "2026-11-17", wh.MODELO_BUSQUEDA, 10)
     total, filas = claude.resumen_costo(conn, "2026-11-17")
     assert total == pytest.approx(0.10) and filas[0][0] == "Latinoamérica: buscar en la web (Haiku)"
+
+
+def test_si_la_respuesta_no_trae_el_json_se_pide_el_formato():
+    """Santi, 2026-11-18: 2 de 5 verificaciones se cayeron por "la respuesta no trajo el JSON pedido"."""
+    from types import SimpleNamespace
+
+    from clips_bot import web_historias as wh
+
+    class Msgs:
+        def create(self, **k):
+            assert "tools" not in k
+            return SimpleNamespace(usage=SimpleNamespace(input_tokens=10, output_tokens=5),
+                                   content=[SimpleNamespace(type="text", text='```json\n{"datos": [], "es_real": true}\n```')])
+
+    cliente = SimpleNamespace(_c=SimpleNamespace(messages=Msgs()), modelo="haiku", uso=None)
+    assert wh.json_de(cliente, "verifiqué todo y está bien", wh.SISTEMA_VERIFICAR) == {"datos": [], "es_real": True}
+    assert wh.json_de(cliente, '{"a": 1}', wh.SISTEMA_VERIFICAR) == {"a": 1}

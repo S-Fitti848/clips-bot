@@ -32,7 +32,7 @@ HAIKU = "claude-haiku-5-5"
 HERRAMIENTA_BUSCAR = "web_search_20250305"
 HERRAMIENTA_LEER = "web_fetch_20250910"
 MODELO_BUSQUEDA = "web_search"          # la fila de costo de las búsquedas en gemini_uso (1 unidad = 1 búsqueda)
-BUSQUEDAS_DESCUBRIR = 8
+BUSQUEDAS_DESCUBRIR = 10      # 2026-11-18: 8 → 10 (más historias que lleguen a 8)
 BUSQUEDAS_VERIFICAR = 4
 LECTURAS_VERIFICAR = 3
 MIN_FUENTES = 2
@@ -132,6 +132,28 @@ class ClienteWeb:
         return texto, list(dict.fromkeys(links))
 
 
+def json_de(cliente: "ClienteWeb", texto: str, sistema: str) -> dict:
+    """El JSON de la respuesta; si no lo trajo (Santi, 2026-11-18: 2 de 5 verificaciones se cayeron así), se le pide
+    al mismo modelo, SIN herramientas, que pase su respuesta al formato pedido (no busca de nuevo)."""
+    try:
+        return sacar_json(texto)
+    except WebError:
+        pass
+    try:
+        r = cliente._c.messages.create(
+            model=cliente.modelo, max_tokens=8000,
+            system="Pasás una respuesta al formato JSON que se pidió. No agregues datos que no estén en la respuesta.",
+            messages=[{"role": "user", "content": "EL FORMATO PEDIDO:\n" + sistema[-1500:] + "\n\nLA RESPUESTA:\n"
+                       + texto[-12000:] + "\n\nDevolvé SOLO el bloque ```json."}])
+        if cliente.uso:
+            cliente.uso(_llamador(), cliente.modelo, "claude", r.usage.input_tokens, r.usage.output_tokens, False)
+        return sacar_json("\n".join(b.text for b in r.content if getattr(b, "type", "") == "text"))
+    except WebError:
+        raise
+    except Exception as e:  # noqa: BLE001
+        raise WebError(f"la respuesta no trajo el JSON pedido ({str(e)[:100]})") from e
+
+
 def _links_de(contenido) -> list[str]:
     out = []
     for b in contenido or []:
@@ -177,7 +199,11 @@ Al final respondé SOLO con un bloque ```json con esta forma:
   costumbre|record|misterio|dato_sorprendente|idolo|otro", "articulo_wikipedia": "título exacto del artículo de
   es.wikipedia del hecho o del protagonista, o vacío", "articulo_lugar": "título exacto del artículo de
   es.wikipedia del lugar, o vacío", "interes": 1-10, "fuentes": ["url", "url"]}]}
-Entre 5 y 10 historias, de países distintos si se puede, cada una con los links donde la leíste."""
+Entre 8 y 12 historias, de países distintos si se puede, cada una con los links donde la leíste.
+Cada historia se puntúa después del 1 al 10 en PERSONA (alguien concreto con nombre), PELIGRO o SORPRESA, GIRO y
+EMOCIÓN, y solo salen las de 8 o más (Nacozari = 10): traé solo las que llegarían a eso. Nada de fundaciones de pueblos
+contadas como un trámite, cambios de nombre ni efemérides administrativas: lo que buscamos es lo que se cuenta en una
+sobremesa."""
 
 
 def buscar(cliente: ClienteWeb, dia, evitar: list[str] | None = None,
@@ -190,7 +216,7 @@ def buscar(cliente: ClienteWeb, dia, evitar: list[str] | None = None,
         prompt += "\nNo repitas estas, que ya salieron: " + " | ".join(x[:120] for x in evitar)
     texto, links = cliente.pedir(SISTEMA_BUSCAR, prompt, busquedas=busquedas)
     out = []
-    for h in sacar_json(texto).get("historias") or []:
+    for h in json_de(cliente, texto, SISTEMA_BUSCAR).get("historias") or []:
         try:
             anio = int(h.get("anio"))
         except (TypeError, ValueError):
@@ -231,7 +257,7 @@ def verificar(cliente: ClienteWeb, texto: str, anio: int, lugar: str, pais: str,
               + ("Links donde apareció: " + " ".join(pistas[:6]) if pistas else ""))
     salida, links = cliente.pedir(SISTEMA_VERIFICAR, prompt, busquedas=BUSQUEDAS_VERIFICAR,
                                   lecturas=LECTURAS_VERIFICAR)
-    d = sacar_json(salida)
+    d = json_de(cliente, salida, SISTEMA_VERIFICAR)
     buenos, malos = [], 0
     for x in d.get("datos") or []:
         fuentes = [u for u in x.get("fuentes") or [] if str(u).startswith("http")]

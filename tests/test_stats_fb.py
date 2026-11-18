@@ -35,7 +35,8 @@ def _fake(vistas):
     return medir
 
 
-def test_a_las_24h_manda_una_vez_con_la_mediana(monkeypatch, tmp_path):
+def test_a_las_24h_se_guarda_y_no_se_manda(monkeypatch, tmp_path):
+    monkeypatch.setattr(__import__('clips_bot.aprendizaje', fromlist=['x']), 'ARCHIVO', tmp_path / 'lecciones.json')
     conn = db.connect(tmp_path / "c.db")
     subidas = [{"canal": "facebook", "video_id": "v1", "clip_id": "historia_fb_1115_1925",
                 "publish_at": (T0 - timedelta(hours=30)).isoformat()},
@@ -46,13 +47,11 @@ def test_a_las_24h_manda_una_vez_con_la_mediana(monkeypatch, tmp_path):
     monkeypatch.setattr(sf, "gancho_y_titulo", lambda clip, root: ("Una ciudad eligió su cumpleaños.", "CDMX"))
     tg = _TG()
     m._fb_24h_tick(conn, tg, load_settings(), ahora=T0, medir=_fake({"v1": 900, "v0": 300}))
-    assert len(tg.mensajes) == 1                          # solo el de 24-48 h (ni el viejo ni el de 3 h)
-    chat, texto = tg.mensajes[0]
-    assert chat == m.DUENO and texto.startswith("🔧 Claude Code:") and "Pequeña Historia" in texto
+    assert tg.mensajes == []           # Santi, 2026-11-18: no se lo manda; lo usa el bot (aprendizaje.py)
+    texto = sf.texto("facebook", sf.cargar(conn)["v1"], [{"vistas": 200}], True)
     assert "«Una ciudad eligió su cumpleaños.»" in texto and "Reproducciones: 900 (200)" in texto
-    assert "datos de hoy" in texto                        # todavía sin 3 medidos a las 24 h
     m._fb_24h_tick(conn, tg, load_settings(), ahora=T0 + timedelta(hours=1), medir=_fake({}))
-    assert len(tg.mensajes) == 1                          # una sola vez
+    assert tg.mensajes == []
     guardado = sf.cargar(conn)["v1"]
     assert guardado["gancho"] and guardado["canal"] == "facebook" and guardado["vistas"] == 900
     assert "Reels de Facebook a las 24 h" in sf.resumen_informe(conn)

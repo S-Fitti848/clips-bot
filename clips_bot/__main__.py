@@ -24,6 +24,7 @@ import json
 import logging
 import re
 import signal
+import subprocess
 import sys
 import threading
 import time
@@ -2727,6 +2728,7 @@ def escuchar_telegram(settings: Settings, timeout_poll: int = 50) -> int:
             _seguro(tg, str(chat_ultimo or ""), "el resumen semanal de costos", _costos_semana_tick, conn, tg, settings)
             _seguro(tg, str(chat_ultimo or ""), "el resumen semanal del estándar de calidad", _calidad_semana_tick,
                     conn, tg)
+            _seguro(tg, str(chat_ultimo or ""), "el resumen semanal de vistas", _resumen_semana_tick, conn, tg)
             _seguro(tg, str(chat_ultimo or ""), "el reintento de los clips",
                     _auto(_clips_reintento_tick), conn, settings)
             _seguro(tg, str(chat_ultimo or ""), "la búsqueda de lo que pegó",
@@ -3749,7 +3751,11 @@ def _fb_24h_tick(conn, tg: TelegramClient, settings: Settings, ahora=None, medir
                     continue
         medidos[vid] = x
         db.set_valor(conn, sf.CLAVE, json.dumps(medidos, ensure_ascii=False))
-        tg.send_message(DUENO, sf.texto(canal, x, otros, de_hoy))
+        # Santi, 2026-11-18: no se lo mando; lo uso para los próximos videos (aprendizaje.py) y va en el resumen semanal
+        log.info("Reel a las 24 h: %s", re.sub(r"<[^>]+>", "", sf.texto(canal, x, otros, de_hoy))[:600])
+        from . import aprendizaje
+
+        aprendizaje.guardar(medidos)
 
 
 COMUNIDAD_DIA = "comunidad_fb_dia"    # bot_estado: el día (AR) en que ya se programó la publicación de comunidad
@@ -4305,6 +4311,41 @@ CALIDAD_SEMANA = "calidad_semana_enviado"   # bot_estado: el lunes (AR) cuyo res
 CALIDAD_SEMANA_HORA = (9, 30)                # los lunes, desde las 09:30 AR (después del de costos)
 
 
+SEMANA_RESUMEN = "resumen_semana_vistas"     # bot_estado: el lunes en que ya se mandó
+SEMANA_RESUMEN_HORA = (10, 0)
+
+
+def _cambios_de_la_semana(desde, hasta) -> list[str]:
+    """Los cambios al bot de la semana (los commits que no son de documentación), cortos."""
+    try:
+        r = subprocess.run(["git", "-C", str(DATA_DIR.parent), "log", f"--since={desde}", f"--until={hasta}",
+                            "--pretty=%s"], capture_output=True, text=True, timeout=20)
+    except (OSError, subprocess.SubprocessError):
+        return []
+    out = []
+    for linea in r.stdout.splitlines():
+        if linea.startswith(("Docs", "Pendientes", "Merge")):
+            continue
+        corto = linea.split(":", 1)[-1].strip() if ":" in linea[:40] else linea
+        out.append(corto.split(" (")[0][:70])
+    return out
+
+
+def _resumen_semana_tick(conn, tg: TelegramClient, ahora=None) -> None:
+    """Los lunes (Santi, 2026-11-18): 5 líneas con qué cambió y cómo vienen las vistas (en vez del resumen de cada Reel)."""
+    from . import aprendizaje
+    from . import stats_fb as sf
+
+    ahora = ahora or datetime.now(AR)
+    lunes = ahora.date().isoformat()
+    if (ahora.weekday() != 0 or (ahora.hour, ahora.minute) < SEMANA_RESUMEN_HORA
+            or db.get_valor(conn, SEMANA_RESUMEN) == lunes):
+        return
+    db.set_valor(conn, SEMANA_RESUMEN, lunes)
+    desde = (ahora.date() - timedelta(days=7)).isoformat()
+    tg.send_message(DUENO, aprendizaje.resumen_semana(sf.cargar(conn), _cambios_de_la_semana(desde, lunes), ahora))
+
+
 def _calidad_semana_tick(conn, tg: TelegramClient, ahora=None) -> None:
     """Los lunes (Santi, 2026-11-16: "yo no reviso video por video"): qué reglas del estándar de calidad fallaron más
     en la semana anterior, por canal, para mejorar el motor."""
@@ -4527,6 +4568,11 @@ def _animacion_armar(conn, tg: TelegramClient, chats: list[str], settings: Setti
     # Santi, 2026-11-17: con el estándar debajo del mínimo después de las correcciones, NO se programa
     retenido = settings.animacion.subir and calidad.retener("asinacio", est.get("fallas") or [],
                                                               bool(est.get("revisado")))
+    if est.get("tope") and calidad.retener("asinacio", est.get("fallas") or [], bool(est.get("revisado"))):
+        # Santi, 2026-11-18: al tope de US$ 1,50 y debajo del estándar mínimo, ese día no se publica (sin reintento)
+        ok_, total_ = calidad.puntaje("asinacio", est.get("fallas") or [])
+        raise marcas.TopeCosto(f"llegó al tope de US$ {marcas.TOPE_USD_VIDEO:.2f} (US$ {est.get('costo_total_usd', 0):.2f}) "
+                               f"con el estándar {ok_}/{total_}: hoy no sale")
     if retenido:
         _animacion_meta(settings, r, carpeta, hoy, k)
         avisos = []
@@ -4685,7 +4731,7 @@ def _animacion_tick(conn, tg: TelegramClient, settings: Settings, ahora=None, ar
     if not db.tomar_turno(conn, db.RECURSO_PESADO, turno, maximo=1, vencimiento_s=VENCIMIENTO_PESADO_S):
         return
     chats = [c.strip() for c in cfg.chat.split(",") if c.strip()] or [DUENO]
-    error, sin_candidato = "", False
+    error, sin_candidato, tope_costo = "", False, False
     vid = clip_asinacio(ahora.date(), k)
     intento = (fallas.get(str(k), 0) + 1)
     ultimo = intento >= ANIM_FALLAS_MAX or \
@@ -4698,7 +4744,10 @@ def _animacion_tick(conn, tg: TelegramClient, settings: Settings, ahora=None, ar
     except Exception as e:
         from .animacion.marcas import SinCandidato
 
-        sin_candidato = isinstance(e, SinCandidato)
+        from .animacion.marcas import TopeCosto
+
+        sin_candidato = isinstance(e, (SinCandidato, TopeCosto))
+        tope_costo = isinstance(e, TopeCosto)
         if not sin_candidato:
             log.exception("el video de marcas %d falló", k + 1)
         error = html.escape(str(e)[:500])
@@ -4717,6 +4766,9 @@ def _animacion_tick(conn, tg: TelegramClient, settings: Settings, ahora=None, ar
                 and (ahora + timedelta(minutes=cfg.reintento_min)).date() == ahora.date():
             reint[str(k)] = otra
             texto = f"🎨 <b>Así Nació{cual}</b>: no salió ({error}). Reintento a las {otra}."
+        elif tope_costo:          # Santi, 2026-11-18: solo una línea
+            hechos.append(k)
+            texto = f"💸 Así Nació{cual}: {error}."
         else:
             hechos.append(k)
             texto = f"🎨 <b>Marcas animadas{cual}</b>: hoy no sale. {error}"

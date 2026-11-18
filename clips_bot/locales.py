@@ -935,6 +935,10 @@ def proponer(wiki: ef.Wiki, sonnet, haiku, gemini, dia: date, carpeta: Path, avi
         yield from elegidos[:ef.MAX_GUIONES * 2]
         if hecho or any(c.clasif.get("banco_id") for c, _, _ in elegidos):
             return
+        # Santi, 2026-11-18 (el banco se usó 3 veces en la semana): una historia del día que solo falló por fotos y
+        # llega al 50 % sale con el mínimo relajado (como la de tecnología) ANTES de ir al banco (Puebla: 68 %).
+        if insuf is not None and ef.umbral_relajado(insuf[0].pct) is not None and not respaldo:
+            return
         extra = de_banco(banco, excluir)
         if extra:
             avisar("ninguna de las del día salió: paso al banco de reserva")

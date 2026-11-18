@@ -1293,6 +1293,9 @@ def escribir_guion(cliente, e: Evento, fuente: str, correccion: str = "", anteri
     errores: list[str] = []
     d, puntuales = None, 0
     base = sistema or (SISTEMA_GUION_HABLADO if hablado else SISTEMA_GUION)   # efemerides.guion_hablado
+    from . import aprendizaje      # lo que más retuvo en Facebook (Santi, 2026-11-18)
+
+    base += aprendizaje.para_prompt("pequena_historia")
     # Corregir solo lo que falla (Santi, 2026-11-15): las frases que no validan, con el resto como contexto;
     # el guion entero de nuevo solo después de CORRECCIONES_MAX correcciones puntuales fallidas.
     for _ in range(reintentos + 1 + correcciones.CORRECCIONES_MAX):

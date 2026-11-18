@@ -1624,7 +1624,12 @@ def chequear_calidad(cliente, d: dict, m: Marca) -> list[str]:
 def sistema_guion() -> str:
     """El prompt del guion con la biblioteca de escenas de hoy (las recetas guardadas también)."""
     lista = "\n".join(f"  - {k}: {v}" for k, v in sorted(_lib.todas_las_acciones().items()))
-    return SISTEMA_GUION.replace("{BIBLIOTECA}", lista) + (REGLA_16 if REGLAS_V3 else "") + (REGLA_17 if USO_V4 else "")
+    from clips_bot import aprendizaje as _aprendizaje
+
+    from .director import REGLA_DIRECTOR
+
+    return (SISTEMA_GUION.replace("{BIBLIOTECA}", lista) + (REGLA_16 if REGLAS_V3 else "") + (REGLA_17 if USO_V4 else "")
+            + REGLA_DIRECTOR + _aprendizaje.para_prompt("asinacio"))
 
 
 REGLAS_V3 = False      # armar_video lo prende con `animacion.reglas_v3` (Santi, 2026-11-16)
@@ -1686,6 +1691,9 @@ def escribir_guion(cliente, e: Elegido, fuente: str, reintentos: int = 6, avisar
     correccion, ultimo, d, puntuales = "", [], None, 0
     mejor: tuple[dict, list[str]] | None = None     # el mejor sin errores de datos ni de seguridad (Santi, 2026-11-16)
     for intento in range(reintentos):
+        if intento and pasado_tope():
+            avisar(f"guion de {e.marca.nombre}: tope de US$ {TOPE_USD_VIDEO:.2f} alcanzado, no pruebo más")
+            break
         try:
             if d is not None and ultimo and puntuales < correcciones.CORRECCIONES_MAX:
                 puntuales += 1
@@ -2638,6 +2646,42 @@ def aplicar_revision(d: dict, problemas: list[dict], claves: list[tuple[float, i
     return hechos
 
 
+def dirigir_escenas(cliente, d: dict, e: "Elegido", fuente: str, avisar=log.info,
+                    ganchos_previos: list[dict] | None = None) -> dict:
+    """El director (director.py) mira el guion; las escenas que no se entienden sin la voz se corrigen SOLO a ellas
+    (correcciones.corregir) y se vuelve a validar. Si la corrección no valida o empeora, queda el guion como estaba."""
+    from clips_bot import correcciones
+
+    from . import director
+
+    anios = [int(x.get("anio_escena") or 0) for x in d.get("escenas") or [] if x.get("anio_escena")]
+    malas = director.dirigir(cliente, d, describir, e.marca.nombre, min(anios) if anios else None, avisar)
+    if not malas:
+        return d
+    notas = {m["frase"]: m["que_ve"] for m in malas}
+    pedido = (f"MARCA: {e.marca.nombre} ({e.marca.pais})\nÁNGULO: {e.angulo} — {ANGULOS.get(e.angulo, '')}\n\n"
+              f"TEXTO (Wikipedia; los datos salen SOLO de acá):\n{fuente[:20000]}")
+    antes = validar_guion(d, e.marca, fuente, ganchos_previos)
+    try:
+        nuevo = correcciones.corregir(cliente, sistema_guion(), pedido, json.loads(json.dumps(d)),
+                                      director.errores_para_corregir(malas), schema_guion(), "escenas", "escena")
+    except Exception as err:  # noqa: BLE001
+        avisar(f"director: la corrección no salió ({str(err)[:120]})")
+        return d
+    despues = validar_guion(nuevo, e.marca, fuente, ganchos_previos)
+    if any(bloquea(x) for x in despues) or len(despues) > len(antes):
+        avisar(f"director: la corrección no valida ({'; '.join(despues)[:200]}): queda como estaba")
+        return d
+    for k, nota in notas.items():
+        if k < len(nuevo.get("escenas") or []):
+            nuevo["escenas"][k]["que_ve"] = nota
+    for k, esc_ in enumerate(d.get("escenas") or []):       # las notas de las que ya estaban bien
+        if k not in notas and k < len(nuevo.get("escenas") or []) and esc_.get("que_ve"):
+            nuevo["escenas"][k].setdefault("que_ve", esc_["que_ve"])
+    avisar(f"director: corregí las escenas {[k + 1 for k in sorted(notas)]}")
+    return nuevo
+
+
 def ficha_escena(esc_k: dict, d: dict) -> dict:
     """La FICHA de una escena (Santi, 2026-11-17: "cada escena se planifica antes de dibujarla"): quién aparece con
     su rol y su ropa, dónde, en qué año, qué hace cada uno, con qué objetos y en qué plano. El dibujo sale de acá (la
@@ -2660,14 +2704,16 @@ def ficha_escena(esc_k: dict, d: dict) -> dict:
                       "ropa": piezas.replace("+", " + "), "sombrero": sombrero, "hace": hace, "en_las_manos": lleva})
     return {"lugar": esc_k.get("lugar_nuevo") or esc_k.get("fondo") or "", "anio": anio, "gente": gente,
             "objetos": [o.get("prop") for o in esc_k.get("objetos") or [] if o.get("prop")],
-            "accion_escena": esc_k.get("accion_escena") or "", "plano": esc_k.get("plano") or ""}
+            "accion_escena": esc_k.get("accion_escena") or "", "plano": esc_k.get("plano") or "",
+            "que_ve": str(esc_k.get("que_ve") or "")}
 
 
 def texto_ficha(f: dict) -> str:
     gente = "; ".join(f"{g['quien']} ({g['rol']}, {g['genero']} {g['edad']}, {g['ropa']}, sombrero {g['sombrero']}): "
                       f"{g['hace']}{' con ' + g['en_las_manos'] if g['en_las_manos'] else ''}" for g in f["gente"])
     return (f"FICHA: lugar {f['lugar']}, año {f['anio']}; gente: {gente or '-'}; objetos: "
-            f"{', '.join(f['objetos']) or '-'}; plano {f['plano'] or 'normal'}")
+            f"{', '.join(f['objetos']) or '-'}; plano {f['plano'] or 'normal'}"
+            + (f"; TIENE QUE VERSE (director): {f['que_ve']}" if f.get("que_ve") else ""))
 
 
 def guardar_fichas(d: dict, carpeta: Path) -> None:
@@ -2691,7 +2737,11 @@ hace cada uno). Por cada persona del cuadro respondete: ¿QUIÉN ES (se entiende
   sacar_objeto con su nombre en `objeto` o cambiar_accion si es el lugar entero;
 - un fondo pobre: menos de 3 detalles que digan DÓNDE y CUÁNDO (carteles pintados, faroles, carros, adoquines,
   cajas del producto, ladrillo, ropa de época): `arreglo` = otro, y en `que` cuáles faltan;
-- la ventanita de Tito tapando a una persona o un objeto importante: `arreglo` = otro."""
+- la ventanita de Tito tapando a una persona o un objeto importante: `arreglo` = otro;
+- (Santi, 2026-11-18) el cuadro NO muestra lo que dice "TIENE QUE VERSE" (la nota del director), o alguien que no
+  escucha la voz no entendería qué pasa, o cae en lo prohibido (un objeto adentro de otro sin sentido, manos
+  trabajando sobre algo que no se trabaja con las manos, un objeto de otra época, una escena genérica): `arreglo` =
+  cambiar_accion, y en `que` qué tendría que verse."""
 
 
 def revisar_visual(cliente, d: dict, datos: dict, carpeta: Path, capturar=None, avisar=log.info,
@@ -2807,7 +2857,30 @@ class Resultado:
 
 
 NUMERO_CHICO = 12
-TOPE_USD_VIDEO = 2.0   # Claude por video: pasado esto no se prueba otra marca (8 intentos × 4 marcas = ~US$ 4)
+# TOPE DURO por video (Santi, 2026-11-18, el Atari costó US$ 3,43): todo lo de Claude de un video (elegir, guion, piezas,
+# correcciones, reemplazos y rescate) como mucho US$ 1,50. Al llegarlo se frena todo: si el video ya llega al estándar
+# mínimo sale; si no, ese día no se publica (TopeCosto: sin reintento) y se avisa con una línea.
+TOPE_USD_VIDEO = 1.50
+_PRESUPUESTO: dict = {}      # {"conn", "fila"}: lo pone armar_video al empezar cada video
+
+
+class TopeCosto(Exception):
+    """El video llegó al tope de costo antes de tener un guion: ese día no sale (sin reintento)."""
+
+
+def gastado() -> float:
+    """US$ de Claude del video que se está armando (0 si no hay uno)."""
+    conn = _PRESUPUESTO.get("conn")
+    if conn is None:
+        return 0.0
+    try:
+        return costo_desde(conn, _PRESUPUESTO.get("fila", 0))
+    except Exception:  # noqa: BLE001
+        return 0.0
+
+
+def pasado_tope() -> bool:
+    return bool(_PRESUPUESTO) and gastado() >= TOPE_USD_VIDEO
 
 
 def costo_desde(conn, fila: int) -> float:
@@ -2929,9 +3002,9 @@ def proponer(conn, cliente, wiki, hoy: date, catalogo: list[Marca] | None = None
     bitacora.paso("guion")
     fila0 = ultima_fila_uso(conn) if conn is not None else 0
     for e in elegidos[:max_intentos]:
-        if conn is not None and errores and costo_desde(conn, fila0) > TOPE_USD_VIDEO:
-            errores.append(f"corté: este video ya gastó más de US$ {TOPE_USD_VIDEO:g} de Claude")
-            break
+        if conn is not None and errores and (pasado_tope() or costo_desde(conn, fila0) > TOPE_USD_VIDEO):
+            raise TopeCosto(f"llegó al tope de US$ {TOPE_USD_VIDEO:.2f} (US$ {max(gastado(), costo_desde(conn, fila0)):.2f}) "
+                            "sin un guion que valide: hoy no sale")
         fuente = fuente_de(wiki, e.marca)
         fila_g = bitacora.fila_actual()
         try:
@@ -2986,6 +3059,10 @@ def armar_video(conn, settings, carpeta: Path, cliente=None, wiki=None, hoy: dat
     t_total = time.time()
     tiempos = {}
     fila0 = ultima_fila_uso(conn)
+    _PRESUPUESTO.clear()
+    if conn is not None:
+        _PRESUPUESTO.update(conn=conn, fila=fila0)
+    tope_frenado = ""      # el texto de la línea si el video llegó al tope de costo
     cliente = cliente or claude.cliente(cfg.modelo_texto, max_tokens=cfg.max_tokens)
     if cliente is None:
         raise SinCandidato("sin ANTHROPIC_API_KEY: el texto de este canal va con Claude")
@@ -2999,6 +3076,8 @@ def armar_video(conn, settings, carpeta: Path, cliente=None, wiki=None, hoy: dat
         e, d, fuente = proponer(conn, cliente, wiki, hoy, catalogo, cfg.candidatos, cfg.puntaje_min,
                                 cfg.max_intentos, avisar, revisor=revisor, forzar=forzar,
                                 reintentos_guion=cfg.reintentos_guion, banco=banco, ultimo=ultimo)
+        if pasado_tope():
+            raise TopeCosto(f"llegó al tope de US$ {TOPE_USD_VIDEO:.2f} (US$ {gastado():.2f}) con el guion: hoy no sale")
     tiempos["guion_s"] = round(time.time() - t0, 1)
     if not tiene_claves(d) and revisor is not None:     # REGLA 9 con un guion que no la trae
         try:
@@ -3008,6 +3087,13 @@ def armar_video(conn, settings, carpeta: Path, cliente=None, wiki=None, hoy: dat
     from clips_bot import bitacora
 
     bitacora.dato(titulo=str(d.get("titulo") or ""), marca=e.marca.nombre, angulo=e.angulo)
+    # Escenas con sentido (Santi, 2026-11-18): el director escribe qué ve el espectador en cada frase y se corrigen SOLO
+    # las escenas que no se entienden sin la voz, antes de dibujar (así las piezas que falten se crean después).
+    bitacora.paso("director")
+    if not pasado_tope():
+        if not fuente:
+            fuente = fuente_de(wiki, e.marca)
+        d = dirigir_escenas(cliente, d, e, fuente, avisar, ganchos_recientes(conn) if conn is not None else None)
     bitacora.paso("dibujos")
     d = asegurar_dibujos(cliente, d, e, fuente or "", avisar)
     if REGLAS_V3:
@@ -3049,6 +3135,10 @@ def armar_video(conn, settings, carpeta: Path, cliente=None, wiki=None, hoy: dat
             antes, fin = fin, narrar.duracion_wav(wav)
             avisar(f"voz: {antes:.1f} s → {fin:.1f} s ajustando la velocidad ×{ajuste:.3f} (sin reescribir)")
         if MIN_S <= fin <= MAX_S or intento == 2 or not reescribir:
+            break
+        if pasado_tope():
+            tope_frenado = f"tope de US$ {TOPE_USD_VIDEO:.2f}: no reescribí el guion por la duración ({fin:.1f} s)"
+            avisar(tope_frenado)
             break
         # fuera de 32-38 s: se reescribe el guion (más corto o más largo), nunca se acelera más
         palabras_hoy = sum(len(x.split()) for x in hablado)
@@ -3123,6 +3213,12 @@ def armar_video(conn, settings, carpeta: Path, cliente=None, wiki=None, hoy: dat
         if vuelta == VUELTAS_REVISION:
             revision.append(f"vuelta {vuelta + 1}: quedó sin corregir: "
                             + "; ".join(str(pr.get("que") or "")[:80] for pr in problemas[:4]))
+            break
+        if pasado_tope():               # Santi, 2026-11-18: tope duro del video entero
+            frenado = costo_rev()
+            tope_frenado = f"correcciones frenadas por el tope de US$ {TOPE_USD_VIDEO:.2f} (US$ {gastado():.2f})"
+            revision.append(tope_frenado)
+            avisar(tope_frenado)
             break
         if costo_rev() > tope_rev:      # Santi, 2026-11-16: las correcciones de un video, como mucho US$ 0,50
             frenado = costo_rev()
@@ -3208,12 +3304,18 @@ def armar_video(conn, settings, carpeta: Path, cliente=None, wiki=None, hoy: dat
 
         clave_video = f"{hoy.isoformat()}/{e.marca.nombre}/{e.angulo}"
         for k, ids in por_frase.items():
+            if pasado_tope():
+                frenado = costo_rev()
+                tope_frenado = f"reemplazos frenados por el tope de US$ {TOPE_USD_VIDEO:.2f} (US$ {gastado():.2f})"
+                revision.append(tope_frenado)
+                break
             if costo_rev() > tope_rev:
                 frenado = costo_rev()
                 revision.append(f"reemplazo de escenas frenado: ya iban US$ {frenado:.2f} (tope {tope_rev:g})")
                 break
             hecho = _rz.reemplazar(haiku, d, datos, eventos, k, ids, _armar_todo, clave_video, e.marca.nombre,
-                                   carpeta, sigue=lambda: costo_rev() <= tope_rev, avisar=avisar)
+                                   carpeta, sigue=lambda: costo_rev() <= tope_rev and not pasado_tope(),
+                                   avisar=avisar)
             if hecho:
                 datos, eventos, d, texto_ = hecho
                 reemplazos.append(texto_)
@@ -3232,7 +3334,10 @@ def armar_video(conn, settings, carpeta: Path, cliente=None, wiki=None, hoy: dat
     # escenas que fallan, creando lo que falte (objetos y lugares nuevos quedan guardados), y se vuelve a mirar una
     # vez. Con su propio tope de costo, aparte del de las correcciones.
     rescate = ""
-    if revisado and calidad.retener("asinacio", d.get("_estandar") or [], True) and conn is not None and cliente is not None:
+    if revisado and calidad.retener("asinacio", d.get("_estandar") or [], True) and pasado_tope():
+        tope_frenado = tope_frenado or f"sin rescate: el video llegó al tope de US$ {TOPE_USD_VIDEO:.2f} (US$ {gastado():.2f})"
+        revision.append(tope_frenado)
+    elif revisado and calidad.retener("asinacio", d.get("_estandar") or [], True) and conn is not None and cliente is not None:
         fila_res = ultima_fila_uso(conn)
         malas = []
         for pr in problemas_f:
@@ -3250,7 +3355,7 @@ def armar_video(conn, settings, carpeta: Path, cliente=None, wiki=None, hoy: dat
             datos, eventos = linea_de_tiempo(d, inicios, fin, palabras, wav,
                                              subtitulos="viral" if settings.animacion.subtitulos_virales else "clasico",
                                              visual=getattr(cfg, "visual_plus", False))
-            if costo_desde(conn, fila_res) <= RESCATE_USD:
+            if costo_desde(conn, fila_res) <= RESCATE_USD and not pasado_tope():
                 problemas_f, claves_f = revisar_visual(cliente, d, datos, carpeta, avisar=avisar, conn=conn)
                 revisado = bool(d.get("_estandar_ok"))
             ok_, total_ = calidad.puntaje("asinacio", d.get("_estandar") or [])
@@ -3270,7 +3375,8 @@ def armar_video(conn, settings, carpeta: Path, cliente=None, wiki=None, hoy: dat
                 "corregidas": sorted(set(primeras or []) - {f["id"] for f in finales}),
                 "guion": [str(x) for x in d.get("_estilo_pendiente") or []],
                 "reemplazos": reemplazos, "sin_arreglo": sin_arreglo,
-                "frenado_usd": round(frenado, 3), "costo_correcciones_usd": round(costo_rev(), 3), "rescate": rescate}
+                "frenado_usd": round(frenado, 3), "costo_correcciones_usd": round(costo_rev(), 3), "rescate": rescate,
+                "tope": bool(tope_frenado) or pasado_tope(), "costo_total_usd": round(gastado(), 3)}
     try:
         anotar_escenas(conn, d, f"{hoy.isoformat()}/{e.marca.nombre}/{e.angulo}", e.marca.nombre)
     except Exception as err:  # noqa: BLE001 — anotar nunca frena el video
@@ -3279,7 +3385,8 @@ def armar_video(conn, settings, carpeta: Path, cliente=None, wiki=None, hoy: dat
                    estandar["corregidas"], [("AN-21", g_[:240]) for g_ in estandar["guion"]], revisado,
                    dia=hoy.isoformat())
     try:
-        flojas = puntos_flojos(cliente, d, datos, carpeta, avisar)      # mejora continua (Santi, 2026-11-16)
+        # mejora continua (Santi, 2026-11-16); pasado el tope de costo, no se gasta más
+        flojas = [] if pasado_tope() else puntos_flojos(cliente, d, datos, carpeta, avisar)
     except Exception as err:  # noqa: BLE001 — anotar nunca frena el video
         avisar(f"puntos flojos: no salieron ({str(err)[:120]})")
         flojas = []
@@ -3328,6 +3435,8 @@ def armar_video(conn, settings, carpeta: Path, cliente=None, wiki=None, hoy: dat
                       hilos_x264=rd.hilos_x264_defecto())
     tiempos["render_s"] = round(time.time() - t0, 1)
     avisar(r.resumen())
+    costo_final = costo_desde(conn, fila0)
+    _PRESUPUESTO.clear()
     return Resultado(
         marca=e.marca.nombre, angulo=e.angulo, notas=e.notas, promedio=e.promedio,
         titulo=str(d.get("titulo") or ""), descripcion=str(d.get("descripcion") or ""),
@@ -3335,7 +3444,7 @@ def armar_video(conn, settings, carpeta: Path, cliente=None, wiki=None, hoy: dat
         motor_voz=motor, musica=tema.ruta if tema else "", credito_musica=tema.credito() if tema else "",
         articulo=f"https://es.wikipedia.org/wiki/{e.marca.wiki_es.replace(' ', '_')}",
         render_s=tiempos["render_s"], total_s=round(time.time() - t_total, 1),
-        costo_usd=costo_desde(conn, fila0), piezas_usd=piezas_desde(conn, fila0), tiempos=tiempos, revision=revision, flojas=flojas, niveles=niv,
+        costo_usd=costo_final, piezas_usd=piezas_desde(conn, fila0), tiempos=tiempos, revision=revision, flojas=flojas, niveles=niv,
         estandar=estandar,
         aviso=" · ".join(x for x in (e.aviso, aviso_estilo(d)) if x), banco_id=e.banco_id)
 

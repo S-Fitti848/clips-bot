@@ -158,3 +158,13 @@ def _fotos_falsas_pasan(monkeypatch, request):
 
 def pytest_configure(config):
     config.addinivalue_line("markers", "calidad_real: el test usa el filtro real de resolución y nitidez de las fotos")
+
+
+@pytest.fixture(autouse=True)
+def _sin_presupuesto_de_otro_video():
+    """El tope de costo de Así Nació (marcas._PRESUPUESTO) es del video que se está armando: nunca pasa de un test a otro."""
+    from clips_bot.animacion import marcas
+
+    marcas._PRESUPUESTO.clear()
+    yield
+    marcas._PRESUPUESTO.clear()
