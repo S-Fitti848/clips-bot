@@ -473,6 +473,11 @@ class Animacion:
     hora_publicacion: str = "19:00"
     # 2 por día (Santi, 2026-11-15): uno por horario, de marcas distintas. Vacío = solo hora_publicacion.
     horas_publicacion: tuple = ()
+    # Prueba de horarios (Santi, 2026-11-18): entre prueba_desde y prueba_hasta (AAAA-MM-DD, AR, incluidos) se usan
+    # horas_prueba en vez de horas_publicacion; el resumen de los lunes compara las vistas de los dos horarios.
+    horas_prueba: tuple = ()
+    prueba_desde: str = ""
+    prueba_hasta: str = ""
     # El guion de animación es largo (escenas, cámara, efectos): el 15/11 no entró en 16.000 tokens.
     max_tokens: int = 32000
     reintentos_guion: int = 8          # vueltas de corrección del guion antes de pasar a otra marca
@@ -615,6 +620,7 @@ def load_settings(path: Path = CONFIG_DIR / "settings.yaml") -> Settings:
         ("candidatos", "categorias_costream"),
         ("publicacion", "horarios"),
         ("animacion", "horas_publicacion"),
+        ("animacion", "horas_prueba"),
     ]:
         if clave in (raw.get(seccion) or {}):
             raw[seccion][clave] = tuple(str(x) for x in raw[seccion][clave] or ())

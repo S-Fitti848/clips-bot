@@ -4352,7 +4352,16 @@ def _resumen_semana_tick(conn, tg: TelegramClient, ahora=None) -> None:
         return
     db.set_valor(conn, SEMANA_RESUMEN, lunes)
     desde = (ahora.date() - timedelta(days=7)).isoformat()
-    tg.send_message(DUENO, aprendizaje.resumen_semana(sf.cargar(conn), _cambios_de_la_semana(desde, lunes), ahora))
+    from . import horarios_an, youtube
+
+    medidos = sf.cargar(conn)
+    try:
+        cliente = youtube.Cliente("animacion")
+    except Exception as e:      # noqa: BLE001 — sin token de Así Nació, la comparación va solo con Facebook
+        log.info("resumen semanal: sin YouTube de Así Nació (%s)", e)
+        cliente = None
+    horarios = horarios_an.resumen(conn, cliente, medidos, ahora)
+    tg.send_message(DUENO, aprendizaje.resumen_semana(medidos, _cambios_de_la_semana(desde, lunes), ahora, horarios))
 
 
 def _calidad_semana_tick(conn, tg: TelegramClient, ahora=None) -> None:
@@ -4546,9 +4555,13 @@ ANIM_DIA = "animacion_dia"   # bot_estado: el día (AR) en que ya se armó (o se
 PREFIJO_ASINACIO = "asinacio_"   # clip_id de los videos de Así Nació (asinacio_AAAAMMDD)
 
 
-def horas_asinacio(settings: Settings) -> list[str]:
-    """Los horarios de publicación de Así Nació: uno por video del día (2026-11-15: 13:00 y 20:00)."""
+def horas_asinacio(settings: Settings, dia=None) -> list[str]:
+    """Los horarios de publicación de Así Nació: uno por video del día (2026-11-15: 13:00 y 20:00; del 19/11 al 02/12,
+    la prueba de 12:30 y 18:00, `animacion.horas_prueba`)."""
     cfg = settings.animacion
+    dia = (dia or datetime.now(AR).date()).isoformat()
+    if cfg.horas_prueba and cfg.prueba_desde <= dia <= (cfg.prueba_hasta or "9999"):
+        return list(cfg.horas_prueba)
     return list(cfg.horas_publicacion) or [cfg.hora_publicacion]
 
 
@@ -4634,7 +4647,7 @@ def _hora_asinacio(settings: Settings, hora: str, ahora: datetime | None = None)
 
 def _animacion_meta(settings: Settings, r, carpeta: Path, hoy, k: int = 0) -> dict:
     """El meta del video de Así Nació, guardado al lado del video (para programarlo o cancelarlo después)."""
-    horas = horas_asinacio(settings)
+    horas = horas_asinacio(settings, hoy)
     hora = horas[min(k, len(horas) - 1)]
     descripcion = (f"{r.descripcion}\n\nFuente: {r.articulo}"
                    + (f"\nMúsica: {r.credito_musica}" if r.credito_musica else ""))
@@ -4729,7 +4742,7 @@ def _animacion_tick(conn, tg: TelegramClient, settings: Settings, ahora=None, ar
     clave = f"{ANIM_ESTADO}:{hoy}"
     estado = json.loads(db.get_valor(conn, clave) or "{}")
     hechos, reint, fallas = estado.get("hechos", []), estado.get("reintento", {}), estado.get("fallas", {})
-    n = len(horas_asinacio(settings))
+    n = len(horas_asinacio(settings, ahora.date()))
     from . import presupuesto
 
     if db.get_valor(conn, presupuesto.UN_VIDEO) == "1":      # Santi, 2026-11-18: el saldo no alcanza al 14/12

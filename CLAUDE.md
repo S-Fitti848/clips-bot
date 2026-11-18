@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-11-17 | **Versión:** v1.37.0 (desplegado) | **Modo:** Fase 2: corriendo solo en la Pi. **Rots APAGADO.** Pequeña Historia (3 por día, madrugada desde las 04:00) (**NO se publica sola desde el 17/11**: llega con ✅ Publicar / ❌ Cancelar y sin respuesta no sale) y **Así Nació** (2 por día, desde las 07:00, publican 13:00 y 20:00 en YouTube y Facebook con ❌ Cancelar), todo al privado de Santi
+**Snapshot:** 2026-11-18 | **Versión:** v1.38.0 (desplegado) | **Modo:** Fase 2: corriendo solo en la Pi. **Rots APAGADO.** Pequeña Historia (3 por día, madrugada desde las 04:00) (**NO se publica sola desde el 17/11**: llega con ✅ Publicar / ❌ Cancelar y sin respuesta no sale) y **Así Nació** (2 por día, desde las 07:00, publican 13:00 y 20:00 en YouTube y Facebook con ❌ Cancelar), todo al privado de Santi
 
 > **SI ESTÁS EMPEZANDO UNA SESIÓN NUEVA, LEÉ §10.** Ahí está qué está hecho, qué quedó a medias,
 > qué falta, y las trampas que ya nos mordieron.
@@ -237,6 +237,10 @@ servicio systemd separado: `clips-bot`).
   registra el primero antes de armar el segundo). Si un video falla por algo que no es "no hay candidato"
   (Claude cortado, Gemini caído), otro intento en 1 h, hasta las 22:00 y 4 intentos por video: no se pierde el
   día. Un guion cortado por max_tokens se reintenta solo con el doble de límite (hasta 64.000).
+- **Así Nació: prueba de horarios (Santi, 2026-11-18; `animacion.horas_prueba`, `horarios_an.py`):** del 19/11 al 02/12
+  se publica a las 12:30 y 18:00 (YouTube y Facebook) en vez de 13:00 y 20:00; el 03/12 vuelve solo. El resumen de los
+  lunes trae una línea con la mediana de vistas por horario (YouTube: los 2 primeros días por Analytics, guardados en
+  `bot_estado.asinacio_yt_2dias`; Facebook: las de 24 h de `stats_fb`), 12:30 contra 13:00 y 18:00 contra 20:00.
 - **Así Nació: tope duro de US$ 1,20 por video (1,50 a la mañana del 18/11) y escenas con sentido (Santi, 2026-11-18; AN-28 y AN-29):** todo lo
   de Claude de un video como mucho US$ 1,20 (`marcas.TOPE_USD_VIDEO`, `pasado_tope`): al llegar se frena todo; si llega
   al estándar mínimo sale, si no, ese día no se publica (`TopeCosto`, una línea). Antes de dibujar, el director
@@ -1279,6 +1283,8 @@ Problemas abiertos:
 
 ## 9. CHANGELOG
 
+- v1.38.0 (2026-11-18, tarde) — Prueba de horarios de Así Nació (12:30 y 18:00 del 19/11 al 02/12) y su comparación
+  en el resumen de los lunes. `tests/test_horarios_an.py`. 1722 tests OK.
 - v1.37.0 (2026-11-18, tarde) — Pruebas sin Claude real; la revisión final reemplaza la foto mala en vez de frenar.
   Gasto del 18/11 hasta las 11:07: US$ 8,73 (Así Nació 5,67 con los 2 videos de antes del tope, Pequeña Historia 2,41,
   búsqueda web 0,34, pruebas y mediciones 0,31; bancos 0).

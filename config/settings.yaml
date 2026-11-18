@@ -639,6 +639,11 @@ animacion:
   # 2 videos por día (Santi, 2026-11-15), de marcas distintas: el primero se arma desde las 07:00 y el
   # segundo apenas termina el primero; cada uno se programa en su horario.
   horas_publicacion: ["13:00", "20:00"]
+  # Prueba de horarios por 2 semanas (Santi, 2026-11-18): 12:30 y 18:00 en YouTube y Facebook del 19/11 al 02/12;
+  # después vuelve sola a horas_publicacion. El resumen de los lunes compara las vistas con los horarios de antes.
+  horas_prueba: ["12:30", "18:00"]
+  prueba_desde: "2026-11-19"
+  prueba_hasta: "2026-12-02"
   max_tokens: 32000          # el guion entero (escenas, cámara, efectos); si se corta, reintenta con 64.000
   reintentos_guion: 8
   reintento_min: 60          # si un video falla, otro intento en 1 h (hasta las 22:00), no se pierde el día

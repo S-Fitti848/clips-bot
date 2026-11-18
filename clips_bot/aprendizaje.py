@@ -75,7 +75,7 @@ def para_prompt(canal: str, archivo: Path | None = None) -> str:
     return txt
 
 
-def resumen_semana(medidos: dict, cambios: list[str], hoy: datetime) -> str:
+def resumen_semana(medidos: dict, cambios: list[str], hoy: datetime, horarios: str = "") -> str:
     """5 líneas: qué cambió y cómo vienen las vistas (mediana de reproducciones a las 24 h, esta semana contra la
     anterior, por canal)."""
     lunes = (hoy - timedelta(days=hoy.weekday())).date()
@@ -97,5 +97,8 @@ def resumen_semana(medidos: dict, cambios: list[str], hoy: datetime) -> str:
             lineas.append(f"{nombre}: {n} Reels, mediana {ahora_:,} vistas a las 24 h"
                           .replace(",", ".") + (f" (antes {prev:,}{flecha})".replace(",", ".") if prev is not None else "") + ".")
     lineas.append("Cambié: " + ("; ".join(cambios[:3]) if cambios else "nada nuevo") + ".")
-    lineas.append("Apliqué a los próximos lo que más retuvo (ganchos y temas) y dejé de lado lo que menos.")
+    if horarios:     # la prueba de horarios de Así Nació (Santi, 2026-11-18): en lugar de la línea genérica
+        lineas.append(horarios)
+    else:
+        lineas.append("Apliqué a los próximos lo que más retuvo (ganchos y temas) y dejé de lado lo que menos.")
     return "\n".join(lineas[:5])
