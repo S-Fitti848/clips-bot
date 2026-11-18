@@ -3581,8 +3581,9 @@ def _elector_fotos(settings: Settings, reintento: bool = False):
         return None
     from . import claude
 
-    c = claude.cliente(settings.historias_fb.modelo_texto)
-    if c is not None:   # el primer filtro (2026-11-15): Haiku ordena, Sonnet mira solo las mejores
+    # Santi, 2026-11-18 (capas 3 y 4): Haiku ordena por el texto y elige mirando SOLO las 2-3 finalistas por frase
+    c = claude.cliente(settings.historias_fb.modelo_simple)
+    if c is not None:
         c.prefiltro = claude.cliente(settings.historias_fb.modelo_simple, esfuerzo="low")
     return c
 
@@ -5081,12 +5082,9 @@ def _efe_armar(conn, tg: TelegramClient, chat_id, token: str, settings: Settings
     # contra las reglas ANTES de gastar la voz; las fotos que no pasan se cambian solas y lo que quede se avisa.
     from . import calidad
 
-    try:
-        prop, cal_fallas, cal_corregidas, cal_revisado = calidad.revisar_ph(
-            _claude_textos(settings)[0], prop, Path(estado["carpeta"]), avisar=log.info)
-    except Exception as err:  # noqa: BLE001 — la revisión nunca frena el video
-        log.warning("estándar de calidad (Pequeña Historia): %s", err)
-        cal_fallas, cal_corregidas, cal_revisado = [], [], False
+    # Santi, 2026-11-18 (capa 5): la revisión es UNA, sobre el mosaico del video terminado (abajo); la de la hoja de
+    # antes de la voz ya no corre (gastaba 2 pedidos con imágenes y no veía los cortes reales).
+    cal_fallas, cal_corregidas, cal_revisado = [], [], False
     if cal_corregidas:
         estado = {**estado, "propuesta": prop.__dict__}
         db.set_valor(conn, f"efe:{token}", json.dumps(estado, ensure_ascii=False))

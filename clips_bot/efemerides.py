@@ -165,6 +165,9 @@ class Foto:
     articulo: str
     ruta: str = ""                    # la copia local, cuando se baja
     anio: int | None = None           # cuándo se sacó (DateTimeOriginal de Commons), si se sabe
+    # Santi, 2026-11-18 (capa 1): de un artículo GENERAL (un país, una ciudad entera): solo sirve como paisaje o vista
+    # de ese lugar, nunca para una frase sobre una persona, un club o un hecho.
+    general: bool = False
 
     def a_dict(self) -> dict:
         return asdict(self)
@@ -644,12 +647,30 @@ def filtrar_infos(wiki: Wiki, lang: str, infos: list[dict], articulo: str,
     return fotos, descartes
 
 
+ARTICULOS_GENERALES = {
+    "argentina", "mexico", "colombia", "peru", "chile", "venezuela", "uruguay", "paraguay", "bolivia", "ecuador",
+    "cuba", "brasil", "guatemala", "honduras", "nicaragua", "costa rica", "panama", "el salvador", "puerto rico",
+    "republica dominicana", "haiti", "estados unidos", "espana", "francia", "italia", "alemania", "reino unido",
+    "japon", "china", "rusia", "america latina", "latinoamerica", "america del sur", "sudamerica", "europa",
+    "united states", "spain", "france", "germany", "italy", "japan", "mexico city", "ciudad de mexico"}
+
+
+def es_general(titulo: str) -> bool:
+    """Un artículo de un país o de una región entera (Santi, 2026-11-18: en Colón el artículo del hecho era
+    "Argentina" y de ahí salieron Illia y Cristina Kirchner en Atucha)."""
+    return _norm(re.sub(r"\s*\(.*?\)\s*", " ", str(titulo or ""))).strip() in ARTICULOS_GENERALES
+
+
 def fotos_del_evento(wiki: Wiki, e: Evento) -> tuple[list[Foto], dict]:
     """Las fotos del artículo del evento (`e.paginas[0]`) que pasan las reglas, en su orden, y por
-    qué quedaron afuera las otras."""
+    qué quedaron afuera las otras. Las de un artículo general (un país) quedan marcadas `general`."""
     titulo = e.paginas[0]
     archivos = list(dict.fromkeys(wiki.archivos(e.lang, titulo)))
-    return filtrar_infos(wiki, e.lang, wiki.info(e.lang, archivos), titulo, e.anio)
+    fotos, desc = filtrar_infos(wiki, e.lang, wiki.info(e.lang, archivos), titulo, e.anio)
+    if es_general(titulo):
+        for f in fotos:
+            f.general = True
+    return fotos, desc
 
 
 def bajar_fotos(wiki: Wiki, fotos: list[Foto], carpeta: Path, prefijo: str, cuantas: int,
@@ -1583,9 +1604,9 @@ def rankings_de(d: dict, candidatas: list[list[int]],
 # de salida: lo caro). Ahora Haiku describe cada foto UNA vez (guardado por foto: la misma foto no se
 # vuelve a pagar) y, solo con texto, ordena las candidatas de cada frase; Sonnet mira las mejores
 # PREFILTRO_POR_FRASE de cada una (la frase 1, una más: la del gancho) y decide como siempre.
-PREFILTRO_POR_FRASE = 5      # 2026-11-15: con US$ 80/mes de tope, Sonnet mira más (eran 3)
+PREFILTRO_POR_FRASE = 3      # 2026-11-18 (capa 4): 2 o 3 finalistas por frase, las únicas que se miran con imagen
 VIDEOS_POR_FRASE = 3          # (2026-11-15: 3) con el estilo nuevo eran hasta 4 videos × 3 cuadros por frase: lo más caro
-PREFILTRO_MIN = 14            # con menos fotos que esto, Sonnet las mira todas (no hay nada que ahorrar)
+PREFILTRO_MIN = 0             # 2026-11-18: siempre (la imagen la miran solo las finalistas)
 CACHE_DESCRIPCIONES = DATA_DIR / "cache_claude" / "fotos"
 
 SISTEMA_DESCRIBIR = """Describís fotos para un primer filtro. La imagen k es la foto k. Para CADA foto:
@@ -1616,10 +1637,15 @@ SCHEMA_DESCRIBIR = {
     "required": ["fotos"],
 }
 
-SISTEMA_PREFILTRO = """Primer filtro de las fotos de un video corto narrado. Te paso las frases del guion
-(qué conviene mostrar y los números de sus candidatas) y, de cada foto, cuándo se sacó, su epígrafe y
-qué se ve. Para CADA frase, ordená de mejor a peor hasta {k} de SUS candidatas que muestren lo que dice
-LA FRASE (no solo el tema en general). Preferí: la foto del hecho o del lugar; para una frase del pasado,
+SISTEMA_PREFILTRO = """Primer filtro de las fotos de un video corto narrado, SOLO CON EL TEXTO (no ves las imágenes).
+Te paso las frases del guion (qué conviene mostrar y los números de sus candidatas) y, de cada foto, cuándo se sacó, el
+nombre del archivo, su descripción y de qué artículo viene. Para CADA frase, ordená de mejor a peor hasta {k} de SUS
+candidatas que muestren lo que dice LA FRASE (no solo el tema en general).
+DESCARTÁ (no las pongas) las que por su nombre o descripción muestran OTRA persona, OTRO lugar u OTRO año que los de la
+frase o del hecho (un presidente, un retrato de alguien que la frase no nombra, una central nuclear en una historia de
+fútbol, una ciudad de otro país, una foto de 2024 en una frase de 1921), y las de políticos o actos de gobierno (salvo
+que la historia sea de esa persona). Las marcadas ARTÍCULO GENERAL (de un país o una ciudad entera) solo sirven como
+paisaje o vista de ESE lugar, para una frase que hable del lugar: nunca para una persona, un club o un hecho. Preferí: la foto del hecho o del lugar; para una frase del pasado,
 fotos de esa época; para una frase CENTRAL, una foto real del hecho o, si no hay, una escena que ilustre
 la situación; para una AL PASAR, una foto clara de la cosa que se nombra. Nada de mapas, logos,
 capturas, gráficos ni documentos salvo que la frase hable de eso. Si dudás entre dos, poné las dos:
@@ -1721,24 +1747,14 @@ def prefiltrar_fotos(haiku, lineas: list[str], pool: list[Foto], imagenes: list[
     recorta EN EL LUGAR a los VIDEOS_POR_FRASE mejores de cada frase (Haiku mira el cuadro del medio)."""
     videos = {i: vs for i, vs in (videos or {}).items() if len(vs) > VIDEOS_POR_FRASE}
     medios = [(i, k, v) for i, vs in sorted(videos.items()) for k, v in enumerate(vs) if v.frames]
-    imgs_v = [_jpeg_chico(Path(v.frames[len(v.frames) // 2]), 384) for _, _, v in medios]
-    textos = [f"{f.archivo} — {f.epigrafe}" for f in pool] + [v.titulo for _, _, v in medios]
-    desc_todas = describir_fotos(haiku, imagenes + imgs_v, carpeta, avisar, textos=textos)
-    desc, desc_v = desc_todas[:len(imagenes)], desc_todas[len(imagenes):]
-    duras = {k for k, x in enumerate(desc) if x.get("dura")}
-    for k, x in enumerate(desc):
-        malo = motivo_persona(x, historia)
-        if malo:
-            duras.add(k)
-            avisar(f"    foto {k + 1} afuera: {malo}")
-    if fuera is not None:
-        fuera.update(duras)
-    fotos = "\n".join(f"foto {k} ({f.anio or 'sin fecha'}): {f.epigrafe[:100]} — se ve: "
-                      f"{desc[k - 1].get('se_ve') or '?'} [{desc[k - 1].get('tipo') or '?'}]"
+    # Capa 3 (Santi, 2026-11-18): Haiku lee SOLO el título y la descripción de cada foto (sin la imagen).
+    duras: set[int] = set()
+    fotos = "\n".join(f"foto {k} ({f.anio or 'sin fecha'}): {f.archivo.replace('File:', '').replace('_', ' ')[:90]} — "
+                      f"{f.epigrafe[:140]} — de «{f.articulo[:60]}»"
+                      + (" [ARTÍCULO GENERAL: solo paisaje de ese lugar]" if getattr(f, "general", False) else "")
                       for k, f in enumerate(pool, 1))
     vids = "\n".join(f"frase {i + 1}, V{k + 1}: {v.titulo[:80]} ({'de archivo' if v.de_archivo else 'stock'}, "
-                     f"{v.etiqueta()}) — se ve: {dv.get('se_ve') or '?'}"
-                     for (i, k, v), dv in zip(medios, desc_v))
+                     f"{v.etiqueta()})" for (i, k, v) in medios)
     prompt = ((f"EL HECHO ES DE {anio}.\n\n" if anio else "") + "FRASES:\n" + "\n".join(lineas)
               + "\n\nFOTOS:\n" + fotos + (f"\n\nVIDEOS:\n{vids}" if vids else ""))
     d = json.loads(haiku.json(SISTEMA_PREFILTRO.replace("{k}", str(PREFILTRO_POR_FRASE))
@@ -1756,7 +1772,10 @@ def prefiltrar_fotos(haiku, lineas: list[str], pool: list[Foto], imagenes: list[
         dichas = ((frases[i] or {}).get("fotos") if i < len(frases) else None) or []
         elegidas = [x - 1 for x in dichas if isinstance(x, int) and x - 1 in validas]
         suyas = propias[i] if propias and i < len(propias) else []
-        orden = elegidas + [x for x in suyas if x in validas] + [x for x in cands if x in validas]
+        # Capa 3 (Santi, 2026-11-18): lo que Haiku descartó por el texto NO vuelve por relleno. Solo si no respondió
+        # nada para esta frase, las de su propia búsqueda (nunca las de un artículo general).
+        orden = elegidas if dichas else [x for x in suyas + cands if x in validas
+                                         and not getattr(pool[x], "general", False)]
         vistas: list[int] = []
         for x in orden:
             if x not in vistas:
@@ -1764,7 +1783,24 @@ def prefiltrar_fotos(haiku, lineas: list[str], pool: list[Foto], imagenes: list[
             if len(vistas) >= tope:
                 break
         keep.update(vistas)
-    avisar(f"    primer filtro (Haiku): Sonnet mira {len(keep)} de {len(pool)} fotos"
+    # Capa 4: solo las finalistas se miran con imagen (Haiku, en miniatura): personas, dureza y las de un artículo
+    # general que no son un paisaje.
+    finalistas = sorted(keep)
+    if finalistas:
+        desc = describir_fotos(haiku, [imagenes[k] for k in finalistas], carpeta, avisar,
+                               textos=[f"{pool[k].archivo} — {pool[k].epigrafe}" for k in finalistas])
+        for k, x in zip(finalistas, desc):
+            malo = ("muestra muertos o heridos" if x.get("dura") else motivo_persona(x, historia))
+            if not malo and getattr(pool[k], "general", False) and (x.get("retrato") or x.get("politico")
+                                                                    or x.get("tipo") not in (None, "foto")):
+                malo = "de un artículo general y no es un paisaje del lugar"
+            if malo:
+                keep.discard(k)
+                duras.add(k)
+                avisar(f"    foto {k + 1} afuera: {malo}")
+    if fuera is not None:
+        fuera.update(duras)
+    avisar(f"    primer filtro (Haiku, por texto): {len(keep)} finalistas de {len(pool)} fotos"
            + (f" y {VIDEOS_POR_FRASE} videos por frase" if videos else ""))
     return keep
 
@@ -2548,12 +2584,9 @@ def de_reserva(g: Guion, n_pool: int) -> list[int]:
        menos las modernas (más de MARGEN_EPOCA años después del hecho).
     Nunca las descartadas, y nunca resultados de búsqueda que nadie miró (así se coló una postal
     de Hamburgo en la prueba del 28/09). Si no queda nada, lo que quede del pool que no sea moderno."""
-    malas, modernas = set(g.descartadas), set(g.modernas)
-    del_hecho = [x for x in g.del_hecho if x not in malas]
-    rankeadas = [x for x in dict.fromkeys(x for r in g.rankings() for x in r)
-                 if x not in malas and x not in modernas]
-    return list(dict.fromkeys(del_hecho + rankeadas)) or \
-        [i for i in range(n_pool) if i not in malas and i not in modernas]
+    # Santi, 2026-11-18 (capa 1, después de Colón): ninguna. Antes acá entraban las del artículo del hecho y las de
+    # OTRAS frases (así se coló Atucha); ahora cada frase usa solo las fotos elegidas para ella, o una tarjeta.
+    return []
 
 
 def generales(g: Guion) -> list[int]:

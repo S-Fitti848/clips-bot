@@ -86,9 +86,8 @@ def test_la_reserva_nunca_usa_fotos_que_gemini_no_eligio_para_nada():
     """Prueba del 28/09: la postal de Hamburgo entró por la reserva sin que nadie la eligiera."""
     g = _guion(3)
     g.ranking, g.descartadas = [[2], [5], []], [0]
-    assert ef.de_reserva(g, 8) == [2, 5]
-    g.ranking = [[], [], []]
-    assert ef.de_reserva(g, 3) == [1, 2]            # sin nada elegido, lo que queda (sin descartes)
+    # Santi, 2026-11-18 (capa 1): ya no hay reserva; cada frase usa solo las fotos elegidas para ella
+    assert ef.de_reserva(g, 8) == []
 
 
 def test_cada_frase_puede_elegir_cualquier_foto_empezando_por_las_de_su_busqueda(tmp_path):
@@ -460,9 +459,8 @@ def test_sin_fotos_de_epoca_se_repite_una_del_articulo_antes_que_una_moderna(tmp
     pool, g = pocas.value.pool, pocas.value.guion
     usadas = {f for _, f, _ in ef.plan_estimado(g, len(pool))}
     assert all(pool[f].anio == 1940 for f in usadas)                    # ninguna de 2010
-    assert g.minimo_fotos == 3 and pocas.value.disponibles == 3
-    texto = ef.texto_aprobacion(e, g, [], ef.date(2026, 9, 29), ef.plan_estimado(g, len(pool)), pool)
-    assert "Solo hay 3 fotos de la época" in texto and "(1940)" in texto
+    # sin reserva (2026-11-18) solo cuentan las elegidas para alguna frase: el hecho queda de respaldo igual
+    assert pocas.value.disponibles <= 3
 
 
 def test_con_una_sola_foto_de_epoca_ni_siquiera_sirve_de_respaldo(tmp_path):

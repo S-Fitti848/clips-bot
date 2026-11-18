@@ -319,8 +319,8 @@ def revisar_ph(cliente, p, carpeta: Path, wiki=None, avisar=log.info):
 # video armado, Claude mira UN cuadro de cada corte, en grande, con su frase al lado.
 REGLAS_VIDEO_PH = ("PH-02", "PH-03", "PH-04", "PH-05", "PH-06", "PH-10", "PH-11", "PH-12", "PH-13")
 
-SISTEMA_VIDEO_PH = """Revisás un video corto de "Pequeña Historia" YA TERMINADO, antes de publicarlo. Te paso un cuadro
-de cada corte del video, en orden (la imagen k es el corte k), con la frase que la voz dice en ese momento, y los datos
+SISTEMA_VIDEO_PH = """Revisás un video corto de "Pequeña Historia" YA TERMINADO, antes de publicarlo. Te paso UNA imagen con
+un cuadro de cada corte del video, en orden y numerados (el número amarillo k es el corte k), con la frase que la voz dice en ese momento, y los datos
 reales de la historia (año y lugar). Mirá cada cuadro de verdad: quién aparece, qué se ve, si se ve nítido, y qué dicen
 los textos escritos en pantalla (el año, el lugar). Sé estricto con las personas: un político, un funcionario o un acto
 de gobierno, o el retrato de alguien que la historia no nombra, NO cumple. No inventes problemas: si se cumple, true."""
@@ -347,6 +347,29 @@ def cuadros_de_cortes(video: Path, cortes: list[dict], carpeta: Path, ancho: int
     return out
 
 
+def mosaico(cuadros: list[Path], destino: Path, ancho: int = 216, columnas: int = 5) -> Path:
+    """Capa 5 (Santi, 2026-11-18): todos los cortes en UNA imagen, numerados, para un solo pedido."""
+    from PIL import Image, ImageDraw, ImageFont
+
+    ims = [Image.open(c).convert("RGB") for c in cuadros]
+    alto = max(int(im.height * ancho / im.width) for im in ims)
+    filas = (len(ims) + columnas - 1) // columnas
+    hoja = Image.new("RGB", (columnas * ancho, filas * alto), "black")
+    dr = ImageDraw.Draw(hoja)
+    try:
+        fnt = ImageFont.truetype("DejaVuSans-Bold.ttf", 26)
+    except OSError:
+        fnt = ImageFont.load_default()
+    for k, im in enumerate(ims):
+        x, y = (k % columnas) * ancho, (k // columnas) * alto
+        hoja.paste(im.resize((ancho, int(im.height * ancho / im.width))), (x, y))
+        dr.rectangle((x, y, x + 40, y + 32), fill="black")
+        dr.text((x + 5, y + 2), str(k + 1), fill="yellow", font=fnt)
+    destino.parent.mkdir(parents=True, exist_ok=True)
+    hoja.save(destino, quality=85)
+    return destino
+
+
 def revisar_video_ph(cliente, meta: dict, avisar=log.info) -> tuple[list[dict], bool]:
     """(fallas, revisado) del video terminado contra las reglas de fotos y de rótulos (REGLAS_VIDEO_PH)."""
     ef_ = meta.get("efemeride") or {}
@@ -367,7 +390,7 @@ def revisar_video_ph(cliente, meta: dict, avisar=log.info) -> tuple[list[dict], 
         lineas.append(f"Corte {k} ({c.get('tipo')}, {c.get('inicio')} s): frase {i + 1}: {frase}")
     local = ef_.get("local") or {}
     ids = por_id("pequena_historia")
-    reglas_txt = "\n".join(f"- {rid}: {ids[rid].texto}" for rid in REGLAS_VIDEO_PH if rid in ids)
+    reglas_txt = "\n".join(f"- {r.id}: {r.texto}" for r in de_revision("pequena_historia"))
     prompt = (f"DATOS REALES: el hecho es de {ef_.get('anio')}"
               + (f", en {local.get('lugar')} ({local.get('pais')})" if local.get("lugar") else "")
               + f". {ef_.get('evento', '')[:400]}\n\nLOS CORTES:\n" + "\n".join(lineas)
@@ -375,12 +398,12 @@ def revisar_video_ph(cliente, meta: dict, avisar=log.info) -> tuple[list[dict], 
                 "(true/false) y, si no cumple, el `corte` donde se ve (desde 1) y `que` (concreto: qué se ve y qué "
                 f"tendría que verse).\n{reglas_txt}")
     try:
-        imgs = [c.read_bytes() for c in cuadros]
+        imgs = [mosaico(cuadros, video.parent / "revision_final" / "mosaico.jpg").read_bytes()]
         r = json.loads(cliente.json(SISTEMA_VIDEO_PH, prompt, SCHEMA_VIDEO_PH, 0.1, imagenes=imgs))
     except Exception as err:  # noqa: BLE001
         avisar(f"revisión del video terminado: no respondió ({str(err)[:120]})")
         return [], False
-    validos = set(REGLAS_VIDEO_PH)
+    validos = {r.id for r in de_revision("pequena_historia")}
     out, vistos = [], set()
     for x in r.get("reglas") or []:
         rid = str(x.get("id") or "").strip().upper()
@@ -395,8 +418,8 @@ def revisar_video_ph(cliente, meta: dict, avisar=log.info) -> tuple[list[dict], 
 
 def juntar_fallas(antes: list[dict], final: list[dict]) -> list[dict]:
     """Las fallas de la revisión de la hoja más las del video terminado (la del video manda en sus reglas)."""
-    ids_final = {f["id"] for f in final}
-    return final + [f for f in antes if f["id"] not in ids_final and f["id"] not in REGLAS_VIDEO_PH]
+    # la del video terminado es la revisión (capa 5): manda en todas las reglas
+    return list(final)
 
 
 def semana_anterior(hoy: date) -> tuple[str, str]:

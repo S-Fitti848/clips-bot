@@ -140,7 +140,7 @@ def test_el_reintento_va_con_claude_aunque_la_regla_este_apagada(monkeypatch):
     monkeypatch.setattr(claude, "cliente", lambda modelo, **k: C(modelo))
     assert m._elector_fotos(s) is None
     c = m._elector_fotos(s, reintento=True)
-    assert c.modelo == s.historias_fb.modelo_texto
+    assert c.modelo == s.historias_fb.modelo_simple       # 2026-11-18: Haiku mira solo las finalistas
     assert c.prefiltro.modelo == s.historias_fb.modelo_simple     # el primer filtro (2026-11-15), Haiku
 
 

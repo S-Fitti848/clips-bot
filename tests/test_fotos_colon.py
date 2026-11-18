@@ -83,19 +83,46 @@ def test_revision_del_video_terminado(tmp_path, monkeypatch):
                           "cortes": [{"frase": 0, "inicio": 0.0, "dur": 3.0, "tipo": "foto"},
                                      {"frase": 1, "inicio": 3.0, "dur": 3.0, "tipo": "foto"}]}}
     cuadros = []
+    from PIL import Image
+
     for k in range(2):
         p = tmp_path / f"c{k}.jpg"
-        p.write_bytes(b"jpg")
+        Image.new("RGB", (108, 192), "gray").save(p)
         cuadros.append(p)
     monkeypatch.setattr(calidad, "cuadros_de_cortes", lambda *a, **k: cuadros)
 
     class Cliente:
         def json(self, sistema, prompt, schema, temp, imagenes=None):
-            assert "PH-10" in prompt and "Santa Fe" in prompt and len(imagenes) == 2
+            assert "PH-10" in prompt and "PH-07" in prompt and "Santa Fe" in prompt and len(imagenes) == 1   # un mosaico
             return json.dumps({"reglas": [{"id": "PH-10", "cumple": False, "corte": 2, "que": "Cristina en Atucha"},
                                           {"id": "PH-12", "cumple": True, "corte": 0, "que": ""}]})
 
     fallas, revisado = calidad.revisar_video_ph(Cliente(), meta)
     assert revisado and [f["id"] for f in fallas] == ["PH-10"] and "3.0 s" in fallas[0]["que"]
     juntas = calidad.juntar_fallas([{"id": "PH-02", "que": "viejo"}, {"id": "PH-07", "que": "x"}], fallas)
-    assert {f["id"] for f in juntas} == {"PH-10", "PH-07"}
+    assert {f["id"] for f in juntas} == {"PH-10"}          # la del video terminado manda en todas
+
+
+def test_capas_origen_texto_e_imagen_solo_finalistas(tmp_path):
+    """Santi, 2026-11-18: las de un país son generales; el primer filtro es por texto; solo las finalistas se miran."""
+    assert ef.es_general("Argentina") and ef.es_general("México") and not ef.es_general("Club Atlético Colón")
+    pool = [ef.Foto(archivo=f"File:{n}.jpg", url="", ancho=1200, alto=800, licencia="CC0", autor="a", epigrafe=n,
+                    pagina="", articulo=art) for n, art in
+            (("Hinchas de Colón festejan 2021", "Club Atlético Colón"), ("Atucha presidencia", "Argentina"),
+             ("Colón en la cancha 2021", "Club Atlético Colón"), ("Arturo Illia 1965", "Argentina"))]
+    pool[1].general = pool[3].general = True
+    vistos = {}
+
+    class Haiku:
+        def json(self, sistema, prompt, schema, temperatura=0.5, imagenes=None, **k):
+            if imagenes:          # capa 4: solo las finalistas
+                vistos["n"] = len(imagenes)
+                return json.dumps({"fotos": [{"foto": j + 1, "se_ve": "x", "tipo": "foto", "otro_idioma": False,
+                                              "dura": False, "politico": False, "retrato": False, "quien": ""}
+                                             for j in range(len(imagenes))]})
+            assert "ARTÍCULO GENERAL" in prompt and "SOLO CON EL TEXTO" in sistema
+            return json.dumps({"frases": [{"fotos": [1, 3], "videos": []}]})
+
+    keep = ef.prefiltrar_fotos(Haiku(), ["frase 1: Colón campeón\n  candidatas: 1, 2, 3, 4"], pool,
+                               [b"x"] * 4, [[0, 1, 2, 3]], None, 2021, carpeta=tmp_path, historia="Colón campeón")
+    assert keep <= {0, 2} and vistos["n"] <= 3

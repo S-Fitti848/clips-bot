@@ -996,6 +996,8 @@ def proponer(wiki: ef.Wiki, sonnet, haiku, gemini, dia: date, carpeta: Path, avi
                 if c.seccion != "web":
                     raise
                 f_lugar, d2 = [], {}
+            for f in f_lugar:      # capa 1 (Santi, 2026-11-18): la ciudad entera = solo paisajes de ese lugar
+                f.general = True
             fotos += [f for f in f_lugar if f.archivo not in {x.archivo for x in fotos}]
             for k, v in d2.items():
                 desc[k] = desc.get(k, 0) + v
