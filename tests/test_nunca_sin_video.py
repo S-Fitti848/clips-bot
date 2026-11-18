@@ -334,3 +334,14 @@ def test_foto_de_europeana_sin_fuente():
     f = ef._foto_de({"archivo": "a.jpg", "url": "https://x/a.jpg", "ancho": 1200, "alto": 800,
                      "licencia": "CC0", "autor": "", "epigrafe": "x", "pagina": "", "anio": None}, "Zaragoza")
     assert f.articulo == "otra fuente: Zaragoza" and f.autor == "autor desconocido"
+
+
+def test_tecnologia_si_falla_por_fotos_prueba_el_banco(tec_sin_red, tmp_path, monkeypatch):
+    """Santi, 2026-11-18: el Minecraft (7,5) quedó en 49 % de fotos reales y no salió nada. Ahora: el banco."""
+    def fotos(wiki, cl, e, g, *a, **k):
+        if e.paginas[0] == "Producto_X":
+            raise ef.SinFotosReales("solo 49 % del tiempo con fotos reales (mínimo 70 %)")
+        return [], g
+    monkeypatch.setattr(ef, "fotos_con_control", fotos)
+    p = ef.proponer(WikiTec(), _nota_tec(8), HOY, tmp_path, tema="tecnologia", piso=6.0, banco=[ITEM_TEC])
+    assert p.local["banco_id"] == "tec:Netscape" and "banco" in p.local["aviso"]

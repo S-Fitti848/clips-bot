@@ -2978,9 +2978,8 @@ def proponer(wiki: Wiki, cliente, dia: date, carpeta: Path, avisar=log.info,
     fallas: list[str] = []
     respaldo = None   # (evento, fuente, PocasFotos, fotos): el de más fotos de los que no llegaron a 4
     insuf = None      # (FotosInsuficientes, evento, fuente, índice): el que más se acercó al 70 %
-    for i, articulo in elegidos[saltear:]:
-        if guiones >= MAX_GUIONES:
-            break
+    def intentar(i, articulo):
+        nonlocal guiones, respaldo, insuf
         # El artículo del evento va primero: de ahí salen las fotos y el texto del guion.
         e = Evento(candidatos[i].lang, candidatos[i].anio, candidatos[i].texto,
                    [articulo] + [x for x in candidatos[i].paginas if x != articulo])
@@ -3011,7 +3010,7 @@ def proponer(wiki: Wiki, cliente, dia: date, carpeta: Path, avisar=log.info,
                               encontrado=f"{pocas.disponibles} fotos de época que sirven ({len(pocas.pool)} en el pool)")
             if respaldo_sirve(pocas) and (respaldo is None or pocas.disponibles > respaldo[3]):
                 respaldo = (e, fuente, pocas, pocas.disponibles)
-            continue
+            return None
         except NarrarError as err:
             avisar(f"  no salió: {err}")
             fallas.append(f"{e.anio}: {err}")
@@ -3021,7 +3020,7 @@ def proponer(wiki: Wiki, cliente, dia: date, carpeta: Path, avisar=log.info,
             bitacora.descarte(f"{e.anio} {e.texto[:90]}", str(err), "fotos" if en_fotos else "guion", desde_fila=fila_h,
                               buscado=list(g.mostrar) if en_fotos else None,
                               encontrado=f"{len(fotos)} fotos del artículo; {str(err)[:150]}" if en_fotos else "")
-            continue
+            return None
         for k in g.descartadas:        # para poder juzgar si el descarte visual es razonable
             if 0 <= k < len(pool):
                 avisar(f"    descartada {k + 1}: {pool[k].epigrafe[:90]}")
@@ -3035,6 +3034,26 @@ def proponer(wiki: Wiki, cliente, dia: date, carpeta: Path, avisar=log.info,
         return Propuesta(fecha=dia.isoformat(), evento=e.a_dict(), fotos=[f.a_dict() for f in pool],
                          reserva=[], guion=g.a_dict(), fuente=fuente[:20000], descartes=descartes,
                          local=local)
+
+    # Plan B de tecnología (Santi, 2026-11-18: el Minecraft del 18/11 quedó en 49 % de fotos reales y no salió nada):
+    # si los de PUNTAJE_TEC_MIN fallan por fotos o guion, se prueban los demás desde el piso (6), y después el banco.
+    cola = list(elegidos[saltear:])
+    extra_aviso: dict = {}
+    if tema == "tecnologia" and piso is not None:
+        ya = {x[0] for x in cola}
+        for x in sorted(todos_tec, key=lambda x: -notas.get(x[0], {}).get("puntaje", 0)):
+            nota = notas.get(x[0], {}).get("puntaje", 0) or 0
+            if x[0] not in ya and nota >= piso:
+                cola.append(x)
+                extra_aviso[x[0]] = f"⚠️ salió con puntaje {nota:.1f} (mínimo {PUNTAJE_TEC_MIN:g})".replace(".", ",", 1)
+    for i, articulo in cola:
+        if guiones >= MAX_GUIONES:
+            break
+        if i in extra_aviso:
+            aviso_puntaje = extra_aviso[i]
+        prop = intentar(i, articulo)
+        if prop is not None:
+            return prop
     if insuf and not respaldo and aceptar_relajado(insuf[0], avisar):
         err, e, fuente, i = insuf
         n = notas.get(i) or {}
@@ -3055,6 +3074,14 @@ def proponer(wiki: Wiki, cliente, dia: date, carpeta: Path, avisar=log.info,
         return Propuesta(fecha=dia.isoformat(), evento=e.a_dict(),
                          fotos=[f.a_dict() for f in pocas.pool], reserva=[],
                          guion=pocas.guion.a_dict(), fuente=fuente[:20000], descartes=descartes)
+    if tema == "tecnologia" and banco and not elegidos_banco and usar_banco("los de hoy no llegaron a las fotos"):
+        guiones = 0
+        for i, articulo in list(elegidos_banco):
+            if guiones >= MAX_GUIONES:
+                break
+            prop = intentar(i, articulo)
+            if prop is not None:
+                return prop
     # Con la causa de cada uno: el 28/09 decía "no llegó a 6 fotos" cuando lo que falló fue el guion.
     raise SinFotosReales(f"Ninguno de los {len(elegidos)} hechos elegidos salió ({guiones} intentados): "
                          "no armo un video malo. " + " | ".join(fallas)[:600])
