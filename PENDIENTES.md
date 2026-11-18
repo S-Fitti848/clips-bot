@@ -10,8 +10,7 @@ Se actualiza al terminar cada tarea.
       video terminado que frena (PH-02, PH-10 a PH-13, PH-25).
 - [x] YouTube a privado (2026-11-18): Colón, Ambato, Santiago de Cuba, Banfield, La Pola, Túpac Katari, Morelia,
       Colonia Alberdi y Sor Juana (CDMX no tiene YouTube). Intel y Half-Life quedan (Santi).
-- [ ] Facebook: la API no deja ocultar ni hacer privado un Reel (solo borrarlo). Santi decide: borrar los 10 (CDMX +
-      los 9 de arriba) o hacerlo él desde Meta Business Suite.
+- [x] Facebook: la API no deja ocultar un Reel; los 10 los oculta Santi desde Meta Business Suite (2026-11-18).
 - [ ] Mirar los primeros videos con las reglas nuevas (18/11, madrugada): cuántas fotos saca el filtro de personas y
       el de nitidez, cuántas tarjetas de más, y si la revisión del video terminado frena de más.
 
