@@ -3,6 +3,17 @@
 Lista corta de lo que está en curso. El detalle y la historia van en CLAUDE.md (§1, §9, §10).
 Se actualiza al terminar cada tarea.
 
+## Pequeña Historia: fotos después del Short de Colón (2026-11-17, v1.33.0)
+
+- [x] No se publica sola (`efemerides.publicar_sola: false`): todo llega con ✅ Publicar / ❌ Cancelar.
+- [x] Reglas de fotos (políticos, retratos sin nombrar, foto = su frase, nitidez y 800 px, año real) y revisión del
+      video terminado que frena (PH-02, PH-10 a PH-13, PH-25).
+- [ ] Videos de la semana con problemas: Santi decide cuáles pasar a privado (YouTube y Facebook). A privado:
+      CDMX 15/11, Ambato 13/11, Santiago de Cuba 16/11, Banfield 12/11, La Pola 14/11, Túpac Katari 14/11 (Colón
+      ya está). Dudosos: Morelia 17/11, Colonia Alberdi 13/11, Sor Juana 12/11, Intel 13/11, Half-Life 16/11.
+- [ ] Mirar los primeros videos con las reglas nuevas (18/11, madrugada): cuántas fotos saca el filtro de personas y
+      el de nitidez, cuántas tarjetas de más, y si la revisión del video terminado frena de más.
+
 ## Así Nació: escenas de uso, inspiración, apretón y firma (`animacion.uso_manos`, `uso_v3.py`)
 
 - [x] Escena 7, apretón (2026-11-16, noche): plano medio con las dos personas cerca, detrás de la mesa con el
