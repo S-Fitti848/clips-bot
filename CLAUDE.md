@@ -1291,6 +1291,15 @@ Problemas abiertos:
 
 ## 9. CHANGELOG
 
+- v1.41.0 (2026-11-19, noche) — La escena de manos y la de inspiración pasan al protagonista fiel (`fiel.asegurar`
+  reemplaza también en `uso.partes` e `inspiracion.producto`); en el estadio los que no hacen nada juegan (`en_juego`:
+  dos se pasan la pelota en arco por arriba de las cabezas, el primer pase es un saque con salto; el festejo queda;
+  `Escena.pases`). Hoja de 6 tiendas por rubro + el estadio mandada a Santi. **Prueba con Lego** (marca nueva, guion
+  nuevo, voz de prueba Piper llevada a 35 s): 5/19 por US$ 0,36 (37 pedidos, 1 de Sonnet); el rescate no corrió por el
+  tope de 4 correcciones. Lo que falló: el ladrillo moderno aparece en 1932 (el protagonista siempre pasa la época),
+  manos de madera gigantes con un carrito flotando, la fábrica de 1949 como escenario con cortinas y un cuadro de
+  Mondrian, escenas sin gente (2015, 2004). El ladrillo fiel se ve bien en la hoja, pero Haiku no lo reconoció (y la v2
+  le agregó ruedas): el chequeo de "¿se reconoce?" es demasiado exigente.
 - v1.40.0 (2026-11-19) — Motor de Así Nació, general para todos los videos (Santi): tiendas por rubro (`escenas.RUBROS`:
   almacén, deportes, juguetería, farmacia, concesionaria, ropa, tecnología, hogar; `tienda:<rubro>` según la frase o la
   categoría de la marca, `rubro_de`); protagonista fiel (`animacion/fiel.py`: Haiku describe el producto real, se
