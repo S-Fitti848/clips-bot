@@ -664,7 +664,7 @@ class Escena:
                 s_ = -s_
         elif accion.startswith("pasar_"):   # estadio: se pasan la pelota (el saque, con un salto, es el primero)
             turno = int(accion[-1])
-            caras.append({"t": t0, "cara": "risa"})
+            caras.append({"t": t0, "cara": "feliz"})
             for j, tt in enumerate(tiempos_pase(fin)):
                 if j % 2 == turno:      # tira
                     if tt - 0.25 > 0:
@@ -748,8 +748,9 @@ class Escena:
         dos = sorted((a for a in self.actores if "pase" in a), key=lambda a: a["pase"])
         if len(dos) < 2:
             return False
-        manos = [(float(a["x"]) + (60 if float(a["x"]) < 540 else -60) * float(a.get("escala", 1)),
-                  PISO - 560 * float(a.get("escala", 1))) for a in dos]
+        # arriba de la cabeza y hacia el compañero (a la altura de la cara la tapaba: hoja del 19/11)
+        manos = [(float(a["x"]) + (110 if float(a["x"]) < 540 else -110) * float(a.get("escala", 1)),
+                  PISO - 760 * float(a.get("escala", 1))) for a in dos]
         kf = [{"t": 0, "x": round(manos[0][0], 1), "y": round(manos[0][1], 1), "rotacion": 0}]
         for j, tt in enumerate(tiempos_pase(self.dur - 0.1)):
             (ox, oy), (dx, dy) = manos[j % 2], manos[(j + 1) % 2]
