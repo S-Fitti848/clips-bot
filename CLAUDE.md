@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-11-19 | **Versión:** v1.38.1 (desplegado) | **Modo:** Fase 2: corriendo solo en la Pi. **Rots APAGADO.** Pequeña Historia (3 por día, madrugada desde las 04:00) (**NO se publica sola desde el 17/11**: llega con ✅ Publicar / ❌ Cancelar y sin respuesta no sale) y **Así Nació** (2 por día, desde las 07:00, publican 13:00 y 20:00 en YouTube y Facebook con ❌ Cancelar), todo al privado de Santi
+**Snapshot:** 2026-11-19 | **Versión:** v1.39.0 (desplegado) | **Modo:** Fase 2: corriendo solo en la Pi. **Rots APAGADO. Así Nació PAUSADO desde el 19/11** (vuelve con 1 por día cuando una prueba pase 17/19 por menos de US$ 0,60). Pequeña Historia (3 por día, madrugada desde las 04:00) (**NO se publica sola desde el 17/11**: llega con ✅ Publicar / ❌ Cancelar y sin respuesta no sale) y **Así Nació** (2 por día, desde las 07:00, publican 13:00 y 20:00 en YouTube y Facebook con ❌ Cancelar), todo al privado de Santi
 
 > **SI ESTÁS EMPEZANDO UNA SESIÓN NUEVA, LEÉ §10.** Ahí está qué está hecho, qué quedó a medias,
 > qué falta, y las trampas que ya nos mordieron.
@@ -478,6 +478,14 @@ servicio systemd separado: `clips-bot`).
 - **Así Nació: nada tapa el texto grande ni los subtítulos (Santi, 2026-11-17; AN-27):** tampoco con la cámara cerca
   (`acciones.despejar_textos`, al final de `linea_de_tiempo`): primero sale el decorado, después la cámara se acerca
   menos; sin cámara, se baja lo que tapa. Antes de 1920 una caja es un cajón de madera (`prop_caja(forma=1)`).
+- **Así Nació PAUSADO y costo por video (Santi, 2026-11-19: US$ 2,68 en dos videos que no salieron, el segundo 8/19):**
+  `animacion.activo: false` hasta que un video de prueba pase 17/19 y cueste menos de US$ 0,60; ahí vuelve con 1 por
+  día. Sonnet SOLO escribe el guion de Así Nació; director, revisiones, dibujos, gancho y el resto con Haiku
+  (`claude.modelo_para`). Caché de prompts en el sistema de todo pedido (`cache_control`; gemini_uso anota la entrada
+  equivalente, `claude.entrada_equivalente`). Guion: el primero + 2 reintentos (`reintentos_guion: 3`). **Todos los
+  canales: como mucho 4 pedidos de corrección por video (por candidato), con Haiku salvo la reescritura entera del
+  guion** (`correcciones.TOPE_POR_VIDEO`, `TopeCorrecciones`); si no alcanza, la escena o la foto se reemplaza por una
+  de la biblioteca o se cambia de historia o marca. Nunca más de 4.
 - **Videos largos: NO por ahora (decisión de Santi, 2026-09-28).** No quiere videos largos con voz
   de IA. Si más adelante se hacen, van con SU voz grabada, no con Gemini TTS ni Piper.
 - **Sin música agregada en los clips.** Cualquier música es riesgo de Content ID. Si el clip trae
@@ -1283,6 +1291,13 @@ Problemas abiertos:
 
 ## 9. CHANGELOG
 
+- v1.39.0 (2026-11-19) — Así Nació pausado; Sonnet solo para el guion, Haiku para el resto y las correcciones; caché de
+  prompts; 4 correcciones por video en todos los canales; 2 reintentos de guion (§1). **Diagnóstico del Wilson (8/19)**:
+  la revisión acierta, falla el motor: la pelota es un círculo naranja genérico (no la Wilson de voley con su cara), la
+  tienda es el fondo de siempre con botellas, los personajes quedan parados sonriendo, la cancha es de fútbol sin
+  pelota, y la sombrilla y el paraguas flotan. **Prueba con el guion y la voz de hoy, todo con Haiku: 10/19 por
+  US$ 0,047** (27 pedidos; el rescate arregló AN-01, 06, 08 y 15). Costo resuelto; el puntaje necesita arreglos del
+  motor (fondos por tipo de tienda, objetos fieles, poses de trabajo). `tests/test_costo_por_video.py`.
 - v1.38.1 (2026-11-19) — Así Nació falló a las 07:05 ("'str' object has no attribute 'get'"): la corrección puntual
   del guion de Toys "R" Us trajo `dibujos_nuevos` como lista de textos. `correcciones.aplicar` ahora controla la forma
   de cada campo general con el schema del guion (`con_forma`) y `marcas` lee esas listas solo con objetos (`_dicts`).
