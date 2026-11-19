@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-11-19 | **Versión:** v1.39.0 (desplegado) | **Modo:** Fase 2: corriendo solo en la Pi. **Rots APAGADO. Así Nació PAUSADO desde el 19/11** (vuelve con 1 por día cuando una prueba pase 17/19 por menos de US$ 0,60). Pequeña Historia (3 por día, madrugada desde las 04:00) (**NO se publica sola desde el 17/11**: llega con ✅ Publicar / ❌ Cancelar y sin respuesta no sale) y **Así Nació** (2 por día, desde las 07:00, publican 13:00 y 20:00 en YouTube y Facebook con ❌ Cancelar), todo al privado de Santi
+**Snapshot:** 2026-11-19 | **Versión:** v1.40.0 (desplegado) | **Modo:** Fase 2: corriendo solo en la Pi. **Rots APAGADO. Así Nació PAUSADO desde el 19/11** (vuelve con 1 por día cuando una prueba pase 17/19 por menos de US$ 0,60). Pequeña Historia (3 por día, madrugada desde las 04:00) (**NO se publica sola desde el 17/11**: llega con ✅ Publicar / ❌ Cancelar y sin respuesta no sale) y **Así Nació** (2 por día, desde las 07:00, publican 13:00 y 20:00 en YouTube y Facebook con ❌ Cancelar), todo al privado de Santi
 
 > **SI ESTÁS EMPEZANDO UNA SESIÓN NUEVA, LEÉ §10.** Ahí está qué está hecho, qué quedó a medias,
 > qué falta, y las trampas que ya nos mordieron.
@@ -1291,6 +1291,17 @@ Problemas abiertos:
 
 ## 9. CHANGELOG
 
+- v1.40.0 (2026-11-19) — Motor de Así Nació, general para todos los videos (Santi): tiendas por rubro (`escenas.RUBROS`:
+  almacén, deportes, juguetería, farmacia, concesionaria, ropa, tecnología, hogar; `tienda:<rubro>` según la frase o la
+  categoría de la marca, `rubro_de`); protagonista fiel (`animacion/fiel.py`: Haiku describe el producto real, se
+  dibuja con eso y Haiku chequea sobre la imagen "¿se reconoce sin leer el nombre?", una segunda versión si no;
+  `data/animacion/fieles.json`); poses de acción (trabajar, jugar, comprar, cargar, preocuparse; `ACCION_DE_ROL`: quieto,
+  señalar o pensar según el rol; nadie parado); física (`acciones.apoyar`: nada en el aire salvo íconos o lo que se
+  mueve; afuera, al piso). Prueba con el guion y la voz del Wilson: 8/19 por US$ 0,05 (la pelota se reconoce, la tienda
+  es de deportes, AN-07 pasa; siguen la escena de manos con la pelota genérica, gente parada en el estadio y la
+  revisión que ve el gancho repetido porque el mismo Wilson ya se probó). La comparación con imágenes de Gemini no se
+  pudo hacer: las dos claves no tienen facturación y la generación de imágenes no tiene cuota gratis.
+  `tests/test_motor_general.py`.
 - v1.39.0 (2026-11-19) — Así Nació pausado; Sonnet solo para el guion, Haiku para el resto y las correcciones; caché de
   prompts; 4 correcciones por video en todos los canales; 2 reintentos de guion (§1). **Diagnóstico del Wilson (8/19)**:
   la revisión acierta, falla el motor: la pelota es un círculo naranja genérico (no la Wilson de voley con su cara), la
