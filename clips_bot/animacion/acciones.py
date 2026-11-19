@@ -321,6 +321,36 @@ def _bob(y: float, t0: float, t1: float, alto: float, paso: float) -> list[dict]
     return out
 
 
+# Estadio: los que no hacen nada juegan (Santi, 2026-11-19). Dos se pasan la pelota (el primer pase es el saque); un
+# tercero va a buscarla; uno solo juega con ella. Festejar queda como está: es el festejo.
+A_JUGAR = {"quieto", "senalar", "pensar", "asustarse", "jugar", "atrapar", "tirar", "caminar", "explicar"}
+PRIMER_PASE = 0.35
+DUR_PASE = 0.7
+CICLO_PASE = 0.8
+
+
+def tiempos_pase(fin: float) -> list[float]:
+    out, t = [], PRIMER_PASE
+    while t + DUR_PASE <= fin:
+        out.append(round(t, 3))
+        t += CICLO_PASE
+    return out
+
+
+def en_juego(actores: list[dict]) -> list[dict]:
+    """Las acciones de los actores de una escena en el estadio."""
+    actores = [dict(a) for a in actores]
+    libres = [k for k, a in enumerate(actores) if (a.get("accion") or "quieto") in A_JUGAR]
+    if len(libres) == 1:
+        actores[libres[0]]["accion"] = "jugar"
+    elif len(libres) >= 2:
+        for n, k in enumerate(libres):
+            actores[k]["accion"] = f"pasar_{n}" if n < 2 else "correr"
+            if n < 2:
+                actores[k]["hacia"] = None     # quietos en su lugar: la pelota va de mano en mano
+    return actores
+
+
 def _arco(x0, y0, x1, y1, t0, dur, alto, giro=0.0) -> list[dict]:
     pts = []
     n = max(2, int(dur * FPS_FISICA))
@@ -632,6 +662,24 @@ class Escena:
                 kf.append({"t": round(t, 3), "estirar": 1.0 + 0.04 * s_, "cabeza": 5 * s_, "easing": "suave"})
                 t += 0.3
                 s_ = -s_
+        elif accion.startswith("pasar_"):   # estadio: se pasan la pelota (el saque, con un salto, es el primero)
+            turno = int(accion[-1])
+            caras.append({"t": t0, "cara": "risa"})
+            for j, tt in enumerate(tiempos_pase(fin)):
+                if j % 2 == turno:      # tira
+                    if tt - 0.25 > 0:
+                        gestos.append({"t": round(tt - 0.25, 3), "gesto": "lanzar_atras"})
+                    gestos += [{"t": round(tt, 3), "gesto": "lanzar"}, {"t": round(tt + 0.3, 3), "gesto": "reposo"}]
+                    if j == 0:          # el saque: salta
+                        kf += [{"t": round(max(0.0, tt - 0.3), 3), "y": PISO, "estirar": 0.92, "easing": "salida"},
+                               {"t": round(tt, 3), "y": PISO - 70, "estirar": 1.06, "easing": "salida"},
+                               {"t": round(tt + 0.3, 3), "y": PISO, "estirar": 1.0, "easing": "entrada"}]
+                else:                   # recibe
+                    gestos.append({"t": round(max(0.0, tt + DUR_PASE - 0.35), 3), "gesto": "atrapar"})
+                    kf.append({"t": round(tt + DUR_PASE, 3), "estirar": 0.95, "easing": "salida"})
+                    kf.append({"t": round(tt + DUR_PASE + 0.15, 3), "estirar": 1.0, "easing": "entrada"})
+            gestos.sort(key=lambda g: g["t"])
+            el["pase"] = turno
         elif accion == "jugar":     # el deportista con la pelota (el producto): la levanta y la lanza, salta un poco
             caras.append({"t": t0, "cara": "risa"})
             gestos += _alternar("sostener_a", "lanzar", t0, fin, 0.4)
@@ -693,6 +741,23 @@ class Escena:
         if caras:
             el["caras"] = [c for c in caras if c["cara"] != "normal"] or caras
         self.elementos.append(el)
+
+    def pases(self, pelota: str) -> bool:
+        """Estadio (Santi, 2026-11-19: "los jugadores juegan: pases, saques, festejo"): la pelota va de las manos de
+        uno a las del otro en arco, ida y vuelta, sincronizada con los gestos de `pasar_0` / `pasar_1`."""
+        dos = sorted((a for a in self.actores if "pase" in a), key=lambda a: a["pase"])
+        if len(dos) < 2:
+            return False
+        manos = [(float(a["x"]) + (60 if float(a["x"]) < 540 else -60) * float(a.get("escala", 1)),
+                  PISO - 560 * float(a.get("escala", 1))) for a in dos]
+        kf = [{"t": 0, "x": round(manos[0][0], 1), "y": round(manos[0][1], 1), "rotacion": 0}]
+        for j, tt in enumerate(tiempos_pase(self.dur - 0.1)):
+            (ox, oy), (dx, dy) = manos[j % 2], manos[(j + 1) % 2]
+            kf += _arco(ox, oy, dx, dy, tt, DUR_PASE, 300, 360 * (1 if j % 2 == 0 else -1))
+            self.sfx.append((tt, "whoosh"))
+        self.elementos.append({"tipo": "prop", "nombre": pelota, "x": kf[0]["x"], "y": kf[0]["y"],
+                               "escala": 0.5, "color": True, "keyframes": kf, "pase": True})
+        return True
 
     def multitud(self, n: int = 6) -> None:
         """Gente atrás (2026-11-15: "multitudes"): una fila de personas chicas que festejan, caminan o
@@ -1576,10 +1641,16 @@ def escena_accion(spec: dict, dur: float, i: int, primera: bool = False, tono: f
         e.elementos += hecha["elementos"]
         e.sfx += hecha["sfx"]
         e.actores += hecha["actores"]
-    for k, a in enumerate(planear([] if hecha else (spec.get("actores") or []), reservar)):
+    actores_spec = [] if hecha else list(spec.get("actores") or [])
+    estadio = _esc.base_fondo(fondo) == "estadio"
+    if estadio:
+        actores_spec = en_juego(actores_spec)
+    for k, a in enumerate(planear(actores_spec, reservar)):
         e.actor(a.get("rol") or "joven", a.get("accion") or "quieto", a["carril"], a.get("hacia"),
                 a.get("cara") or "normal", k, x0=a["x0"], x1=a["x1"], genero=a.get("genero") or "",
                 edad=a.get("edad") or "")
+    if estadio:
+        e.pases(protagonista or "pelota")
     colores = (P.NARANJA, P.AZUL, P.ROJO, P.VERDE, P.VIOLETA)
     # Época (Santi, 2026-11-16): ningún objeto aparece antes del año en que existe (el protagonista, siempre).
     def _de_epoca(nombre: str) -> bool:

@@ -31,7 +31,7 @@ def test_nada_flota_salvo_que_se_mueva():
 
 
 def test_nadie_parado_segun_su_rol():
-    d, _ = ac.escena_accion({"fondo": "estadio", "actores": [
+    d, _ = ac.escena_accion({"fondo": "tienda:deportes", "actores": [
         {"rol": "deportista", "accion": "quieto", "desde": "izquierda"},
         {"rol": "cliente", "accion": "senalar", "desde": "derecha"}]}, 3.0, 1, protagonista="pelota")
     personas = [el for el in d["elementos"] if el.get("tipo") == "personaje" and not el.get("multitud")]
@@ -77,3 +77,38 @@ def test_protagonista_fiel(tmp_path, monkeypatch):
     d2 = {"protagonista": {"prop": "pelota", "que_es": "pelota de vóley Wilson", "dibujo": ""}, "escenas": []}
     fiel.asegurar(c2, d2, "Wilson")
     assert not any(p.startswith("Describís") for p in c2.pedidos)
+
+
+def test_en_el_estadio_se_pasan_la_pelota():
+    d, sfx = ac.escena_accion({"fondo": "estadio", "actores": [
+        {"rol": "joven", "accion": "asustarse", "desde": "izquierda", "cara": "sorprendido"},
+        {"rol": "deportista", "accion": "quieto", "desde": "derecha"}]}, 3.2, 1, protagonista="pelota")
+    personas = [el for el in d["elementos"] if el.get("tipo") == "personaje" and not el.get("multitud")]
+    assert sorted(p_["pase"] for p_ in personas) == [0, 1]
+    for p_ in personas:
+        gestos = {g["gesto"] for g in p_["gestos"]}
+        assert "lanzar" in gestos and "atrapar" in gestos            # tira y recibe
+    pelota = next(el for el in d["elementos"] if el.get("tipo") == "prop" and el.get("pase"))
+    xs = [k["x"] for k in pelota["keyframes"]]
+    assert max(xs) - min(xs) > 300                                     # va de uno al otro
+    assert not any(el.get("en_mano") for el in d["elementos"])        # una sola pelota, en juego
+    # el festejo queda
+    d2, _ = ac.escena_accion({"fondo": "estadio", "actores": [
+        {"rol": "joven", "accion": "festejar", "desde": "izquierda"}]}, 2.0, 1, protagonista="pelota")
+    assert not any(el.get("tipo") == "prop" and el.get("pase") for el in d2["elementos"])
+
+
+def test_la_escena_de_manos_usa_el_protagonista_fiel(tmp_path, monkeypatch):
+    from clips_bot.animacion import dibujos
+
+    monkeypatch.setattr(fiel, "ARCHIVO", tmp_path / "fieles.json")
+    monkeypatch.setattr(dibujos, "CARPETA", tmp_path / "dibujos")
+    d = {"protagonista": {"prop": "pelota", "que_es": "pelota de vóley Wilson", "dibujo": ""},
+         "escenas": [{"objetos": [{"prop": "pelota"}]},
+                     {"accion_escena": "uso_manos", "uso": {"partes": {"cuerpo": "pelota", "tapa": "", "contenido": ""},
+                                                            "pasos": ["girar"]}},
+                     {"accion_escena": "inspiracion", "inspiracion": {"producto": "pelota", "fuente": "x"}}]}
+    fiel.asegurar(_Haiku((True,)), d, "Wilson")
+    nombre = d["protagonista"]["dibujo"]
+    assert d["escenas"][1]["uso"]["partes"]["cuerpo"] == nombre
+    assert d["escenas"][2]["inspiracion"]["producto"] == nombre

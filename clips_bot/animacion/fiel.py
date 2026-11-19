@@ -148,6 +148,17 @@ def asegurar(cliente, d: dict, marca: str, fuente: str = "", avisar=log.info) ->
                     o["prop"], o["dibujo"] = mk.DIBUJO_NUEVO, nombre
         pr["prop"], pr["dibujo"] = mk.DIBUJO_NUEVO, nombre
         d["protagonista"] = pr
+        # las escenas de uso con las manos y de inspiración ya tenían el producto viejo (la pelota naranja en la escena
+        # de manos del Wilson, 2026-11-19): pasan al fiel
+        for e_ in d.get("escenas") or []:
+            for clave, campos in (("uso", ("partes",)), ("inspiracion", ())):
+                bloque = e_.get(clave)
+                if not isinstance(bloque, dict):
+                    continue
+                for dic in [bloque] + [bloque[c] for c in campos if isinstance(bloque.get(c), dict)]:
+                    for k_, v in list(dic.items()):
+                        if v == viejo:
+                            dic[k_] = nombre
     if hechos:
         avisar("protagonista fiel: " + "; ".join(hechos))
     return hechos
