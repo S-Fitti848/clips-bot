@@ -1319,14 +1319,22 @@ def escribir_guion(cliente, e: Evento, fuente: str, correccion: str = "", anteri
     base += aprendizaje.para_prompt("pequena_historia")
     # Corregir solo lo que falla (Santi, 2026-11-15): las frases que no validan, con el resto como contexto;
     # el guion entero de nuevo solo después de CORRECCIONES_MAX correcciones puntuales fallidas.
+    correcciones.reiniciar()      # como mucho 4 pedidos de corrección por candidato (Santi, 2026-11-19)
     for _ in range(reintentos + 1 + correcciones.CORRECCIONES_MAX):
-        if d is not None and errores and puntuales < correcciones.CORRECCIONES_MAX:
-            puntuales += 1
-            d = correcciones.corregir(cliente, base, prompt, d, errores, SCHEMA_GUION, "frases", "frase")
-        else:
-            extra = f"\n\nTu respuesta anterior tenía estos errores: {'; '.join(errores)}" if errores else ""
-            puntuales = 0
-            d = json.loads(cliente.json(base, prompt + extra, SCHEMA_GUION, temperatura=0.5))
+        try:
+            if d is not None and errores and puntuales < correcciones.CORRECCIONES_MAX:
+                puntuales += 1
+                d = correcciones.corregir(cliente, base, prompt, d, errores, SCHEMA_GUION, "frases", "frase")
+            else:
+                extra = f"\n\nTu respuesta anterior tenía estos errores: {'; '.join(errores)}" if errores else ""
+                puntuales = 0
+                if errores:
+                    correcciones.anotar()      # la reescritura entera también cuenta para el tope
+                d = json.loads(cliente.json(base, prompt + extra, SCHEMA_GUION, temperatura=0.5))
+        except correcciones.TopeCorrecciones as err:
+            log.info("guion de %s: %s", e.anio, err)
+            errores = errores or [str(err)]
+            break
         errores = validar_guion(d, e.anio, fuente + "\n" + e.texto + f" {e.anio}", corto=corto,
                                 rango=rango)
         if validar_extra and not errores:

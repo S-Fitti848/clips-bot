@@ -645,7 +645,7 @@ animacion:
   prueba_desde: "2026-11-19"
   prueba_hasta: "2026-12-02"
   max_tokens: 32000          # el guion entero (escenas, cámara, efectos); si se corta, reintenta con 64.000
-  reintentos_guion: 8
+  reintentos_guion: 3        # el primero + 2 reintentos como mucho (Santi, 2026-11-19); y 4 correcciones por video
   reintento_min: 60          # si un video falla, otro intento en 1 h (hasta las 22:00), no se pierde el día
   reintento_hasta: "22:00"
   facebook: true             # el Reel en la página de Facebook de Así Nació (conectada el 2026-11-14)

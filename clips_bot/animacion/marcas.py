@@ -1694,6 +1694,7 @@ def escribir_guion(cliente, e: Elegido, fuente: str, reintentos: int = 6, avisar
     # escenas o los campos a cambiar; recién con CORRECCIONES_MAX correcciones fallidas seguidas, el guion
     # entero de nuevo. Cada pedido (entero o corrección) cuenta como un intento.
     correccion, ultimo, d, puntuales = "", [], None, 0
+    correcciones.reiniciar()      # como mucho 4 pedidos de corrección por candidato (Santi, 2026-11-19)
     mejor: tuple[dict, list[str]] | None = None     # el mejor sin errores de datos ni de seguridad (Santi, 2026-11-16)
     for intento in range(reintentos):
         if intento and pasado_tope():
@@ -1706,7 +1707,12 @@ def escribir_guion(cliente, e: Elegido, fuente: str, reintentos: int = 6, avisar
                                           "escena")
             else:
                 puntuales = 0
+                if d is not None:
+                    correcciones.anotar()      # la reescritura entera también cuenta para el tope
                 d = json.loads(cliente.json(sistema_guion(), pedido + correccion, schema_guion(), 0.9))
+        except correcciones.TopeCorrecciones as err:
+            avisar(f"guion de {e.marca.nombre}: {err}")
+            break
         except GeminiError as err:   # ClaudeError hereda: una respuesta cortada cuenta como un intento
             if getattr(err, "pasajero", False):
                 raise

@@ -15,6 +15,31 @@ import logging
 log = logging.getLogger(__name__)
 
 CORRECCIONES_MAX = 3
+# Tope duro (Santi, 2026-11-19: US$ 2,69 en 31 pedidos de corrección en un día): como mucho 4 pedidos de corrección por
+# video (por candidato: marca o historia), en TODOS los canales, con Haiku (claude.HAIKU_SIEMPRE) salvo la reescritura
+# entera del guion. Pasado eso, la escena o la foto se reemplaza por una de la biblioteca, o se cambia de candidato.
+TOPE_POR_VIDEO = 4
+_hechas = {"n": 0}
+
+
+class TopeCorrecciones(Exception):
+    """Ya se hicieron TOPE_POR_VIDEO pedidos de corrección en este video."""
+
+
+def reiniciar() -> None:
+    """Un video (o candidato) nuevo: el contador vuelve a cero."""
+    _hechas["n"] = 0
+
+
+def quedan() -> int:
+    return max(0, TOPE_POR_VIDEO - _hechas["n"])
+
+
+def anotar() -> None:
+    """Un pedido de corrección más; TopeCorrecciones si ya no queda ninguno."""
+    if _hechas["n"] >= TOPE_POR_VIDEO:
+        raise TopeCorrecciones(f"ya van {TOPE_POR_VIDEO} pedidos de corrección en este video (el tope)")
+    _hechas["n"] += 1
 
 INSTRUCCION = """
 
@@ -134,7 +159,9 @@ def aplicar(d: dict, parche: dict, lista: str, schema: dict | None = None) -> di
 
 def corregir(cliente, sistema: str, pedido: str, d: dict, errores: list[str], schema: dict, lista: str,
              item: str = "escena") -> dict:
-    """Un pedido de corrección puntual. Devuelve el guion corregido (todavía sin validar)."""
+    """Un pedido de corrección puntual. Devuelve el guion corregido (todavía sin validar). Cuenta para el tope por
+    video (TopeCorrecciones)."""
+    anotar()
     prompt = (pedido + "\n\nEL GUION (" + lista + " numeradas desde 1):\n"
               + json.dumps(d, ensure_ascii=False) + "\n\nERRORES:\n- " + "\n- ".join(errores))
     parche = json.loads(cliente.json(sistema + INSTRUCCION.replace("{item}", item), prompt,

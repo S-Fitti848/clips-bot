@@ -156,6 +156,41 @@ def texto_costo(conn, dia: str) -> str:
     return "\n".join(lineas)
 
 
+# Qué modelo hace cada cosa (Santi, 2026-11-19: US$ 2,68 en dos videos de Así Nació que no salieron). Sonnet SOLO
+# escribe el guion de Así Nació (`marcas.escribir_guion`, también la reescritura entera); el director, las revisiones,
+# los dibujos, el gancho y el resto del canal van con Haiku, y las correcciones puntuales, de TODOS los canales, también.
+MODULOS_ANIMACION = {"marcas", "director", "dibujos", "reemplazo", "visuales", "gancho_v3", "uso_v3", "escenas_lib",
+                     "acciones", "calidad_an"}
+SONNET_EN_ANIMACION = {"marcas.escribir_guion"}
+HAIKU_SIEMPRE = {"correcciones.corregir"}
+
+
+def modelo_para(funcion: str, modelo: str) -> str:
+    """El modelo que corresponde a la función que pidió (solo baja de Sonnet a Haiku, nunca al revés)."""
+    if modelo != SONNET:
+        return modelo
+    if funcion in HAIKU_SIEMPRE:
+        return HAIKU
+    if funcion.split(".")[0] in MODULOS_ANIMACION and funcion not in SONNET_EN_ANIMACION:
+        return HAIKU
+    return modelo
+
+
+# Caché de prompts (Santi, 2026-11-19): el sistema (reglas, ejemplos, biblioteca: lo fijo) va con cache_control.
+# Escribir en la caché cuesta 1,25× la entrada; leerla, 0,05× en Sonnet 5.5 y 0,1× en Haiku 5.5. En gemini_uso se anota
+# la entrada EQUIVALENTE (lo que se pagó, en tokens de precio normal), así `costo` sigue igual.
+CACHE_ESCRITURA = 1.25
+CACHE_LECTURA = {SONNET: 0.05, HAIKU: 0.10}
+
+
+def entrada_equivalente(modelo: str, usage) -> int:
+    base = int(getattr(usage, "input_tokens", 0) or 0)
+    escrita = int(getattr(usage, "cache_creation_input_tokens", 0) or 0)
+    leida = int(getattr(usage, "cache_read_input_tokens", 0) or 0)
+    lectura = CACHE_LECTURA[HAIKU] if "haiku" in str(modelo) else CACHE_LECTURA[SONNET]
+    return round(base + escrita * CACHE_ESCRITURA + leida * lectura)
+
+
 class ClaudeClient:
     def __init__(self, api_key: str, modelo: str = SONNET, cliente=None, uso=None,
                  max_tokens: int = 16000, esfuerzo: str | None = None, timeout: float = 300,
@@ -182,8 +217,8 @@ class ClaudeClient:
             raise ClaudeError("Claude acá no recibe audio: eso va con Gemini")
         if imagenes and len(imagenes) > MAX_IMAGENES:
             raise ClaudeError(f"Claude: {len(imagenes)} imágenes (máximo {MAX_IMAGENES} por pedido)")
-        modelo = modelo or self.modelo
         funcion = _llamador()
+        modelo = modelo or modelo_para(funcion, self.modelo)
         clave_cache = self._clave_cache(modelo, sistema, prompt, schema, imagenes)
         guardado = self._de_cache(clave_cache)
         if guardado is not None:
@@ -201,7 +236,8 @@ class ClaudeClient:
         limites = [self.max_tokens] + ([min(MAX_TOKENS_TOPE, self.max_tokens * 2)]
                                        if self.max_tokens < MAX_TOKENS_TOPE else [])
         for n_lim, limite in enumerate(limites):
-            pedido = dict(model=modelo, max_tokens=limite, system=sistema,
+            pedido = dict(model=modelo, max_tokens=limite,
+                          system=[{"type": "text", "text": sistema, "cache_control": {"type": "ephemeral"}}],
                           messages=[{"role": "user", "content": contenido if imagenes else prompt}],
                           output_config={"format": {"type": "json_schema", "schema": a_json_schema(schema)},
                                          **({"effort": self.esfuerzo} if self.esfuerzo else {})})
@@ -214,9 +250,10 @@ class ClaudeClient:
                                   pasajero=e.status_code >= 500) from e
             except anthropic.APIConnectionError as e:
                 raise ClaudeError(f"Claude ({modelo}): sin conexión ({e})", pasajero=True) from e
-            entrada, salida = r.usage.input_tokens, r.usage.output_tokens
-            log.info("Claude %s para %s (%d + %d tokens, US$ %.4f)", r.model, funcion, entrada, salida,
-                     costo(modelo, entrada, salida))
+            entrada, salida = entrada_equivalente(modelo, r.usage), r.usage.output_tokens
+            leida = int(getattr(r.usage, "cache_read_input_tokens", 0) or 0)
+            log.info("Claude %s para %s (%d + %d tokens%s, US$ %.4f)", r.model, funcion, entrada, salida,
+                     f", {leida} de la caché" if leida else "", costo(modelo, entrada, salida))
             if self.uso:
                 self.uso(funcion, r.model, "claude", entrada, salida, False)
             if r.stop_reason != "max_tokens":
