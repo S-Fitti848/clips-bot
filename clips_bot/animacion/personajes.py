@@ -77,6 +77,13 @@ GESTOS: dict[str, dict] = {
     "dar_mano_izq": {"izq": (84, -8), "der": (14, 12)},
     "sostener_a": {"izq": (18, -95), "der": (18, -95)},
     "sostener_b": {"izq": (24, -110), "der": (14, -88)},
+    # Poses de acción reusables (Santi, 2026-11-19: "nadie parado"): cargar arriba de la cabeza, las manos a la
+    # cabeza al preocuparse, pagar con el brazo extendido.
+    "cargar_a": {"izq": (165, -25), "der": (165, -25)},
+    "cargar_b": {"izq": (158, -12), "der": (158, -12)},
+    "preocupar_a": {"izq": (150, 135), "der": (150, 135), "cejas": "triste"},
+    "preocupar_b": {"izq": (140, 150), "der": (140, 150), "cejas": "triste"},
+    "pagar": {"izq": (18, -95), "der": (80, -15)},
 }
 
 

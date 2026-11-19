@@ -181,9 +181,17 @@ def aspecto(rol: str, genero: str = "", edad: str = "") -> tuple[str, dict, floa
 # Acciones de un personaje. Las de MOVIMIENTO son las que hacen que una escena no sea "estática".
 ACCIONES = ("caminar", "correr", "saltar", "caerse", "retar", "martillar", "tirar", "atrapar",
             "festejar", "asustarse", "pensar", "entrar", "salir", "senalar", "quieto",
-            "fabricar", "vender", "usar", "probar")
+            "fabricar", "vender", "usar", "probar",
+            "trabajar", "jugar", "comprar", "cargar", "preocuparse")
 MOVIMIENTO = {"caminar", "correr", "saltar", "caerse", "retar", "martillar", "tirar", "atrapar",
-              "festejar", "asustarse", "entrar", "salir", "fabricar", "vender", "usar", "probar"}
+              "festejar", "asustarse", "entrar", "salir", "fabricar", "vender", "usar", "probar",
+              "trabajar", "jugar", "comprar", "cargar", "preocuparse"}
+# Nadie parado (Santi, 2026-11-19, poses de acción reusables para TODOS los videos): lo que hace cada rol cuando el
+# guion lo deja quieto, señalando o pensando. Con una cara triste, se preocupa; el resto gesticula moviéndose.
+ACCION_DE_ROL = {"deportista": "jugar", "cliente": "comprar", "vendedor": "vender", "vendedora": "vender",
+                 "obrero": "trabajar", "obrera": "trabajar", "cajero": "trabajar", "cajera": "trabajar",
+                 "cocinero": "trabajar", "repartidor": "cargar", "granjero": "cargar", "marinero": "cargar"}
+OBJETO_ACCION = {"jugar": "{prota}", "comprar": "billete", "cargar": "caja", "vender": "{prota}"}
 # Acciones de trabajo (2026-11-15: "fabricando, inventando, vendiendo, gente usando el producto"): se
 # dibujan con los gestos de otra acción que ya tiene movimiento con peso.
 ALIAS_ACCION = {"usar": "atrapar", "probar": "saltar"}
@@ -246,6 +254,23 @@ def soporte_de(prop: str, soporte: str | None) -> str:
 X_MUEBLE = {"izquierda": 175.0, "centro": 905.0, "derecha": 905.0}   # contra la pared, al costado
 
 
+# Física (Santi, 2026-11-19, para TODOS los videos): todo objeto apoyado en algo (piso, mesa, estante, pared o mano);
+# en el aire solo los íconos (una lamparita, un signo de pregunta) y lo que se mueve porque la frase lo pide (vuela,
+# llueve, rebota, se rompe). Afuera no hay mesas ni estantes: va al piso.
+EN_EL_AIRE_OK = {"vuela", "llueve", "rebota", "cae_y_se_rompe", "se_rompe"}
+AFUERA = {"ciudad", "playa", "campo", "puerto", "estadio", "cielo"}
+
+
+def apoyar(prop: str, soporte: str, efecto: str = "quieto", fondo: str = "") -> str:
+    if soporte == "aire" and prop not in ICONOS and efecto not in EN_EL_AIRE_OK:
+        soporte = SOPORTE_NATURAL.get(prop, "piso")
+        if soporte == "aire":
+            soporte = "piso"
+    if str(fondo or "").split(":")[0] in AFUERA and soporte in ("mesa", "estante") and prop not in ICONOS:
+        soporte = "piso"
+    return soporte
+
+
 def ubicar(prop: str, soporte: str, donde: str, fondo: str = "", espejo: bool = False) -> tuple[float, float]:
     """(x, y) del centro del dibujo, apoyado donde corresponde. Las mesas y los estantes van contra
     la pared A LOS COSTADOS (Santi: "una mesita en el medio tapando al inventor"): lo que está arriba
@@ -255,7 +280,7 @@ def ubicar(prop: str, soporte: str, donde: str, fondo: str = "", espejo: bool = 
         x = X_MUEBLE.get(donde, 930.0)
     if prop == "lampara" and soporte == "piso" and fondo == "casa":
         x = 610.0 if espejo else 470.0  # la lámpara de pie, al lado del sillón (de un lado o del otro)
-    base = ALTO_BASE.get(prop, 120)
+    base = ALTO_BASE.get(prop, 120 if prop in _props_codigo() else 105)   # un dibujo guardado mide ±110
     if soporte == "piso":
         return x, PISO_PARED - base
     if soporte == "mesa":
@@ -265,6 +290,12 @@ def ubicar(prop: str, soporte: str, donde: str, fondo: str = "", espejo: bool = 
     if soporte == "pared":
         return x, Y_PARED
     return x, Y_AIRE
+
+
+def _props_codigo() -> set:
+    from . import escenas as _e
+
+    return set(_e.PROPS)
 
 
 def y_objeto(prop: str) -> float:
@@ -419,8 +450,12 @@ class Escena:
         if edad != "chico" and rol not in NINOS:
             cambios = {**cambios, **vestir(rol, getattr(self, "anio", 2026), genero_de(nombre, cambios, genero))}
         # cada rol hace lo suyo: nadie queda quieto con las manos vacías (Santi, 2026-11-17)
-        if accion == "quieto" and rol in TRABAJO_ROL:
+        if accion in ("quieto", "senalar", "pensar") and rol in ACCION_DE_ROL:
+            accion = ACCION_DE_ROL[rol]
+        elif accion == "quieto" and rol in TRABAJO_ROL:
             accion = "trabajar"
+        elif accion == "quieto" and cara == "triste":
+            accion = "preocuparse"
         accion_pedida = accion
         accion = "manipular" if (MANOS_V3 and accion in CON_MANOS) else ALIAS_ACCION.get(accion, accion)
         x0 = _x(desde) if x0 is None else x0
@@ -597,20 +632,62 @@ class Escena:
                 kf.append({"t": round(t, 3), "estirar": 1.0 + 0.04 * s_, "cabeza": 5 * s_, "easing": "suave"})
                 t += 0.3
                 s_ = -s_
+        elif accion == "jugar":     # el deportista con la pelota (el producto): la levanta y la lanza, salta un poco
+            caras.append({"t": t0, "cara": "risa"})
+            gestos += _alternar("sostener_a", "lanzar", t0, fin, 0.4)
+            t, s_ = t0, 1
+            while t + 0.4 <= fin + 0.05:
+                kf += [{"t": round(t, 3), "y": PISO, "estirar": 0.92, "easing": "salida"},
+                       {"t": round(t + 0.2, 3), "y": PISO - 40, "estirar": 1.06, "cabeza": -5 * s_, "easing": "salida"},
+                       {"t": round(t + 0.4, 3), "y": PISO, "estirar": 1.0, "easing": "entrada"}]
+                t += 0.8
+                s_ = -s_
+            self.sfx.append((t0 + 0.4, "whoosh"))
+        elif accion == "comprar":   # el cliente paga: extiende el billete y lo vuelve a mirar
+            caras.append({"t": t0, "cara": "feliz"})
+            gestos += _alternar("pagar", "sostener_a", t0, fin, 0.55)
+            t, s_ = t0, 1
+            while t < fin:
+                kf.append({"t": round(t, 3), "cabeza": 6 * s_, "x": round(x0 + 10 * s_, 1), "easing": "suave"})
+                t += 0.55
+                s_ = -s_
+        elif accion == "cargar":    # levanta la caja arriba de la cabeza y la lleva de acá para allá
+            caras.append({"t": t0, "cara": "normal"})
+            gestos += _alternar("cargar_a", "cargar_b", t0, fin, 0.3)
+            t, s_ = t0, 1
+            while t < fin:
+                kf.append({"t": round(t, 3), "x": round(x0 + 16 * s_, 1), "estirar": 1.0 - 0.03 * s_,
+                           "easing": "suave"})
+                t += 0.6
+                s_ = -s_
+        elif accion == "preocuparse":   # las manos a la cabeza, mueve la cabeza de un lado al otro
+            caras.append({"t": t0, "cara": "triste"})
+            gestos += _alternar("preocupar_a", "preocupar_b", t0, fin, 0.35)
+            t, s_ = t0, 1
+            while t < fin:
+                kf.append({"t": round(t, 3), "cabeza": 9 * s_, "rotacion": 2 * s_, "easing": "suave"})
+                t += 0.35
+                s_ = -s_
         elif accion == "senalar":
             gestos += [{"t": t0, "gesto": "senalar" if x0 < 540 else "senalar_izq"}]
             kf += [{"t": t0, "estirar": 1.0}, {"t": t0 + 0.15, "estirar": 1.05, "easing": "salida"},
                    {"t": t0 + 0.35, "estirar": 1.0, "easing": "suave"}]
             respira(t0 + 0.4, fin)
-        else:   # quieto: igual respira, se balancea y gesticula
-            gestos += [{"t": t0, "gesto": "explicar"}]
-            respira(t0, fin, 4.0)
+        else:   # quieto: nadie parado (2026-11-19): habla con las manos y se mueve
+            gestos += _alternar("explicar", "senalar" if x0 < 540 else "senalar_izq", t0, fin, 0.5)
+            t, s_ = t0, 1
+            while t < fin:
+                kf.append({"t": round(t, 3), "cabeza": 5 * s_, "estirar": 1.0 + 0.02 * s_, "easing": "suave"})
+                t += 0.5
+                s_ = -s_
         el["keyframes"] = sorted(kf, key=lambda q: q["t"])
         el["gestos"] = gestos
-        if accion in ("manipular", "trabajar"):
+        if accion in ("manipular", "trabajar", "jugar", "comprar", "cargar", "vender"):
             el["manos"] = True       # el objeto "en la mano" va en las dos, adelante (Escena.objeto)
         if accion == "trabajar":
-            el["objeto_rol"] = TRABAJO_ROL[rol]
+            el["objeto_rol"] = TRABAJO_ROL.get(rol, "{prota}")
+        elif accion in OBJETO_ACCION:
+            el["objeto_rol"] = OBJETO_ACCION[accion]
         el["rol"] = rol
         self.actores.append(el)
         if caras:
@@ -678,7 +755,7 @@ class Escena:
                color: str | None = None, k: int = 0, blanco: tuple[float, float] | None = None,
                soporte: str | None = None) -> float | None:
         """Agrega el objeto (apoyado donde corresponde); devuelve el segundo del impacto/rotura si lo hay."""
-        sop = soporte_de(prop, soporte)
+        sop = apoyar(prop, soporte_de(prop, soporte), efecto, self.fondo)
         x, y = ubicar(prop, sop, donde, self.fondo, self.espejo)
         self._apoyo(sop, x)
         base = {"tipo": "prop", "nombre": prop, "x": x, "y": y}
@@ -693,7 +770,7 @@ class Escena:
             off = 125 * esc_ * lado
             y = PISO - 330 * esc_
             if quien.get("manos"):   # reglas_v3: en las dos manos, delante del cuerpo
-                off, y = 0.0, PISO - 300 * esc_
+                off, y = 0.0, PISO - 680 * esc_ * per_alto(quien["nombre"], quien.get("cambios") or {}) * 0.42
             kx = [{"t": k["t"], "x": round(float(k["x"]) + off, 1), "easing": k.get("easing", "suave")}
                   for k in quien.get("keyframes", []) if "x" in k]
             # lo voluminoso (una caja) se lleva a la altura de la panza y más chico: si no, le tapa la cara

@@ -159,7 +159,7 @@ def texto_costo(conn, dia: str) -> str:
 # Qué modelo hace cada cosa (Santi, 2026-11-19: US$ 2,68 en dos videos de Así Nació que no salieron). Sonnet SOLO
 # escribe el guion de Así Nació (`marcas.escribir_guion`, también la reescritura entera); el director, las revisiones,
 # los dibujos, el gancho y el resto del canal van con Haiku, y las correcciones puntuales, de TODOS los canales, también.
-MODULOS_ANIMACION = {"marcas", "director", "dibujos", "reemplazo", "visuales", "gancho_v3", "uso_v3", "escenas_lib",
+MODULOS_ANIMACION = {"marcas", "director", "dibujos", "reemplazo", "visuales", "gancho_v3", "uso_v3", "escenas_lib", "fiel",
                      "acciones", "calidad_an"}
 SONNET_EN_ANIMACION = {"marcas.escribir_guion"}
 HAIKU_SIEMPRE = {"correcciones.corregir"}

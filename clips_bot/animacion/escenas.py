@@ -280,8 +280,115 @@ def _fondo_fabrica_base(semilla: int = 5) -> str:
     return "".join(p)
 
 
-def _fondo_tienda_base(semilla: int = 6) -> str:
-    """Góndolas de un almacén/supermercado con productos genéricos de colores (sin marcas)."""
+# Fondos por rubro (Santi, 2026-11-19, para TODOS los videos: la tienda de Wilson tenía botellas): la tienda muestra
+# lo que vende la historia. Cada rubro es un dibujo de código (la biblioteca: se arma una vez, se cachea por lugar);
+# un rubro que no está acá se dibuja una vez con Claude como lugar nuevo (marcas.crear_lugares).
+RUBROS = ("almacen", "deportes", "jugueteria", "farmacia", "concesionaria", "ropa", "tecnologia", "hogar")
+RUBRO_DE_CATEGORIA = {
+    "bebidas": "almacen", "golosinas": "almacen", "alimentos": "almacen", "cervezas": "almacen",
+    "comida rápida": "almacen", "supermercados": "almacen", "snacks": "almacen", "cafeterías": "almacen",
+    "tiendas": "almacen", "deportes": "deportes", "juguetes": "jugueteria", "videojuegos": "jugueteria",
+    "entretenimiento": "jugueteria", "higiene": "farmacia", "autos": "concesionaria", "ropa": "ropa",
+    "tecnología": "tecnologia", "internet": "tecnologia", "telecomunicaciones": "tecnologia", "medios": "tecnologia",
+    "hogar": "hogar", "energía": "hogar", "industria": "hogar"}
+# lo que dice la frase gana sobre la categoría de la marca ("una juguetería", "en la farmacia")
+PALABRAS_RUBRO = (("deportes", r"deport\w*|pelotas?|raquetas?|zapatillas"),
+                  ("jugueteria", r"jugueter\w*|juguetes?"), ("farmacia", r"farmacias?|botica|remedios?"),
+                  ("concesionaria", r"concesionari\w*|agencia de autos"), ("ropa", r"ropa|boutique|zapater\w*"),
+                  ("tecnologia", r"electr[oó]nica|computadoras?|celulares?"), ("almacen", r"almac[eé]n|kioscos?|supermercad\w*"))
+
+
+def rubro_de(categoria: str = "", texto: str = "") -> str:
+    for rubro, patron in PALABRAS_RUBRO:
+        if re.search(rf"\b(?:{patron})\b", str(texto or ""), re.I):
+            return rubro
+    return RUBRO_DE_CATEGORIA.get(str(categoria or "").strip().lower(), "almacen")
+
+
+def base_fondo(tipo: str) -> str:
+    """'tienda:deportes' → 'tienda' (las tablas de luz, piso y textura son las del lugar)."""
+    return str(tipo or "").split(":", 1)[0]
+
+
+def _articulo(rubro: str, x: float, ye: float, rnd, colores) -> tuple[str, float]:
+    """Un artículo del estante del rubro, apoyado en `ye`; devuelve (svg, ancho)."""
+    c = rnd.choice(colores)
+    k = rnd.randrange(3)
+    if rubro == "deportes":
+        if k == 0:     # pelota con costuras
+            return (circulo(x + 40, ye - 40, 38, rnd.choice([P.BLANCO, P.NARANJA, "#d9452f"]), ancho=P.TRAZO_FINO)
+                    + f'<path d="M{x + 4} {ye - 40} Q{x + 40} {ye - 62} {x + 76} {ye - 40}" {trazo(ancho=4)}/>'), 80
+        if k == 1:     # raqueta parada
+            return (elipse(x + 30, ye - 120, 28, 40, "#f3e2c2", ancho=P.TRAZO_FINO)
+                    + "".join(f'<path d="M{x + 8 + i * 11} {ye - 152} L{x + 8 + i * 11} {ye - 88}" stroke="#9a8a70" '
+                              f'stroke-width="2"/>' for i in range(4))
+                    + rect(x + 25, ye - 80, 10, 80, P.MADERA, r=4, ancho=4)), 62
+        return g(prop_zapatilla(c), x + 50, ye - 32, escala=0.5), 100
+    if rubro == "jugueteria":
+        if k == 0:     # osito
+            return (circulo(x + 35, ye - 35, 32, "#b97a45", ancho=P.TRAZO_FINO)
+                    + circulo(x + 35, ye - 85, 24, "#b97a45", ancho=P.TRAZO_FINO)
+                    + circulo(x + 18, ye - 104, 9, "#b97a45", ancho=3) + circulo(x + 52, ye - 104, 9, "#b97a45", ancho=3)
+                    + circulo(x + 28, ye - 88, 3, P.CONTORNO, borde=False) + circulo(x + 42, ye - 88, 3, P.CONTORNO, borde=False)), 72
+        if k == 1:     # cubos con letras-dibujo (sin letras: un círculo y un triángulo)
+            return (rect(x, ye - 50, 50, 50, c, r=4, ancho=P.TRAZO_FINO) + rect(x + 25, ye - 100, 50, 50,
+                    rnd.choice(colores), r=4, ancho=P.TRAZO_FINO) + circulo(x + 25, ye - 25, 10, P.BLANCO, borde=False)), 78
+        return (rect(x, ye - 38, 90, 26, c, r=8, ancho=P.TRAZO_FINO) + circulo(x + 20, ye - 10, 11, P.CONTORNO)
+                + circulo(x + 70, ye - 10, 11, P.CONTORNO) + rect(x + 20, ye - 60, 46, 24, "#bfe9ff", r=6, ancho=4)), 92
+    if rubro == "farmacia":
+        if k == 0:     # caja de remedio con la cruz
+            return (rect(x, ye - 70, 60, 70, P.BLANCO, r=4, ancho=P.TRAZO_FINO)
+                    + rect(x + 24, ye - 56, 12, 40, "#2fae5a", borde=False) + rect(x + 10, ye - 42, 40, 12, "#2fae5a", borde=False)), 62
+        if k == 1:     # frasco
+            return (rect(x, ye - 80, 44, 80, "#e8a33d", r=10, ancho=P.TRAZO_FINO)
+                    + rect(x + 4, ye - 96, 36, 18, P.BLANCO, r=4, ancho=4)), 46
+        return rect(x, ye - 46, 70, 46, rnd.choice(["#bfe9ff", "#ffd6e0", "#e9f7d8"]), r=6, ancho=P.TRAZO_FINO), 72
+    if rubro == "ropa":     # remeras dobladas y una colgada
+        if k == 2:
+            return (f'<path d="M{x} {ye - 120} L{x + 25} {ye - 140} L{x + 55} {ye - 140} L{x + 80} {ye - 120} '
+                    f'L{x + 68} {ye - 100} L{x + 62} {ye - 106} L{x + 62} {ye - 30} L{x + 18} {ye - 30} L{x + 18} '
+                    f'{ye - 106} L{x + 12} {ye - 100} Z" fill="{c}" {trazo(ancho=P.TRAZO_FINO)}/>'), 82
+        return "".join(rect(x, ye - 22 * (i + 1), 76, 20, rnd.choice(colores), r=4, ancho=4) for i in range(3)), 80
+    if rubro == "tecnologia":   # pantallas y cajas de aparatos
+        if k == 0:
+            return (rect(x, ye - 90, 100, 70, "#2b2b33", r=6, ancho=P.TRAZO_FINO) + rect(x + 8, ye - 82, 84, 54,
+                    "#3fd1a8", borde=False) + rect(x + 40, ye - 20, 20, 20, P.GRIS, ancho=4)), 104
+        if k == 1:
+            return rect(x, ye - 100, 52, 100, "#2b2b33", r=10, ancho=P.TRAZO_FINO) + rect(x + 6, ye - 92, 40, 78,
+                    "#7cc6ee", r=4, borde=False), 56
+        return rect(x, ye - 60, 80, 60, c, r=4, ancho=P.TRAZO_FINO), 82
+    if rubro == "hogar":       # ollas, lámparas, cajas
+        if k == 0:
+            return (rect(x, ye - 50, 80, 50, P.GRIS, r=10, ancho=P.TRAZO_FINO) + rect(x - 8, ye - 56, 96, 10, P.GRIS_OSCURO,
+                    r=4, ancho=4)), 90
+        if k == 1:
+            return (camino(f"M{x + 10} {ye - 120} L{x + 70} {ye - 120} L{x + 80} {ye - 70} L{x} {ye - 70} Z", c,
+                           ancho=P.TRAZO_FINO) + rect(x + 36, ye - 70, 8, 60, P.GRIS_OSCURO, borde=False)
+                    + rect(x + 20, ye - 12, 40, 12, P.GRIS_OSCURO, r=4, borde=False)), 82
+        return rect(x, ye - 70, 70, 70, "#c69c6d", r=4, ancho=P.TRAZO_FINO), 72
+    return "", 0
+
+
+def _fondo_concesionaria(semilla: int = 6) -> str:
+    """El salón de autos: ventanal a la calle, piso brillante y autos en exhibición (sin estanterías)."""
+    rnd = random.Random(semilla)
+    p = [rect(0, 0, W, H, "#eef3f7", borde=False),
+         rect(60, 240, 960, 760, "#bfe3f5", r=8),                                   # ventanal
+         f'<path d="M380 240 L380 1000 M700 240 L700 1000" {trazo(ancho=8)}/>',
+         rect(0, H * 0.74, W, H * 0.26, "#d9dde3", borde=False),
+         f'<path d="M0 {n(H * 0.74)} L{W} {n(H * 0.74)}" {trazo()}/>']
+    for x in range(0, W, 220):     # reflejos del piso
+        p.append(f'<path d="M{x} {n(H * 0.76)} L{x + 90} {H}" stroke="#ffffff" stroke-width="10" opacity="0.5"/>')
+    for x, esc_ in ((270, 0.95), (800, 0.95)):
+        p.append(g(prop_auto(color=rnd.choice([P.ROJO, P.AZUL, P.AMARILLO, P.VERDE])), x, 1020, escala=esc_))
+        p.append(rect(x - 150, 1100, 300, 18, "#b9c2cc", r=8, borde=False))      # tarima
+    return "".join(p)
+
+
+def _fondo_tienda_base(semilla: int = 6, rubro: str = "almacen") -> str:
+    """Las estanterías de la tienda con lo que vende el rubro (el almacén: productos genéricos de colores, sin marcas)."""
+    if rubro == "concesionaria":
+        return _fondo_concesionaria(semilla)
     rnd = random.Random(semilla)
     colores = [P.ROJO, P.AZUL, P.VERDE, P.AMARILLO, P.NARANJA, P.VIOLETA, P.ROSA, P.TURQUESA]
     p = [rect(0, 0, W, H, "#fff3dc", borde=False),
@@ -297,6 +404,14 @@ def _fondo_tienda_base(semilla: int = 6) -> str:
             ye = 300 + k * 270
             p.append(rect(x0 + 20, ye + 200, 440, 26, P.MADERA, r=4))
             x = x0 + 34
+            if rubro != "almacen":
+                while x < x0 + 420:
+                    art, w = _articulo(rubro, x, ye + 200, rnd, colores)
+                    if not w or x + w > x0 + 455:
+                        break
+                    p.append(art)
+                    x += w + 16
+                continue
             while x < x0 + 430:
                 w, h = rnd.choice([(60, 150), (80, 110), (50, 180), (90, 90)])
                 if x + w > x0 + 455:
@@ -405,12 +520,14 @@ def fondo_fabrica(semilla: int = 5) -> str:
     return "".join(p)
 
 
-def fondo_tienda(semilla: int = 6) -> str:
+def fondo_tienda(semilla: int = 6, rubro: str = "almacen") -> str:
     """La tienda de la época: caja registradora de bronce y frascos antes de 1950, registradora
     mecánica en los 50-80, pantalla y lector de código de barras hoy."""
     decada, _ = epoca_de(semilla)
     rango = _rango(decada)
-    p = [_fondo_tienda_base(semilla)]
+    p = [_fondo_tienda_base(semilla, rubro)]
+    if rubro == "concesionaria":
+        return "".join(p)
     p.append(rect(40, 1260, 300, 160, "#8a5a2b" if rango != "hoy" else "#cfd8dc", r=6))       # mostrador
     if rango == "antes":
         p.append(camino("M100 1260 L110 1170 L250 1170 L270 1260 Z", "#c9a24a")
@@ -869,6 +986,7 @@ def _patrones() -> str:
 
 def ambiente(tipo: str) -> str:
     """Lo que le da profundidad y luz a un fondo (ver arriba). Vacío para los que no lo llevan."""
+    tipo = base_fondo(tipo)
     out = []
     if tipo in PISO_Y:
         py = H * PISO_Y[tipo]
@@ -920,6 +1038,7 @@ MOMENTO_LUZ = {"atardecer": ("#ff7a3d", 0.17), "noche": ("#0d1a40", 0.36), "inte
 
 def grade(tipo: str, momento: str = "") -> str:
     """El tinte y la viñeta de ese lugar, y la luz del momento (SVG en coordenadas de pantalla)."""
+    tipo = base_fondo(tipo)
     luz = ""
     if momento in MOMENTO_LUZ:
         c_, op_ = MOMENTO_LUZ[momento]
@@ -942,6 +1061,7 @@ def primer_plano(tipo: str, lado: int = 1, variante: int = 0) -> str:
     """Un objeto MUY cerca de la cámara, recortado por el borde de abajo (una planta, el respaldo de una
     silla, una caja, un poste): más oscuro (fuera de la luz). Coordenadas de pantalla: la esquina de abajo
     del `lado` (-1 izquierda, 1 derecha). Ocupa solo el borde (≤ 120 px adentro, de y 1640 para abajo)."""
+    tipo = base_fondo(tipo)
     oscuro = lambda c: oscurecer(c, 0.55)   # noqa: E731
     if tipo in ("casa", "oficina", "cielo") and variante % 2 == 0:     # hojas de una planta
         hojas = "".join(g(camino("M0 0 Q-55 -140 0 -300 Q55 -140 0 0 Z", oscuro(P.VERDE), ancho=P.TRAZO_FINO),
@@ -968,6 +1088,13 @@ def fondo(tipo: str, semilla: int | None = None) -> str:
         from . import visuales
 
         return visuales.svg_mapa(int(semilla or 0))
+    if ":" in str(tipo) and base_fondo(tipo) == "tienda":
+        rubro = str(tipo).split(":", 1)[1]
+        rubro = rubro if rubro in RUBROS else "almacen"
+        svg_ = fondo_tienda(6 if semilla is None else semilla, rubro) + (ambiente("tienda") if P.VOLUMEN else "")
+        if semilla is not None and espejado(semilla):
+            return f'<g transform="translate({W} 0) scale(-1 1)">{svg_}</g>'
+        return svg_
     f = FONDOS.get(tipo)
     if f is None:
         from . import dibujos
@@ -990,6 +1117,9 @@ def es_fondo(tipo: str) -> bool:
     """De la biblioteca de siempre o un lugar nuevo guardado."""
     from . import dibujos
 
+    if ":" in str(tipo or ""):
+        b, r = str(tipo).split(":", 1)
+        return b == "tienda" and r in RUBROS
     return tipo in FONDOS or dibujos.fondo_guardado(str(tipo or "")) is not None
 
 

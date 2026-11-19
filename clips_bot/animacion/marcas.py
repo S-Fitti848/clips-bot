@@ -2059,6 +2059,14 @@ def linea_de_tiempo(d: dict, inicios: list[float], fin: float, palabras: list,
                 log.warning("escena: %d cosas siguen tapando un texto", len({k for _t, k, _ in quedan}))
     if visual:
         reacciones_tito(escenas)
+    # La tienda vende lo de la historia (Santi, 2026-11-19): el rubro sale de lo que dicen las frases de la tienda y,
+    # si no dicen nada, de la categoría de la marca (`_categoria`, la pone armar_video).
+    texto_tienda = " ".join(str(x.get("frase") or "") for x in d.get("escenas") or [] if x.get("fondo") == "tienda")
+    rubro = esc.rubro_de(str(d.get("_categoria") or ""), texto_tienda)
+    for x in escenas:
+        f_ = x.get("fondo") if isinstance(x, dict) else None
+        if isinstance(f_, dict) and f_.get("tipo") == "tienda":
+            f_["tipo"] = f"tienda:{rubro}"
     out = {"fps": P.FPS, "escenas": escenas, "subtitulos_y": SUBTITULOS_Y, "subtitulos_tam": SUBTITULOS_TAM,
            "subtitulos_estilo": subtitulos}
     if voz is not None:
@@ -3110,6 +3118,11 @@ def armar_video(conn, settings, carpeta: Path, cliente=None, wiki=None, hoy: dat
     if REGLAS_V3:
         completar_v3(cliente, d, avisar)     # las 3 opciones de gancho y el decorado (pedido aparte)
     resolver_objetos(cliente, d, e, avisar)
+    # El protagonista como el real (Santi, 2026-11-19): Haiku lo describe, se dibuja así y se chequea que se reconozca
+    from . import fiel
+
+    fiel.asegurar(cliente, d, e.marca.nombre, fuente or "", avisar)
+    d["_categoria"] = e.marca.categoria      # la tienda vende lo del rubro de la marca (linea_de_tiempo)
     guardar_acciones_nuevas(d)
     if getattr(cfg, "visual_plus", False):
         from . import visuales
