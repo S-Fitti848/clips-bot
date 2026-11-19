@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-11-18 | **Versión:** v1.38.0 (desplegado) | **Modo:** Fase 2: corriendo solo en la Pi. **Rots APAGADO.** Pequeña Historia (3 por día, madrugada desde las 04:00) (**NO se publica sola desde el 17/11**: llega con ✅ Publicar / ❌ Cancelar y sin respuesta no sale) y **Así Nació** (2 por día, desde las 07:00, publican 13:00 y 20:00 en YouTube y Facebook con ❌ Cancelar), todo al privado de Santi
+**Snapshot:** 2026-11-19 | **Versión:** v1.38.1 (desplegado) | **Modo:** Fase 2: corriendo solo en la Pi. **Rots APAGADO.** Pequeña Historia (3 por día, madrugada desde las 04:00) (**NO se publica sola desde el 17/11**: llega con ✅ Publicar / ❌ Cancelar y sin respuesta no sale) y **Así Nació** (2 por día, desde las 07:00, publican 13:00 y 20:00 en YouTube y Facebook con ❌ Cancelar), todo al privado de Santi
 
 > **SI ESTÁS EMPEZANDO UNA SESIÓN NUEVA, LEÉ §10.** Ahí está qué está hecho, qué quedó a medias,
 > qué falta, y las trampas que ya nos mordieron.
@@ -1283,6 +1283,10 @@ Problemas abiertos:
 
 ## 9. CHANGELOG
 
+- v1.38.1 (2026-11-19) — Así Nació falló a las 07:05 ("'str' object has no attribute 'get'"): la corrección puntual
+  del guion de Toys "R" Us trajo `dibujos_nuevos` como lista de textos. `correcciones.aplicar` ahora controla la forma
+  de cada campo general con el schema del guion (`con_forma`) y `marcas` lee esas listas solo con objetos (`_dicts`).
+  El intento perdido costó US$ 0,58 de Claude (6 pedidos). `tests/test_parche_campos_forma.py`.
 - v1.38.0 (2026-11-18, tarde) — Prueba de horarios de Así Nació (12:30 y 18:00 del 19/11 al 02/12) y su comparación
   en el resumen de los lunes. `tests/test_horarios_an.py`. 1722 tests OK.
 - v1.37.0 (2026-11-18, tarde) — Pruebas sin Claude real; la revisión final reemplaza la foto mala en vez de frenar.

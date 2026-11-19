@@ -622,7 +622,7 @@ pego:
 animacion:
   # Así Nació PRENDIDO (Santi aprobó el Nerf el 2026-11-14): 2 videos por día al privado (desde el 15/11), ya
   # programados en YouTube (@asinacio.oficial) a las 13:00 y 20:00 AR, con ❌ Cancelar; si no se toca nada, salen solos.
-  activo: true
+  activo: false   # PAUSADO por Santi el 2026-11-19 (US$ 2,68 en dos videos que no salieron): vuelve con 1 por día cuando una prueba pase 17/19 y cueste < US$ 0,60
   subir: true
   # Más visual + biblioteca de escenas + viaje nuevo (Santi, 2026-11-15: "prendé el modo nuevo para el video de
   # mañana a las 07:00"): rótulo, número gigante, cita, cartel, mapa, luz del momento, cámara variada y Tito.

@@ -61,8 +61,33 @@ def schema_parche(schema: dict, lista: str) -> dict:
     }
 
 
-def aplicar(d: dict, parche: dict, lista: str) -> dict:
-    """El guion con el parche aplicado (sin tocar el original)."""
+_TIPOS = {"ARRAY": list, "OBJECT": dict, "STRING": str, "INTEGER": int, "NUMBER": (int, float), "BOOLEAN": bool}
+
+
+def con_forma(v, prop: dict | None):
+    """El valor de un campo general con la forma que pide su schema, o None si no se puede (2026-11-19: Claude
+    mandó `dibujos_nuevos` como lista de textos y `errores_protagonista` se cayó con "'str' object has no attribute
+    'get'"). En una lista, los elementos que no tienen la forma salen; un objeto suelto donde va una lista, se envuelve."""
+    if not prop or prop.get("type") not in _TIPOS:
+        return v
+    tipo = prop["type"]
+    if tipo == "ARRAY":
+        if isinstance(v, dict):
+            v = [v]
+        if not isinstance(v, list):
+            return None
+        sub = prop.get("items") or {}
+        if sub.get("type") in _TIPOS:
+            v = [x for x in (con_forma(x, sub) for x in v) if x is not None]
+        return v
+    if tipo in ("INTEGER", "NUMBER") and isinstance(v, bool):
+        return None
+    return v if isinstance(v, _TIPOS[tipo]) else None
+
+
+def aplicar(d: dict, parche: dict, lista: str, schema: dict | None = None) -> dict:
+    """El guion con el parche aplicado (sin tocar el original). Con el schema del guion, los campos generales que no
+    tienen su forma no se aplican (queda el valor de antes)."""
     out = copy.deepcopy(d)
     items = list(out.get(lista) or [])
     agregados = [{"despues_de": c.get("indice"), "item": c.get("item")}
@@ -98,7 +123,10 @@ def aplicar(d: dict, parche: dict, lista: str) -> dict:
                 pass
             lista_campos[c["campo"]] = v
         campos = lista_campos
+    props = (schema or {}).get("properties") or {}
     for k, v in campos.items():
+        if k in props:
+            v = con_forma(v, props[k])
         if v not in (None, "", [], {}):
             out[k] = v
     return out
@@ -116,4 +144,4 @@ def corregir(cliente, sistema: str, pedido: str, d: dict, errores: list[str], sc
     log.info("corrección puntual: %d cambios, %d nuevos, %d afuera, campos %s",
              len(parche.get("cambios") or []), len(parche.get("agregar") or []), len(parche.get("sacar") or []),
              sorted(c.get("campo", "") if isinstance(c, dict) else c for c in (parche.get("campos") or [])))
-    return aplicar(d, parche, lista)
+    return aplicar(d, parche, lista, schema)

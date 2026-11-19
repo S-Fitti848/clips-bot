@@ -27,7 +27,8 @@ class R:
 
 def test_prendido_y_a_las_19():
     s = load_settings().animacion
-    assert s.activo and s.subir and s.hora_publicacion == "19:00" and s.facebook
+    # activo: pausado por Santi el 2026-11-19 hasta que una prueba pase 17/19 por menos de US$ 0,60
+    assert s.subir and s.hora_publicacion == "19:00" and s.facebook
     assert s.chat in ("", m.DUENO)
 
 

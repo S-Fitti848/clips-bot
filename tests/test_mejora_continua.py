@@ -2,6 +2,7 @@
 estadísticas de 24 h, y los lunes y jueves las 5 mejoras al motor por impacto (al menos una del gancho)."""
 
 import json
+from dataclasses import replace
 from datetime import datetime
 
 from PIL import Image
@@ -48,6 +49,7 @@ def test_lunes_y_jueves_las_5_mejoras_con_cuadro_y_una_del_gancho(tmp_path):
     con_gancho = {"mejoras": [_mejora("gancho"), _mejora("accion"), _mejora("objeto", 9), _mejora("camara"), _mejora("texto")]}
     cli, tg = _Cli(sin_gancho, con_gancho), _TG()
     s = load_settings()
+    s = replace(s, animacion=replace(s.animacion, activo=True))   # pausado el 2026-11-19; el test mira el canal prendido
     m._mejoras_motor_tick(conn, tg, s, ahora=datetime(2026, 11, 17, 11, 0, tzinfo=m.AR), cliente=cli)   # martes
     assert not tg.mensajes and not cli.pedidos
     m._mejoras_motor_tick(conn, tg, s, ahora=datetime(2026, 11, 19, 9, 0, tzinfo=m.AR), cliente=cli)    # jueves, temprano

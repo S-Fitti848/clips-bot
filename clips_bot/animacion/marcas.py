@@ -86,6 +86,11 @@ AJUSTE_VEL_MAX = 0.08   # Santi (2026-11-15): fuera de 32-38 s, primero la veloc
                         # sin cambiar el tono); recién si no alcanza se reescribe el guion y se paga otra voz
 
 
+
+def _dicts(xs) -> list[dict]:
+    """Solo los elementos que son objetos (una corrección puede mandar textos sueltos: 2026-11-19)."""
+    return [x for x in xs if isinstance(x, dict)] if isinstance(xs, list) else []
+
 def ajuste_velocidad(fin: float, minimo: float = MIN_S, maximo: float = MAX_S,
                      tope: float = AJUSTE_VEL_MAX) -> float | None:
     """El atempo que lleva una voz de `fin` s adentro del rango (con medio segundo de margen); None si ya está
@@ -711,7 +716,7 @@ def entidades_sin_presentar(d: dict, m: Marca) -> list[str]:
     from clips_bot.textos import nombres_propios
 
     frases = frases_de(d)
-    ents = [x for x in d.get("entidades") or [] if str(x.get("nombre") or "").strip()]
+    ents = [x for x in _dicts(d.get("entidades")) if str(x.get("nombre") or "").strip()]
     errores = []
     for x in ents:
         nombre, pres = str(x["nombre"]), str(x.get("presentacion") or "")
@@ -858,8 +863,8 @@ def errores_fieles(d: dict) -> list[str]:
     if escenas and prota and not any(prop_real(o) == prota for o in escenas[0].get("objetos") or []) \
             and not any(c.get("prop") == prota for c in escenas[0].get("cadena") or []):
         errores.append(f"el gancho (escena 1) tiene que MOSTRAR el protagonista ({prota}): ponelo en sus `objetos`")
-    nuevos = {str(x.get("nombre") or "").strip() for x in d.get("dibujos_nuevos") or []}
-    for x in d.get("dibujos_nuevos") or []:
+    nuevos = {str(x.get("nombre") or "").strip() for x in _dicts(d.get("dibujos_nuevos"))}
+    for x in _dicts(d.get("dibujos_nuevos")):
         if not dibujos.nombre_valido(x.get("nombre")):
             errores.append(f"dibujo nuevo {x.get('nombre')!r}: nombre corto en minúsculas con guiones bajos")
     pedidos = [prop_real(o) for e in escenas for o in e.get("objetos") or [] if o.get("prop") == DIBUJO_NUEVO]
@@ -889,7 +894,7 @@ def errores_protagonista(d: dict) -> list[str]:
     errores = []
     pr = d.get("protagonista") or {}
     prop = prop_real(pr)
-    nuevos = {str(x.get("nombre") or "").strip() for x in d.get("dibujos_nuevos") or []}
+    nuevos = {str(x.get("nombre") or "").strip() for x in _dicts(d.get("dibujos_nuevos"))}
     if prop not in DETALLADOS and prop not in nuevos and not (prop and esc.es_prop(prop) and prop not in esc.PROPS):
         errores.append(f"`protagonista`: {prop!r} no es un objeto dibujado con detalle (elegí uno de: "
                        f"{', '.join(sorted(DETALLADOS))})")
@@ -1774,7 +1779,7 @@ def asegurar_dibujos(cliente, d: dict, e: "Elegido", fuente: str, avisar=log.inf
     from . import dibujos
 
     fallidos = []
-    for x in d.get("dibujos_nuevos") or []:
+    for x in _dicts(d.get("dibujos_nuevos")):
         nombre = str(x.get("nombre") or "").strip()
         if not nombre or esc.es_prop(nombre):
             continue
@@ -1839,7 +1844,7 @@ def resolver_objetos(cliente, d: dict, e: "Elegido | None" = None, avisar=log.in
     (`crear_lugares`, 2026-11-17)."""
     from . import dibujos
 
-    descr = {str(x.get("nombre") or "").strip(): str(x.get("descripcion") or "") for x in d.get("dibujos_nuevos") or []}
+    descr = {str(x.get("nombre") or "").strip(): str(x.get("descripcion") or "") for x in _dicts(d.get("dibujos_nuevos"))}
     resueltos: dict[str, str] = {}
     cambios: list[str] = crear_lugares(cliente, d, avisar)
     contexto = f"{e.marca.nombre}: {e.angulo}" if e is not None else ""

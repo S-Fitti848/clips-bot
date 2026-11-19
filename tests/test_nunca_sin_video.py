@@ -13,6 +13,12 @@ from clips_bot import efemerides as ef
 from clips_bot.animacion import marcas as mk
 from clips_bot.config import load_settings
 
+
+def _con_asinacio(s):
+    """Así Nació prendido (Santi lo pausó el 2026-11-19; estos tests miran el canal prendido)."""
+    from dataclasses import replace
+    return replace(s, animacion=replace(s.animacion, activo=True))
+
 HOY = date(2026, 11, 20)
 
 
@@ -186,7 +192,7 @@ def _ahora(hhmm, dia=HOY):
 
 
 def test_a_las_2000_avisa_los_canales_sin_video_una_vez(conn):
-    s = load_settings()
+    s = _con_asinacio(load_settings())
     tg = Tg()
     cuando = _ahora("13:00").astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     db.crear_subida(conn, "efemeride_x", "pequena_historia", "programada", video_id="v", publish_at=cuando)
@@ -211,7 +217,7 @@ def test_sin_faltantes_no_avisa(conn):
 
 
 def test_la_reposicion_va_al_banco_mas_vacio_en_su_horario(conn, monkeypatch):
-    s = load_settings()
+    s = _con_asinacio(load_settings())
     corridos = []
     monkeypatch.setattr(banco, "paso", lambda c, canal, *a, **k: corridos.append(canal))
     monkeypatch.setattr(m, "_claude_textos", lambda st: (object(), object()))
