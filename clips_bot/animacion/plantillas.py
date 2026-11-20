@@ -396,7 +396,8 @@ def _producto_en_uso(plano, spec, dur, i, obj, rnd):
     inclinada, la cabeza atrás) y una comida se COME; lo demás se usa en las manos."""
     e = ac.Escena(dur, semilla=i)
     fondo = str(spec.get("fondo") or "")
-    fondo = fondo if fondo in _LUGAR_USO else "casa"
+    # en el lugar de la escena (un campo minero, un aula): solo el escenario vacío o nada pasan a la casa
+    fondo = fondo if fondo and fondo not in ("escenario", "ciudad", "fabrica") else "casa"
     texto = str(spec.get("_categoria") or "") + " " + str(spec.get("frase") or "")
     comer = bool(_SE_COME.search(texto)) and not _SE_TOMA.search(texto)
     boca = comer or bool(_SE_TOMA.search(texto))

@@ -1899,6 +1899,10 @@ def escena_accion(spec: dict, dur: float, i: int, primera: bool = False, tono: f
         tr = "iris"            # transición con estilo hacia el remate
     if visual is not None and visual.get("rotulo"):   # el rótulo ya dice el año: sin el año suelto en grande
         elementos = [el for el in elementos if not (el.get("tipo") == "gancho" and str(el.get("texto", "")).strip().isdigit())]
+    if visual is not None and visual.get("cartel") and texto and \
+            re.sub(r"\W", "", str(visual["cartel"]).lower()) == re.sub(r"\W", "", texto.lower()):
+        # el mismo texto dos veces en el cuadro (Levi's, 2026-11-20: "¡RASGADO! aparece dos veces"): queda el cartel
+        elementos = [el for el in elementos if el.get("tipo") != "gancho" or primera]
     if visual is not None:   # Así Nació más visual (2026-11-15): rótulo, dato, cita, cartel y la luz del momento
         nuevos, fx_v = elementos_visuales(visual, dur, sorted(t for t, _ in e.golpes), primera)
         elementos += nuevos

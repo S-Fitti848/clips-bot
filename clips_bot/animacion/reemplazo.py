@@ -286,7 +286,12 @@ _BASE_POR_FRASE = (
 )
 
 
-_POR_PARTE = {"problema": "crisis", "idea": "taller_inventor", "giro": "lanzamiento", "que_paso": "vender_tienda"}
+_POR_PARTE = {"problema": "crisis", "idea": "taller_inventor", "que_paso": "vender_tienda"}
+# Dónde pasa cada escena base: si la escena que falló es en otro lugar (mineros en un campo), la base que se pone es
+# "en uso" EN ESE LUGAR (Levi's, 2026-11-20: los mineros de 1853 quedaron en una oficina con un gráfico).
+LUGARES_BASE = {"crisis": {"oficina", "casa"}, "taller_inventor": {"taller", "laboratorio", "oficina", "hospital"},
+                "fabrica_produce": {"fabrica"}, "vender_tienda": {"tienda"}, "lanzamiento": {"escenario"},
+                "exito_multitud": {"tienda", "ciudad"}, "apreton_manos": {"oficina", "casa", "tienda", "ciudad"}}
 
 
 def base_para_frase(frase: str, fallo: str = "", parte: str = "") -> str:
@@ -316,6 +321,9 @@ def spec_base(d: dict, k: int) -> dict:
     actual = copy.deepcopy(d["escenas"][k])
     accion = base_para_frase(str(actual.get("frase") or ""), str(actual.get("accion_escena") or ""),
                              str(actual.get("parte") or ""))
+    fondo = str(actual.get("fondo") or "").split(":", 1)[0]
+    if fondo and accion in LUGARES_BASE and fondo not in LUGARES_BASE[accion]:
+        accion = "producto_en_uso"
     nuevo = {c: copy.deepcopy(actual[c]) for c in CONTINUIDAD + ("actores", "emocion", "objetos") if c in actual}
     nuevo["accion_escena"], nuevo["plano"] = accion, ""
     nuevo.pop("dibujo_nuevo", None)

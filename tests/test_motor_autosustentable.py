@@ -179,3 +179,13 @@ def test_el_quimico_vuelca_el_matraz_sobre_el_producto_y_el_anio_no_se_repite():
     d = ac.escena_accion({"frase": "En 1923 quebró", "fondo": "oficina", "texto_pantalla": "1923",
                           "actores": [{"rol": "empresario", "accion": "preocuparse"}]}, 3.0, 2)[0]
     assert not [el for el in d["elementos"] if el.get("tipo") == "gancho"]
+
+
+def test_el_reemplazo_respeta_el_lugar_de_la_escena():
+    """Levi's (2026-11-20): los mineros de 1853 en un campo quedaron en una oficina con un gráfico."""
+    d = {"escenas": [{"frase": "a"}, {"frase": "Los mineros rasgaban sus bolsillos, un problema", "accion_escena": "libre",
+                                      "fondo": "campo", "parte": "problema", "actores": [{"rol": "obrero"}]}]}
+    nuevo = rz.spec_base(d, 1)
+    assert nuevo["accion_escena"] == "producto_en_uso" and nuevo["fondo"] == "campo"
+    assert _armar("producto_en_uso", fondo="campo")["fondo"]["tipo"] == "campo"
+    assert rz.base_para_frase("En 1950 prohibieron los vaqueros", parte="giro") != "lanzamiento"
