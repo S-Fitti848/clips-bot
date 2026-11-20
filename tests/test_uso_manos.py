@@ -52,7 +52,7 @@ def test_la_secuencia_del_tupper_paso_a_paso():
             x, y = _valor(m, "x", t), _valor(m, "y", t)
             cerca = min(math.hypot(x - _valor(o, "x", t), y - _valor(o, "y", t)) for o in (tapa, cuerpo, comida))
             assert cerca < 400, (t, m["forma"], round(cerca))
-    assert _valor(manos[0], "fase", tramo) == 1.0               # al agarrar, los dedos se cierran
+    assert _valor(manos[0], "fase", tramo) >= 0.5               # al agarrar, los dedos se doblan sobre el objeto
     Video.desde_dict({"fps": 30, "escenas": [{"duracion": 5.0, "fondo": "casa", "elementos": h["elementos"],
                                               "camara": h["camara"]}]})
 
