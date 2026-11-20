@@ -1838,6 +1838,19 @@ def escena_accion(spec: dict, dur: float, i: int, primera: bool = False, tono: f
                 "escala": 0.5, "desde": t_i, "keyframes": [{"t": t_i, "escala": 0.15},
                                                           {"t": t_i + 0.25, "escala": 0.5, "easing": "rebote"}]}
     e.elementos += _emo.aplicar(e.actores, _emo.de_escena(spec), dur, e.elementos, _lamparita)
+    # Todo lo que está en una mano lleva los dedos encima, también fuera de la biblioteca base (Santi, 2026-11-20: "el
+    # juego fijo de manos en todos lados"): la mano es la de la persona más cerca del objeto
+    from . import manos as _M
+    from . import personajes as _per
+
+    gente_ = [el for el in e.elementos if el.get("tipo") == "personaje" and not el.get("multitud")]
+    for el in e.elementos:
+        if el.get("tipo") == "prop" and el.get("en_mano") and not el.get("agarre") and el.get("nombre") != "dedos"                 and gente_:
+            quien = min(gente_, key=lambda p_: abs(float(p_.get("x", 540)) - float(el.get("x", 540))))
+            cambios = {k: v for k, v in (quien.get("cambios") or {}).items() if k in _per.Personaje.__dataclass_fields__}
+            el["agarre"] = {"piel": _per.personaje(quien.get("nombre") or "narrador", **cambios).piel,
+                            "lado": int(quien.get("perfil") or 1),
+                            "escala": round(float(quien.get("escala", 0.74)) * _M.ESCALA_PERSONAJE, 3)}
     # Los dedos cierran SOBRE lo que se agarra (Santi, 2026-11-20): justo después del objeto, con su piel
     con_dedos = []
     for el in e.elementos:

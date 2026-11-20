@@ -43,8 +43,10 @@ def test_nadie_queda_quieto_con_las_manos_vacias(monkeypatch, v3):
     d = _escena([{"rol": "obrero", "accion": "quieto"}, {"rol": "obrera", "accion": "quieto"}])
     gente = [el for el in d["elementos"] if el.get("tipo") == "personaje"]
     assert all(el.get("objeto_rol") and el.get("lleva") for el in gente)
-    en_mano = [el["nombre"] for el in d["elementos"] if el.get("en_mano")]
+    en_mano = [el["nombre"] for el in d["elementos"] if el.get("en_mano") and el["nombre"] != "dedos"]
     assert sorted(en_mano) == ["caja", "chocolate"]
+    # cada cosa agarrada lleva los dedos encima (el juego fijo de manos, 2026-11-20)
+    assert sum(1 for el in d["elementos"] if el.get("nombre") == "dedos") == 2
     assert all(el["cambios"].get("vestuario") for el in gente)       # con la ropa de su rol
 
 

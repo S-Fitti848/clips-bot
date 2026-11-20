@@ -131,7 +131,10 @@ def _forma(forma: str, piel: str, c: float) -> str:
             ld.nudillo(45, y + 1)        # y la segunda articulación, adelante
         pulgar = ld.svg() + _pulgar(piel, c, (20, -18), (40, -10))        # cruzado delante del índice y el mayor
     elif forma == "agarra":
-        pass       # detrás del objeto, solo la palma: los dedos y el pulgar van por delante (`encima`)
+        # detrás del objeto: la palma y los dedos ya doblados en C (si no hay objeto, se lee como una mano que agarra
+        # algo chico); lo que va por delante del objeto (los dedos que lo envuelven y el pulgar) va en `encima`
+        for y in (-13, -4.5, 4.5, 13):
+            lp.dedo([(38, y), (47, y + 1), (46, y + 7)], ANCHO * (0.9 if y > 10 else 1), una=False, arruga=False)
     elif forma == "pinza":
         # sostener un papel: lo de ATRÁS del papel son los dedos; la palma y el pulgar van adelante (`encima`, en el
         # marco de la mano, en la muñeca)
