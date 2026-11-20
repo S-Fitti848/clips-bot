@@ -216,3 +216,27 @@ def test_ronda_de_las_5_marcas():
     finally:
         dib.dibujar_fondo = orig
     assert hechos and "aula escuela primaria" in hechos[0][1]
+
+
+def test_revision_repetible_por_mayoria():
+    """Medido con Pepsi (2026-11-20): con 2 y el promedio la nota iba de 17 a 19; con 3 y la mayoría, más quieta."""
+    def f(*ids):
+        return [{"id": i, "cuadro": 2, "que": "x"} for i in ids]
+    fallas, _, notas = mk.combinar_revisiones([([], f("AN-02", "AN-11")), ([], f("AN-02")), ([], f("AN-05"))])
+    assert [x["id"] for x in fallas] == ["AN-02"] and notas == [17, 18, 18]
+    assert mk.REVISIONES == 3 and mk._hace_falta_tercera([([], f())] * 2)
+
+
+def test_revision_repetible_promedia_y_pide_una_tercera(monkeypatch):
+    monkeypatch.setattr(mk, "VOTO", False)
+    monkeypatch.setattr(mk, "REVISIONES", 2)
+    """Santi (2026-11-20): 2 revisiones con el promedio; una 3.ª si difieren en más de 2 puntos."""
+    def f(*ids):
+        return [{"id": i, "cuadro": 2, "que": "x"} for i in ids]
+    fallas, _, notas = mk.combinar_revisiones([([], f("AN-02", "AN-11")), ([], f("AN-02"))])
+    assert notas == [17, 18] and [x["id"] for x in fallas] == ["AN-02"]          # media 17,5 → 18 (una falla)
+    assert not mk._hace_falta_tercera([([], f("AN-02")), ([], f("AN-02", "AN-03"))])
+    assert mk._hace_falta_tercera([([], f()), ([], f("AN-02", "AN-03", "AN-04"))])
+    probs = [{"cuadro": 3, "arreglo": "cambiar_accion", "que": "a"}]
+    _, problemas, _ = mk.combinar_revisiones([(probs, f("AN-02")), ([], f("AN-02"))])
+    assert problemas == probs                                    # el cuadro 3 lo marcó la mitad: se corrige

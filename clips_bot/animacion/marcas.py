@@ -2864,19 +2864,98 @@ def revisar_visual(cliente, d: dict, datos: dict, carpeta: Path, capturar=None, 
     guardar_fichas(d, carpeta)
     sistema += calidad.para_prompt("asinacio") + ("\nToda regla que no se cumple va TAMBIÉN en `problemas`, con su "
                                                    "cuadro y el arreglo que la corrige.")
-    try:
-        r_ = json.loads(cliente.json(sistema, f"Los cuadros, en orden:\n{lista}", SCHEMA_REVISION, 0.2,
-                                     imagenes=imagenes))
-    except Exception as err:   # la revisión es una red de seguridad: si no responde, sigue
-        avisar(f"revisión visual: no respondió ({str(err)[:120]})")
+    # REPETIBLE (Santi, 2026-11-20: "el mismo guion no puede dar 17 y después 13"): los mismos cuadros en las mismas
+    # posiciones, el mismo pedido, 2 revisiones independientes (cada una saltea la caché) con el promedio, y una 3.ª si
+    # difieren en más de 2 puntos. La temperatura no se puede fijar: los modelos de Claude actuales no la aceptan.
+    respuestas = []
+    for k in range(REVISIONES_MAX):
+        if k >= REVISIONES and not _hace_falta_tercera(respuestas):
+            break
+        try:
+            # una marca única por pedido: si no, la caché de Claude devolvía la misma respuesta (no era otra revisión)
+            import uuid
+
+            sello = uuid.uuid4().hex[:8]
+            r_ = json.loads(cliente.json(sistema, f"Los cuadros, en orden:\n{lista}\n\n(revisión independiente {k + 1} · {sello})",
+                                         SCHEMA_REVISION, 0.0, imagenes=imagenes))
+        except Exception as err:   # la revisión es una red de seguridad: si no responde, sigue con las que hay
+            avisar(f"revisión visual {k + 1}: no respondió ({str(err)[:120]})")
+            continue
+        respuestas.append((list(r_.get("problemas") or []), calidad.fallas_de(r_.get("reglas"), "asinacio")))
+    if not respuestas:
         d["_estandar_ok"] = False
         return [], claves
-    problemas = list(r_.get("problemas") or [])
+    fallas, problemas, notas = combinar_revisiones(respuestas)
+    d["_estandar"], d["_estandar_ok"], d["_notas_revision"] = fallas, True, notas
+    if len(notas) > 1:
+        avisar(f"revisión visual: notas {' y '.join(str(n) for n in notas)} → {calidad.puntaje('asinacio', fallas)[0]}")
     # el estándar de calidad (Santi, 2026-11-16): lo que no cumple y la revisión no puso en `problemas` se suma con el
     # arreglo de la regla, así se corrige igual
-    fallas = calidad.fallas_de(r_.get("reglas"), "asinacio")
-    d["_estandar"], d["_estandar_ok"] = fallas, True
     return problemas_del_estandar(fallas, problemas, len(claves)), claves
+
+
+# Santi (2026-11-20): cada video se revisa 2 veces con el promedio y una 3.ª si difieren en más de 2. Medido con el mismo
+# Pepsi: así la nota iba de 17 a 19 (una revisión sola, de 15 a 19). Con 3 SIEMPRE y la regla fallada solo si falla en
+# la mayoría, la nota es la de la mayoría (VOTO).
+REVISIONES = 3
+REVISIONES_MAX = 5      # si alguna no respondió, se pide otra
+DIFERENCIA_MAX = 2
+VOTO = True
+
+
+def _hace_falta_tercera(respuestas: list) -> bool:
+    if len(respuestas) < REVISIONES:
+        return True                              # si una no respondió, se pide otra
+    notas = [calidad.puntaje("asinacio", f)[0] for _, f in respuestas]
+    return max(notas) - min(notas) > DIFERENCIA_MAX
+
+
+def combinar_revisiones(respuestas: list[tuple[list, list]]) -> tuple[list[dict], list[dict], list[int]]:
+    """El PROMEDIO de varias revisiones: cada regla cuenta según en cuántas falló; la nota es la media (redondeada) y
+    las reglas que quedan como falladas son las que más veces fallaron (tantas como la media de fallas). Los problemas
+    que se corrigen son los de los cuadros que marcó al menos la mitad de las revisiones."""
+    n = len(respuestas)
+    notas = [calidad.puntaje("asinacio", f)[0] for _, f in respuestas]
+    veces: dict[str, int] = {}
+    ejemplo: dict[str, dict] = {}
+    for _, fallas in respuestas:
+        for f in fallas:
+            veces[f["id"]] = veces.get(f["id"], 0) + 1
+            ejemplo.setdefault(f["id"], f)
+    total = len(calidad.de_revision("asinacio"))
+    if VOTO and n >= 3:          # la regla falla si falla en la MAYORÍA de las revisiones
+        fallas = [ejemplo[i] for i in sorted(veces, key=lambda i: (-veces[i], i)) if veces[i] * 2 > n]
+        por_cuadro_v: dict[int, int] = {}
+        for probs, _ in respuestas:
+            for c in {int(p.get("cuadro") or 0) for p in probs}:
+                por_cuadro_v[c] = por_cuadro_v.get(c, 0) + 1
+        problemas_v, vistos_v = [], set()
+        for probs, _ in respuestas:
+            for p in probs:
+                c = int(p.get("cuadro") or 0)
+                if por_cuadro_v.get(c, 0) * 2 > n and (c, p.get("arreglo")) not in vistos_v:
+                    vistos_v.add((c, p.get("arreglo")))
+                    problemas_v.append(p)
+        return fallas, problemas_v, notas
+    nota_media = sum(notas) / n
+    import math as _m
+
+    cuantas = max(0, min(len(veces), total - int(_m.floor(nota_media + 0.5))))   # la media redondeada (½ para arriba)
+    orden = sorted(veces, key=lambda i: (-veces[i], i))
+    fallas = [ejemplo[i] for i in orden[:cuantas]]
+    por_cuadro: dict[int, int] = {}
+    for probs, _ in respuestas:
+        for c in {int(p.get("cuadro") or 0) for p in probs}:
+            por_cuadro[c] = por_cuadro.get(c, 0) + 1
+    problemas, vistos = [], set()
+    for probs, _ in respuestas:
+        for p in probs:
+            c = int(p.get("cuadro") or 0)
+            clave = (c, p.get("arreglo"))
+            if por_cuadro.get(c, 0) * 2 >= n and clave not in vistos:
+                vistos.add(clave)
+                problemas.append(p)
+    return fallas, problemas, notas
 
 
 REVISION_CALIBRADA = """
