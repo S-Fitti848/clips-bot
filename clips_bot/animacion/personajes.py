@@ -145,7 +145,8 @@ _MANOS_PREFIJO = (
     ("p_senalar", {"der": "senala", "izq": "relajada"}), ("senalar", {"der": "senala"}),
     ("p_sostener", {"der": "agarra", "izq": "agarra"}), ("sostener", {"der": "agarra", "izq": "agarra"}),
     ("p_cinta", {"der": "agarra", "izq": "agarra"}), ("p_dar", {"der": "agarra", "izq": "relajada"}),
-    ("p_tomar", {"der": "agarra"}), ("p_verter", {"der": "agarra"}), ("p_comer", {"der": "agarra"}), ("p_escribir", {"der": "agarra", "izq": "abierta"}),
+    ("p_tomar", {"der": "agarra"}), ("p_verter", {"der": "agarra"}), ("p_comer", {"der": "agarra"}),
+    ("p_escribir", {"der": "lapiz", "izq": "abierta"}),
     ("p_coser", {"der": "agarra", "izq": "agarra"}), ("p_armar", {"der": "agarra", "izq": "agarra"}),
     ("p_cargar", {"der": "agarra", "izq": "agarra"}), ("cargar", {"der": "agarra", "izq": "agarra"}),
     ("pagar", {"der": "agarra", "izq": "agarra"}), ("dar_mano", {"der": "agarra", "izq": "agarra"}),
@@ -184,7 +185,8 @@ def _ajustar_emociones() -> None:
     GESTOS["brazos_cruzados"].update(izq=a(-50, -286, True), der=a(-50, -300, True))
     GESTOS["arremangar"].update(izq=a(40, -300, True), der=a(-20, -316, True))
     # de perfil (perfil_fijo): la mano adelante y arriba de la boca, la botella inclinada hacia la boca
-    GESTOS["p_tomar_alto"].update(der=brazo_hacia(146, -123))
+    # la mano adelante y arriba de la boca: la botella inclinada con el pico EN la boca (no adelante de la cara)
+    GESTOS["p_tomar_alto"].update(der=brazo_hacia(171, -128))
     GESTOS["p_verter"].update(der=brazo_hacia(150, -20))       # la mano adelante, a la altura del pecho alto
     GESTOS["rascar"].update(der=a(62, -612))
     GESTOS["rascar_b"].update(der=a(74, -600))
@@ -627,7 +629,7 @@ class Personaje:
               espejo: bool = False) -> str:
         """La mano con dedos en la muñeca (x2, y2), siguiendo el antebrazo (x1, y1) → (x2, y2)."""
         ang = math.degrees(math.atan2(y2 - y1, x2 - x1))
-        return M.mano(x2, y2, ang, forma, piel or self.piel, escala=1.15, espejo=espejo)
+        return M.mano(x2, y2, ang, forma, piel or self.piel, escala=M.ESCALA_PERSONAJE, espejo=espejo)
 
     def _cabeza(self, e: Estado) -> str:
         R = self.R_CABEZA

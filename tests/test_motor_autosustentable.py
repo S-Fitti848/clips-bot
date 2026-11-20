@@ -23,7 +23,9 @@ def _armar(accion, fondo="oficina", anio=1950, prota="botella", **extra):
 
 def test_manos_con_dedos_en_personajes_y_tito():
     for forma in M.FORMAS:
-        assert M.mano(0, 0, 30, forma).count("<path") >= 8          # palma + dedos y pulgar, contorno y relleno
+        if forma != "agarra":         # agarrar: detrás del objeto solo va la palma (dedos y pulgar en `encima`)
+            assert M.mano(0, 0, 30, forma).count("<path") >= 8      # palma + dedos y pulgar, contorno y relleno
+    assert M.encima("agarra").count("<path") >= 10
     assert per.manos_de_gesto("senalar") == ("relajada", "senala")
     assert per.manos_de_gesto("p_sostener_a") == ("agarra", "agarra")
     assert per.manos_de_gesto("punos")[1] == "puno"

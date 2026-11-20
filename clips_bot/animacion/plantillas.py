@@ -166,8 +166,10 @@ def _agarrado(obj: str, xy: tuple[float, float], alto_px: float = 170, quien: di
     el = _el(obj, xy[0], xy[1] - 10, escala=esc_de(obj, alto_px), color=True, en_mano=True, **kw)
     if quien is not None:
         quien["_sostiene"] = True
+        from . import manos as M
+
         el["agarre"] = {"piel": _pj(quien).piel, "lado": int(quien.get("perfil") or 1),
-                        "escala": round(float(quien.get("escala", 0.74)) * 1.15, 3)}
+                        "escala": round(float(quien.get("escala", 0.74)) * M.ESCALA_PERSONAJE, 3)}
     return el
 
 
@@ -206,7 +208,6 @@ def _taller_inventor(plano, spec, dur, i, obj, rnd):
     if lugar == "oficina":      # escribe el plan: la lapicera en la mano, el papel en el escritorio, el producto al lado
         mano = _de_perfil(e, 0, 1, "p_escribir_a", "p_escribir_b", dur, 0.22)
         els_extra += [_mesa(mano[0] + 30), _el("papel_firma", mano[0] + 10, ac.PISO - 226 * 0.72 - 8, escala=0.6, forma=1),
-                      _agarrado("lapicera", mano, 90, quien=e.actores[0]),
                       _el(obj, mano[0] + 190, ac.PISO - 226 * 0.72 - 70, escala=esc_de(obj, 150), color=True)]
     else:
         mano = _de_perfil(e, 0, 1, "p_sostener_a", "p_sostener_b", dur)
@@ -387,9 +388,7 @@ def _a_la_boca(e, k: int, obj: str, dur: float, comer: bool) -> list[dict]:
     # tiempos: abajo 0 → sube 0,5 → arriba hasta 1,6 → baja 2,0 → abajo hasta 2,6 → sube… (ciclo de 2,6 s)
     gestos, kf, t = [], [], 0.0
     (xa, ya), (xb, yb) = pos(abajo), pos(arriba)
-    if not comer:     # el pico de la botella en la boca: el cuerpo de la botella queda afuera, arriba
-        xb, yb = xb + 20 * lado, yb - 15
-    rot_a, rot_b = -8 * lado, (-128 if not comer else -30) * lado
+    rot_a, rot_b = -8 * lado, (-130 if not comer else -30) * lado
     # el gesto tarda 0,3 s en llegar (timeline): sube de 0,2 a 0,5, queda arriba, baja de 1,7 a 2,0
     while t < dur:
         gestos += [{"t": round(t, 3), "gesto": abajo}, {"t": round(t + 0.2, 3), "gesto": arriba},

@@ -1893,8 +1893,8 @@ def prop_apreton(manga: str = "", color: str = "", forma: int = 1, **_) -> str:
     for y in (-36, -12, 12, 36):          # los nudillos
         out.append(elipse(54 if abs(y) > 20 else 60, y, 10, 11, s1, borde=False))
     # los pulgares cruzados arriba: el de la izquierda va hacia la derecha y el de la derecha, por encima, hacia la izq.
-    out.append(g(_dedo(112, 28, p1, nudillos=1), -14, -40, rot=60))
-    out.append(g(_dedo(116, 28, p2, nudillos=1), 110, -36, rot=-58))
+    # UN solo pulgar a la vista (Santi, 2026-11-20): el de la mano de adelante, apoyado sobre el dorso de la otra
+    out.append(g(_dedo(108, 28, p1, nudillos=1), -18, -44, rot=86))
     return "".join(out)
 
 
