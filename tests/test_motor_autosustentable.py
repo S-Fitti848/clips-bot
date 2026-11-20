@@ -27,7 +27,9 @@ def test_manos_con_dedos_en_personajes_y_tito():
             assert M.mano(0, 0, 30, forma).count("<path") >= 8      # palma + dedos y pulgar, contorno y relleno
     assert M.encima("agarra").count("<path") >= 10
     assert per.manos_de_gesto("senalar") == ("relajada", "senala")
-    assert per.manos_de_gesto("p_sostener_a") == ("agarra", "agarra")
+    assert per.manos_de_gesto("p_sostener_a") == ("relajada", "agarra")       # la otra, relajada al costado
+    assert per.GESTOS["p_tomar_alto"]["izq"] == per.CAIDO
+    assert per.manos_de_gesto("cargar_caja") == ("agarra", "agarra")
     assert per.manos_de_gesto("punos")[1] == "puno"
     # Tito señala con el índice: ya no es un palito pegado a una bola
     assert "M342 -612 L392 -634" not in ti.tito_svg("senala")

@@ -122,6 +122,9 @@ GESTOS: dict[str, dict] = {
     "p_armar_a": {"izq": (44, 44), "der": (56, 30), "cabeza_baja": 0.5},     # encaja una pieza
     "p_armar_b": {"izq": (54, 32), "der": (46, 46), "cabeza_baja": 0.5},
     "p_verter": {"izq": (30, 60), "der": (60, 40)},                          # vuelca lo que tiene (se calcula abajo)
+    # dos manos de verdad, DE FRENTE (Santi, 2026-11-20): cada mano agarra el objeto por su borde, a cada lado
+    "sostener_ancho": {"izq": (60, 60), "der": (60, 60)},     # un papel grande o un cartel por los bordes (se calcula)
+    "cargar_caja": {"izq": (40, 80), "der": (40, 80)},        # una caja por los costados (se calcula)
     "p_cargar_a": {"izq": (40, 92), "der": (46, 88)},                        # la caja contra el pecho
     "p_cargar_b": {"izq": (36, 96), "der": (42, 92)},
     # Emociones de cuerpo (Santi, 2026-11-20): de frente
@@ -143,10 +146,11 @@ GESTOS: dict[str, dict] = {
 _MANOS_PREFIJO = (
     ("senalar_izq", {"izq": "senala"}), ("reirse_senalar", {"der": "senala", "izq": "puno"}),
     ("p_senalar", {"der": "senala", "izq": "relajada"}), ("senalar", {"der": "senala"}),
-    ("p_sostener", {"der": "agarra", "izq": "agarra"}), ("sostener", {"der": "agarra", "izq": "agarra"}),
+    ("p_sostener", {"der": "agarra", "izq": "relajada"}), ("sostener", {"der": "agarra", "izq": "agarra"}),
     ("p_cinta", {"der": "agarra", "izq": "agarra"}), ("p_dar", {"der": "agarra", "izq": "relajada"}),
     ("p_tomar", {"der": "agarra"}), ("p_verter", {"der": "agarra"}), ("p_comer", {"der": "agarra"}),
-    ("p_escribir", {"der": "lapiz", "izq": "abierta"}),
+    ("p_escribir", {"der": "lapiz", "izq": "abierta"}), ("sostener_ancho", {"der": "pinza", "izq": "pinza"}),
+    ("cargar_caja", {"der": "agarra", "izq": "agarra"}),
     ("p_coser", {"der": "agarra", "izq": "agarra"}), ("p_armar", {"der": "agarra", "izq": "agarra"}),
     ("p_cargar", {"der": "agarra", "izq": "agarra"}), ("cargar", {"der": "agarra", "izq": "agarra"}),
     ("pagar", {"der": "agarra", "izq": "agarra"}), ("dar_mano", {"der": "agarra", "izq": "agarra"}),
@@ -173,6 +177,9 @@ def manos_de_gesto(nombre: str) -> tuple[str, str]:
     return "relajada", "relajada"
 
 
+CAIDO = (5.0, 8.0)       # el brazo relajado al costado del cuerpo, caído
+
+
 def _ajustar_emociones() -> None:
     """Las poses de frente que llevan las manos a un lugar del cuerpo se calculan con `brazo_hacia` (el hombro está
     en x ±92, y -382; la cara en y ~-500; el pecho en y ~-300)."""
@@ -187,6 +194,22 @@ def _ajustar_emociones() -> None:
     # de perfil (perfil_fijo): la mano adelante y arriba de la boca, la botella inclinada hacia la boca
     # la mano adelante y arriba de la boca: la botella inclinada con el pico EN la boca (no adelante de la cara)
     GESTOS["p_tomar_alto"].update(der=brazo_hacia(171, -128))
+    # UNA mano hace la acción y la otra queda relajada al costado, con el brazo caído (Santi, 2026-11-20: "nunca
+    # estirada adelante sin hacer nada")
+    for nombre in ("p_sostener_a", "p_sostener_b", "p_dar", "p_dar_b", "p_senalar", "p_senalar_b", "p_tomar_a",
+                   "p_tomar_b", "p_tomar_alto", "p_comer_a", "p_comer_b", "p_verter"):
+        GESTOS[nombre]["izq"] = CAIDO
+    # escribir: la otra mano apoyada sobre la mesa al costado del papel, sujetándolo
+    for nombre in ("p_escribir_a", "p_escribir_b"):
+        h, c_ = GESTOS[nombre]["der"]
+        a1, a2 = math.radians(h), math.radians(h + c_)
+        x = 4 + math.sin(a1) * Personaje.LARGO_BRAZO + math.sin(a2) * Personaje.LARGO_ANTEBRAZO
+        y = math.cos(a1) * Personaje.LARGO_BRAZO + math.cos(a2) * Personaje.LARGO_ANTEBRAZO
+        GESTOS[nombre]["izq"] = brazo_hacia(x - 46 + 6, y + 8)
+    # dos manos por los bordes, de frente: el papel grande a la altura del pecho, la caja más abajo
+    # (con los codos cerca del cuerpo y los antebrazos hacia afuera: el IK cruzaba los brazos o abría los codos)
+    GESTOS["sostener_ancho"].update(izq=(20.0, 55.0), der=(20.0, 55.0))
+    GESTOS["cargar_caja"].update(izq=(8.0, 25.0), der=(8.0, 25.0))
     GESTOS["p_verter"].update(der=brazo_hacia(150, -20))       # la mano adelante, a la altura del pecho alto
     GESTOS["rascar"].update(der=a(62, -612))
     GESTOS["rascar_b"].update(der=a(74, -600))
