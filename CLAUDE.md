@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-11-20 | **Versión:** v1.45.0 (desplegado) | **Modo:** Fase 2: corriendo solo en la Pi. **Rots APAGADO. Así Nació PAUSADO desde el 19/11** (vuelve con 1 por día, preparado la noche anterior, si 4 de 5 marcas nuevas dan 15/19 o más por menos de US$ 0,60). Pequeña Historia (3 por día, madrugada desde las 04:00) (**NO se publica sola desde el 17/11**: llega con ✅ Publicar / ❌ Cancelar y sin respuesta no sale) y **Así Nació** (2 por día, desde las 07:00, publican 13:00 y 20:00 en YouTube y Facebook con ❌ Cancelar), todo al privado de Santi
+**Snapshot:** 2026-11-20 | **Versión:** v1.46.0 (desplegado) | **Modo:** Fase 2: corriendo solo en la Pi. **Rots APAGADO. Así Nació PAUSADO desde el 19/11** (vuelve con 1 por día, preparado la noche anterior, si 4 de 5 marcas nuevas dan 15/19 o más por menos de US$ 0,60). Pequeña Historia (3 por día, madrugada desde las 04:00) (**NO se publica sola desde el 17/11**: llega con ✅ Publicar / ❌ Cancelar y sin respuesta no sale) y **Así Nació** (2 por día, desde las 07:00, publican 13:00 y 20:00 en YouTube y Facebook con ❌ Cancelar), todo al privado de Santi
 
 > **SI ESTÁS EMPEZANDO UNA SESIÓN NUEVA, LEÉ §10.** Ahí está qué está hecho, qué quedó a medias,
 > qué falta, y las trampas que ya nos mordieron.
@@ -1315,6 +1315,19 @@ Problemas abiertos:
 
 ## 9. CHANGELOG
 
+- v1.46.0 (2026-11-20, noche) — **Revisión repetible y juego fijo de manos** (Santi). (1) La temperatura no se puede
+  fijar (los Claude actuales no la aceptan) y la caché devolvía la MISMA respuesta para los mismos cuadros (una
+  "segunda revisión" no era otra): cada revisión lleva un sello único. Medido con el mismo Pepsi: una revisión sola,
+  de 15 a 19; con 2 y el promedio, de 17 a 19; con 3 SIEMPRE y la regla fallada solo si falla en la mayoría
+  (`marcas.REVISIONES` 3, `VOTO`, `combinar_revisiones`), 18,17,18,18,18,18 (≈ US$ 0,01 por video). (2) Manos
+  (`animacion/manos.py`, aprobadas por Santi después de 3 hojas): pulgar que nace del costado de la palma con dos
+  falanges y uña (la raíz se funde con la palma), agarrar (los dedos envuelven y el pulgar cruza por delante, `encima`),
+  servir, papel por el borde (pinza), escribir en pinza con la lapicera incluida, señalar, puño, abierta, apretón con un
+  solo pulgar; contorno fijo en pantalla (`TRAZO_PX`), manos de los personajes ×1,45; la otra mano relajada al costado
+  (`personajes.CAIDO`); dos manos por los bordes (`cargar_caja`, `sostener_ancho`); al escribir la otra sujeta el papel;
+  tomar con el pico en la boca; las manos de primer plano con la manga hasta el borde y la revisión marca manos sueltas;
+  todo lo que está en una mano lleva los dedos encima (`acciones.escena_accion`). (3) Ronda 3 (antes de las manos
+  nuevas): Pepsi 18, Levi's 14, Kellogg's 14 (frenada para desplegar las manos).
 - v1.45.0 (2026-11-20, tarde) — **Prueba final de 5 marcas nuevas con el motor nuevo** (guion real con Sonnet, voz de
   prueba, una revisión calibrada + reemplazo por escena base y una medida final; `output/animacion/prueba5b` en la Pi,
   hoja `hoja_r2.jpg` mandada a Santi). Ronda 1 (guion nuevo): Pepsi 13, Levi's 14, Kellogg's 17, Gillette 11, Crayola 8;
