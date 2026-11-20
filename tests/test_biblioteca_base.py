@@ -42,7 +42,7 @@ def test_traen_su_camara_y_no_la_pisa_gancho_v3():
 
 
 def test_de_perfil_el_producto_queda_en_la_mano_de_adelante():
-    d = _armar("taller_inventor")
+    d = _armar("taller_inventor", fondo="taller")
     inv = next(el for el in d["elementos"] if el.get("tipo") == "personaje")
     prod = next(el for el in d["elementos"] if el.get("nombre") == "botella" and el.get("en_mano"))
     lx, ly = per.personaje(inv["nombre"], **inv.get("cambios", {})).mano_perfil(*per.GESTOS["p_sostener_a"]["der"])
@@ -60,7 +60,13 @@ def test_la_crisis_va_de_noche_y_el_cierre_con_tito_sin_nadie_de_mas():
 def test_en_uso_una_bebida_se_lleva_a_la_boca():
     d = _armar("producto_en_uso", fondo="cocina", _categoria="bebidas")
     p0 = next(el for el in d["elementos"] if el.get("tipo") == "personaje")
-    assert p0["gestos"][0]["gesto"] == "p_tomar_a"
+    assert "p_tomar_alto" in [g["gesto"] for g in p0["gestos"]]
+    botella = next(el for el in d["elementos"] if el.get("a_la_boca"))
+    rots = [k["rotacion"] for k in botella["keyframes"]]
+    assert min(rots) <= -120 and max(rots) >= -10          # sube inclinada a la boca y vuelve a bajar
+    # los dedos van justo después de la botella, siguiéndola
+    k = d["elementos"].index(botella)
+    assert d["elementos"][k + 1]["nombre"] == "dedos" and d["elementos"][k + 1]["keyframes"]
     d = _armar("producto_en_uso", fondo="cocina", _categoria="juguetes", prota="pelota")
     p0 = next(el for el in d["elementos"] if el.get("tipo") == "personaje")
     assert p0["gestos"][0]["gesto"] == "p_sostener_a"

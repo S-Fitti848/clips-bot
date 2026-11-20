@@ -174,24 +174,21 @@ ESCENAS = [
      [_a("empresario", "pensar", "izquierda"), _a("fundador", "senalar", "derecha")], []),
     ("En 1947 fundaron la empresa y empezaron a fabricar alfajores.", "que_paso", "fabrica",
      [_a("fundador", "martillar", "izquierda")], [_o("galletitas", "quieto", "derecha")]),
-    ("Los alfajores se volvieron famosos en toda la costa.", "que_paso", "ciudad",
+    ("Los alfajores se volvieron famosos.", "que_paso", "ciudad",
      [_a("cliente", "correr", "izquierda", "derecha")], [_o("billete", "llueve")]),
-    ("La gente los llevaba de regalo después de las vacaciones.", "que_paso", "casa",
-     [_a("mama", "entrar", "izquierda", "centro"), _a("nene", "caminar", "derecha")], [_o("galletitas", "quieto", soporte="mano")]),
     ("¿Y el bar? Cerró, y el alfajor se quedó con el nombre.", "final", "escenario",
      [_a("fundador", "festejar", "centro")], [_o("corona", "crece", "derecha")]),
 ]
 
 
-ACCIONES_ESC = ["libre", "libre", "vender_tienda", "reunion", "fabrica_produce", "contador_ventas", "libre",
-                "objeto_gira"]
+ACCIONES_ESC = ["libre", "libre", "vender_tienda", "reunion", "fabrica_produce", "contador_ventas", "objeto_gira"]
 
 
 def guion(**cambios):
     escenas = [{"frase": f, "parte": p, "fondo": fo, "actores": a, "objetos": o, "camara": "fija",
                 "texto_pantalla": "1947" if i == 4 else "", "transicion": "barrido",
                 "cadena": [_c("tele", "mesa", "izquierda"), _c("lampara", "piso", "centro")] if i == 0 else [],
-                "viaje_a_anio": 1947 if i == 1 else 0, "vuelve_al_presente": i == 7,
+                "viaje_a_anio": 1947 if i == 1 else 0, "vuelve_al_presente": i == 6,
                 # biblioteca de escenas (2026-11-15): la acción de cada frase; "libre" como mucho 4 de 10
                 "accion_escena": ACCIONES_ESC[i] if i < len(ACCIONES_ESC) else "libre", "plano": "lejos"}
                for i, (f, p, fo, a, o) in enumerate(ESCENAS)]
@@ -278,8 +275,8 @@ def test_viaje_al_pasado_cuando_cambia_la_epoca():
     d["escenas"][0]["viaje_a_anio"] = 1947
     assert any("gancho es en el presente" in e for e in mk.validar_guion(d, marca(), FUENTE))
     d = guion()
-    d["escenas"][7]["vuelve_al_presente"] = False
-    d["escenas"][7]["frase"] = "Hoy el bar ya no existe, y el alfajor se quedó con el nombre."
+    d["escenas"][6]["vuelve_al_presente"] = False
+    d["escenas"][6]["frase"] = "Hoy el bar ya no existe, y el alfajor se quedó con el nombre."
     assert any("habla de hoy" in e for e in mk.validar_guion(d, marca(), FUENTE))
     d = guion()
     d["escenas"][1]["viaje_a_anio"] = 1932                # el año del viaje también va contra el artículo
@@ -305,12 +302,14 @@ def test_problema_idea_que_paso_final_en_orden():
     assert "`problema`" in err and "`idea`" in err
 
 
-def test_el_locutor_interrumpe_de_1_a_3_veces():
-    assert any("interrumpe" in e for e in mk.validar_guion(guion(locutor=[]), marca(), FUENTE))
-    cuatro = [{"despues_de_frase": k, "texto": "Spoiler: el bar no la pasó nada bien."} for k in (2, 3, 4, 5)]
-    assert any("interrumpe" in e for e in mk.validar_guion(guion(locutor=cuatro), marca(), FUENTE))
+def test_el_locutor_interrumpe_como_mucho_una_vez():
+    """Santi (2026-11-20): en 25-30 s Tito interrumpe 0 o 1 vez."""
+    assert not any("interrumpe" in e for e in mk.validar_guion(guion(locutor=[]), marca(), FUENTE))
+    dos = [{"despues_de_frase": 2, "texto": "Spoiler: el bar no la pasó nada bien."},
+           {"despues_de_frase": 3, "texto": "Y sí, el bar cerró."}]
+    assert any("interrumpe" in e for e in mk.validar_guion(guion(locutor=dos), marca(), FUENTE))
     ultima = [{"despues_de_frase": 8, "texto": "Spoiler: el bar no la pasó nada bien."}]
-    assert any("entre la 1 y la 7" in e for e in mk.validar_guion(guion(locutor=ultima), marca(), FUENTE))
+    assert any("entre la 1 y la 6" in e for e in mk.validar_guion(guion(locutor=ultima), marca(), FUENTE))
 
 
 def test_toda_empresa_o_persona_se_presenta():
@@ -338,7 +337,7 @@ def test_los_lugares_no_hace_falta_presentarlos_y_el_giro_puede_ir_en_el_medio()
 
 def test_nada_de_temas_sensibles():
     d = guion()
-    d["escenas"][7]["frase"] = "¿Y el bar? Cerró después de un accidente, obvio."
+    d["escenas"][6]["frase"] = "¿Y el bar? Cerró después de un accidente, obvio."
     assert any("sensibles" in e for e in mk.validar_guion(d, marca(), FUENTE))
 
 
@@ -351,7 +350,8 @@ def test_props_y_fondos_tienen_que_existir():
 
 
 def test_escribir_guion_reintenta_con_los_errores():
-    malo = guion(locutor=[])
+    malo = guion(locutor=[{"despues_de_frase": 2, "texto": "Spoiler: el bar no la pasó nada bien."},
+                          {"despues_de_frase": 3, "texto": "Y sí, el bar cerró."}])
     cliente = ClienteFalso(malo, guion())
     e = mk.Elegido(marca(), "nombre", {c: 9 for c in mk.CRITERIOS})
     assert mk.escribir_guion(cliente, e, FUENTE, avisar=lambda *_: None)["locutor"]
@@ -670,10 +670,11 @@ def test_niveles_de_audio(tmp_path):
     assert -14 < n["medio"] < -8 and n["pico"] < 0
 
 
-def test_ritmo_32_a_38_s():
-    """Santi (2026-11-14): ×1,13 quedó un pelín rápido → ×1,065, y el video entre 32 y 38 s."""
-    assert (mk.MIN_S, mk.MAX_S) == (32.0, 38.0) and mk.VELOCIDAD_VOZ == 1.065
-    assert "32 a 38 segundos" in mk.SISTEMA_GUION
+def test_ritmo_25_a_30_s():
+    """Santi (2026-11-14): ×1,13 quedó un pelín rápido → ×1,065; (2026-11-20) videos de 25 a 30 s con 6-7 escenas."""
+    assert (mk.MIN_S, mk.MAX_S) == (25.0, 30.0) and mk.VELOCIDAD_VOZ == 1.065
+    assert (mk.FRASES_MIN, mk.FRASES_MAX) == (6, 7)
+    assert "25 a 30 segundos" in mk.SISTEMA_GUION
 
 
 def _dos_cerca(gesto_a="senalar"):
@@ -1019,6 +1020,13 @@ def test_lugares_nuevos_y_multitud():
         {"rol": "obrero", "accion": "fabricar", "desde": "izquierda"}, {"rol": "vendedor", "accion": "vender",
                                                                          "desde": "derecha"}], "objetos": []}
     d, _ = ac.escena_accion(spec, 3.0, 2)
+    # menos gente (Santi, 2026-11-20): la multitud de relleno ya no se dibuja
+    assert not [el for el in d["elementos"] if el.get("multitud")]
+    ac.SIN_RELLENO = False
+    try:
+        d, _ = ac.escena_accion(spec, 3.0, 2)
+    finally:
+        ac.SIN_RELLENO = True
     gente = [el for el in d["elementos"] if el.get("multitud")]
     assert len(gente) >= 5 and ac.es_dinamica(spec) and not ac.superposiciones(d)
 

@@ -128,7 +128,8 @@ def texto_estandar(canal: str, fallas: list[dict], corregidas: list[str] | None 
 # ❌ Cancelar, y si no responde no sale. El aviso solo alcanza con 1 o 2 reglas sin cumplir.
 # Mínimo para publicarse sola (Santi, 2026-11-17): como mucho 2 reglas de revisión sin cumplir (era 12/14 en Así Nació
 # y 7/9 en Pequeña Historia); así sumar reglas nuevas no cambia la vara.
-MAX_FALLAS = {"asinacio": 2, "pequena_historia": 2}
+# Así Nació 15/19 (Santi, 2026-11-20: la vara de la prueba de las 5 marcas): 4 reglas de revisión sin cumplir como mucho
+MAX_FALLAS = {"asinacio": 4, "pequena_historia": 2}
 
 
 def minimo(canal: str) -> int:

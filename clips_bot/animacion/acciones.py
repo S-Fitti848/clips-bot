@@ -1231,7 +1231,7 @@ def posiciones_finales(esc_d: dict) -> list[tuple[float, float]]:
 # dibujos de escenas.py (los muebles grandes tienen su caja real: la mesa es 300 × 226).
 CAJAS = {"mesa": (150, 0, 226), "estante": (140, 0, 70), "lampara": (110, -150, 187), "tele": (150, -190, 130),
          "cuadro": (130, -150, 90), "ventana": (170, -200, 200), "jarron": (100, -120, 120),
-         "botella": (80, -262, 230), "lata": (80, -170, 150), "caja": (140, -180, 170), "pelota": (70, -70, 70),
+         "botella": (80, -262, 230), "frasco": (90, -186, 14), "tubos": (130, -150, 8), "dedos": (30, -30, 30), "lata": (80, -170, 150), "caja": (140, -180, 170), "pelota": (70, -70, 70),
          "pelota_espuma": (78, -78, 78), "juego_mesa": (170, -90, 90), "hamburguesa": (130, -90, 130),
          "chocolate": (160, -80, 80), "galletitas": (100, -70, 70), "auto": (180, -100, 72),
          "telefono_disco": (120, -90, 60), "radio": (130, -90, 90), "consola": (150, -40, 170),
@@ -1318,7 +1318,7 @@ def composicion(esc_d: dict, paso: float = 0.1) -> list[tuple[float, str, int, i
                 vistos.add(("franja", k, -1))
                 out.append((round(t, 2), "franja", k, -1))
         for k, d, el in cosas:
-            if not el.visible(t) or d.get("nombre") in NO_CHOCAN:
+            if not el.visible(t) or d.get("nombre") in NO_CHOCAN or d.get("a_la_boca") or d.get("nombre") == "dedos":
                 continue
             x = el.pista.valor("x", t, el.base["x"])
             y = el.pista.valor("y", t, el.base["y"])
@@ -1615,6 +1615,11 @@ def dejar_lugar_a_tito(elementos: list[dict], lado: str) -> None:
 GRAFICOS = {"grafico_sube", "grafico_baja", "contador"}
 
 
+# Menos gente (Santi, 2026-11-20): 1 o 2 personas en primer plano por escena y nada de gente de relleno atrás
+SIN_RELLENO = True
+MAX_GENTE = 2
+
+
 def con_gente(e: "Escena", spec: dict, fondo: str, reservar: str | None, de_biblioteca: bool) -> None:
     from . import escenas as _esc
 
@@ -1676,7 +1681,8 @@ def escena_accion(spec: dict, dur: float, i: int, primera: bool = False, tono: f
                              or any(el.get("nombre") in ("mano", "apreton") for el in hecha["elementos"]))
     e = Escena(dur, semilla=i + 1, fondo=fondo, espejo=_esc.espejado(semilla))
     e.anio = int(anio or 2026)
-    if spec.get("multitud") or (hecha and hecha.get("multitud")):
+    # Menos gente (Santi, 2026-11-20): 1 o 2 personas en primer plano, sin gente de relleno atrás
+    if not SIN_RELLENO and (spec.get("multitud") or (hecha and hecha.get("multitud"))):
         e.multitud()
     if hecha:
         for el in hecha["elementos"]:
@@ -1687,7 +1693,7 @@ def escena_accion(spec: dict, dur: float, i: int, primera: bool = False, tono: f
         e.elementos += hecha["elementos"]
         e.sfx += hecha["sfx"]
         e.actores += hecha["actores"]
-    actores_spec = [] if hecha else list(spec.get("actores") or [])
+    actores_spec = [] if hecha else list(spec.get("actores") or [])[:MAX_GENTE]
     estadio = _esc.base_fondo(fondo) == "estadio"
     if estadio:
         actores_spec = en_juego(actores_spec)
@@ -1820,8 +1826,34 @@ def escena_accion(spec: dict, dur: float, i: int, primera: bool = False, tono: f
                 el["escala"] = round(float(el.get("escala", 1.0)) * 0.7, 3)
     # orden de dibujo: muebles de apoyo → lo que cuelga o se apoya atrás → personajes → pedazos y proyectiles
     fondo_cosas = {"ventana", "lampara", "cuadro", "tele", "jarron", "botella", "trofeo"}
-    e.elementos.sort(key=lambda el: 0 if (el.get("nombre") in fondo_cosas or el.get("decorado")) and not el.get("keyframes") else
-                     1 if el.get("tipo") == "personaje" else 2)
+    e.elementos.sort(key=lambda el: 0 if (el.get("nombre") in fondo_cosas or el.get("decorado")) and not el.get("keyframes")
+                     and not el.get("en_mano") else 1 if el.get("tipo") == "personaje" else 2)
+    # La expresión según el momento de la historia (Santi, 2026-11-20; emociones.py): cara y, con las manos libres,
+    # cuerpo del protagonista; en una burla, los demás se ríen.
+    from . import emociones as _emo
+
+    def _lamparita(prota, t_i):
+        return {"tipo": "prop", "nombre": "lamparita", "x": float(prota.get("x", 540)), "y": PISO - 660,
+                "escala": 0.5, "desde": t_i, "keyframes": [{"t": t_i, "escala": 0.15},
+                                                          {"t": t_i + 0.25, "escala": 0.5, "easing": "rebote"}]}
+    e.elementos += _emo.aplicar(e.actores, _emo.de_escena(spec), dur, e.elementos, _lamparita)
+    # Los dedos cierran SOBRE lo que se agarra (Santi, 2026-11-20): justo después del objeto, con su piel
+    con_dedos = []
+    for el in e.elementos:
+        con_dedos.append(el)
+        ag = el.get("agarre")
+        if ag and el.get("tipo") == "prop":
+            dd = {"tipo": "prop", "nombre": "dedos", "x": el["x"], "y": round(float(el["y"]) + 10, 1),
+                  "escala": ag.get("escala", 0.85), "color": ag.get("piel") or "#f2c29b", "forma": ag.get("lado", 1),
+                  "en_mano": True, "lib": True}
+            for clave in ("rotacion", "desde", "hasta"):
+                if clave in el:
+                    dd[clave] = el[clave]
+            if el.get("keyframes"):
+                dd["keyframes"] = [{**k, **({"y": round(float(k["y"]) + 10, 1)} if "y" in k else {})}
+                                   for k in el["keyframes"] if any(c in k for c in ("x", "y", "rotacion"))]
+            con_dedos.append(dd)
+    e.elementos = con_dedos
     e.elementos += linea          # la cinta adelante de la gente (les tapa las piernas: trabajan detrás de la línea)
     # las manos son de piel, también en el pasado: con el sepia parecían de madera o de metal (Nintendo, 2026-11-19)
     for el in e.elementos:

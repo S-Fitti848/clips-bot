@@ -265,3 +265,66 @@ def reemplazar(haiku, d: dict, datos: dict, sfx: list, k: int, ids: list[str], a
             return unido[0], unido[1], d, (f"escena {k + 1}: reemplazada por una aprobada de {cand.get('marca')} "
                                            f"({cand.get('accion_escena')}{', ' + cand['plano'] if cand.get('plano') else ''})")
     return None
+
+
+# ---- reemplazo por una escena BASE (Santi, 2026-11-20) ----------------------------------------------------------
+# "Si una escena falla la revisión, se reemplaza solo esa por la escena base que mejor sirva para la frase, sin dibujos
+# nuevos ni otra revisión con imágenes. Nunca se rehace el video entero." La escena base se elige por la frase (sin
+# Claude), se arma con el producto, el lugar, la época y la gente de esa escena y se empalma en su tramo.
+_BASE_POR_FRASE = (
+    ("crisis", r"quiebr|banca?rrot|fracas|perdi|deuda|cerr|nadie (lo )?compr|no se vend|cay[eó]|ruina|problema"),
+    ("exito_multitud", r"millones|[ée]xito|furor|r[ée]cord|agot|todos lo quer|famos|se vend[ií]a(n)? solo"),
+    ("lanzamiento", r"lanz|publicidad|anunci|present|comercial|campa[ñn]a|feria|exposici"),
+    ("apreton_manos", r"trato|acuerdo|socio|firm|compr[oó] la (empresa|marca|f[oó]rmula)|invers|contrato|vendi[oó] la"),
+    ("fabrica_produce", r"f[aá]brica|produc|fabric|embotell|en serie|planta|l[ií]nea"),
+    ("vender_tienda", r"vend|tienda|almac[eé]n|negocio|mostrador|kiosco|supermercado|comprar"),
+    ("taller_inventor", r"invent|idea|cre[oó]|prob[oó]|laborator|taller|f[oó]rmula|receta|descubr|empez"),
+    ("producto_en_uso", r"us(a|aba|aron)|tom(a|aba)|com(e|ía)|jug|todos los d[ií]as|en casa|en la cocina"),
+)
+
+
+def base_para_frase(frase: str, fallo: str = "", parte: str = "") -> str:
+    """La escena de la biblioteca base que mejor cuenta la frase (sin Claude), distinta de la que falló."""
+    if parte == "final":
+        return "cierre_tito"
+    for accion, rx in _BASE_POR_FRASE:
+        if accion != fallo and re.search(rx, frase or "", re.I):
+            return accion
+    return "producto_en_uso" if fallo != "producto_en_uso" else "taller_inventor"
+
+
+def spec_base(d: dict, k: int) -> dict:
+    """La escena k con la acción de la biblioteca base que mejor sirve para su frase, manteniendo lo de la historia
+    (frase, lugar, año, viajes, textos, gente) y sin pedir dibujos nuevos."""
+    actual = copy.deepcopy(d["escenas"][k])
+    accion = base_para_frase(str(actual.get("frase") or ""), str(actual.get("accion_escena") or ""),
+                             str(actual.get("parte") or ""))
+    nuevo = {c: copy.deepcopy(actual[c]) for c in CONTINUIDAD + ("actores", "emocion", "objetos") if c in actual}
+    nuevo["accion_escena"], nuevo["plano"] = accion, ""
+    nuevo.pop("dibujo_nuevo", None)
+    nuevo.pop("lugar_nuevo", None)
+    # nada de dibujos que todavía no existen: solo los objetos que ya se dibujan
+    from . import escenas as esc
+
+    nuevo["objetos"] = [o for o in nuevo.get("objetos") or [] if o.get("prop") and esc.es_prop(str(o["prop"]))]
+    return nuevo
+
+
+def reemplazar_con_base(d: dict, datos: dict, sfx: list, k: int, armar, avisar=log.info):
+    """Cambia SOLO la escena k por la escena base que mejor sirve para su frase y la empalma en su tramo (misma
+    duración: la voz, los subtítulos y lo demás quedan idénticos). Sin revisión con imágenes. (datos, sfx, d, texto)
+    o None si no empalma."""
+    nuevo_spec = spec_base(d, k)
+    d2 = copy.deepcopy(d)
+    d2["escenas"][k] = nuevo_spec
+    try:
+        datos2, sfx2 = armar(d2)
+    except Exception as err:  # noqa: BLE001 — si no se arma, queda la escena como estaba
+        avisar(f"reemplazo escena {k + 1}: la base {nuevo_spec['accion_escena']} no se arma ({str(err)[:100]})")
+        return None
+    unido = empalmar(datos, sfx, datos2, sfx2, k)
+    if unido is None:
+        avisar(f"reemplazo escena {k + 1}: la base {nuevo_spec['accion_escena']} no empalma (otra duración)")
+        return None
+    d["escenas"][k] = nuevo_spec
+    return unido[0], unido[1], d, f"escena {k + 1}: reemplazada por la base {nuevo_spec['accion_escena']}"

@@ -392,6 +392,9 @@ def _fondo_tienda_base(semilla: int = 6, rubro: str = "almacen") -> str:
     """Las estanterías de la tienda con lo que vende el rubro (el almacén: productos genéricos de colores, sin marcas)."""
     if rubro == "concesionaria":
         return _fondo_concesionaria(semilla)
+    # "vacia": los estantes sin nada (el éxito: se agotó todo; Santi, 2026-11-20)
+    vacia = rubro == "vacia"
+    rubro = "almacen" if vacia else rubro
     rnd = random.Random(semilla)
     colores = [P.ROJO, P.AZUL, P.VERDE, P.AMARILLO, P.NARANJA, P.VIOLETA, P.ROSA, P.TURQUESA]
     p = [rect(0, 0, W, H, "#fff3dc", borde=False),
@@ -407,6 +410,8 @@ def _fondo_tienda_base(semilla: int = 6, rubro: str = "almacen") -> str:
             ye = 300 + k * 270
             p.append(rect(x0 + 20, ye + 200, 440, 26, P.MADERA, r=4))
             x = x0 + 34
+            if vacia:
+                continue
             if rubro != "almacen":
                 while x < x0 + 420:
                     art, w = _articulo(rubro, x, ye + 200, rnd, colores)
@@ -1093,7 +1098,7 @@ def fondo(tipo: str, semilla: int | None = None) -> str:
         return visuales.svg_mapa(int(semilla or 0))
     if ":" in str(tipo) and base_fondo(tipo) == "tienda":
         rubro = str(tipo).split(":", 1)[1]
-        rubro = rubro if rubro in RUBROS else "almacen"
+        rubro = rubro if rubro in RUBROS or rubro == "vacia" else "almacen"
         svg_ = fondo_tienda(6 if semilla is None else semilla, rubro) + (ambiente("tienda") if P.VOLUMEN else "")
         if semilla is not None and espejado(semilla):
             return f'<g transform="translate({W} 0) scale(-1 1)">{svg_}</g>'
@@ -1122,7 +1127,7 @@ def es_fondo(tipo: str) -> bool:
 
     if ":" in str(tipo or ""):
         b, r = str(tipo).split(":", 1)
-        return b == "tienda" and r in RUBROS
+        return b == "tienda" and (r in RUBROS or r == "vacia")
     return tipo in FONDOS or dibujos.fondo_guardado(str(tipo or "")) is not None
 
 
@@ -2034,6 +2039,31 @@ def prop_cinta_frente(forma: int = 0, **_) -> str:
     return "".join(out)
 
 
+def prop_dedos(color: str = "#f2c29b", forma: int = 1, **_) -> str:
+    """Los dedos cerrados SOBRE lo que alguien agarra (Santi, 2026-11-20): van después del objeto."""
+    from . import manos as M
+
+    return M.dedos_encima(color if isinstance(color, str) and color.startswith("#") else "#f2c29b", 1 if forma >= 0 else -1)
+
+
+def prop_frasco(color: str = P.VERDE, **_) -> str:
+    """Un matraz de laboratorio con líquido de color (el origen es la base)."""
+    return (camino("M-22 -170 L22 -170 L22 -100 L80 -10 Q90 10 70 14 L-70 14 Q-90 10 -80 -10 L-22 -100 Z", "#e8f6ff")
+            + camino("M-52 -40 L52 -40 L80 -6 Q86 8 70 10 L-70 10 Q-86 8 -80 -6 Z", color, borde=False)
+            + rect(-28, -186, 56, 20, P.GRIS_OSCURO, r=4)
+            + camino("M-12 -150 L-12 -110", borde=True, ancho=6, color="#ffffff"))
+
+
+def prop_tubos(**_) -> str:
+    """Una gradilla con tubos de ensayo de colores (el origen es la base)."""
+    p = [rect(-130, -60, 260, 24, P.MADERA, r=4), rect(-130, -10, 260, 18, P.MADERA, r=4)]
+    for k, c in enumerate((P.ROJO, P.AZUL, P.VERDE, P.AMARILLO, P.VIOLETA)):
+        x = -100 + k * 50
+        p.append(camino(f"M{x - 14} -150 L{x + 14} -150 L{x + 14} -8 Q{x} 8 {x - 14} -8 Z", "#e8f6ff", ancho=4)
+                 + camino(f"M{x - 14} -70 L{x + 14} -70 L{x + 14} -8 Q{x} 8 {x - 14} -8 Z", c, borde=False))
+    return "".join(p)
+
+
 PROPS = {"reloj_gigante": prop_reloj_gigante, "cinta_frente": prop_cinta_frente, "mano": prop_mano, "mostrador": prop_mostrador, "fuego": prop_fuego, "cubo_rubik": prop_cubo_rubik,
          "rotulo": prop_rotulo, "dato": prop_dato, "cita": prop_cita, "cartel_comic": prop_cartel_comic,
          "tito_reaccion": prop_tito_reaccion, "primer_plano": prop_primer_plano, "polvo": prop_polvo, "lineas_mov": prop_lineas_mov,
@@ -2053,7 +2083,7 @@ PROPS = {"reloj_gigante": prop_reloj_gigante, "cinta_frente": prop_cinta_frente,
          "celular": prop_celular, "corona": prop_corona, "cohete": prop_cohete,
          "idea_fallida": prop_bombilla_rota, "rayos": prop_rayos,
          "caja_registradora": prop_caja_registradora, "papel_firma": prop_papel_firma, "lapicera": prop_lapicera,
-         "apreton": prop_apreton}
+         "apreton": prop_apreton, "dedos": prop_dedos, "frasco": prop_frasco, "tubos": prop_tubos}
 
 
 def _palabras(t: str) -> set[str]:

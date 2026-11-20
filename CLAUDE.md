@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-11-20 | **Versión:** v1.43.0 (desplegado) | **Modo:** Fase 2: corriendo solo en la Pi. **Rots APAGADO. Así Nació PAUSADO desde el 19/11** (vuelve con 1 por día cuando una prueba pase 17/19 por menos de US$ 0,60). Pequeña Historia (3 por día, madrugada desde las 04:00) (**NO se publica sola desde el 17/11**: llega con ✅ Publicar / ❌ Cancelar y sin respuesta no sale) y **Así Nació** (2 por día, desde las 07:00, publican 13:00 y 20:00 en YouTube y Facebook con ❌ Cancelar), todo al privado de Santi
+**Snapshot:** 2026-11-20 | **Versión:** v1.44.0 (desplegado) | **Modo:** Fase 2: corriendo solo en la Pi. **Rots APAGADO. Así Nació PAUSADO desde el 19/11** (vuelve con 1 por día, preparado la noche anterior, si 4 de 5 marcas nuevas dan 15/19 o más por menos de US$ 0,60). Pequeña Historia (3 por día, madrugada desde las 04:00) (**NO se publica sola desde el 17/11**: llega con ✅ Publicar / ❌ Cancelar y sin respuesta no sale) y **Así Nació** (2 por día, desde las 07:00, publican 13:00 y 20:00 en YouTube y Facebook con ❌ Cancelar), todo al privado de Santi
 
 > **SI ESTÁS EMPEZANDO UNA SESIÓN NUEVA, LEÉ §10.** Ahí está qué está hecho, qué quedó a medias,
 > qué falta, y las trampas que ya nos mordieron.
@@ -444,6 +444,23 @@ servicio systemd separado: `clips-bot`).
   ninguna pasa, aviso y esa regla va PRIMERA en las mejoras al motor (`bot_estado.mejoras_primero`). Tope: si las
   correcciones de un video pasan de US$ 0,50 (`reemplazo.TOPE_CORRECCIONES_USD`, contado desde las vueltas de
   revisión), se frena y el mensaje lo dice (💸).
+- **Así Nació: motor que se autosustenta (Santi, 2026-11-20, "que ande bien sin que yo corrija escenas"; AN-02, AN-05,
+  AN-18, AN-22, AN-25, AN-29):** (1) lo que existe en la biblioteca se usa todas las veces que haga falta; lo que falta se
+  crea y queda solo si pasa el estándar; nada frena un video. (2) Manos con dedos (`animacion/manos.py`: abierta,
+  relajada, puño, señala con el índice, agarra; los dedos se cierran ENCIMA de lo que se agarra, prop `dedos`), en todos
+  los personajes y en Tito. Acciones completas de perfil (`p_tomar_alto`: la botella sube inclinada a la boca y la cabeza
+  va atrás, y vuelve a bajar; comer, escribir, coser, armar, cargar). (3) EXPRESIONES según el momento
+  (`animacion/emociones.py`, `emocion` por escena en el guion, REGLA 17): éxito, pérdida, determinado, idea, trabajo,
+  duda, burla; cara siempre, cuerpo si tiene las manos libres; la ficha la lleva y la revisión la chequea. (4) El lugar del
+  origen sale del oficio del protagonista (`protagonista.oficio`, REGLA 18; `plantillas.lugar_de_oficio`: químico →
+  laboratorio con frascos y tubos, empresario → oficina escribiendo el plan, artesano → taller). (5) Menos gente: 1 o 2
+  en primer plano, sin multitud de relleno (`acciones.SIN_RELLENO`, `MAX_GENTE`). (6) Éxito que se entiende: salta con
+  los brazos arriba, gráfico que sube, ¡AGOTADO! y estantes vacíos (`tienda:vacia`). (7) Por ahora videos de 6-7 escenas
+  de 4-5 s, 25-30 s, Tito como mucho una vez, cámara que se acerca dentro de cada plano. (8) Una sola revisión,
+  CALIBRADA (`REVISION_CALIBRADA`: solo lo que se nota en 1 segundo, nunca detalles del fondo); la escena que falla se
+  reemplaza por la escena base que mejor sirve para su frase (`reemplazo.reemplazar_con_base`, sin Claude ni otra
+  revisión); sin vueltas de corrección ni rescate. Mínimo para publicarse sola 15/19 (`calidad.MAX_FALLAS` 4); tope
+  US$ 0,60 por video. Aprobadas por Santi: tienda, fábrica, apretón, crisis y lanzamiento; el gancho lo juzga en un video real.
 - **Así Nació: BIBLIOTECA BASE, reusar escenas y crear solo si hace falta (Santi, 2026-11-20; reemplaza el "cada video
   único" del 17/11; AN-25):** 10 escenas armadas y probadas (`animacion/plantillas.py`): gancho (gancho_v3) ·
   taller_inventor · fabrica_produce · vender_tienda · apreton_manos · crisis (de noche, el papel de ventas) ·
@@ -1298,6 +1315,13 @@ Problemas abiertos:
 
 ## 9. CHANGELOG
 
+- v1.44.0 (2026-11-20) — **Motor de Así Nació que se autosustenta** (§1): manos con dedos (`manos.py`) en personajes y
+  Tito, dedos sobre lo agarrado, tomar/comer/escribir/coser/armar/cargar completos, expresiones por emoción
+  (`emociones.py`, caras nuevas: concentrado, preocupado, determinado, devastado, frustrado, eufórico; cejas
+  `concentrado`, bocas firme/torcida/abajo, `cabeza_baja`), lugar por oficio (frasco y tubos nuevos), éxito con
+  `tienda:vacia`, sin multitud, 6-7 escenas y 25-30 s, una revisión calibrada y reemplazo por escena base, mínimo 15/19,
+  tope US$ 0,60. Probado sin Claude con la hoja de la Coca-Cola en `~/clips_lib/output/biblio2`.
+  `tests/test_motor_autosustentable.py`. 2070 tests OK.
 - v1.43.0 (2026-11-20) — **Biblioteca base de Así Nació** (§1): `plantillas.py` con las escenas nuevas (taller,
   crisis, éxito, en uso, lanzamiento, cierre con Tito) y la fábrica y la tienda rehechas; personajes de perfil
   trabajando (`Estado.perfil_fijo`, gestos `p_sostener`, `p_cinta`, `p_dar`, `p_senalar`, `p_aplaudir`, `p_tomar`; el

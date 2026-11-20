@@ -53,8 +53,12 @@ from .svg import g, texto_con_borde
 PROPS_ANIMABLES = ("x", "y", "escala", "rotacion", "opacidad", "mirada", "estirar", "cabeza", "fase")
 # "cara" de un personaje: (cejas, boca, apertura de la boca)
 CARAS = {"feliz": ("arriba", "sonrisa", 0.0), "enojado": ("enojo", "cerrada", 0.0),
-         "sorprendido": ("arriba", "o", 0.7), "triste": ("triste", "cerrada", 0.0),
-         "risa": ("arriba", "a", 0.55), "grito": ("enojo", "a", 0.8)}
+         "sorprendido": ("arriba", "o", 0.7), "triste": ("triste", "abajo", 0.0),
+         "risa": ("arriba", "a", 0.55), "grito": ("enojo", "a", 0.8),
+         # Expresiones según el momento de la historia (Santi, 2026-11-20; animacion/emociones.py)
+         "concentrado": ("concentrado", "firme", 0.0), "preocupado": ("triste", "torcida", 0.0),
+         "determinado": ("enojo", "firme", 0.0), "devastado": ("triste", "abajo", 0.0),
+         "frustrado": ("enojo", "abajo", 0.0), "euforico": ("arriba", "a", 0.75)}
 # Ciclos (2026-11-14): pasos por segundo de cada pierna, cuánto rebota el cuerpo, cuánto se balancean
 # los brazos (en contrafase con las piernas), cuánto se doblan los codos y cuánto se inclina la cabeza.
 CICLOS = {"caminar": (1.7, 16.0, 24.0, 18.0, 3.0), "correr": (2.8, 30.0, 40.0, 75.0, 4.0)}
@@ -288,6 +292,10 @@ class Elemento:
                 previo, actual, t_cambio = actual, gs["gesto"], float(gs.get("t", 0))
         u = curva("suave")(recortar((t - t_cambio) / 0.3))
         e = per.mezclar_brazos(per.estado_de_gesto(previo), per.estado_de_gesto(actual), u)
+        # lo que el gesto le hace a la cabeza (tomar: atrás; negar: de un lado al otro) y a la boca (comer)
+        ex_p, ex_a = per.extra_de_gesto(previo), per.extra_de_gesto(actual)
+        cabeza += float(ex_p.get("cabeza", 0.0)) + (float(ex_a.get("cabeza", 0.0)) - float(ex_p.get("cabeza", 0.0))) * u
+        boca_gesto = ex_a.get("boca") if u >= 0.5 else ex_p.get("boca")
         e.respiracion = math.sin(2 * math.pi * t / 3.2)
         e.mirada = mirada
         dy = 0.0
@@ -328,6 +336,8 @@ class Elemento:
         habla = self.datos.get("habla", False)
         if isinstance(habla, list):   # tramos [inicio, fin] locales
             habla = any(a <= t < b for a, b in habla)
+        if boca_gesto and not habla:
+            e.boca, e.apertura = boca_gesto, 0.5
         if habla:
             e.apertura = apertura
             e.boca = vocal(cuadro, apertura)

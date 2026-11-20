@@ -126,10 +126,16 @@ def cabeza(apertura: float = 0.0, parpadeo: float = 0.0, mira: float = 0.25, gui
     return "".join(p)
 
 
-def _brazo(x0: float, y0: float, puntos: list[tuple[float, float]]) -> str:
+def _brazo(x0: float, y0: float, puntos: list[tuple[float, float]], forma: str = "abierta") -> str:
+    """El brazo con la mano con dedos (Santi, 2026-11-20: "el cierre con Tito: la mano")."""
+    import math
+
+    from . import manos as M
+
     pts = [(x0, y0)] + puntos
-    x, y = pts[-1]
-    return linea_gruesa(pts, GUARDAPOLVO, 40) + circulo(x, y, 25, PIEL)
+    (xa, ya), (x, y) = pts[-2], pts[-1]
+    ang = math.degrees(math.atan2(y - ya, x - xa))
+    return linea_gruesa(pts, GUARDAPOLVO, 40) + M.mano(x, y, ang, forma, PIEL, escala=1.3, espejo=x0 < 0)
 
 
 def cuerpo(pose: str, aguja: float = 0.0, respiracion: float = 0.0) -> tuple[str, str]:
@@ -168,24 +174,24 @@ def cuerpo(pose: str, aguja: float = 0.0, respiracion: float = 0.0) -> tuple[str
     hx, hy = 108, top + 14
     if pose == "reloj":
         # brazo derecho (de la pantalla) arriba con el reloj al lado de la cabeza; el otro en la cintura
-        adelante.append(_brazo(-hx, hy, [(-190, -430), (-128, -350)]))
-        adelante.append(_brazo(hx, hy, [(205, -620), (238, -760)]))
+        adelante.append(_brazo(-hx, hy, [(-190, -430), (-128, -350)], "relajada"))
+        adelante.append(_brazo(hx, hy, [(205, -620), (238, -760)], "agarra"))
         rx, ry = 248, -842
         adelante.append(_cadena(bolsillo_reloj[0], bolsillo_reloj[1], rx - 10, ry + 50, caida=160))
         adelante.append(g(reloj(aguja, 70), rx, ry, rot=8))
-        adelante.append(circulo(238, -760, 25, PIEL))      # la mano por delante de la cadena
+        from . import manos as M
+
+        adelante.append(g(M.dedos_encima(PIEL), 238, -768, rot=-60, escala=0.9))   # los dedos sobre el reloj
     else:
         # el reloj colgando de la mano izquierda (de la pantalla), con la cadena al chaleco
-        adelante.append(_brazo(-hx, hy, [(-176, -420), (-168, -300)]))
+        adelante.append(_brazo(-hx, hy, [(-176, -420), (-168, -300)], "agarra"))
         adelante.append(_cadena(bolsillo_reloj[0], bolsillo_reloj[1], -168, -300, caida=40))
         adelante.append(_cadena(-168, -300, -168, -206, caida=0))
         adelante.append(g(reloj(aguja, 52), -168, -150, rot=-6))
         if pose == "senala":
-            adelante.append(_brazo(hx, hy, [(220, -560), (330, -606)]))
-            adelante.append(camino("M342 -612 L392 -634", ancho=26)
-                            + camino("M342 -612 L392 -634", ancho=12, color=PIEL))
+            adelante.append(_brazo(hx, hy, [(220, -560), (330, -606)], "senala"))
         else:   # saluda
-            adelante.append(_brazo(hx, hy, [(196, -640), (214, -768)]))
+            adelante.append(_brazo(hx, hy, [(196, -640), (214, -768)], "abierta"))
     return "".join(p), "".join(adelante)
 
 

@@ -76,11 +76,12 @@ QUIETAS = {"quieto", "pensar", "senalar"}   # sin acción: nadie hace solo esto 
 PISO_ABSOLUTO = 6.0    # Santi, 2026-11-15: en el último intento del día sale la mejor si tiene 6; si no, el banco
 DIAS_SIN_REPETIR_MARCA = 7
 
-PALABRAS_MIN, PALABRAS_MAX = 68, 98      # frases + locutor: con la voz ×1,065 y pausas cortas, 32-38 s
-FRASES_MIN, FRASES_MAX = 7, 12
+# Videos más cortos (Santi, 2026-11-20, "por ahora; el mes que viene los alargamos"): 6-7 escenas de 4-5 s, 25-30 s
+PALABRAS_MIN, PALABRAS_MAX = 50, 74      # frases + locutor: con la voz ×1,065 y pausas cortas, 25-30 s
+FRASES_MIN, FRASES_MAX = 6, 7
 GANCHO_MAX_PALABRAS = 8                   # el gancho dura menos de 3 s
-MAX_S = 38.0            # Santi (2026-11-14): 32-38 s; fuera de eso, ±8 % de velocidad y si no alcanza se reescribe
-MIN_S = 32.0
+MAX_S = 30.0            # Santi (2026-11-20): 25-30 s (antes 32-38); fuera de eso, ±8 % de velocidad y si no se reescribe
+MIN_S = 25.0
 VELOCIDAD_VOZ = 1.065   # atempo (sin cambiar el tono): ×1,13 quedó "un pelín rápido" (Santi, 2026-11-14)
 PAUSA_MAX_S = 0.22      # el silencio entre frases, como mucho
 AJUSTE_VEL_MAX = 0.08   # Santi (2026-11-15): fuera de 32-38 s, primero la velocidad del audio que ya está (±8 %,
@@ -128,7 +129,7 @@ FONDOS = ("casa", "taller", "fabrica", "tienda", "oficina", "ciudad", "escenario
           "laboratorio", "hospital", "campo", "puerto", "playa", "estadio", "cocina")
 # mesa y estante no son objetos de la historia: son el APOYO (`soporte`) y el render los pone contra la pared
 # Los efectos que agrega el render (polvo, líneas de movimiento, destellos, primer plano) NO los elige el guion.
-EFECTOS_RENDER = ("polvo", "lineas_mov", "destello", "primer_plano", "rayos", "cinta_frente")
+EFECTOS_RENDER = ("polvo", "lineas_mov", "destello", "primer_plano", "rayos", "cinta_frente", "dedos")
 PROPS = tuple(sorted(n for n in esc.PROPS if n not in ("pedazo", "microfono", "mesa", "estante") + EFECTOS_RENDER))
 # Lo que puede pedir el guion: la biblioteca, los dibujos guardados y "dibujo_nuevo" (Claude lo dibuja, dibujos.py)
 DIBUJO_NUEVO = "dibujo_nuevo"
@@ -412,9 +413,9 @@ ROTULOS = {"caja", "cartel", "calendario"}
 ROMPIBLES = {"tele", "lampara", "cuadro", "jarron", "ventana", "botella", "lata", "caja", "trofeo", "celular"}
 CADENA_MIN, CADENA_MAX = 2, 4
 _PRESENTE = re.compile(r"\b(hoy|actualmente|en la actualidad|hoy en d[ií]a|ahora)\b", re.I)
-LOCUTOR_MIN, LOCUTOR_MAX = 1, 3
+LOCUTOR_MIN, LOCUTOR_MAX = 0, 1      # en 25-30 s Tito interrumpe como mucho una vez (2026-11-20)
 
-SISTEMA_GUION = f"""Escribís un video vertical ANIMADO de 32 a 38 segundos (ritmo ágil) para un canal sobre el origen de las
+SISTEMA_GUION = f"""Escribís un video vertical ANIMADO de 25 a 30 segundos (ritmo ágil) para un canal sobre el origen de las
 marcas. Castellano neutro latinoamericano con algo de rioplatense, informal, tuteo. TONO: sarcasmo y humor.
 
 El canal se llama "Así Nació". Su locutor y mascota es el ABUELO TITO: un inventor jubilado con
@@ -423,12 +424,11 @@ antiparras de soldador, bigote blanco y un reloj de bolsillo dorado con el que v
 REGLA 1 — MOSTRAR, NO CONTAR. Cada frase de la voz en off es UNA escena donde PASA algo que muestra lo
 que dice la frase. La MAYORÍA de las escenas son ACCIÓN de la historia: gente fabricando (`fabricar`),
 inventando (`martillar`, `pensar` con la idea), vendiendo (`vender`), usando o probando el producto (`usar`,
-`probar`), corriendo, festejando; máquinas, multitudes (`multitud`: true pone gente atrás festejando o
-caminando, para un lanzamiento, una cola, una fábrica llena, un estadio). NADA de dos personas paradas
-hablando: un diálogo solo si la historia lo pide, corto, y como mucho en 2 escenas.
+`probar`), corriendo, festejando; máquinas. MENOS GENTE (Santi, 2026-11-20): 1 o 2 personas en primer plano por
+escena, sin gente de relleno atrás. NADA de dos personas paradas hablando: un diálogo solo si la historia lo pide.
 
-REGLA 2 — TITO, EL LOCUTOR. Tito interrumpe 1 a 3 veces: la escena se congela en gris, él aparece al
-costado y comenta algo con humor o aclara un dato (`locutor`: después de qué frase y su texto, 5 a 20
+REGLA 2 — TITO, EL LOCUTOR. Tito interrumpe COMO MUCHO UNA vez (o ninguna): la escena se congela en gris, él
+aparece al costado y comenta algo con humor o aclara un dato (`locutor`: después de qué frase y su texto, 5 a 10
 palabras). Es la misma voz que narra. No después de la última frase.
 
 REGLA 3 — GUION CLARO. No des nada por sabido: TODA empresa o persona se presenta en pocas palabras la
@@ -533,8 +533,24 @@ ESTRUCTURA:
   máximo 8 palabras (dura menos de 3 s),
   sin año, sin "¿Sabías que…?", sin saludar. Su escena es pura ACCIÓN.
 - El final paga el gancho (responde la pregunta que dejó abierta: `pregunta_gancho`).
-- 7 a 11 frases cortas, 55 a 75 palabras en total en las frases; Tito suma 12 a 25 más (todo junto,
-  70 a 95). Frases cortas y con ritmo: el video dura 32 a 38 segundos.
+- 6 o 7 frases (cada una es UNA escena de 4 a 5 segundos: 9 a 12 palabras; el gancho, menos), 50 a 66 palabras
+  en las frases; Tito suma 0 a 10 más (todo junto, 50 a 74). El video dura 25 a 30 segundos. Armalo PRINCIPALMENTE
+  con las escenas de la BIBLIOTECA BASE (REGLA 15).
+
+REGLA 17 — LA EMOCIÓN DE CADA FRASE (Santi, 2026-11-20). Cada escena lleva `emocion`, el momento de la historia; el
+motor elige la cara y el cuerpo de la gente:
+  exito (muy feliz: sonrisa grande, brazos arriba, saltando) · perdida (pérdida o quiebra: devastado, cabeza baja,
+  manos en la cara) · determinado (después de un fracaso, sigue adelante: ceño firme, puños cerrados, arremangándose)
+  · idea (idea o descubrimiento: sorprendido, ojos grandes, la lamparita) · trabajo (concentrado en lo que hace) ·
+  duda (duda o problema: preocupado, rascándose la cabeza) · burla (burla o rechazo: los demás se ríen o niegan y el
+  protagonista, frustrado) · neutral.
+  Fracaso y seguir adelante = una escena `perdida` y la SIGUIENTE `determinado`. La emoción sale de lo que cuenta la
+  voz en esa frase.
+
+REGLA 18 — EL LUGAR SALE DE QUIÉN ES (Santi, 2026-11-20). En `protagonista.oficio` poné el oficio de la persona de la
+historia (químico, farmacéutico, científico, médico, artesano, inventor, carpintero, empresario, comerciante…): el
+origen (taller_inventor) va en SU lugar: químico o científico en el laboratorio (frascos, tubos, pizarrón), artesano o
+inventor en el taller, empresario en la oficina.
 
 DATOS: todo nombre, cifra, año, mes y lugar sale del TEXTO (Wikipedia). Nada de tu memoria. Los chistes
 son comentarios, no datos inventados. NUNCA humor sobre muertes, accidentes, tragedias, guerras,
@@ -542,7 +558,7 @@ enfermedades ni temas sensibles. NADA de logos: el nombre de la marca puede apar
 
 ESCENA de cada frase:
 - `fondo`: {_lista(FONDOS)}.
-- `actores` (1 a 3): `rol` ({_lista(ac.ROLES)}), `accion` ({_lista(ac.ACCIONES)}), `desde` y `hacia`
+- `actores` (1 o 2): `rol` ({_lista(ac.ROLES)}), `accion` ({_lista(ac.ACCIONES)}), `desde` y `hacia`
   (izquierda, centro, derecha, afuera_izq, afuera_der; `hacia` "ninguno" si no se mueve de lugar) y
   `cara` ({_lista(ac.CARAS)}).
   PERSONAJES SEGÚN QUIÉN ES Y SU ROL (Santi, 2026-11-17): el protagonista es la persona real, con su `genero` y la
@@ -558,7 +574,7 @@ ESCENA de cada frase:
   lo que vuela le pega y lo rompe.
 - `cadena` (casi siempre VACÍA; solo en el gancho y solo si la historia es de algo que rompe cosas, 2 a
   4): las cosas que se rompen una tras otra, cada una con `prop`, `soporte` y `donde`.
-- `multitud`: true si en esa escena hay mucha gente (un lanzamiento, una cola, una fábrica llena).
+- `emocion`: exito, perdida, determinado, idea, trabajo, duda, burla o neutral (REGLA 17).
 - `viaje_a_anio` (0 si no) y `vuelve_al_presente` (true/false).
 - `camara`: {_lista(ac.CAMARAS)} (en los golpes la cámara se sacude sola).
 - `texto_pantalla`: 1 a 4 palabras grandes (un año, una cifra, "NA, MENTIRA") o vacío.
@@ -611,7 +627,7 @@ SCHEMA_GUION = {
                 "cadena": {"type": "ARRAY", "items": _CADENA},
                 "viaje_a_anio": {"type": "INTEGER"},
                 "vuelve_al_presente": {"type": "BOOLEAN"},
-                "claves": _CLAVES, "emoji": _EMOJI, "multitud": {"type": "BOOLEAN"},
+                "claves": _CLAVES, "emoji": _EMOJI, "emocion": {"type": "STRING"},
                 "anio_escena": {"type": "INTEGER"},
                 "accion_escena": {"type": "STRING"},   # sin enum: la gramática de Claude se pasaba de tamaño (15/11)
                 "plano": {"type": "STRING"},
@@ -619,15 +635,15 @@ SCHEMA_GUION = {
             },
             "required": ["frase", "parte", "fondo", "actores", "objetos", "camara", "texto_pantalla",
                          "transicion", "cadena", "viaje_a_anio", "vuelve_al_presente", "claves", "emoji",
-                         "multitud", "anio_escena", "accion_escena", "plano", "accion_nueva"]}},
+                         "emocion", "anio_escena", "accion_escena", "plano", "accion_nueva"]}},
         "locutor": {"type": "ARRAY", "items": {"type": "OBJECT", "properties": {
             "despues_de_frase": {"type": "INTEGER"}, "texto": {"type": "STRING"},
             "claves": _CLAVES, "emoji": _EMOJI},
             "required": ["despues_de_frase", "texto", "claves", "emoji"]}},
         "protagonista": {"type": "OBJECT", "properties": {
             "prop": {"type": "STRING"},
-            "que_es": {"type": "STRING"}, "dibujo": {"type": "STRING"}},
-            "required": ["prop", "que_es", "dibujo"]},
+            "que_es": {"type": "STRING"}, "dibujo": {"type": "STRING"}, "oficio": {"type": "STRING"}},
+            "required": ["prop", "que_es", "dibujo", "oficio"]},
         "dibujos_nuevos": {"type": "ARRAY", "items": {"type": "OBJECT", "properties": {
             "nombre": {"type": "STRING"}, "descripcion": {"type": "STRING"}},
             "required": ["nombre", "descripcion"]}},
@@ -1671,7 +1687,7 @@ REGLA 16 — ESCENAS VIVAS (Santi, 2026-11-16; las 3 opciones de gancho y el dec
 - El OBJETO PROTAGONISTA tiene que parecerse al real: el Tupper es un recipiente de plástico bajo con tapa
   hermética, no una olla. Si ningún dibujo de la lista ES ese objeto (no uno parecido), `dibujo_nuevo` con una
   descripción precisa de su forma, material y colores.
-- Cada frase dura 3 segundos como mucho al decirla (8 a 10 palabras): el video corta a otra toma cada 3 s.
+- Cada frase es una escena de 4 a 5 segundos (9 a 12 palabras), con la cámara moviéndose dentro de la escena.
 - ÉPOCA DE CADA OBJETO: nada que no existiera en el `anio_escena` (ni un celular, una tele o un monitor en 1938):
   el código saca lo que no corresponde.
 - Nada de objetos sin relación con la historia ni con etiquetas de texto escritas, salvo que la historia lo pida.
@@ -2048,7 +2064,9 @@ def linea_de_tiempo(d: dict, inicios: list[float], fin: float, palabras: list,
             if dur < 0.6:
                 continue
         e = {**e, "objetos": [{**o, "prop": prop_real(o)} for o in e.get("objetos") or [] if prop_real(o)],
-             "_categoria": d.get("_categoria") or ""}
+             "_categoria": d.get("_categoria") or "",
+             # el lugar del taller sale del oficio del protagonista (Santi, 2026-11-20: químico → laboratorio)
+             "_oficio": str(d.get("oficio") or (d.get("protagonista") or {}).get("oficio") or "")}
         anio_e = anio_esc if 1800 <= anio_esc < presente else anio_actual
         # antes de que exista el producto, lo que la marca hacía entonces (Lego de madera en 1932, 2026-11-19)
         prota_e = fiel.de_la_escena(d, anio_e, prota)
@@ -2364,7 +2382,11 @@ SCHEMA_REVISION = {"type": "OBJECT", "properties": {"problemas": {"type": "ARRAY
 ARREGLOS = ("mover_objeto", "cambiar_soporte", "sacar_objeto", "separar_personajes", "sacar_texto", "cambiar_accion",
             "rehacer_gancho", "redibujar_objeto", "otro")
 CUADROS_REVISION = 8
-VUELTAS_REVISION = 2      # vueltas de corrección; después, una última que solo mira (estándar de calidad)
+# Santi (2026-11-20): una sola revisión; la escena que falla se reemplaza por la escena base que mejor sirve para su
+# frase (reemplazo.reemplazar_con_base), sin dibujos nuevos ni otra revisión con imágenes. Nunca se rehace el video.
+VUELTAS_REVISION = 0
+RESCATE = False
+MEDIR_FINAL = False       # la prueba de las 5 marcas lo prende: puntaje del video que sale           # el rescate (rehacer enteras las escenas que fallan) quedó apagado por lo mismo
 RESCATE_USD = 0.50        # el rescate de un video que quedaría retenido, aparte del tope de las correcciones
 AVISO_VIDEO_USD = 1.50    # Santi, 2026-11-17: si un video pasa de esto en total, se le avisa
 
@@ -2749,7 +2771,13 @@ def ficha_escena(esc_k: dict, d: dict) -> dict:
     return {"lugar": esc_k.get("lugar_nuevo") or esc_k.get("fondo") or "", "anio": anio, "gente": gente,
             "objetos": [o.get("prop") for o in esc_k.get("objetos") or [] if o.get("prop")],
             "accion_escena": esc_k.get("accion_escena") or "", "plano": esc_k.get("plano") or "",
-            "que_ve": str(esc_k.get("que_ve") or "")}
+            "que_ve": str(esc_k.get("que_ve") or ""), "emocion": _emocion_de(esc_k)}
+
+
+def _emocion_de(esc_k: dict) -> str:
+    from . import emociones
+
+    return emociones.de_escena(esc_k)
 
 
 def texto_ficha(f: dict) -> str:
@@ -2757,7 +2785,8 @@ def texto_ficha(f: dict) -> str:
                       f"{g['hace']}{' con ' + g['en_las_manos'] if g['en_las_manos'] else ''}" for g in f["gente"])
     return (f"FICHA: lugar {f['lugar']}, año {f['anio']}; gente: {gente or '-'}; objetos: "
             f"{', '.join(f['objetos']) or '-'}; plano {f['plano'] or 'normal'}"
-            + (f"; TIENE QUE VERSE (director): {f['que_ve']}" if f.get("que_ve") else ""))
+            + (f"; TIENE QUE VERSE (director): {f['que_ve']}" if f.get("que_ve") else "")
+            + (f"; EMOCIÓN de la frase: {f['emocion']}" if f.get("emocion") and f["emocion"] != "neutral" else ""))
 
 
 def guardar_fichas(d: dict, carpeta: Path) -> None:
@@ -2779,8 +2808,6 @@ hace cada uno). Por cada persona del cuadro respondete: ¿QUIÉN ES (se entiende
 - algo que no existía en ese año o en ese lugar (máquinas modernas de colores en el siglo XIX, un camión o edificios
   modernos en 1882, pantallas antes de 1980, engranajes sin que la frase hable de una máquina): `arreglo` =
   sacar_objeto con su nombre en `objeto` o cambiar_accion si es el lugar entero;
-- un fondo pobre: menos de 3 detalles que digan DÓNDE y CUÁNDO (carteles pintados, faroles, carros, adoquines,
-  cajas del producto, ladrillo, ropa de época): `arreglo` = otro, y en `que` cuáles faltan;
 - la ventanita de Tito tapando a una persona o un objeto importante: `arreglo` = otro;
 - (Santi, 2026-11-18) el cuadro NO muestra lo que dice "TIENE QUE VERSE" (la nota del director), o alguien que no
   escucha la voz no entendería qué pasa, o cae en lo prohibido (un objeto adentro de otro sin sentido, manos
@@ -2819,7 +2846,7 @@ def revisar_visual(cliente, d: dict, datos: dict, carpeta: Path, capturar=None, 
     lista += ("\n\nARRANQUES ANTERIORES DEL CANAL:\n" + texto_ganchos(ganchos_recientes(conn)[:-1])
               if conn is not None else "")
     sistema = ((sistema_revision_v3() + (REVISION_V4 if USO_V4 else "")) if REGLAS_V3 else SISTEMA_REVISION)
-    sistema += REVISION_FICHA
+    sistema += REVISION_FICHA + REVISION_CALIBRADA
     guardar_fichas(d, carpeta)
     sistema += calidad.para_prompt("asinacio") + ("\nToda regla que no se cumple va TAMBIÉN en `problemas`, con su "
                                                    "cuadro y el arreglo que la corrige.")
@@ -2836,6 +2863,21 @@ def revisar_visual(cliente, d: dict, datos: dict, carpeta: Path, capturar=None, 
     fallas = calidad.fallas_de(r_.get("reglas"), "asinacio")
     d["_estandar"], d["_estandar_ok"] = fallas, True
     return problemas_del_estandar(fallas, problemas, len(claves)), claves
+
+
+REVISION_CALIBRADA = """
+
+CALIBRACIÓN (Santi, 2026-11-20; MANDA SOBRE TODO LO ANTERIOR): marcá SOLO lo que un espectador NOTARÍA EN 1 SEGUNDO
+mirando el video en el celular:
+- algo que NO SE ENTIENDE (no se sabe qué pasa ni qué es el objeto);
+- gente SIN HACER NADA EN PRIMER PLANO (parada, brazos colgando, mirando a cámara);
+- objetos FLOTANDO sin motivo;
+- cosas claramente DE OTRA ÉPOCA (un celular en 1920);
+- la EXPRESIÓN que no va con lo que cuenta la voz (alguien feliz cuando la frase habla de una quiebra, triste en un
+  éxito): cada cuadro trae la emoción de su frase.
+NO marques detalles del fondo (cuántos adornos tiene, la textura de la pared, un mueble de más o de menos), el estilo
+del dibujo, las proporciones, ni cosas que hay que buscar con lupa. Las reglas del estándar se juzgan con este mismo
+criterio: si un espectador no lo notaría en 1 segundo, la regla se cumple. Ante la duda, cumple."""
 
 
 MEJORAS_PRIMERO = "mejoras_primero"   # bot_estado: [{fecha, video, frase, reglas, que, enviada}]
@@ -2904,7 +2946,7 @@ NUMERO_CHICO = 12
 # TOPE DURO por video (Santi, 2026-11-18, el Atari costó US$ 3,43): todo lo de Claude de un video (elegir, guion, piezas,
 # correcciones, reemplazos y rescate) como mucho US$ 1,20 (era 1,50 a la mañana). Al llegarlo se frena todo: si el video ya llega al estándar
 # mínimo sale; si no, ese día no se publica (TopeCosto: sin reintento) y se avisa con una línea.
-TOPE_USD_VIDEO = 1.20      # Santi, 2026-11-18 (tarde): 1,50 → 1,20
+TOPE_USD_VIDEO = 0.60      # Santi, 2026-11-20: 0,60 por video (antes 1,20)
 _PRESUPUESTO: dict = {}      # {"conn", "fila"}: lo pone armar_video al empezar cada video
 
 
@@ -3362,9 +3404,8 @@ def armar_video(conn, settings, carpeta: Path, cliente=None, wiki=None, hoy: dat
                 frenado = costo_rev()
                 revision.append(f"reemplazo de escenas frenado: ya iban US$ {frenado:.2f} (tope {tope_rev:g})")
                 break
-            hecho = _rz.reemplazar(haiku, d, datos, eventos, k, ids, _armar_todo, clave_video, e.marca.nombre,
-                                   carpeta, sigue=lambda: costo_rev() <= tope_rev and not pasado_tope(),
-                                   avisar=avisar)
+            # la escena BASE que mejor sirve para la frase, sin Claude ni otra revisión (Santi, 2026-11-20)
+            hecho = _rz.reemplazar_con_base(d, datos, eventos, k, _armar_todo, avisar=avisar)
             if hecho:
                 datos, eventos, d, texto_ = hecho
                 reemplazos.append(texto_)
@@ -3386,7 +3427,8 @@ def armar_video(conn, settings, carpeta: Path, cliente=None, wiki=None, hoy: dat
     if revisado and calidad.retener("asinacio", d.get("_estandar") or [], True) and pasado_tope():
         tope_frenado = tope_frenado or f"sin rescate: el video llegó al tope de US$ {TOPE_USD_VIDEO:.2f} (US$ {gastado():.2f})"
         revision.append(tope_frenado)
-    elif revisado and calidad.retener("asinacio", d.get("_estandar") or [], True) and conn is not None and cliente is not None:
+    elif RESCATE and revisado and calidad.retener("asinacio", d.get("_estandar") or [], True) and conn is not None \
+            and cliente is not None:
         fila_res = ultima_fila_uso(conn)
         malas = []
         for pr in problemas_f:
@@ -3411,6 +3453,12 @@ def armar_video(conn, settings, carpeta: Path, cliente=None, wiki=None, hoy: dat
             rescate = (f"rescate: rehice {len(malas[:4])} escenas"
                        + (f" ({hecho})" if hecho else "") + f"; el estándar quedó en {ok_}/{total_}")
             revision.append(rescate)
+    if revisado and MEDIR_FINAL and reemplazos and not pasado_tope():
+        # solo para la prueba (Santi, 2026-11-20: "una hoja con los puntajes"): una mirada más al video ya empalmado,
+        # para que el puntaje sea el del video que sale; no corrige nada
+        problemas_f, claves_f = revisar_visual(cliente, d, datos, carpeta, avisar=avisar, conn=conn)
+        revisado = bool(d.get("_estandar_ok"))
+        revision.append("medida final: " + "{}/{}".format(*calidad.puntaje("asinacio", d.get("_estandar") or [])))
     if revisado:
         try:
             pasaron = _rz.escenas_que_pasaron(datos, claves_f, problemas_f)

@@ -219,8 +219,8 @@ def test_costos_muestra_los_creditos_del_mes(tmp_path):
 def test_ajuste_de_velocidad_antes_de_reescribir():
     from clips_bot.animacion import marcas
 
-    assert marcas.ajuste_velocidad(35.0) is None                      # adentro: nada
-    assert marcas.ajuste_velocidad(39.5) == pytest.approx(39.5 / 37.5)  # 5 % más rápido: alcanza
-    assert marcas.ajuste_velocidad(30.5) == pytest.approx(30.5 / 32.5)  # 6 % más lento: alcanza
-    assert marcas.ajuste_velocidad(42.0) is None                      # haría falta 12 %: se reescribe
-    assert marcas.ajuste_velocidad(29.0) is None
+    assert marcas.ajuste_velocidad(27.0) is None                      # adentro (25-30 s): nada
+    assert marcas.ajuste_velocidad(31.0) == pytest.approx(31.0 / 29.5)  # 5 % más rápido: alcanza
+    assert marcas.ajuste_velocidad(24.0) == pytest.approx(24.0 / 25.5)  # 6 % más lento: alcanza
+    assert marcas.ajuste_velocidad(33.5) is None                      # haría falta 12 %: se reescribe
+    assert marcas.ajuste_velocidad(22.5) is None

@@ -25,14 +25,15 @@ def test_umbrales():
     an = [r.id for r in calidad.de_revision("asinacio")]
     ph = [r.id for r in calidad.de_revision("pequena_historia")]
     assert len(an) == 19 and len(ph) == 13                               # PH-10 a PH-13 (Colón, 17/11)
-    assert calidad.minimo("asinacio") == 17 and calidad.minimo("pequena_historia") == 11
-    assert calidad.retener("asinacio", _fallas(an[:3]), True)            # 3 sin cumplir (antes 11/14)
-    assert not calidad.retener("asinacio", _fallas(an[:2]), True)        # 2 sin cumplir: sale con aviso
+    # Así Nació 15/19 (Santi, 2026-11-20): como mucho 4 sin cumplir
+    assert calidad.minimo("asinacio") == 15 and calidad.minimo("pequena_historia") == 11
+    assert calidad.retener("asinacio", _fallas(an[:5]), True)            # 5 sin cumplir: 14/19, se retiene
+    assert not calidad.retener("asinacio", _fallas(an[:4]), True)        # 4 sin cumplir: 15/19, sale con aviso
     assert not calidad.retener("asinacio", _fallas(an[:6]), False)       # la revisión no respondió: no se puntuó
     assert calidad.retener("pequena_historia", _fallas(["PH-07", "PH-08", "PH-09"]), True)    # 10/13
     assert not calidad.retener("pequena_historia", _fallas(["PH-07", "PH-08"]), True)
     assert calidad.retener("pequena_historia", _fallas(["PH-02"]), True)           # una que frena
-    assert "15/19" in calidad.texto_retenido("asinacio", _fallas(an[:4]))
+    assert "14/19" in calidad.texto_retenido("asinacio", _fallas(an[:5]))
 
 
 class R:

@@ -12,6 +12,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass, replace
 
+from . import manos as M
 from . import paleta as P
 from .svg import aclarar, camino, circulo, elipse, g, linea_gruesa, n, oscurecer, trazo
 
@@ -25,7 +26,7 @@ class Estado:
     parpadeo: float = 0.0          # 0 abiertos, 1 cerrados
     boca: str = "cerrada"          # cerrada | a | e | o | sonrisa
     apertura: float = 0.0          # 0..1, cuánto se abre la boca (sale de la voz)
-    cejas: str = "normal"          # normal | arriba | enojo | triste
+    cejas: str = "normal"          # normal | arriba | enojo | triste | concentrado
     brazo_izq: tuple[float, float] = (12.0, 10.0)   # (hombro, codo) en grados, 0 = colgando
     brazo_der: tuple[float, float] = (12.0, 10.0)
     respiracion: float = 0.0       # -1..1 (seno)
@@ -45,6 +46,11 @@ class Estado:
     # De perfil QUIETO trabajando (biblioteca base, 2026-11-20: "parados mirando a cámara sin hacer nada"): los brazos
     # salen de los gestos "p_…" con (hombro, codo) medidos en el plano: hombro 0 = colgando, 90 = horizontal adelante.
     perfil_fijo: bool = False
+    # Manos con dedos (Santi, 2026-11-20): abierta | relajada | puno | senala | agarra (manos.FORMAS); "" = la del gesto
+    mano_izq: str = ""
+    mano_der: str = ""
+    # La cabeza baja (0..1): devastado, concentrado en lo que hace; los ojos miran abajo
+    cabeza_baja: float = 0.0
 
 
 # Gestos: ángulos (hombro, codo) de cada brazo. Hombro 0 = colgando, 90 = horizontal hacia afuera,
@@ -104,17 +110,92 @@ GESTOS: dict[str, dict] = {
     "p_tomar_a": {"izq": (30, 60), "der": (70, 110)},        # se lleva el producto a la boca (tomar, comer)
     "p_tomar_b": {"izq": (30, 60), "der": (62, 116)},
     "levantar": {"izq": (30, -60), "der": (165, 12), "cejas": "arriba"},   # de frente: lo levanta arriba de la cabeza
+    # Acciones completas de perfil (Santi, 2026-11-20): tomar (la botella sube a la boca y se inclina), comer, escribir,
+    # coser, armar y cargar; cada una alterna a/b para que se vea el movimiento entero.
+    "p_tomar_alto": {"izq": (30, 60), "der": (96, 104), "cabeza": -16},     # la botella en la boca, la cabeza atrás
+    "p_comer_a": {"izq": (30, 60), "der": (66, 112), "boca": "a"},          # el bocado en la boca
+    "p_comer_b": {"izq": (30, 60), "der": (40, 78)},                         # baja mientras mastica
+    "p_escribir_a": {"izq": (40, 40), "der": (52, 30), "cabeza_baja": 0.6},  # la lapicera sobre el papel
+    "p_escribir_b": {"izq": (40, 40), "der": (58, 22), "cabeza_baja": 0.6},
+    "p_coser_a": {"izq": (40, 40), "der": (40, 40), "cabeza_baja": 0.5},     # la aguja entra
+    "p_coser_b": {"izq": (40, 40), "der": (92, 70), "cabeza_baja": 0.3},     # tira del hilo para arriba
+    "p_armar_a": {"izq": (44, 44), "der": (56, 30), "cabeza_baja": 0.5},     # encaja una pieza
+    "p_armar_b": {"izq": (54, 32), "der": (46, 46), "cabeza_baja": 0.5},
+    "p_cargar_a": {"izq": (40, 92), "der": (46, 88)},                        # la caja contra el pecho
+    "p_cargar_b": {"izq": (36, 96), "der": (42, 92)},
+    # Emociones de cuerpo (Santi, 2026-11-20): de frente
+    "festejar_b": {"izq": (175, -10), "der": (160, 20), "cejas": "arriba"},
+    "cara_manos": {"izq": (150, 128), "der": (150, 128), "cejas": "triste", "cabeza_baja": 0.7},   # las manos en la cara
+    "cara_manos_b": {"izq": (146, 134), "der": (146, 134), "cejas": "triste", "cabeza_baja": 0.8},
+    "punos": {"izq": (40, 120), "der": (40, 120), "cejas": "enojo"},          # los puños cerrados adelante del pecho
+    "punos_b": {"izq": (46, 112), "der": (34, 128), "cejas": "enojo"},
+    "arremangar": {"izq": (40, 120), "der": (20, 150), "cejas": "enojo"},     # una mano sube la manga de la otra
+    "rascar": {"izq": (12, 10), "der": (160, 100), "cejas": "triste"},        # la mano rascándose la cabeza
+    "rascar_b": {"izq": (12, 10), "der": (154, 108), "cejas": "triste"},
+    "brazos_cruzados": {"izq": (40, 128), "der": (40, 128), "cejas": "enojo"},
+    "negar_a": {"izq": (12, 10), "der": (12, 10), "cabeza": -9},              # niega con la cabeza
+    "negar_b": {"izq": (12, 10), "der": (12, 10), "cabeza": 9},
+    "reirse_senalar": {"izq": (40, 110), "der": (115, -5), "cejas": "arriba", "boca": "a"},   # se ríe y señala
 }
 
+# La forma de cada mano según el gesto (manos.FORMAS). Lo que no está: relajada.
+_MANOS_PREFIJO = (
+    ("senalar_izq", {"izq": "senala"}), ("reirse_senalar", {"der": "senala", "izq": "puno"}),
+    ("p_senalar", {"der": "senala", "izq": "relajada"}), ("senalar", {"der": "senala"}),
+    ("p_sostener", {"der": "agarra", "izq": "agarra"}), ("sostener", {"der": "agarra", "izq": "agarra"}),
+    ("p_cinta", {"der": "agarra", "izq": "agarra"}), ("p_dar", {"der": "agarra", "izq": "relajada"}),
+    ("p_tomar", {"der": "agarra"}), ("p_comer", {"der": "agarra"}), ("p_escribir", {"der": "agarra", "izq": "abierta"}),
+    ("p_coser", {"der": "agarra", "izq": "agarra"}), ("p_armar", {"der": "agarra", "izq": "agarra"}),
+    ("p_cargar", {"der": "agarra", "izq": "agarra"}), ("cargar", {"der": "agarra", "izq": "agarra"}),
+    ("pagar", {"der": "agarra", "izq": "agarra"}), ("dar_mano", {"der": "agarra", "izq": "agarra"}),
+    ("levantar", {"der": "agarra"}), ("martillo", {"der": "agarra"}), ("lanzar", {"der": "abierta"}),
+    ("atrapar", {"der": "abierta", "izq": "abierta"}), ("festejar", {"der": "abierta", "izq": "abierta"}),
+    ("sorpresa", {"der": "abierta", "izq": "abierta"}), ("saludar", {"der": "abierta"}),
+    ("explicar", {"der": "abierta", "izq": "abierta"}), ("cubrirse", {"der": "abierta", "izq": "abierta"}),
+    ("preocupar", {"der": "abierta", "izq": "abierta"}), ("cara_manos", {"der": "abierta", "izq": "abierta"}),
+    ("aplaudir", {"der": "abierta", "izq": "abierta"}), ("p_aplaudir", {"der": "abierta", "izq": "abierta"}),
+    ("punos", {"der": "puno", "izq": "puno"}), ("arremangar", {"der": "agarra", "izq": "puno"}),
+    ("brazos_cruzados", {"der": "puno", "izq": "puno"}), ("rascar", {"der": "relajada"}),
+    ("retar", {"der": "senala", "izq": "puno"}), ("encogerse", {"der": "abierta", "izq": "abierta"}),
+)
 
-def brazo_hacia(dx: float, dy: float) -> tuple[float, float]:
+
+def manos_de_gesto(nombre: str) -> tuple[str, str]:
+    """(izq, der) forma de cada mano para el gesto `nombre`."""
+    gs = GESTOS.get(nombre) or {}
+    if gs.get("manos"):
+        return gs["manos"].get("izq", "relajada"), gs["manos"].get("der", "relajada")
+    for pref, m in _MANOS_PREFIJO:
+        if str(nombre).startswith(pref):
+            return m.get("izq", "relajada"), m.get("der", "relajada")
+    return "relajada", "relajada"
+
+
+def _ajustar_emociones() -> None:
+    """Las poses de frente que llevan las manos a un lugar del cuerpo se calculan con `brazo_hacia` (el hombro está
+    en x ±92, y -382; la cara en y ~-500; el pecho en y ~-300)."""
+    def a(x, y, afuera=False):   # la mano derecha en (x, y) del personaje → (hombro, codo); la izquierda es el espejo
+        return brazo_hacia(x - 92, y + 382, afuera)
+    GESTOS["cara_manos"].update(izq=a(74, -440), der=a(74, -440))      # las palmas en los cachetes
+    GESTOS["cara_manos_b"].update(izq=a(70, -430), der=a(70, -430))
+    GESTOS["punos"].update(izq=a(56, -300, True), der=a(56, -300, True))
+    GESTOS["punos_b"].update(izq=a(62, -312, True), der=a(50, -292, True))
+    GESTOS["brazos_cruzados"].update(izq=a(-50, -286, True), der=a(-50, -300, True))
+    GESTOS["arremangar"].update(izq=a(40, -300, True), der=a(-20, -316, True))
+    # de perfil (perfil_fijo): la mano adelante y arriba de la boca, la botella inclinada hacia la boca
+    GESTOS["p_tomar_alto"].update(der=brazo_hacia(146, -123))
+    GESTOS["rascar"].update(der=a(62, -612))
+    GESTOS["rascar_b"].update(der=a(74, -600))
+
+
+def brazo_hacia(dx: float, dy: float, codo_afuera: bool = False) -> tuple[float, float]:
     """(hombro, codo) para que la mano llegue a (dx, dy) desde el hombro, en coordenadas locales del personaje (dx
     hacia afuera, dy hacia abajo), con el codo para abajo. Si no llega, el brazo estirado hacia ese punto."""
     l1, l2 = Personaje.LARGO_BRAZO, Personaje.LARGO_ANTEBRAZO
     d = max(1.0, min(l1 + l2 - 0.5, math.hypot(dx, dy)))
     fi = math.atan2(dx, dy)
     alfa = math.acos(max(-1.0, min(1.0, (l1 * l1 + d * d - l2 * l2) / (2 * l1 * d))))
-    h = fi - alfa
+    h = fi + alfa if codo_afuera else fi - alfa      # codo_afuera: el codo hacia el costado (puños al pecho)
     ex, ey = l1 * math.sin(h), l1 * math.cos(h)
     tx, ty = d * math.sin(fi), d * math.cos(fi)
     a2 = math.atan2(tx - ex, ty - ey)
@@ -142,8 +223,10 @@ def _gesto_brazo(nombre: str) -> dict | None:
 def estado_de_gesto(nombre: str, base: Estado | None = None) -> Estado:
     gs = GESTOS.get(nombre) or _gesto_brazo(str(nombre)) or GESTOS["reposo"]
     e = base or Estado()
+    mi, md = manos_de_gesto(str(nombre))
     return replace(e, brazo_izq=tuple(gs["izq"]), brazo_der=tuple(gs["der"]),
-                   cejas=gs.get("cejas", "normal"))
+                   cejas=gs.get("cejas", "normal"), mano_izq=mi, mano_der=md,
+                   cabeza_baja=float(gs.get("cabeza_baja", 0.0)))
 
 
 def mezclar_brazos(a: Estado, b: Estado, t: float) -> Estado:
@@ -152,7 +235,16 @@ def mezclar_brazos(a: Estado, b: Estado, t: float) -> Estado:
         return (p[0] + (q[0] - p[0]) * t, p[1] + (q[1] - p[1]) * t)
     return replace(a, brazo_izq=lerp2(a.brazo_izq, b.brazo_izq),
                    brazo_der=lerp2(a.brazo_der, b.brazo_der),
-                   cejas=b.cejas if t >= 0.5 else a.cejas)
+                   cejas=b.cejas if t >= 0.5 else a.cejas,
+                   mano_izq=b.mano_izq if t >= 0.5 else a.mano_izq,
+                   mano_der=b.mano_der if t >= 0.5 else a.mano_der,
+                   cabeza_baja=a.cabeza_baja + (b.cabeza_baja - a.cabeza_baja) * t)
+
+
+def extra_de_gesto(nombre: str) -> dict:
+    """Lo que el gesto le hace a la cabeza y la boca: {cabeza: grados, boca: vocal}."""
+    gs = GESTOS.get(nombre) or {}
+    return {k: gs[k] for k in ("cabeza", "boca") if k in gs}
 
 
 def _oscurecer(color: str, f: float = 0.78) -> str:
@@ -201,15 +293,23 @@ class Personaje:
         tope_torso = piso_torso - 270 * k * resp
         cy_cabeza = tope_torso - self.R_CABEZA + 22
         hombro_y = tope_torso + 38
+        brazos = ((-1, e.brazo_izq, e.mano_izq), (1, e.brazo_der, e.mano_der))
         return "".join([
             self._piernas(piso_torso, e),
             self._falda(piso_torso) if not e.espaldas else "",
             self._torso_espaldas(piso_torso, tope_torso) if e.espaldas else self._torso(piso_torso, tope_torso),
             self._vestuario(piso_torso, tope_torso) if not e.espaldas else "",
-            self._brazo(-1, hombro_y, *e.brazo_izq),
-            self._brazo(1, hombro_y, *e.brazo_der),
-            g(self._cabeza(e), 0, cy_cabeza, rot=e.inclinacion),
+            *[self._brazo(lado, hombro_y, *ang, forma=f) for lado, ang, f in brazos if not self._a_la_cara(lado, hombro_y, ang)],
+            g(self._cabeza(e), 0, cy_cabeza + 26 * e.cabeza_baja, rot=e.inclinacion),
+            *[self._brazo(lado, hombro_y, *ang, forma=f) for lado, ang, f in brazos if self._a_la_cara(lado, hombro_y, ang)],
         ])
+
+    def _a_la_cara(self, lado: int, hombro_y: float, ang: tuple[float, float]) -> bool:
+        """¿La mano termina sobre la cara o la cabeza (las manos en la cara, rascarse)? Ahí va delante de la cabeza."""
+        a1, a2 = math.radians(ang[0]), math.radians(ang[0] + ang[1])
+        x = lado * (92 + math.sin(a1) * self.LARGO_BRAZO + math.sin(a2) * self.LARGO_ANTEBRAZO)
+        y = hombro_y + math.cos(a1) * self.LARGO_BRAZO + math.cos(a2) * self.LARGO_ANTEBRAZO
+        return abs(x) < self.R_CABEZA - 20 and y < hombro_y - 40
 
     # -- geometría (para el chequeo de composición: brazos que atraviesan caras) --
     def cara(self, e: Estado | None = None) -> tuple[float, float, float]:
@@ -291,8 +391,9 @@ class Personaje:
                                     f"{n(pie[0] + 60)} {n(pie[1] + 26)} Z", "#2a2a33", ancho=P.TRAZO_FINO + 2))
         brazos = self._brazos_perfil(e, hy)
         p.append(piernas[0])
+        (bx1, by1), (bx2, by2) = brazos[0][-2], brazos[0][-1]
         p.append(linea_gruesa(brazos[0], _oscurecer(self.ropa), self.ANCHO_BRAZO)
-                 + circulo(*brazos[0][-1], 22, _oscurecer(self.piel)))
+                 + self._mano(bx1, by1, bx2, by2, e.mano_izq or "relajada", _oscurecer(self.piel)))
         p.append(piernas[1])
         # torso de costado (más angosto, la panza hacia adelante)
         p.append(camino(f"M-56 {n(piso_torso)} L64 {n(piso_torso)} Q78 {n(tope + 60)} 50 {n(tope + 8)} "
@@ -308,7 +409,9 @@ class Personaje:
                             f"L4 {n(piso_torso + largo_v)} Z", cv, ancho=5))
         elif pz & {"traje", "calle"}:
             p.append(camino(f"M30 {n(tope + 10)} L56 {n(tope + 20)} L40 {n(tope + 140)} Z", BLANCO_SUCIO, ancho=4))
-        p.append(linea_gruesa(brazos[1], self.ropa, self.ANCHO_BRAZO) + circulo(*brazos[1][-1], 24, self.piel))
+        (fx1, fy1), (fx2, fy2) = brazos[1][-2], brazos[1][-1]
+        p.append(linea_gruesa(brazos[1], self.ropa, self.ANCHO_BRAZO)
+                 + self._mano(fx1, fy1, fx2, fy2, e.mano_der or "relajada"))
         # cabeza de perfil: oreja atrás, nariz adelante, un ojo
         cab = [circulo(-22, 14, 26, self.piel), circulo(8, 0, R, self.piel)]
         cab.append(self._pelo_perfil())
@@ -322,9 +425,12 @@ class Personaje:
             ry = 24 * (1 - cierre)
             cab.append(elipse(ojo_x, -8, 16, ry, P.BLANCO, ancho=P.TRAZO_FINO))
             cab.append(circulo(ojo_x + 6, -5, min(10, ry * 0.6), P.CONTORNO, borde=False))
-        dy_ceja = {"arriba": -16, "enojo": 2, "triste": -6}.get(e.cejas, 0)
+        dy_ceja = {"arriba": -16, "enojo": 2, "triste": -6, "concentrado": 6}.get(e.cejas, 0)
         cab.append(g(f'<path d="M-18 0 L18 0" {trazo(ancho=11)}/>', ojo_x, -52 + dy_ceja,
-                     rot={"enojo": 14, "triste": -14}.get(e.cejas, 0)))
+                     rot={"enojo": 14, "triste": -14, "concentrado": 6}.get(e.cejas, 0)))
+        if e.cejas == "concentrado" and cierre <= 0.85:      # la mirada fija en lo que hace
+            cab.append(f'<path d="M{ojo_x - 18} -18 L{ojo_x + 18} -18 L{ojo_x + 18} -34 L{ojo_x - 18} -34 Z" '
+                       f'fill="{self.piel}"/><path d="M{ojo_x - 17} -18 L{ojo_x + 17} -18" {trazo(ancho=P.TRAZO_FINO)}/>')
         if self.anteojos:
             cab.append(f'<circle cx="{ojo_x}" cy="-8" r="30" fill="none" {trazo(ancho=P.TRAZO_FINO + 1)}/>'
                        f'<path d="M{ojo_x - 30} -10 L-10 -14" {trazo(ancho=P.TRAZO_FINO)}/>')
@@ -333,12 +439,16 @@ class Personaje:
             cab.append(camino(f"M{R - 30} 44 Q{R} 34 {R + 14} 50 Q{R - 6} 62 {R - 30} 52 Z", self.pelo,
                               ancho=P.TRAZO_FINO))
         ap = max(0.0, min(1.0, e.apertura))
-        if e.boca in ("cerrada", "sonrisa") or ap < 0.08:
+        if e.boca in ("firme", "torcida"):
+            cab.append(camino(f"M{R - 50} 64 L{R - 12} 64"))
+        elif e.boca == "abajo":
+            cab.append(camino(f"M{R - 50} 70 Q{R - 30} 56 {R - 10} 70"))
+        elif e.boca in ("cerrada", "sonrisa") or ap < 0.08:
             cab.append(camino(f"M{R - 50} 62 Q{R - 30} {74 if e.boca == 'sonrisa' else 66} {R - 10} 60"))
         else:
             cab.append(elipse(R - 28, 66, 14, 6 + 14 * ap, "#5a1e2a", ancho=P.TRAZO_FINO))
         cab.append(self._sombrero_perfil())
-        p.append(g("".join(cab), 0, cy, rot=e.inclinacion))
+        p.append(g("".join(cab), 0, cy + 22 * e.cabeza_baja, rot=e.inclinacion + 12 * e.cabeza_baja))
         return "".join(p)
 
     def _pelo_perfil(self) -> str:
@@ -500,7 +610,7 @@ class Personaje:
                               oscurecer(c, 0.1), ancho=4))
         return "".join(out)
 
-    def _brazo(self, lado: int, hombro_y: float, hombro: float, codo: float) -> str:
+    def _brazo(self, lado: int, hombro_y: float, hombro: float, codo: float, forma: str = "") -> str:
         x0 = lado * 92
         a1 = math.radians(hombro)
         a2 = math.radians(hombro + codo)
@@ -509,7 +619,13 @@ class Personaje:
         x2 = x1 + lado * math.sin(a2) * self.LARGO_ANTEBRAZO
         y2 = y1 + math.cos(a2) * self.LARGO_ANTEBRAZO
         return (linea_gruesa([(x0, hombro_y), (x1, y1), (x2, y2)], self.ropa, self.ANCHO_BRAZO)
-                + circulo(x2, y2, 24, self.piel))
+                + self._mano(x1, y1, x2, y2, forma or "relajada", espejo=lado < 0))
+
+    def _mano(self, x1: float, y1: float, x2: float, y2: float, forma: str, piel: str = "",
+              espejo: bool = False) -> str:
+        """La mano con dedos en la muñeca (x2, y2), siguiendo el antebrazo (x1, y1) → (x2, y2)."""
+        ang = math.degrees(math.atan2(y2 - y1, x2 - x1))
+        return M.mano(x2, y2, ang, forma, piel or self.piel, escala=1.15, espejo=espejo)
 
     def _cabeza(self, e: Estado) -> str:
         R = self.R_CABEZA
@@ -579,13 +695,18 @@ class Personaje:
             ry = (31 if sorpresa else 26) * (1 - cierre)
             p.append(elipse(cx, cy, rx, ry, "#fffdf6", ancho=P.TRAZO_FINO))
             pr = min(13 if not sorpresa else 9, ry * 0.62)
-            ix, iy = cx + 6 * e.mirada, cy + 3
+            ix, iy = cx + 6 * e.mirada, cy + 3 + 9 * e.cabeza_baja
             p.append(circulo(ix, iy, pr * 1.45, self.IRIS, borde=False))
             p.append(circulo(ix, iy, pr * 0.85, P.CONTORNO, borde=False))
             p.append(circulo(ix + 5, iy - 5, max(2.5, pr * 0.42), "#ffffff", borde=False))
             p.append(circulo(ix - 4, iy + 5, max(1.5, pr * 0.2), "#ffffff", borde=False))
             # párpados (del color de la piel, con su línea): la emoción se lee en los ojos
-            if e.cejas == "enojo":
+            if e.cejas == "concentrado":     # la mirada fija: el párpado de arriba a media altura, parejo
+                p.append(f'<path d="M{cx - rx - 4} {cy - ry - 4} L{cx + rx + 4} {cy - ry - 4} '
+                         f'L{cx + rx + 4} {n(cy - ry * 0.25)} L{cx - rx - 4} {n(cy - ry * 0.25)} Z" fill="{self.piel}"/>'
+                         f'<path d="M{cx - rx - 2} {n(cy - ry * 0.25)} L{cx + rx + 2} {n(cy - ry * 0.25)}" '
+                         f'{trazo(ancho=P.TRAZO_FINO)}/>')
+            elif e.cejas == "enojo":
                 p.append(f'<path d="M{cx - rx - 4} {cy - ry - 4} L{cx + rx + 4} {cy - ry - 4} '
                          f'L{cx + rx + 4} {n(cy - ry * (0.15 if s < 0 else 0.75))} '
                          f'L{cx - rx - 4} {n(cy - ry * (0.75 if s < 0 else 0.15))} Z" fill="{self.piel}"/>'
@@ -607,7 +728,7 @@ class Personaje:
         """Cejas con forma (gruesas en el medio, finas en las puntas) y más movimiento."""
         # rotación positiva = horaria (y hacia abajo): en el ojo derecho baja la punta de afuera
         dy, rot = {"normal": (0, 0), "arriba": (-22, 0), "enojo": (6, -18),
-                   "triste": (-8, 18)}.get(tipo, (0, 0))
+                   "triste": (-8, 18), "concentrado": (8, -7)}.get(tipo, (0, 0))
         ceja = (f'<path d="M-24 3 Q0 -13 24 3 Q0 -3 -24 3 Z" fill="{self.pelo}" '
                 f'stroke="{P.CONTORNO}" stroke-width="5" stroke-linejoin="round"/>')
         return "".join(g(g(ceja, escala=1, escala_y=1) if s > 0 else g(ceja, escala=-1, escala_y=1),
@@ -621,6 +742,12 @@ class Personaje:
     def _boca(self, e: Estado) -> str:
         y = 58
         ap = max(0.0, min(1.0, e.apertura))
+        if e.boca == "firme":
+            return camino(f"M-30 {y + 2} L30 {y + 2}")
+        if e.boca == "torcida":
+            return camino(f"M-32 {y + 6} Q-14 {y - 4} 0 {y + 4} Q16 {y + 12} 30 {y}")
+        if e.boca == "abajo":
+            return camino(f"M-32 {y + 12} Q0 {y - 12} 32 {y + 12}")
         if e.boca in ("cerrada", "sonrisa") or ap < 0.08:
             ancho, curva = (30, 14) if e.boca == "cerrada" else (40, 26)
             return camino(f"M{-ancho} {y - 4} Q0 {y + curva} {ancho} {y - 4}")
@@ -697,3 +824,6 @@ def personaje(nombre: str, **cambios) -> Personaje:
     está en el elenco arranca del narrador."""
     base = ELENCO.get(nombre, ELENCO["narrador"])
     return replace(base, **cambios) if cambios else base
+
+
+_ajustar_emociones()     # necesita Personaje (los largos del brazo)
