@@ -211,6 +211,7 @@ def escena_inspiracion(dur: float, fuente: str, pieza: str, producto: str, seed:
 # ---- la plata con acciones reales (Santi, 2026-11-16: "nada de monedas con $ gigantes en las manos: parece que la
 # están lavando") ------------------------------------------------------------------------------------------------
 PLATA = ("contar_billetes", "abrir_caja", "apreton_manos", "firmar")
+ESC_APRETON_MEDIO = 0.5      # el apretón del plano medio (era 0,26: las manos quedaban chiquitas)
 
 
 def _manos(izq: list[dict], der: list[dict], manga: str, manga2: str = "") -> list[dict]:
@@ -292,7 +293,9 @@ def escena_plata(tipo: str, dur: float, manga: str = "", seed: int = 0, spec: di
             lx, ly = pj.mano_perfil(*per.GESTOS["p_dar"]["der"])
             s_ = float(el.get("escala", 0.74))
             lado = -1 if k_ else 1
-            el["x"] = round(X0 - lado * (s_ * lx - 6), 1)
+            # la muñeca llega justo al puño de la camisa del apretón (que va más grande: Santi, 2026-11-20, "las manos
+            # chiquitas en el medio y los brazos no conectados")
+            el["x"] = round(X0 - lado * (s_ * lx + 160 * ESC_APRETON_MEDIO - 10), 1)
             el["perfil"] = lado
             el["hasta"] = t_corte
             el["gestos"] = [{"t": 0, "gesto": "p_sostener_a"}, {"t": 0.25, "gesto": "p_dar"}]
@@ -307,7 +310,7 @@ def escena_plata(tipo: str, dur: float, manga: str = "", seed: int = 0, spec: di
         els += [_el("mesa", X0, y_mesa, escala=esc_mesa, hasta=t_corte, en_medio=True),
                 _el("papel_firma", X0, y_mesa + 4, escala=0.9, forma=1, hasta=t_corte),
                 # las dos manos ya enganchadas, chicas, donde se tocan (aparecen cuando los brazos llegan)
-                _el("apreton", X0, y_mano, escala=0.26, forma=0, manga=ropas[0], color=ropas[1], desde=0.5,
+                _el("apreton", X0, y_mano, escala=ESC_APRETON_MEDIO, forma=0, manga=ropas[0], color=ropas[1], desde=0.5,
                     hasta=t_corte, keyframes=[_k(0.5, y=y_mano), _k(0.75, y=y_mano - 10, easing="suave"),
                                               _k(1.0, y=y_mano + 8, easing="suave"), _k(t_corte, y=y_mano)])]
         t_toca = t_corte + 0.18

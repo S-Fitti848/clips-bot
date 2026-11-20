@@ -258,3 +258,20 @@ def test_tienda_crayones_y_ultima_frase():
     assert p0["gestos"][0]["gesto"].startswith("p_escribir")
     assert rz.base_para_frase("Alice Binney lo bautizó", parte="final") == "taller_inventor"
     assert rz.base_para_frase("Y así siguió", parte="final") == "cierre_tito"
+
+
+def test_escenas_del_pepsi_sin_manos_sueltas():
+    """Santi (2026-11-20, el Pepsi con la voz de Tito): el científico pegado a su frasco aunque venga la pausa de Tito,
+    la firma la hace una persona en su escritorio, el apretón del plano medio más grande con los brazos llegando."""
+    from clips_bot.animacion import uso_v3
+
+    lab = ac.escena_accion({"accion_escena": "taller_inventor", "fondo": "laboratorio", "frase": "x",
+                            "_oficio": "farmacéutico"}, 4.5, 2, reservar="derecha", protagonista="botella")[0]
+    cient = next(el for el in lab["elementos"] if el.get("tipo") == "personaje")
+    frasco = next(el for el in lab["elementos"] if el.get("nombre") == "frasco")
+    assert abs(float(frasco["x"]) - float(cient["x"])) < 200            # el frasco en la mano, no lejos
+    firma = ac.escena_accion({"accion_escena": "firmar", "fondo": "oficina", "frase": "x"}, 4.5, 2,
+                             protagonista="botella")[0]
+    assert any(el.get("tipo") == "personaje" for el in firma["elementos"])
+    assert not any(el.get("nombre") == "mano" for el in firma["elementos"])
+    assert uso_v3.ESC_APRETON_MEDIO >= 0.5

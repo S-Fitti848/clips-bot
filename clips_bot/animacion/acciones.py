@@ -1689,7 +1689,9 @@ def escena_accion(spec: dict, dur: float, i: int, primera: bool = False, tono: f
         for el in hecha["elementos"]:
             if el.get("tipo") == "prop":
                 el["lib"] = True
-        if reservar in X_TITO:
+        # las escenas de la biblioteca base ya traen su composición (la persona pegada a su mesa y a lo que agarra):
+        # correr a la gente para Tito dejaba el frasco y la mano flotando lejos del científico (Pepsi, 2026-11-20)
+        if reservar in X_TITO and accion_ not in lib_.CON_CAMARA:
             dejar_lugar_a_tito(hecha["elementos"], reservar)
         e.elementos += hecha["elementos"]
         e.sfx += hecha["sfx"]

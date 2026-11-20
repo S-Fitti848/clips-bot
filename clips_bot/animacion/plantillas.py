@@ -222,7 +222,7 @@ def _taller_inventor(plano, spec, dur, i, obj, rnd):
             mano = _de_perfil(e, 0, 1, "p_verter", "p_verter", dur, 9.0)
             # la boca del matraz inclinado 100° (178 px de alto a escala 130/200) cae sobre el producto
             boca = (mano[0] + 114, mano[1] - 10 + 20)
-            alto_p = 110
+            alto_p = 76
             arriba_p = y_mesa - alto_p
             els_extra += [_el(obj, boca[0] + 6, y_mesa - alto_p / 2, escala=esc_de(obj, alto_p), color=True),
                           _agarrado("frasco", mano, 130, quien=e.actores[0],
@@ -492,7 +492,31 @@ def _cierre_tito(plano, spec, dur, i, obj, rnd):
             "sfx": [(round(dur * 0.4, 2), "ding")], "actores": []}
 
 
+def _firmar(plano, spec, dur, i, obj, rnd):
+    """FIRMAR (un contrato, la compra): la persona de perfil detrás de su escritorio escribe la firma con la lapicera en
+    la mano y con la otra sujeta el papel; el producto al lado. Nada de manos sueltas (Santi, 2026-11-20: "el papel lo
+    sostiene la persona con su brazo unido al cuerpo")."""
+    e = ac.Escena(dur, semilla=i)
+    _persona(e, _rol(spec, 0, "empresario"), "usar", 400, "concentrado", 0)
+    mano = _de_perfil(e, 0, 1, "p_escribir_a", "p_escribir_b", dur, 0.22)
+    y_mesa = ac.PISO - 226 * 0.72
+    t0, t1 = dur * 0.15, dur * 0.85
+    els = list(e.elementos) + [
+        _mesa(mano[0] + 10),
+        _el("papel_firma", mano[0] - 6, y_mesa - 6, escala=0.75, forma=1, fase=0.0,
+            keyframes=[{"t": 0, "fase": 0.0}, {"t": t0, "fase": 0.0}, {"t": t1, "fase": 1.0, "easing": "lineal"}]),
+        _el(obj, mano[0] + 190, y_mesa - 75, escala=esc_de(obj, 150), color=True)]
+    if len(spec.get("actores") or []) > 1:     # el otro del trato, del otro lado, esperando con la mano lista
+        _persona(e, _rol(spec, 1, "empresario"), "usar", 820, "feliz", 1)
+        _de_perfil(e, 1, -1, "p_sostener_a", "p_sostener_a", dur, 9.0)
+        els += [el for el in e.elementos if el not in els]
+    return {"elementos": els, "fondo": str(spec.get("fondo") or "oficina") if str(spec.get("fondo") or "") in
+            ("oficina", "tienda", "casa") else "oficina",
+            "camara": _cam(dur, (520, Y_MEDIO, MEDIO), (mano[0], mano[1] - 40, 2.2)),
+            "sfx": e.sfx + [(round(t0, 2), "tac"), (round(t1, 2), "ding")], "actores": e.actores}
+
+
 CONSTRUCTORES = {"taller_inventor": _taller_inventor, "crisis": _crisis, "exito_multitud": _exito_multitud,
                  "producto_en_uso": _producto_en_uso, "lanzamiento": _lanzamiento, "cierre_tito": _cierre_tito,
-                 "fabrica_produce": _fabrica_produce, "vender_tienda": _vender_tienda}
+                 "fabrica_produce": _fabrica_produce, "vender_tienda": _vender_tienda, "firmar": _firmar}
 CON_CAMARA = set(CONSTRUCTORES)      # traen su cámara: gancho_v3.planos no la pisa

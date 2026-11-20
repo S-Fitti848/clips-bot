@@ -210,7 +210,8 @@ def _ajustar_emociones() -> None:
     # (con los codos cerca del cuerpo y los antebrazos hacia afuera: el IK cruzaba los brazos o abría los codos)
     GESTOS["sostener_ancho"].update(izq=(20.0, 55.0), der=(20.0, 55.0))
     GESTOS["cargar_caja"].update(izq=(8.0, 25.0), der=(8.0, 25.0))
-    GESTOS["p_verter"].update(der=brazo_hacia(150, -20))       # la mano adelante, a la altura del pecho alto
+    # la mano adelante, a la altura del pecho (más arriba parecía que tomaba del frasco: Pepsi, 2026-11-20)
+    GESTOS["p_verter"].update(der=brazo_hacia(150, 55))
     GESTOS["rascar"].update(der=a(62, -612))
     GESTOS["rascar_b"].update(der=a(74, -600))
 

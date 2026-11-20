@@ -263,7 +263,7 @@ def test_apreton_las_manos_se_juntan_en_el_medio_y_se_ve_enganchado():
     assert len(pjs) == 2 and all("hasta" in el for el in pjs)
     mesa = next(el for el in els if el.get("nombre") == "mesa")
     assert not mesa.get("decorado") and els.index(mesa) > max(els.index(p_) for p_ in pjs)
-    chica = next(el for el in els if el.get("nombre") == "apreton" and el.get("escala", 1) < 0.5)
+    chica = next(el for el in els if el.get("nombre") == "apreton" and el.get("escala", 1) <= uso_v3.ESC_APRETON_MEDIO)
     # de PERFIL, enfrentados (biblioteca base, 2026-11-20): la mano de adelante de cada uno llega al medio
     assert {el["perfil"] for el in pjs} == {1, -1}
     for el in pjs:
@@ -272,7 +272,8 @@ def test_apreton_las_manos_se_juntan_en_el_medio_y_se_ve_enganchado():
         lx, ly = per.personaje(el["nombre"], **el.get("cambios", {})).mano_perfil(*per.GESTOS[gesto]["der"])
         mx = el["x"] + el["perfil"] * lx * el["escala"]
         my = ac.PISO + ly * el["escala"]
-        assert abs(mx - chica["x"]) < 12 and abs(my - chica["y"]) < 12, (el["nombre"], mx, my)
+        # la muñeca llega al puño de la camisa del apretón (más grande desde el 2026-11-20), no al medio
+        assert abs(abs(mx - chica["x"]) - 160 * chica["escala"]) < 14 and abs(my - chica["y"]) < 12, (el["nombre"], mx, my)
     grande = next(el for el in els if el.get("nombre") == "apreton" and el.get("escala", 1) > 1)
     ys = [k["y"] for k in grande["keyframes"] if "y" in k]
     arriba = sum(1 for y in ys if y < uso_v3.Y0 - 30)
