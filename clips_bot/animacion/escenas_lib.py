@@ -133,7 +133,9 @@ def _objeto(spec: dict, protagonista: str) -> str:
     """El objeto de la escena: el protagonista si está; si no, el primero que no es un ícono ni un gráfico (en el Lego
     de 2015 la pila del contador era de gráficos, 2026-11-19)."""
     props = [str(o.get("prop") or "") for o in spec.get("objetos") or []]
-    if protagonista and (protagonista in props or not props):
+    # el producto SIEMPRE que haya (Pepsi, 2026-11-20: en la firma el "objeto" era el papel y quedaba otro papel
+    # parado flotando al lado del escritorio)
+    if protagonista:
         return protagonista
     for p_ in props:
         if p_ and p_ not in ac.ICONOS:

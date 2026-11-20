@@ -2208,7 +2208,8 @@ def reacciones_tito(escenas: list[dict]) -> None:
     t, proxima, k = 0.0, visuales.TITO_CADA_S, 0
     for e in escenas:
         dur = float(e["duracion"])
-        accion = not e.get("congela") and e.get("fondo", {}).get("tipo") not in ("mapa_geo", "color")
+        # ni en las escenas donde ya está Tito (el cierre): la ventanita le tapaba la cabeza (Pepsi, 2026-11-20)
+        accion = not e.get("congela") and e.get("fondo", {}).get("tipo") not in ("mapa_geo", "color")             and not any(el.get("tipo") == "tito" for el in e.get("elementos") or [])
         while accion and t <= proxima < t + dur - 1.2:
             tl = round(proxima - t, 2)
             x, y = lugar_tito(e, tl, k)

@@ -200,7 +200,8 @@ ALIAS_ACCION = {"usar": "atrapar", "probar": "saltar"}
 # adelante haciendo algo con el objeto (sostener_a/b), y el objeto en las dos manos, delante del cuerpo.
 MANOS_V3 = False
 SIN_PLATA_SIMBOLO = False   # lo prende marcas con animacion.uso_manos
-NO_DECORADO = {"ventana", "puerta", "cuadro", "cortina", "lampara", "estante", "mesa"}   # parte del cuarto, no decorado
+NO_DECORADO = {"ventana", "puerta", "cuadro", "cortina", "lampara", "estante", "mesa",
+               "lapicera", "billete", "moneda", "papel_firma"}   # lo chico como decorado se veía flotando (Pepsi)   # parte del cuarto, no decorado
 CON_MANOS = ("usar", "probar", "fabricar")
 CARAS = ("feliz", "enojado", "sorprendido", "triste", "normal")
 
