@@ -1291,6 +1291,16 @@ Problemas abiertos:
 
 ## 9. CHANGELOG
 
+- v1.42.0 (2026-11-20) — Arreglos del Lego (producto antes de existir → lo de la época, manos humanas que agarran,
+  fábrica con obreros y máquinas de época, gráficos siempre con gente, chequeo del fiel más permisivo sin agregados) y
+  por tipo después de la ronda 1 (una sola escena de solo manos, `escenas_lib.una_de_manos`; festejar aplaudiendo,
+  gestos `aplaudir_a/b`; manos a color en sepia; `objeto_gira` sobre una mesa; el año no va como número gigante; el
+  contador llega a la cifra a la mitad). **Prueba con 5 marcas nuevas** (voz de prueba, `output/animacion/prueba5` en la
+  Pi): ronda 1 Nintendo 6, Coca-Cola 9, Adidas 10, Ford 8, Colgate 4 (US$ 0,31-0,40 cada una con el guion); ronda 2 con
+  el mismo guion: 6, 7, 8, 7, 8 (US$ 0,02-0,05 sin el guion). **Ninguna llega a 17/19: Así Nació sigue pausado.**
+  Fallan en las 5: AN-02 (lo que se ve no es lo que dice la frase), AN-03 (no se entiende sin la voz), AN-05, AN-06
+  (lugar), AN-11 y AN-16 (gente quieta). El problema ya no son piezas sueltas: el guion pide acciones concretas y la
+  biblioteca de escenas las traduce a planos genéricos.
 - v1.41.0 (2026-11-19, noche) — La escena de manos y la de inspiración pasan al protagonista fiel (`fiel.asegurar`
   reemplaza también en `uso.partes` e `inspiracion.producto`); en el estadio los que no hacen nada juegan (`en_juego`:
   dos se pasan la pelota en arco por arriba de las cabezas, el primer pase es un saque con salto; el festejo queda;
