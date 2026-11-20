@@ -2967,7 +2967,10 @@ mirando el video en el celular:
 - objetos FLOTANDO sin motivo;
 - cosas claramente DE OTRA ÉPOCA (un celular en 1920);
 - la EXPRESIÓN que no va con lo que cuenta la voz (alguien feliz cuando la frase habla de una quiebra, triste en un
-  éxito): cada cuadro trae la emoción de su frase.
+  éxito): cada cuadro trae la emoción de su frase;
+- (Santi, 2026-11-20) una MANO SUELTA (que no está unida al brazo de una persona visible o que no entra desde el borde
+  de la pantalla en un primer plano) o un objeto agarrado que no llega al cuerpo de nadie (el frasco lejos del que lo
+  sirve): AN-06 no se cumple.
 NO marques detalles del fondo (cuántos adornos tiene, la textura de la pared, un mueble de más o de menos), el estilo
 del dibujo, las proporciones, ni cosas que hay que buscar con lupa. Las reglas del estándar se juzgan con este mismo
 criterio: si un espectador no lo notaría en 1 segundo, la regla se cumple. Ante la duda, cumple. En particular:

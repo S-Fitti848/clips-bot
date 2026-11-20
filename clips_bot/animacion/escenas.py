@@ -1830,10 +1830,11 @@ def _mano_detalle(forma: int = 1, color: str = "", fase: float = 0.0, manga: str
     pulgar = g(_dedo(66, 24, piel, nudillos=1), s_ * 36, -52, rot=s_ * (42 + 30 * agarre))
     puño = (rect(-62, -46, 124, 40, "#f4f1ea", r=12, ancho=5) + circulo(s_ * -38, -26, 6, "#d8d2c4", ancho=3)
             + f'<path d="M-58 -14 L58 -14" stroke="{oscurecer("#f4f1ea", 0.15)}" stroke-width="3"/>')
-    manga_svg = (rect(-66, -18, 132, 230, manga, r=26)
-                 + camino(f"M{s_ * 66} -10 L{s_ * 66} 210 L{s_ * 30} 210 L{s_ * 40} -10 Z", oscurecer(manga, 0.22),
+    # la manga sigue hasta el borde de la pantalla: nunca una mano suelta (Santi, 2026-11-20)
+    manga_svg = (rect(-66, -18, 132, 1600, manga, r=26)
+                 + camino(f"M{s_ * 66} -10 L{s_ * 66} 1580 L{s_ * 30} 1580 L{s_ * 40} -10 Z", oscurecer(manga, 0.22),
                           borde=False)
-                 + f'<path d="M-30 10 L-26 190 M30 10 L26 190" stroke="{oscurecer(manga, 0.3)}" stroke-width="4"/>')
+                 + f'<path d="M-30 10 L-26 1560 M30 10 L26 1560" stroke="{oscurecer(manga, 0.3)}" stroke-width="4"/>')
     return manga_svg + puño + pulgar + palma + lado_sombra + tendones + nudillos + dedos
 
 
@@ -2039,11 +2040,13 @@ def prop_cinta_frente(forma: int = 0, **_) -> str:
     return "".join(out)
 
 
-def prop_dedos(color: str = "#f2c29b", forma: int = 1, **_) -> str:
-    """Los dedos cerrados SOBRE lo que alguien agarra (Santi, 2026-11-20): van después del objeto."""
+def prop_dedos(color: str = "#f2c29b", forma: int = 1, texto: str = "", **_) -> str:
+    """Lo que la mano pone DELANTE de lo que agarra (el juego fijo de manos, Santi 2026-11-20): los dedos que envuelven
+    la botella (`texto` vacío o "agarra"), el pulgar sobre el papel ("pinza") o sobre la lapicera ("lapiz")."""
     from . import manos as M
 
-    return M.dedos_encima(color if isinstance(color, str) and color.startswith("#") else "#f2c29b", 1 if forma >= 0 else -1)
+    return M.encima(texto if texto in ("pinza", "lapiz") else "agarra",
+                    color if isinstance(color, str) and color.startswith("#") else "#f2c29b", 1 if forma >= 0 else -1)
 
 
 def prop_frasco(color: str = P.VERDE, **_) -> str:
