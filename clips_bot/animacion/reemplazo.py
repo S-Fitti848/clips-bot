@@ -278,6 +278,7 @@ _BASE_POR_FRASE = (
     # antes que la fábrica: "Guth, de la fábrica Loft, la compró" es un trato, no una fábrica (Pepsi, 2026-11-20)
     ("apreton_manos", r"trato|acuerdo|socio|firm|\b(la|lo) compr[oó]|compr[oó] (la|el) (empresa|marca|f[oó]rmula|"
                       r"compa[ñn][ií]a)|invers|contrato|vendi[oó] la|nuevo due[ñn]o|acreedor"),
+    ("taller_inventor", r"imagin|se le ocurri|pens[oó] en|tuvo la idea|so[ñn][oó] con"),
     ("fabrica_produce", r"f[aá]brica|produc|fabric|embotell|en serie|planta|l[ií]nea"),
     ("vender_tienda", r"vend|tienda|almac[eé]n|negocio|mostrador|kiosco|supermercado|comprar"),
     ("taller_inventor", r"invent|idea|cre[oó]|prob[oó]|laborator|taller|f[oó]rmula|receta|descubr|empez|naci[oó]|"
@@ -289,7 +290,8 @@ _BASE_POR_FRASE = (
 _POR_PARTE = {"problema": "crisis", "idea": "taller_inventor", "que_paso": "vender_tienda"}
 # Dónde pasa cada escena base: si la escena que falló es en otro lugar (mineros en un campo), la base que se pone es
 # "en uso" EN ESE LUGAR (Levi's, 2026-11-20: los mineros de 1853 quedaron en una oficina con un gráfico).
-LUGARES_BASE = {"crisis": {"oficina", "casa"}, "taller_inventor": {"taller", "laboratorio", "oficina", "hospital"},
+LUGARES_BASE = {"crisis": {"oficina", "casa"},
+                "taller_inventor": {"taller", "laboratorio", "oficina", "hospital", "fabrica", "casa", "tienda"},
                 "fabrica_produce": {"fabrica"}, "vender_tienda": {"tienda"}, "lanzamiento": {"escenario"},
                 "exito_multitud": {"tienda", "ciudad"}, "apreton_manos": {"oficina", "casa", "tienda", "ciudad"}}
 

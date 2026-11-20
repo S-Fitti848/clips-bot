@@ -189,3 +189,30 @@ def test_el_reemplazo_respeta_el_lugar_de_la_escena():
     assert nuevo["accion_escena"] == "producto_en_uso" and nuevo["fondo"] == "campo"
     assert _armar("producto_en_uso", fondo="campo")["fondo"]["tipo"] == "campo"
     assert rz.base_para_frase("En 1950 prohibieron los vaqueros", parte="giro") != "lanzamiento"
+
+
+def test_ronda_de_las_5_marcas():
+    """Gillette y Crayola (2026-11-20): el texto grande que repite la frase, la idea en una fábrica, la maquinilla en
+    uso y un lugar inventado puesto directo en `fondo`."""
+    d = ac.escena_accion({"frase": "En 1998 lanzó la Mach 3", "fondo": "oficina", "texto_pantalla": "MACH 3",
+                          "actores": [{"rol": "empresario", "accion": "usar"}]}, 3.0, 2)[0]
+    assert not [el for el in d["elementos"] if el.get("tipo") == "gancho"]
+    assert rz.base_para_frase("En una fábrica de tapones, imaginó una cuchilla desechable") == "taller_inventor"
+    d = _armar("producto_en_uso", fondo="casa", _categoria="higiene", prota="botella")
+    p0 = next(el for el in d["elementos"] if el.get("tipo") == "personaje")
+    assert "p_comer_a" in [g["gesto"] for g in p0["gestos"]]
+
+    class Cli:
+        def __init__(self):
+            self.pedidos = []
+
+    import clips_bot.animacion.dibujos as dib
+    hechos = []
+    orig = dib.dibujar_fondo
+    dib.dibujar_fondo = lambda cli, nombre, desc, anio: hechos.append((nombre, desc))
+    try:
+        g = {"escenas": [{"fondo": "lugar_aula_escuela_primaria", "anio_escena": 1903}]}
+        mk.crear_lugares(Cli(), g)
+    finally:
+        dib.dibujar_fondo = orig
+    assert hechos and "aula escuela primaria" in hechos[0][1]

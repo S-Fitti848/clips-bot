@@ -344,6 +344,8 @@ def _exito_multitud(plano, spec, dur, i, obj, rnd):
 _SE_TOMA = _re.compile(r"bebid|gaseos|refresc|cerveza|vino|caf[eé]|\bt[eé]\b|jugo|leche|agua|tomar|tom[oa]ba", _re.I)
 _SE_COME = _re.compile(r"comid|aliment|golosin|chocolat|galle|snack|helad|caramel|hamburgues|pizza|cereal|comer|com[ií]a",
                        _re.I)
+# lo que se usa en la cara (afeitarse, maquillarse, cepillarse): el mismo movimiento que comer, hasta la cara
+_A_LA_CARA = _re.compile(r"afeit|maquinill|cuchill|navaja|higiene|maquill|labial|cepill|dientes|crema|perfum", _re.I)
 _LUGAR_USO = {"cocina", "casa", "estadio", "playa", "campo", "oficina", "hospital", "laboratorio", "escuela"}
 
 
@@ -399,7 +401,7 @@ def _producto_en_uso(plano, spec, dur, i, obj, rnd):
     # en el lugar de la escena (un campo minero, un aula): solo el escenario vacío o nada pasan a la casa
     fondo = fondo if fondo and fondo not in ("escenario", "ciudad", "fabrica") else "casa"
     texto = str(spec.get("_categoria") or "") + " " + str(spec.get("frase") or "")
-    comer = bool(_SE_COME.search(texto)) and not _SE_TOMA.search(texto)
+    comer = bool(_SE_COME.search(texto) or _A_LA_CARA.search(texto)) and not _SE_TOMA.search(texto)
     boca = comer or bool(_SE_TOMA.search(texto))
     _persona(e, _rol(spec, 0, "joven", "mujer"), "usar", 360, "feliz", 0)
     if boca:

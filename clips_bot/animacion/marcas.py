@@ -1844,9 +1844,16 @@ def crear_lugares(cliente, d: dict, avisar=log.info) -> list[str]:
     eligió el guion. Devuelve lo que creó o reusó."""
     from . import dibujos
 
+    from . import escenas as esc
+
     hechos = []
     for i, e in enumerate(d.get("escenas") or []):
         desc = str(e.get("lugar_nuevo") or "").strip()
+        f_ = str(e.get("fondo") or "")
+        if not desc and f_ and not esc.es_fondo(f_):
+            # un lugar que no existe puesto directo en `fondo` (Crayola, 2026-11-20: "lugar_aula_escuela_primaria"
+            # salió como un living): también se crea (Santi: "si no existe, se crea")
+            desc = f_.removeprefix("lugar_").replace("_", " ").strip()
         if not desc:
             continue
         nombre = ("lugar_" + _slug(desc, 22))[:30].rstrip("_")

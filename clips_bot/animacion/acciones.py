@@ -1862,9 +1862,15 @@ def escena_accion(spec: dict, dur: float, i: int, primera: bool = False, tono: f
             el["color"] = True
     elementos = e.fondo_el + e.elementos
     texto = str(spec.get("texto_pantalla") or "").strip()
-    # un año solo en grande repite el del rótulo y el del subtítulo (Pepsi, 2026-11-20: "1923 aparece dos veces")
+    # un año solo en grande repite el del rótulo y el del subtítulo (Pepsi, 2026-11-20: "1923 aparece dos veces"); y
+    # fuera del gancho, un texto grande que repite palabras de la frase repite el subtítulo (AN-11: "MACH 3", "LLANTAS",
+    # "2695 MILLONES" en los 5 de prueba)
     if re.fullmatch(r"(1[5-9]|20)\d\d", texto):
         texto = ""
+    if texto and not primera:
+        pal = {w for w in re.findall(r"[a-záéíóúñ0-9]{3,}", texto.lower())}
+        if pal & {w for w in re.findall(r"[a-záéíóúñ0-9]{3,}", str(spec.get("frase") or "").lower())}:
+            texto = ""
     if texto:
         elementos.append({"tipo": "gancho", "texto": texto, "y": Y_TEXTO_PANTALLA, "modo": "palabras" if primera else "rebote",
                           "tam": 100, "desde": 0.0 if primera else 0.2})
