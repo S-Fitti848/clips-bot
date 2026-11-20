@@ -457,6 +457,12 @@ class Animacion:
     hasta que exista el canal de YouTube ("animacion")."""
     activo: bool = False               # APAGADO hasta que Santi apruebe los ejemplos
     hora: str = "07:00"                # AR: desde cuándo la escucha arma el del día (nunca 03:45-06:00)
+    # Preparado la NOCHE ANTERIOR (Santi, 2026-11-20): desde hora_noche se arma el video de MAÑANA (hasta las 03:45; si
+    # no salió, otra chance a la mañana hasta las 11:00) y se programa para su horario de mañana. por_dia: cuántos
+    # videos por día (0 = uno por horario de publicación).
+    preparar_noche: bool = False
+    hora_noche: str = "21:00"
+    por_dia: int = 0
     chat: str = ""                     # a dónde va; vacío = el privado de Santi
     modelo_texto: str = "claude-sonnet-5-5"
     candidatos: int = 8                # marcas que se puntúan por día (una por marca)

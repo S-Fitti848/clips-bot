@@ -135,3 +135,36 @@ def test_una_escena_base_que_falla_no_se_cambia_por_otra_base():
     assert rz.es_base({"accion_escena": "apreton_manos"}) and not rz.es_base({"accion_escena": "reunion"})
     assert rz.base_para_frase("En 1898 pasó a llamarse Pepsi") == "taller_inventor"
     assert rz.base_para_frase("Algo pasó", parte="problema") == "crisis"
+
+
+def test_preparado_la_noche_anterior(tmp_path):
+    """Santi (2026-11-20): 1 video por día, preparado la noche anterior, para su horario de mañana."""
+    from dataclasses import replace
+    from datetime import date, datetime
+
+    import clips_bot.__main__ as m
+    from clips_bot import db
+    from clips_bot.config import load_settings
+
+    conn = db.connect(tmp_path / "clips.db")
+    s = load_settings()
+    s = replace(s, animacion=replace(s.animacion, activo=True, preparar_noche=True, hora_noche="21:00", por_dia=1))
+    llamadas = []
+
+    def armar(conn_, tg, chats, settings, dia, k, **kw):
+        llamadas.append((dia, k))
+
+    class Tg:
+        def send_message(self, *a, **k):
+            pass
+
+    m._animacion_tick(conn, Tg(), s, datetime(2026, 11, 21, 15, 0, tzinfo=m.AR), armar=armar)   # de tarde: nada
+    assert llamadas == []
+    m._animacion_tick(conn, Tg(), s, datetime(2026, 11, 21, 21, 30, tzinfo=m.AR), armar=armar)
+    assert llamadas == [(date(2026, 11, 22), 0)]
+    m._animacion_tick(conn, Tg(), s, datetime(2026, 11, 21, 23, 0, tzinfo=m.AR), armar=armar)   # ya está: uno por día
+    m._animacion_tick(conn, Tg(), s, datetime(2026, 11, 22, 1, 0, tzinfo=m.AR), armar=armar)
+    assert len(llamadas) == 1
+    # se programa para ESE día a su hora, no esa misma noche
+    t = m._hora_asinacio(s, "12:30", datetime(2026, 11, 21, 21, 40, tzinfo=m.AR), "2026-11-22")
+    assert (t.date(), t.hour, t.minute) == (date(2026, 11, 22), 12, 30)

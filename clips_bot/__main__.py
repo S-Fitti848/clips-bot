@@ -4631,12 +4631,19 @@ def _animacion_armar(conn, tg: TelegramClient, chats: list[str], settings: Setti
                                + (f"; piezas nuevas US$ {piezas:.2f}" if piezas else "") + ".")
 
 
-def _hora_asinacio(settings: Settings, hora: str, ahora: datetime | None = None) -> datetime:
+def _hora_asinacio(settings: Settings, hora: str, ahora: datetime | None = None, fecha=None) -> datetime:
     """Cuándo se publica: `hora` de hoy; si ya pasó (un reintento que terminó tarde), en 30 min, nunca
-    después de las 23:55 y nunca al día siguiente (pisaría el de mañana)."""
+    después de las 23:55 y nunca al día siguiente (pisaría el de mañana). Con `fecha` (el día del video, que se
+    prepara la noche anterior: Santi, 2026-11-20), `hora` de ESE día si todavía falta."""
     from . import youtube
 
     hoy = (ahora or datetime.now(timezone.utc)).astimezone(AR)
+    if fecha:
+        dia = date.fromisoformat(str(fecha)[:10])
+        hh, mm = (int(x) for x in hora.split(":"))
+        t = datetime(dia.year, dia.month, dia.day, hh, mm, tzinfo=AR)
+        if t >= hoy + timedelta(minutes=20):
+            return t
     cuando = youtube.proximo_horario(hora, ahora=hoy)
     if cuando.date() != hoy.date():
         limite = hoy.replace(hour=23, minute=55, second=0, microsecond=0)
@@ -4705,7 +4712,8 @@ def _subir_facebook_asinacio(conn, settings: Settings, meta: dict, ahora: dateti
     clip_id = meta["clip_id"]
     if any(s["canal"] == ASINACIO_FB for s in db.subidas(conn, ("programada", "publicada"), clip_id=clip_id)):
         return ""
-    cuando = _hora_asinacio(settings, meta.get("hora") or horas_asinacio(settings)[0], ahora)
+    cuando = _hora_asinacio(settings, meta.get("hora") or horas_asinacio(settings)[0], ahora,
+                            (meta.get("animacion") or {}).get("fecha"))
     t = meta["textos"]
     texto = f"{t['titulo']}\n\n{t['descripcion']}\n\n{' '.join(t.get('hashtags') or [])}"
     try:
@@ -4734,15 +4742,29 @@ def _animacion_tick(conn, tg: TelegramClient, settings: Settings, ahora=None, ar
     if not cfg.activo:
         return
     ahora = ahora or datetime.now(AR)
-    hoy, hm = ahora.date().isoformat(), ahora.strftime("%H:%M")
-    if cfg.franja_libre_desde <= hm < cfg.franja_libre_hasta or not cfg.hora <= hm < "23:00":
-        return
+    hm = ahora.strftime("%H:%M")
+    noche = bool(getattr(cfg, "preparar_noche", False))
+    if noche:
+        # Santi (2026-11-20): el video de MAÑANA se prepara la noche anterior; si no salió de noche, otra chance a la
+        # mañana (hasta las 11:00) para su horario de ese mismo día
+        if hm >= cfg.hora_noche:
+            dia_video = ahora.date() + timedelta(days=1)
+        elif hm < cfg.franja_libre_desde or cfg.franja_libre_hasta <= hm < "11:00":
+            dia_video = ahora.date()
+        else:
+            return
+    else:
+        if cfg.franja_libre_desde <= hm < cfg.franja_libre_hasta or not cfg.hora <= hm < "23:00":
+            return
+        dia_video = ahora.date()
+    hoy = dia_video.isoformat()
+    marca_t = ahora.strftime("%Y-%m-%dT%H:%M") if noche else hm      # de noche se cruza la medianoche
     if db.get_valor(conn, ANIM_DIA) == hoy or db.hay_trabajo_pesado(conn, VENCIMIENTO_PESADO_S):
         return
     clave = f"{ANIM_ESTADO}:{hoy}"
     estado = json.loads(db.get_valor(conn, clave) or "{}")
     hechos, reint, fallas = estado.get("hechos", []), estado.get("reintento", {}), estado.get("fallas", {})
-    n = len(horas_asinacio(settings, ahora.date()))
+    n = int(getattr(cfg, "por_dia", 0) or 0) or len(horas_asinacio(settings, dia_video))
     from . import presupuesto
 
     if db.get_valor(conn, presupuesto.UN_VIDEO) == "1":      # Santi, 2026-11-18: el saldo no alcanza al 14/12
@@ -4751,20 +4773,21 @@ def _animacion_tick(conn, tg: TelegramClient, settings: Settings, ahora=None, ar
     if k is None:
         db.set_valor(conn, ANIM_DIA, hoy)
         return
-    if reint.get(str(k)) and hm < reint[str(k)]:
+    if reint.get(str(k)) and marca_t < reint[str(k)]:
         return
     turno = "animacion:diaria"
     if not db.tomar_turno(conn, db.RECURSO_PESADO, turno, maximo=1, vencimiento_s=VENCIMIENTO_PESADO_S):
         return
     chats = [c.strip() for c in cfg.chat.split(",") if c.strip()] or [DUENO]
     error, sin_candidato, tope_costo = "", False, False
-    vid = clip_asinacio(ahora.date(), k)
+    vid = clip_asinacio(dia_video, k)
     intento = (fallas.get(str(k), 0) + 1)
-    ultimo = intento >= ANIM_FALLAS_MAX or \
-        (ahora + timedelta(minutes=cfg.reintento_min)).strftime("%H:%M") >= cfg.reintento_hasta
+    ultimo = intento >= ANIM_FALLAS_MAX or (not noche and
+                                            (ahora + timedelta(minutes=cfg.reintento_min)).strftime("%H:%M")
+                                            >= cfg.reintento_hasta)
     bitacora.abrir(conn, vid if intento == 1 else f"{vid}#{intento}", "asinacio", "marcas")
     try:
-        (armar or _animacion_armar)(conn, tg, chats, settings, ahora.date(), k,
+        (armar or _animacion_armar)(conn, tg, chats, settings, dia_video, k,
                                     **({"ultimo": True} if ultimo else {}))
         bitacora.cerrar(conn, "programado" if cfg.subir else "entregado")
     except Exception as e:
@@ -4787,9 +4810,13 @@ def _animacion_tick(conn, tg: TelegramClient, settings: Settings, ahora=None, ar
         reint.pop(str(k), None)
     else:
         fallas[str(k)] = fallas.get(str(k), 0) + 1
-        otra = (ahora + timedelta(minutes=cfg.reintento_min)).strftime("%H:%M")
-        if not sin_candidato and fallas[str(k)] < ANIM_FALLAS_MAX and otra < cfg.reintento_hasta \
-                and (ahora + timedelta(minutes=cfg.reintento_min)).date() == ahora.date():
+        prox = ahora + timedelta(minutes=cfg.reintento_min)
+        otra = prox.strftime("%H:%M")
+        if noche and not sin_candidato and fallas[str(k)] < ANIM_FALLAS_MAX:
+            reint[str(k)] = prox.strftime("%Y-%m-%dT%H:%M")
+            texto = f"🎨 <b>Así Nació{cual}</b>: no salió ({error}). Reintento a las {otra}."
+        elif not sin_candidato and fallas[str(k)] < ANIM_FALLAS_MAX and otra < cfg.reintento_hasta \
+                and prox.date() == ahora.date():
             reint[str(k)] = otra
             texto = f"🎨 <b>Así Nació{cual}</b>: no salió ({error}). Reintento a las {otra}."
         elif tope_costo:          # Santi, 2026-11-18: solo una línea
@@ -5432,7 +5459,7 @@ def _programar_subida(conn, settings: Settings, meta: dict, canal: str, hora: st
             hh, mm = (int(x) for x in hora.split(":"))
             cuando = (hoy + timedelta(days=1)).replace(hour=hh, minute=mm, second=0, microsecond=0)
         elif canal == "animacion":
-            cuando = _hora_asinacio(settings, hora, hoy)
+            cuando = _hora_asinacio(settings, hora, hoy, (meta.get("animacion") or {}).get("fecha"))
         elif canal == "pequena_historia" and cuando.date() != hoy.date():
             # "Un día como hoy" publicado mañana está mal: si ya pasó la hora, sale hoy en 30 min,
             # y nunca después de las 23:55 (a las 23:32 "en 30 min" caía al día siguiente: lo
