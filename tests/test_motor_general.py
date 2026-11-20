@@ -194,3 +194,27 @@ def test_los_graficos_siempre_con_gente():
     assert d["fondo"]["tipo"] == "oficina"
     assert [el for el in d["elementos"] if el.get("tipo") == "personaje" and not el.get("multitud")]
     assert not [el for el in d["elementos"] if el.get("nombre") == "grafico_sube" and el.get("lib")]   # la pila no es de gráficos
+
+
+def test_una_sola_escena_de_solo_manos():
+    """Las 5 marcas del 20/11: firmar, contar billetes y armar desde arriba en el mismo video = "solo manos, sin gente".
+    Queda una (la de uso) y las demás pasan a su versión con gente."""
+    from clips_bot.animacion import escenas_lib as lib
+
+    escenas = [{"accion_escena": "firmar", "plano": "manos"}, {"accion_escena": "armar_mesa", "plano": "arriba"},
+               {"accion_escena": "uso_manos", "plano": "manos"}, {"accion_escena": "abrir_caja", "plano": "manos"},
+               {"accion_escena": "vender_tienda", "plano": "lejos"}]
+    out = lib.una_de_manos(escenas)
+    assert [lib.solo_manos(e) for e in out] == [False, False, True, False, False]
+    assert out[0]["accion_escena"] == "reunion" and out[3]["accion_escena"] == "vender_tienda"
+    assert out[1] == {"accion_escena": "armar_mesa", "plano": "lejos"}
+
+
+def test_festejar_aplaude_sin_brazos_vacios_arriba():
+    from clips_bot.animacion import acciones as ac
+
+    spec = {"frase": "x", "fondo": "tienda", "multitud": True, "objetos": [],
+            "actores": [{"rol": "empresario", "accion": "festejar", "carril": "izq"}]}
+    d, _ = ac.escena_accion(spec, 2.0, 3, anio=1950)
+    gestos = {g["gesto"] for el in d["elementos"] if el.get("tipo") == "personaje" for g in el.get("gestos", [])}
+    assert "festejar" not in gestos and "aplaudir_a" in gestos

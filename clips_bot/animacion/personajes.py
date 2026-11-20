@@ -84,6 +84,9 @@ GESTOS: dict[str, dict] = {
     "preocupar_a": {"izq": (150, 135), "der": (150, 135), "cejas": "triste"},
     "preocupar_b": {"izq": (140, 150), "der": (140, 150), "cejas": "triste"},
     "pagar": {"izq": (18, -95), "der": (80, -15)},
+    # festejar aplaudiendo (2026-11-20): los brazos levantados con las manos vacías la revisión los rechaza siempre
+    "aplaudir_a": {"izq": (34, -118), "der": (34, -118), "cejas": "arriba"},
+    "aplaudir_b": {"izq": (24, -96), "der": (24, -96), "cejas": "arriba"},
 }
 
 

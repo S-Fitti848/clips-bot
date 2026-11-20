@@ -62,7 +62,32 @@ ACCIONES_V4 = {"uso_manos", "inspiracion", "contar_billetes", "abrir_caja", "apr
 CON_V4 = False
 LIBRE = "libre"
 PLANOS = ("arriba", "manos", "lejos", "espaldas", "cerca", "frente")
-SIN_DECO = {"mesa_arriba"}       # fondos propios de la biblioteca (no los elige el guion)
+SIN_DECO = {"mesa_arriba"}
+
+# Como mucho UNA escena de solo manos por video (las 5 marcas del 20/11: firmar, contar billetes y armar desde arriba
+# en el mismo video y la revisión decía "solo manos, sin gente, no se entiende sin la voz"). Se queda la de uso (el
+# producto en uso); las demás pasan a su versión con gente, sin pedirle nada a Claude.
+SOLO_MANOS = {"uso_manos", "contar_billetes", "abrir_caja", "firmar"}
+CON_GENTE = {"firmar": ("reunion", "lejos"), "contar_billetes": ("reunion", "lejos"),
+             "abrir_caja": ("vender_tienda", "cerca"), "uso_manos": ("armar_mesa", "lejos"),
+             "armar_mesa": ("armar_mesa", "lejos")}
+
+
+def solo_manos(e: dict) -> bool:
+    acc = str(e.get("accion_escena") or "")
+    return acc in SOLO_MANOS or (acc == "armar_mesa" and str(e.get("plano") or "") in ("arriba", "manos"))
+
+
+def una_de_manos(escenas: list[dict], maximo: int = 1) -> list[dict]:
+    idx = [i for i, e in enumerate(escenas) if solo_manos(e)]
+    quedan = set(sorted(idx, key=lambda i: (escenas[i].get("accion_escena") != "uso_manos", i))[:maximo])
+    out = []
+    for i, e in enumerate(escenas):
+        if i in idx and i not in quedan:
+            acc, plano = CON_GENTE.get(str(e.get("accion_escena") or ""), ("armar_mesa", "lejos"))
+            e = {**e, "accion_escena": acc, "plano": plano}
+        out.append(e)
+    return out       # fondos propios de la biblioteca (no los elige el guion)
 
 
 def recetas() -> dict:
@@ -321,7 +346,9 @@ def _contador_ventas(plano, spec, dur, i, obj, rnd):
 
     hasta = numero_de_ventas(str(spec.get("frase") or ""))
     # Sin un número en la frase no hay contador (nada de cifras inventadas): solo la pila que crece.
-    els = ([{"tipo": "contador", "de": 0, "a": hasta, "dur": max(0.6, dur - 0.6), "desde": 0.15, "x": 540, "y": 640,
+    # llega a la cifra a la mitad de la escena: un cuadro a mitad de cuenta mostraba "190196" con la voz diciendo
+    # "200 000" (las 5 marcas del 20/11)
+    els = ([{"tipo": "contador", "de": 0, "a": hasta, "dur": max(0.6, min(1.3, dur * 0.45)), "desde": 0.15, "x": 540, "y": 640,
              "tam": 170 if hasta < 10 ** 7 else 130, "entrada": "rebote"}] if hasta else [])
     for k in range(12):          # la pila del objeto que crece
         t0 = round(0.2 + k * (dur - 0.5) / 12, 2)
@@ -348,11 +375,13 @@ def _estantes_llenan(plano, spec, dur, i, obj, rnd):
 
 
 def _objeto_gira(plano, spec, dur, i, obj, rnd):
-    els = [_el(obj, 540, 1060, escala=2.6, fase=0.0,
-               keyframes=[{"t": 0, "rotacion": -25, "escala": 2.0, "fase": 0.0},
-                          {"t": dur * 0.85, "rotacion": 335, "escala": 2.6, "fase": 1.0, "easing": "suave"},
-                          {"t": dur, "rotacion": 360, "escala": 2.7, "fase": 1.0}])]
-    els += ac.destellos(max(0.2, dur * 0.8), rnd, (540, 1060))
+    # apoyado en una mesa y girando apenas, nunca flotando en el aire (Santi, 2026-11-19: nada flota)
+    els = [_el("mesa", 540, 1300, escala=3.4, decorado=True, en_medio=True),
+           _el(obj, 540, 1180, escala=1.9, fase=0.0, color=True,
+               keyframes=[{"t": 0, "rotacion": -6, "escala": 1.75, "fase": 0.0},
+                          {"t": dur * 0.85, "rotacion": 6, "escala": 1.95, "fase": 1.0, "easing": "suave"},
+                          {"t": dur, "rotacion": 6, "escala": 1.95, "fase": 1.0}])]
+    els += ac.destellos(max(0.2, dur * 0.8), rnd, (540, 1080))
     return {"elementos": els, "fondo": "escenario", "camara": [{"t": 0, "zoom": 1.0}, {"t": dur, "zoom": 1.15, "easing": "suave"}],
             "sfx": [(round(dur * 0.8, 2), "ding")], "actores": []}
 

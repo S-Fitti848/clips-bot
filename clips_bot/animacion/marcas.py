@@ -1961,7 +1961,7 @@ def linea_de_tiempo(d: dict, inicios: list[float], fin: float, palabras: list,
 
     presente = presente or _date.today().year
     segs = segmentos(d)
-    escenas_d = d.get("escenas") or []
+    escenas_d = _lib.una_de_manos(d.get("escenas") or [])     # como mucho una escena de solo manos (2026-11-20)
     durs = cortes(inicios, fin)
     escenas, sfx, t = [], [], 0.0
     anio_actual, pasado = presente, False

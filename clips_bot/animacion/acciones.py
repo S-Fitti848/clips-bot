@@ -539,7 +539,7 @@ class Escena:
                        {"t": t + 0.62, "y": PISO, "easing": "entrada"},
                        {"t": t + 0.7, "estirar": 0.84, "cabeza": 4, "easing": "salida"},          # aterriza aplastado
                        {"t": t + 0.86, "estirar": 1.0, "cabeza": 0, "easing": "rebote"}]
-                gestos += [{"t": t + 0.1, "gesto": "festejar"}, {"t": t + 0.72, "gesto": "explicar"}]
+                gestos += [{"t": t + 0.1, "gesto": "aplaudir_a"}, {"t": t + 0.72, "gesto": "aplaudir_b"}]
                 self.sfx.append((t + 0.14, "boing"))
                 t += 0.95
                 saltos += 1
@@ -597,7 +597,7 @@ class Escena:
             caras += [{"t": t0, "cara": "sorprendido"}, {"t": t0 + 0.6, "cara": "risa"}]
             respira(t0 + 0.8, fin)
         elif accion == "festejar":
-            gestos += _alternar("festejar", "sorpresa", t0, fin, 0.32)
+            gestos += _alternar("aplaudir_a", "aplaudir_b", t0, fin, 0.16)
             caras.append({"t": t0, "cara": "risa"})
             t = t0
             while t + 0.5 <= fin:
@@ -773,7 +773,7 @@ class Escena:
             gestos, kf = [{"t": 0, "gesto": "reposo"}], []
             t0, t = 0.1 + 0.07 * k, 0.1 + 0.07 * k
             if accion == "festejar":
-                gestos += _alternar("festejar", "sorpresa", t0, self.dur, 0.35)
+                gestos += _alternar("aplaudir_a", "aplaudir_b", t0, self.dur, 0.18)
             while t < self.dur:
                 dy = -26 if (accion == "saltar" and int((t - t0) / 0.3) % 2 == 0) else 0
                 kf.append({"t": round(t, 3), "y": PISO - 150 + dy, "cabeza": 4 if int(t / 0.35) % 2 else -4,
@@ -1814,6 +1814,10 @@ def escena_accion(spec: dict, dur: float, i: int, primera: bool = False, tono: f
     e.elementos.sort(key=lambda el: 0 if (el.get("nombre") in fondo_cosas or el.get("decorado")) and not el.get("keyframes") else
                      1 if el.get("tipo") == "personaje" else 2)
     e.elementos += linea          # la cinta adelante de la gente (les tapa las piernas: trabajan detrás de la línea)
+    # las manos son de piel, también en el pasado: con el sepia parecían de madera o de metal (Nintendo, 2026-11-19)
+    for el in e.elementos:
+        if el.get("nombre") == "mano" and not el.get("color"):
+            el["color"] = True
     elementos = e.fondo_el + e.elementos
     texto = str(spec.get("texto_pantalla") or "").strip()
     if texto:
