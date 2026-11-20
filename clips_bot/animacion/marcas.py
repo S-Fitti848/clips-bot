@@ -2056,6 +2056,9 @@ def linea_de_tiempo(d: dict, inicios: list[float], fin: float, palabras: list,
             anio_r = str(anio_esc) if anio_esc else (next((x for x in partes if x.isdigit()), "") or str(anio_actual))
             lugar_r = next((x for x in partes if not x.isdigit()), "") or ultimo_lugar
             ultimo_lugar = lugar_r or ultimo_lugar
+            # si el subtítulo ya dice el año, el rótulo solo dice el lugar (AN-11: "1923 escrito dos veces", Pepsi)
+            if anio_r and anio_r in str(e.get("frase") or "") and lugar_r:
+                anio_r = ""
             vis = {**vis, "rotulo": " · ".join(x for x in (anio_r, lugar_r) if x)}
         if v3 and k == 0 and opciones:
             # el gancho: 2 o 3 cortes de ~1 s con la imagen imposible (gancho_v3); si la frase dura más, sigue la escena

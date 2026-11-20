@@ -303,20 +303,28 @@ def _vender_tienda(plano, spec, dur, i, obj, rnd):
 
 
 def _crisis(plano, spec, dur, i, obj, rnd):
-    """De noche, en la oficina: una persona detrás del escritorio se agarra la cabeza; sobre el escritorio el papel de
-    las ventas y el producto olvidado; al lado de la cabeza, el gráfico que se viene abajo."""
+    """La PÉRDIDA que se ve (Santi, 2026-11-20: "triste o devastado: cabeza baja, manos en la cara"): de noche en la
+    oficina, la persona de frente detrás del escritorio con la cabeza baja y las manos en la cara; sobre el escritorio
+    el papel de las ventas y el producto; al lado, el gráfico que se viene abajo."""
     e = ac.Escena(dur, semilla=i)
-    # mira el papel de las ventas que tiene en las manos (con las manos en la nuca se leía "relajado", 2026-11-20)
-    _persona(e, _rol(spec, 0, "empresario"), "usar", 420, "devastado", 0)
-    mano = _de_perfil(e, 0, 1, "p_sostener_a", "p_sostener_b", dur, 0.7)
-    els = list(e.elementos) + [_el("papel_firma", mano[0] + 10, mano[1] - 20, escala=0.7, forma=1, en_mano=True,
-                                   rotacion=-70)]
-    els += [_mesa(540), _el(obj, 610, ac.PISO - 163 - 75, escala=esc_de(obj, 150), color=True)]
+    _persona(e, _rol(spec, 0, "empresario"), "preocuparse", 420, "devastado", 0)
+    el = e.actores[0]
+    for clave in ("objeto_rol", "manos"):
+        el.pop(clave, None)
+    el["lleva"] = "_"
+    el["gestos"] = [{"t": 0, "gesto": "cara_manos"}] + [
+        {"t": round(0.6 + k * 0.7, 2), "gesto": "cara_manos_b" if k % 2 == 0 else "cara_manos"}
+        for k in range(int(dur / 0.7))]
+    el["caras"], el["cara"] = [{"t": 0, "cara": "devastado"}], "devastado"
+    y_mesa = ac.PISO - 226 * 0.72
+    els = list(e.elementos) + [_mesa(470),
+                               _el("papel_firma", 400, y_mesa - 6, escala=0.6, forma=1),
+                               _el(obj, 560, y_mesa - 75, escala=esc_de(obj, 150), color=True)]
     t_g = 0.3
     els.append(_el("grafico_baja", 790, Y_CABEZA - 60, escala=0.75, desde=t_g,
                    keyframes=[{"t": t_g, "escala": 0.2}, {"t": t_g + 0.3, "escala": 0.75, "easing": "rebote"}]))
     return {"elementos": els, "fondo": "oficina", "momento": "noche",
-            "camara": _cam(dur, (560, Y_MEDIO, MEDIO), (560, Y_CABEZA + 40, 2.2)),
+            "camara": _cam(dur, (560, Y_MEDIO, MEDIO), (480, Y_CABEZA + 60, 2.0)),
             "sfx": [(t_g, "boing")] + e.sfx, "actores": e.actores}
 
 

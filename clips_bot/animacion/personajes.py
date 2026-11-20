@@ -740,7 +740,7 @@ class Personaje:
                          f'<path d="M{cx - rx - 2} {n(cy - ry * (0.75 if s < 0 else 0.15))} '
                          f'L{cx + rx + 2} {n(cy - ry * (0.15 if s < 0 else 0.75))}" {trazo(ancho=P.TRAZO_FINO)}/>')
             elif e.cejas == "triste":
-                afuera, adentro = (cx - s * rx, cx + s * rx)
+                afuera, adentro = (cx + s * rx, cx - s * rx)     # el párpado cae hacia AFUERA (estaba al revés)
                 p.append(f'<path d="M{afuera - s * 4} {cy - ry - 4} L{adentro + s * 4} {cy - ry - 4} '
                          f'L{adentro + s * 4} {n(cy - ry * 0.7)} L{afuera - s * 4} {n(cy - ry * 0.05)} Z" fill="{self.piel}"/>'
                          f'<path d="M{afuera} {n(cy - ry * 0.05)} L{adentro} {n(cy - ry * 0.7)}" {trazo(ancho=P.TRAZO_FINO)}/>')
