@@ -278,7 +278,7 @@ _BASE_POR_FRASE = (
     # antes que la fábrica: "Guth, de la fábrica Loft, la compró" es un trato, no una fábrica (Pepsi, 2026-11-20)
     ("apreton_manos", r"trato|acuerdo|socio|firm|\b(la|lo) compr[oó]|compr[oó] (la|el) (empresa|marca|f[oó]rmula|"
                       r"compa[ñn][ií]a)|invers|contrato|vendi[oó] la|nuevo due[ñn]o|acreedor"),
-    ("taller_inventor", r"imagin|se le ocurri|pens[oó] en|tuvo la idea|so[ñn][oó] con"),
+    ("taller_inventor", r"imagin|se le ocurri|pens[oó] en|tuvo la idea|so[ñn][oó] con|bautiz|le puso"),
     ("fabrica_produce", r"f[aá]brica|produc|fabric|embotell|en serie|planta|l[ií]nea"),
     ("vender_tienda", r"vend|tienda|almac[eé]n|negocio|mostrador|kiosco|supermercado|comprar"),
     ("taller_inventor", r"invent|idea|cre[oó]|prob[oó]|laborator|taller|f[oó]rmula|receta|descubr|empez|naci[oó]|"
@@ -298,11 +298,15 @@ LUGARES_BASE = {"crisis": {"oficina", "casa"},
 
 def base_para_frase(frase: str, fallo: str = "", parte: str = "") -> str:
     """La escena de la biblioteca base que mejor cuenta la frase (sin Claude), distinta de la que falló."""
-    if parte == "final" and fallo != "cierre_tito":
-        return "cierre_tito"
+    # lo que dice la frase gana; el cierre con Tito, recién si la última frase no cuenta algo concreto (Crayola,
+    # 2026-11-20: "Alice Binney lo bautizó" terminó en Tito)
+    if parte == "final" and fallo != "cierre_tito" and re.search(r"as[ií] naci|hoy", frase or "", re.I):
+        return "cierre_tito"          # el remate del canal ("Y así nació…", "Hoy…")
     for accion, rx in _BASE_POR_FRASE:
         if accion != fallo and re.search(rx, frase or "", re.I):
             return accion
+    if parte == "final" and fallo != "cierre_tito":
+        return "cierre_tito"
     por_parte = _POR_PARTE.get(parte, "")
     if por_parte and por_parte != fallo:
         return por_parte

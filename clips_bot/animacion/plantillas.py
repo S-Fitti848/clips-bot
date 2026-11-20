@@ -274,6 +274,14 @@ def _vender_tienda(plano, spec, dur, i, obj, rnd):
     enfrentados, las manos en el producto), la caja registradora y más producto sobre el mostrador. Sin billetes: con
     un billete en la mano se leía como un "$" en el pecho (2026-11-20)."""
     e = ac.Escena(dur, semilla=i)
+    # el que vende es el que tiene rol de vendedor; el protagonista que compra va del lado del cliente (Gillette,
+    # 2026-11-20: King Gillette, que sufría con las navajas caras, quedaba atrás del mostrador)
+    gente = list(spec.get("actores") or [])
+    vende = next((k for k, a in enumerate(gente) if str(a.get("rol") or "") in _VENDEN), None)
+    if vende not in (None, 0):
+        spec = {**spec, "actores": [gente[vende]] + gente[:vende] + gente[vende + 1:]}
+    elif vende is None and gente:
+        spec = {**spec, "actores": [{"rol": "vendedor", "genero": "hombre"}] + gente[:1]}
     _persona(e, _rol(spec, 0, "vendedor", "hombre"), "vender", 780, "feliz", 0)
     m_v = _de_perfil(e, 0, -1, "p_dar", "p_dar", dur)
     _persona(e, _rol(spec, 1, "cliente", "mujer"), "comprar", 450, "feliz", 1)
@@ -340,6 +348,9 @@ def _exito_multitud(plano, spec, dur, i, obj, rnd):
             "sfx": e.sfx + [(0.1, "aplausos"), (round(dur * 0.5, 2), "caja_registradora")], "actores": e.actores}
 
 
+_VENDEN = {"vendedor", "vendedora", "cajero", "cajera"}
+# lo que se usa DIBUJANDO (crayones, lápices, pintura): sobre un papel en la mesa (Crayola, 2026-11-20)
+_SE_DIBUJA = _re.compile(r"cray[oó]n|crayola|l[aá]pi[cz]|pintur|dibuj|colore|marcador|tiza|acuarel|plastilina", _re.I)
 # lo que se usa llevándoselo a la boca (una bebida o una comida): en uso, se toma o se come
 _SE_TOMA = _re.compile(r"bebid|gaseos|refresc|cerveza|vino|caf[eé]|\bt[eé]\b|jugo|leche|agua|tomar|tom[oa]ba", _re.I)
 _SE_COME = _re.compile(r"comid|aliment|golosin|chocolat|galle|snack|helad|caramel|hamburgues|pizza|cereal|comer|com[ií]a",
@@ -404,7 +415,14 @@ def _producto_en_uso(plano, spec, dur, i, obj, rnd):
     comer = bool(_SE_COME.search(texto) or _A_LA_CARA.search(texto)) and not _SE_TOMA.search(texto)
     boca = comer or bool(_SE_TOMA.search(texto))
     _persona(e, _rol(spec, 0, "joven", "mujer"), "usar", 360, "feliz", 0)
-    if boca:
+    dibuja = bool(_SE_DIBUJA.search(texto)) and not boca
+    if dibuja:      # dibuja sobre el papel de la mesa con el producto en la mano
+        m1 = _de_perfil(e, 0, 1, "p_escribir_a", "p_escribir_b", dur, 0.22)
+        y_mesa = ac.PISO - 226 * 0.62
+        els_p = [_el("papel_firma", m1[0] + 10, y_mesa - 8, escala=0.7, forma=1),
+                 _agarrado(obj, m1, 110, quien=e.actores[0],
+                           keyframes=[{"t": 0, "rotacion": 35}, {"t": dur, "rotacion": 45, "easing": "suave"}])]
+    elif boca:
         _de_perfil(e, 0, 1, "p_sostener_a", "p_sostener_a", dur, 9.0)
         els_p = _a_la_boca(e, 0, obj, dur, comer)
     else:

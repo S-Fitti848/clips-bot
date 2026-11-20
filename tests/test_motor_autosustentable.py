@@ -240,3 +240,17 @@ def test_revision_repetible_promedia_y_pide_una_tercera(monkeypatch):
     probs = [{"cuadro": 3, "arreglo": "cambiar_accion", "que": "a"}]
     _, problemas, _ = mk.combinar_revisiones([(probs, f("AN-02")), ([], f("AN-02"))])
     assert problemas == probs                                    # el cuadro 3 lo marcó la mitad: se corrige
+
+
+def test_tienda_crayones_y_ultima_frase():
+    """Gillette y Crayola (2026-11-20)."""
+    d = _armar("vender_tienda", fondo="tienda", actores=[{"rol": "fundador", "genero": "hombre"},
+                                                          {"rol": "vendedor", "genero": "hombre"}])
+    gente = [el for el in d["elementos"] if el.get("tipo") == "personaje"]
+    vendedor = max(gente, key=lambda el: float(el["x"]))         # detrás del mostrador, a la derecha
+    assert vendedor["perfil"] == -1 and len(gente) == 2
+    d = _armar("producto_en_uso", fondo="casa", _categoria="juguetes", prota="botella", frase="pintaban con crayones")
+    p0 = next(el for el in d["elementos"] if el.get("tipo") == "personaje")
+    assert p0["gestos"][0]["gesto"].startswith("p_escribir")
+    assert rz.base_para_frase("Alice Binney lo bautizó", parte="final") == "taller_inventor"
+    assert rz.base_para_frase("Y así siguió", parte="final") == "cierre_tito"
