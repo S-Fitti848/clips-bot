@@ -3,6 +3,30 @@
 Lista corta de lo que está en curso. El detalle y la historia van en CLAUDE.md (§1, §9, §10).
 Se actualiza al terminar cada tarea.
 
+## PLAN DE ASÍ NACIÓ hasta el 15/12 (Santi, 2026-11-20)
+
+Este mes es para dejar el motor perfecto; el **15/12 arranca la producción**. Así Nació sigue pausado hasta entonces.
+Pruebas con un tope de **US$ 1 por día** aparte de la producción (`claude.TOPE_PRUEBAS_DIA`; al llegar, frena hasta el
+día siguiente y avisa en una línea); render local siempre que se pueda. **Lunes a las 10:00: 5 líneas a Santi de cómo
+vamos** (tarea programada `asinacio-plan-lunes`).
+
+| semana | meta | estado |
+|---|---|---|
+| 20/11 – 22/11 | manos y apretón | en curso: manos nuevas (v1.46.0) en todos lados; Pepsi tito5 18/19 (US$ 0,04); laboratorio, firma y apretón de cerca rehechos, hoja mandada el 20/11. Falta: OK de Santi a la hoja → video completo con la voz de Tito |
+| 23/11 – 29/11 | escenas que faltan y expresiones | |
+| 30/11 – 06/12 | gancho y viaje al pasado | |
+| 07/12 – 10/12 | prueba final con 10 marcas | |
+| **10/12** | **decisión**: si 8 de 10 pasan 15/19 con menos de US$ 0,60 por video, queda listo para el 15/12 | |
+
+## Pequeña Historia: tecnología todos los días (2026-11-20)
+
+- [x] El 20/11 el de tecnología (Windows 1.0) SÍ se armó y se mandó a las 04:26, pero retenido por el estándar: la
+      revisión final tomó como "foto borrosa / de otra cosa" una tarjeta «MELAZA» (clave de otra frase). Arreglado: las
+      tarjetas de la revisión usan solo la clave de su frase o el año y no se juzgan como foto (PH-02/PH-12).
+- [x] Orden: hechos del día → banco → recién ahí el mínimo de fotos relajado; los reintentos no arrancan después de las
+      16:30 (llega para aprobar antes de las 18:00).
+- [ ] Mirar el 21/11 que llegue a la madrugada y que no quede retenido por una tarjeta.
+
 ## Pequeña Historia: fotos después del Short de Colón (2026-11-17, v1.33.0)
 
 - [x] No se publica sola (`efemerides.publicar_sola: false`): todo llega con ✅ Publicar / ❌ Cancelar.

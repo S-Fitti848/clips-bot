@@ -143,6 +143,7 @@ def puntaje(canal: str, fallas: list[dict]) -> tuple[int, int]:
 
 # Reglas que frenan el video aunque el resto se cumpla (Santi, 2026-11-17, el Short de Colón): una sola sin cumplir
 # en la revisión del video terminado y no se publica solo.
+TARJETA_EXENTA = {"PH-02", "PH-12"}
 BLOQUEANTES = {"pequena_historia": {"PH-02", "PH-10", "PH-11", "PH-12", "PH-13"}}
 
 
@@ -436,6 +437,7 @@ def revisar_y_reemplazar(revisor, salida: Path, plan: list, g, cortes: list[dict
     if not revisado:
         return out
     malas: set[int] = set()
+    con_tarjeta: set[int] = set()   # cortes que ya pasaron a tarjeta: no se juzgan como foto
     rk = g.rankings()
     for _vuelta in range(VUELTAS_REEMPLAZO):
         de_foto = [f for f in fallas if f["id"] in REGLAS_FOTO and 1 <= int(f.get("cuadro") or 0) <= len(plan)]
@@ -458,6 +460,10 @@ def revisar_y_reemplazar(revisor, salida: Path, plan: list, g, cortes: list[dict
                 como = "una tarjeta de texto"
             if nueva is None:
                 continue
+            if como == "una tarjeta de texto":
+                con_tarjeta.add(k)
+            else:
+                con_tarjeta.discard(k)
             plan[k] = (i, nueva, s_)
             cambiados[k] = f"corte {k + 1} ({f['id']}): {como}"
         if not cambiados:
@@ -477,6 +483,9 @@ def revisar_y_reemplazar(revisor, salida: Path, plan: list, g, cortes: list[dict
                   if 1 <= int(x.get("cuadro") or 0) <= len(orden) and x["id"] in REGLAS_FOTO] if ok else []
         fallas = [x for x in fallas if not (x["id"] in REGLAS_FOTO and int(x.get("cuadro") or 0) - 1 in cambiados)]
         fallas += nuevas
+    # Santi, 2026-11-20 (Windows 1.0): una tarjeta con la clave de su frase es el último recurso de la regla (k); su
+    # fondo difuminado a propósito no es una "foto borrosa" (PH-12) ni una foto de otra cosa (PH-02).
+    fallas = [x for x in fallas if not (x["id"] in TARJETA_EXENTA and int(x.get("cuadro") or 0) - 1 in con_tarjeta)]
     out["fallas"] = fallas
     return out
 

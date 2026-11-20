@@ -211,6 +211,7 @@ def escena_inspiracion(dur: float, fuente: str, pieza: str, producto: str, seed:
 # ---- la plata con acciones reales (Santi, 2026-11-16: "nada de monedas con $ gigantes en las manos: parece que la
 # están lavando") ------------------------------------------------------------------------------------------------
 PLATA = ("contar_billetes", "abrir_caja", "apreton_manos", "firmar")
+ZOOM_APRETON_MEDIO = 1.6    # el plano medio del apretón, de la cintura para arriba (era 1,22: se veían enteros y chicos)
 ESC_APRETON_MEDIO = 0.5      # el apretón del plano medio (era 0,26: las manos quedaban chiquitas)
 
 
@@ -228,6 +229,7 @@ def escena_plata(tipo: str, dur: float, manga: str = "", seed: int = 0, spec: di
     rnd = random.Random(seed)
     els: list[dict] = []
     sfx: list[tuple[float, str]] = []
+    cam_medio = 190.0
     mesa = _el("mesa", X0, Y0 + 190, escala=3.4, decorado=True, en_medio=True)
     if tipo == "contar_billetes":      # de una pila a la otra, de a uno, con la mano que lo pasa
         n_ = max(4, min(8, int(dur / 0.4)))
@@ -304,6 +306,7 @@ def escena_plata(tipo: str, dur: float, manga: str = "", seed: int = 0, spec: di
             ys_mano.append(ac.PISO + s_ * ly)
             ropas.append(el.get("cambios", {}).get("ropa") or pj.ropa)
         y_mano = sum(ys_mano) / len(ys_mano)
+        cam_medio = (y_mano - 960 - 170)         # la cámara del plano medio: las manos abajo del centro, caras arriba
         els += e_.elementos
         ropas += ["#3d4f7a", "#5a3d2b"]
         # la mesa y el contrato van DELANTE de los dos (sin `decorado`, que los mandaba detrás de los personajes)
@@ -346,7 +349,11 @@ def escena_plata(tipo: str, dur: float, manga: str = "", seed: int = 0, spec: di
         els += _manos(izq, der, manga)
     if tipo == "apreton_manos":    # plano medio de las dos personas → corte seco al primer plano del apretón
         t_c = round(dur * 0.45, 3)
-        cam = [_k(0, zoom=1.22, y=190), _k(t_c - 0.02, zoom=1.27, y=190, easing="suave"),
+        # Santi, 2026-11-20 (Pepsi): "manos chiquitas, brazos que no se conectan": el plano medio va CERCA de los dos
+        # (de la cintura para arriba), así las manos y los brazos se leen de un vistazo.
+        y_m = round(cam_medio, 1)
+        cam = [_k(0, zoom=ZOOM_APRETON_MEDIO, y=y_m), _k(t_c - 0.02, zoom=ZOOM_APRETON_MEDIO + 0.06, y=y_m,
+                                                           easing="suave"),
                _k(t_c, zoom=1.35, y=Y0 - 960, easing="escalon"), _k(dur, zoom=1.45, y=Y0 - 960, easing="suave")]
     else:
         cam = [_k(0, zoom=1.0), _k(dur, zoom=1.06, easing="suave")]

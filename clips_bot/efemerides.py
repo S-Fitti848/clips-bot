@@ -2548,8 +2548,11 @@ def fabrica_tarjetas(g: Guion, anio: int, carpeta: Path, foto_de, agregar):
         except (IndexError, AttributeError):
             pass
 
-    def nueva(i: int) -> int | None:
-        textos = [texto_tarjeta(g, i, anio, solo_clave=True), str(anio)] + [c.upper() for c in g.claves]
+    def nueva(i: int, propia: bool = False) -> int | None:
+        # `propia` (2026-11-20, la tarjeta «MELAZA» en la frase de Paint): solo la clave de ESA frase o el año, nunca
+        # la clave de otra frase (la revisión final la marca como PH-02).
+        textos = [texto_tarjeta(g, i, anio, solo_clave=True), str(anio)] + (
+            [] if propia else [c.upper() for c in g.claves])
         texto = next((t for t in textos if t and t not in usados), None)
         bases = [x for x in dict.fromkeys(generales(g) + [x for r in g.rankings() for x in r])
                  if x not in set(g.tarjetas_fotos or []) and x != VIDEO]
@@ -3102,6 +3105,16 @@ def proponer(wiki: Wiki, cliente, dia: date, carpeta: Path, avisar=log.info,
         prop = intentar(i, articulo)
         if prop is not None:
             return prop
+    # Santi, 2026-11-20: tecnología sale todos los días; si los hechos del día no pasan las fotos, el banco ANTES que
+    # bajar el mínimo de fotos reales (el 20/11 salió Windows 1.0 con 51 % y una tarjeta mal, y quedó retenido).
+    if tema == "tecnologia" and banco and not elegidos_banco and usar_banco("los de hoy no llegaron a las fotos"):
+        guiones = 0
+        for i, articulo in list(elegidos_banco):
+            if guiones >= MAX_GUIONES:
+                break
+            prop = intentar(i, articulo)
+            if prop is not None:
+                return prop
     if insuf and not respaldo and aceptar_relajado(insuf[0], avisar):
         err, e, fuente, i = insuf
         n = notas.get(i) or {}
@@ -3122,14 +3135,6 @@ def proponer(wiki: Wiki, cliente, dia: date, carpeta: Path, avisar=log.info,
         return Propuesta(fecha=dia.isoformat(), evento=e.a_dict(),
                          fotos=[f.a_dict() for f in pocas.pool], reserva=[],
                          guion=pocas.guion.a_dict(), fuente=fuente[:20000], descartes=descartes)
-    if tema == "tecnologia" and banco and not elegidos_banco and usar_banco("los de hoy no llegaron a las fotos"):
-        guiones = 0
-        for i, articulo in list(elegidos_banco):
-            if guiones >= MAX_GUIONES:
-                break
-            prop = intentar(i, articulo)
-            if prop is not None:
-                return prop
     # Con la causa de cada uno: el 28/09 decía "no llegó a 6 fotos" cuando lo que falló fue el guion.
     raise SinFotosReales(f"Ninguno de los {len(elegidos)} hechos elegidos salió ({guiones} intentados): "
                          "no armo un video malo. " + " | ".join(fallas)[:600])
@@ -4104,7 +4109,8 @@ def hacer_video(p: Propuesta, settings, carpeta: Path, avisar=log.info, conn=Non
         tarjeta_nueva = fabrica_tarjetas(g, e.anio, carpeta, lambda k: Foto.de_dict(p.fotos[k]),
                                          lambda f: (p.fotos.append(f.a_dict()), len(p.fotos) - 1)[1])
         revision_final = calidad.revisar_y_reemplazar(
-            revisor, salida, plan, g, cortes_de(plan, p), e, p.local or {}, armar, tarjeta_nueva, avisar)
+            revisor, salida, plan, g, cortes_de(plan, p), e, p.local or {}, armar,
+            lambda i: tarjeta_nueva(i, propia=True), avisar)
         salida = Path(revision_final.get("salida") or salida)
     for problema in chequear_audio(salida):
         avisar(f"⚠️ audio: {problema}")

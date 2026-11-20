@@ -197,10 +197,10 @@ def test_la_diaria_con_gemini_caido_no_avisa_y_reintenta_en_una_hora(base, monke
     monkeypatch.setattr(musica, "llenar", lambda *a, **k: 0)
     monkeypatch.setattr(m, "_efe_proponer", lambda *a: m.ErrorPasajero("No salió: 503"))
     monkeypatch.setattr(m, "_efe_horas_que_faltan", lambda horas, ahora: [])   # ya pasaron 7 y 10
-    monkeypatch.setattr(m, "_en_un_rato", lambda s, ahora: "17:42")
+    monkeypatch.setattr(m, "_en_un_rato", lambda s, ahora: "15:42")
     m.efemeride_del_dia(s)
     assert mensajes == []
-    assert json.loads(db.get_valor(c, m.EFE_REINTENTO))["horas"] == ["17:42"]
+    assert json.loads(db.get_valor(c, m.EFE_REINTENTO))["horas"] == ["15:42"]
 
 
 def test_el_reintento_sigue_cada_hora_hasta_el_tope_y_recien_ahi_avisa(base, monkeypatch):
@@ -209,14 +209,15 @@ def test_el_reintento_sigue_cada_hora_hasta_el_tope_y_recien_ahi_avisa(base, mon
     monkeypatch.setattr(m, "_efe_proponer",
                         lambda *a: llamadas.append(1) or m.ErrorPasajero("No salió: 503"))
     db.set_valor(c, m.EFE_REINTENTO, json.dumps({
-        "fecha": _hoy(0).date().isoformat(), "chats": ["-100"], "horas": ["21:00"],
+        "fecha": _hoy(0).date().isoformat(), "chats": ["-100"], "horas": ["15:00"],
         "error": "x", "intentos": ["05:00", "07:00", "10:00"]}))
-    m._efe_reintento_tick(c, tg, s, ahora=_hoy(21))
-    assert mensajes == [] and json.loads(db.get_valor(c, m.EFE_REINTENTO))["horas"] == ["22:00"]
-    m._efe_reintento_tick(c, tg, s, ahora=_hoy(22))       # 23:00 ya se pasa del tope
+    m._efe_reintento_tick(c, tg, s, ahora=_hoy(15))
+    assert mensajes == [] and json.loads(db.get_valor(c, m.EFE_REINTENTO))["horas"] == ["16:00"]
+    # 17:00 ya se pasa del tope de la efeméride (16:30: tiene que llegar antes de las 18:00, Santi 2026-11-20)
+    m._efe_reintento_tick(c, tg, s, ahora=_hoy(16))
     assert len(llamadas) == 2 and db.get_valor(c, m.EFE_REINTENTO) is None
     chat, texto = mensajes[-1]
-    assert chat == "-100" and "hoy no hay propuesta" in texto and "21:00, 22:00" in texto
+    assert chat == "-100" and "hoy no hay propuesta" in texto and "15:00, 16:00" in texto
 
 
 def test_un_error_que_no_es_pasajero_no_suma_reintentos(base, monkeypatch):

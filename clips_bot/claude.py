@@ -324,6 +324,69 @@ def prueba_sin_claude() -> None:
 
     if gemini.ORIGEN == gemini.PRUEBA and os.environ.get("CLIPS_CLAUDE_REAL") != "1":
         raise ClaudeError("prueba sin Claude real (Santi, 2026-11-18): para usarlo, CLIPS_CLAUDE_REAL=1")
+    if gemini.ORIGEN == gemini.PRUEBA:
+        gastado = gasto_pruebas_hoy()
+        if gastado >= TOPE_PRUEBAS_DIA:
+            _avisar_tope_pruebas(gastado)
+            raise TopePruebas(f"las pruebas de hoy ya gastaron US$ {gastado:.2f} (tope US$ {TOPE_PRUEBAS_DIA:.2f} "
+                              "por día, Santi 2026-11-20): sigue mañana")
+
+
+# Santi, 2026-11-20: las pruebas (origen "prueba") tienen un tope de US$ 1 por día, aparte de la producción. Al llegar,
+# todo pedido de prueba se frena hasta el día siguiente (AR) y se avisa a Santi en una línea.
+TOPE_PRUEBAS_DIA = 1.0
+
+
+class TopePruebas(ClaudeError):
+    """Las pruebas del día llegaron al tope."""
+
+
+def gasto_pruebas_hoy(conn=None, dia: str | None = None) -> float:
+    """US$ de Claude (búsqueda web incluida) con origen "prueba" en el día AR."""
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    from . import db
+    from .config import DB_PATH
+
+    dia = dia or datetime.now(ZoneInfo("America/Argentina/Buenos_Aires")).date().isoformat()
+    propia = conn is None
+    try:
+        conn = conn or db.connect(DB_PATH)
+        filas = conn.execute("SELECT modelo, entrada, salida FROM gemini_uso WHERE clave = 'claude' AND dia = ? "
+                             "AND origen = 'prueba'", (dia,)).fetchall()
+    except Exception:          # sin base (tests, otra compu): no frena
+        return 0.0
+    finally:
+        if propia and conn is not None:
+            conn.close()
+    return round(sum(costo(m, e or 0, s or 0) for m, e, s in filas), 4)
+
+
+def _avisar_tope_pruebas(gastado: float) -> None:
+    """Una línea a Santi, una vez por día."""
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    from . import db
+    from .config import DB_PATH, env
+
+    dia = datetime.now(ZoneInfo("America/Argentina/Buenos_Aires")).date().isoformat()
+    try:
+        conn = db.connect(DB_PATH)
+        try:
+            if db.get_valor(conn, "tope_pruebas_avisado") == dia:
+                return
+            db.set_valor(conn, "tope_pruebas_avisado", dia)
+        finally:
+            conn.close()
+        from .telegram import TelegramClient
+
+        TelegramClient(env("TELEGRAM_BOT_TOKEN")).send_message(
+            "8668060171", f"🔧 Claude Code: las pruebas llegaron al tope de hoy (US$ {gastado:.2f} de "
+                          f"{TOPE_PRUEBAS_DIA:.2f}); sigo mañana.")
+    except Exception:
+        log.warning("no pude avisar el tope de pruebas", exc_info=True)
 
 
 class ConRespaldo:

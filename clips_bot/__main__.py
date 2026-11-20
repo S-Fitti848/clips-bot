@@ -4846,6 +4846,15 @@ def _efe_horas_que_faltan(horas, ahora: datetime) -> list[str]:
     return sorted(out)
 
 
+# Santi, 2026-11-20: la de tecnología tiene que llegar para aprobar antes de las 18:00; el último reintento arranca a
+# esta hora como mucho (una propuesta tarda ~30-40 min en la Pi).
+EFE_ULTIMO_REINTENTO = "16:30"
+
+
+def _antes_del_tope_efe(horas: list[str]) -> list[str]:
+    return [h for h in horas if h <= EFE_ULTIMO_REINTENTO]
+
+
 def _con_reintento_pasajero(horas: list[str], error, settings: Settings, ahora: datetime) -> list[str]:
     """Si el error es pasajero (Gemini caído), suma un intento dentro de una hora, en vez de avisar
     la falla: las fotos ya están en la caché, así que el reintento solo depende de Gemini. Si es
@@ -4924,7 +4933,7 @@ def _efe_reintento_tick(conn, tg: TelegramClient, settings: Settings, ahora=None
     finally:
         db.soltar_turno(conn, db.RECURSO_PESADO, turno, VENCIMIENTO_PESADO_S)
     d["intentos"] = d.get("intentos", []) + [hora]
-    d["horas"] = _con_reintento_pasajero(d["horas"], error, settings, ahora)
+    d["horas"] = _antes_del_tope_efe(_con_reintento_pasajero(d["horas"], error, settings, ahora))
     if not error:
         db.borrar_valor(conn, EFE_REINTENTO)
         log.info("efeméride: salió en el reintento de las %s", hora)
@@ -4979,7 +4988,7 @@ def efemeride_del_dia(settings: Settings, simular: bool = False) -> None:
         if error:
             print(f"  {error}")
             horas = _efe_horas_que_faltan(cfg.reintentos, datetime.now(AR))
-            horas = _con_reintento_pasajero(horas, error, settings, datetime.now(AR))
+            horas = _antes_del_tope_efe(_con_reintento_pasajero(horas, error, settings, datetime.now(AR)))
             if horas:
                 db.set_valor(conn, EFE_REINTENTO, json.dumps({
                     "fecha": datetime.now(AR).date().isoformat(), "chats": chats, "horas": horas,

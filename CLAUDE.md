@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-11-20 | **Versión:** v1.46.0 (desplegado) | **Modo:** Fase 2: corriendo solo en la Pi. **Rots APAGADO. Así Nació PAUSADO desde el 19/11** (vuelve con 1 por día, preparado la noche anterior, si 4 de 5 marcas nuevas dan 15/19 o más por menos de US$ 0,60). Pequeña Historia (3 por día, madrugada desde las 04:00) (**NO se publica sola desde el 17/11**: llega con ✅ Publicar / ❌ Cancelar y sin respuesta no sale) y **Así Nació** (2 por día, desde las 07:00, publican 13:00 y 20:00 en YouTube y Facebook con ❌ Cancelar), todo al privado de Santi
+**Snapshot:** 2026-11-20 | **Versión:** v1.47.0 (desplegado) | **Modo:** Fase 2: corriendo solo en la Pi. **Rots APAGADO. Así Nació PAUSADO desde el 19/11** (vuelve con 1 por día, preparado la noche anterior, si 4 de 5 marcas nuevas dan 15/19 o más por menos de US$ 0,60). Pequeña Historia (3 por día, madrugada desde las 04:00) (**NO se publica sola desde el 17/11**: llega con ✅ Publicar / ❌ Cancelar y sin respuesta no sale) y **Así Nació** (2 por día, desde las 07:00, publican 13:00 y 20:00 en YouTube y Facebook con ❌ Cancelar), todo al privado de Santi
 
 > **SI ESTÁS EMPEZANDO UNA SESIÓN NUEVA, LEÉ §10.** Ahí está qué está hecho, qué quedó a medias,
 > qué falta, y las trampas que ya nos mordieron.
@@ -254,6 +254,8 @@ servicio systemd separado: `clips-bot`).
   las 2-3 finalistas por frase se miran con imagen, con Haiku (`describir_fotos` + `elegir_fotos`; `_elector_fotos`
   es Haiku); (5) una sola revisión, la del video terminado, con todos los cortes en UN mosaico y todas las reglas
   (`calidad.mosaico`); la de la hoja de antes de la voz ya no corre.
+- **Pruebas: tope de US$ 1 por día (Santi, 2026-11-20),** aparte de la producción; al llegar se frena hasta el día
+  siguiente y se avisa en una línea; render local siempre que se pueda.
 - **Pruebas sin Claude real (Santi, 2026-11-18):** con origen "prueba" (scripts y CLI a mano) Claude y la búsqueda
   web no responden (`claude.prueba_sin_claude`) salvo con `CLIPS_CLAUDE_REAL=1`, y eso solo si Santi lo pide, avisándole
   antes cuánto va a costar.
@@ -1315,6 +1317,16 @@ Problemas abiertos:
 
 ## 9. CHANGELOG
 
+- v1.47.0 (2026-11-20, noche) — (1) **Plan de Así Nació hasta el 15/12** (en PENDIENTES.md, 5 líneas a Santi los
+  lunes con la tarea programada `asinacio-plan-lunes`). (2) **Tope de pruebas: US$ 1 por día** aparte de la producción
+  (`claude.TOPE_PRUEBAS_DIA`, `gasto_pruebas_hoy`, `TopePruebas`; avisa una vez por día). El 20/11 las pruebas ya iban
+  US$ 2,72. (3) **Tecnología del 20/11:** Windows 1.0 se armó con 51 % de fotos y se mandó a las 04:26 RETENIDO: la
+  revisión final tomó como foto borrosa/de otra cosa (PH-02, PH-12) una tarjeta «MELAZA» con la clave de otra frase.
+  Ahora la tarjeta de la revisión usa solo la clave de su frase o el año y no se juzga como foto
+  (`calidad.TARJETA_EXENTA`); el banco va antes que bajar el mínimo de fotos; los reintentos no arrancan después de
+  las 16:30 (`EFE_ULTIMO_REINTENTO`). (4) **Apretón del plano medio de cerca** (`uso_v3.ZOOM_APRETON_MEDIO` 1,6, la
+  cámara en las manos): hoja del Pepsi (laboratorio, apretón, firma) mandada a Santi, solo render.
+  `tests/test_tecnologia_diaria.py`.
 - v1.46.0 (2026-11-20, noche) — **Revisión repetible y juego fijo de manos** (Santi). (1) La temperatura no se puede
   fijar (los Claude actuales no la aceptan) y la caché devolvía la MISMA respuesta para los mismos cuadros (una
   "segunda revisión" no era otra): cada revisión lleva un sello único. Medido con el mismo Pepsi: una revisión sola,
