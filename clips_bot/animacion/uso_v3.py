@@ -21,8 +21,23 @@ CON_TAPA = {"abrir_tapa", "meter", "cerrar_tapa", "apretar"}
 X0, Y0 = 540, 1180            # el producto, de cerca, en el centro
 SEP_TRATO = 190               # en el apretón, cada persona a esta distancia del medio (cerca, del otro lado de la mesa)
 ESCALA = 1.9                  # los dibujos miden ~200 px: el producto ocupa ~380 px
-SEP_MANO = 230                # las manos, a los costados del cuerpo
+SEP_MANO = 345                # las manos, a los costados del cuerpo
+# Agarre humano (Santi, 2026-11-19, después del Lego: "nada de manos de madera gigantes ni pinzas de robot"): la mano
+# llega de costado, casi acostada, con los dedos apoyados sobre la cara del objeto y doblados a medias.
+GIRO_AGARRE = 62
+Y_AGARRE = 110              # la muñeca, abajo del medio del objeto: los dedos tocan su costado
+AGARRE = 0.55
+ESCALA_MANO = 1.3
 PASO_MIN_S = 0.55
+
+
+def manga_de_epoca(spec: dict) -> str:
+    """La manga de la escena: la que dice el guion o una de la época (tweed marrón antes de 1940, azul después)."""
+    m = str((spec.get("uso") or {}).get("manga") or "")
+    if m.startswith("#"):
+        return m
+    anio = int(spec.get("anio_escena") or 0)
+    return "#6b5440" if anio and anio < 1940 else "#3d4f7a"
 
 
 def _el(nombre: str, x: float, y: float, **kw) -> dict:
@@ -56,8 +71,8 @@ def escena_uso(dur: float, prota: str, partes: dict, pasos: list[str], manga: st
     y_tapa = Y0 - 120 * ESCALA * 0.55            # la tapa apoyada arriba del cuerpo
     kc = [_k(0, x=X0, y=Y0, escala=ESCALA, rotacion=0, fase=0.0)]          # cuerpo (o el producto entero)
     kt = [_k(0, x=X0, y=y_tapa, escala=ESCALA, rotacion=0)]                # tapa
-    izq = [_k(0, x=X0 - SEP_MANO - 260, y=Y0 + 330, rotacion=24, fase=0.0)]   # las manos entran desde abajo
-    der = [_k(0, x=X0 + SEP_MANO + 260, y=Y0 + 330, rotacion=-24, fase=0.0)]
+    izq = [_k(0, x=X0 - SEP_MANO - 300, y=Y0 + 200, rotacion=GIRO_AGARRE - 15, fase=0.0)]   # entran de costado
+    der = [_k(0, x=X0 + SEP_MANO + 300, y=Y0 + 200, rotacion=-GIRO_AGARRE + 15, fase=0.0)]
     sfx: list[tuple[float, str]] = []
     extra: list[dict] = []
     t = 0.0
@@ -66,10 +81,12 @@ def escena_uso(dur: float, prota: str, partes: dict, pasos: list[str], manga: st
         a, b = t, min(dur, t + tramo)
         m = a + (b - a) * 0.5
         if paso == "agarrar":          # las dos manos llegan al cuerpo y los dedos se cierran sobre él
-            izq += [_k(a + 0.35 * (b - a), x=X0 - SEP_MANO, y=Y0 + 60, rotacion=28, fase=0.0, easing="salida"),
-                    _k(b, x=X0 - SEP_MANO + 30, y=Y0 + 50, rotacion=32, fase=1.0, easing="suave")]
-            der += [_k(a + 0.35 * (b - a), x=X0 + SEP_MANO, y=Y0 + 60, rotacion=-28, fase=0.0, easing="salida"),
-                    _k(b, x=X0 + SEP_MANO - 30, y=Y0 + 50, rotacion=-32, fase=1.0, easing="suave")]
+            izq += [_k(a + 0.35 * (b - a), x=X0 - SEP_MANO - 40, y=Y0 + Y_AGARRE + 20, rotacion=GIRO_AGARRE - 10, fase=0.0,
+                       easing="salida"),
+                    _k(b, x=X0 - SEP_MANO, y=Y0 + Y_AGARRE, rotacion=GIRO_AGARRE, fase=AGARRE, easing="suave")]
+            der += [_k(a + 0.35 * (b - a), x=X0 + SEP_MANO + 40, y=Y0 + Y_AGARRE + 20, rotacion=-GIRO_AGARRE + 10, fase=0.0,
+                       easing="salida"),
+                    _k(b, x=X0 + SEP_MANO, y=Y0 + Y_AGARRE, rotacion=-GIRO_AGARRE, fase=AGARRE, easing="suave")]
             sfx.append((round(a + 0.35 * (b - a), 3), "tac"))
         elif paso == "abrir_tapa":     # la izquierda sostiene el cuerpo; la derecha levanta la tapa y la corre
             kt += [_k(a, x=X0, y=y_tapa, rotacion=0), _k(m, x=X0 + 40, y=y_tapa - 230, rotacion=-14, easing="salida"),
@@ -114,16 +131,16 @@ def escena_uso(dur: float, prota: str, partes: dict, pasos: list[str], manga: st
                 ancho = 1.25 if paso == "amasar" else 1.4 - 0.25 * k_
                 kc += [_k(t1, escala=ESCALA * ancho, rotacion=rnd.uniform(-8, 8), easing="suave"),
                        _k(min(b, t1 + (b - a) / (2 * n_)), escala=ESCALA * 0.92, rotacion=0, easing="suave")]
-                izq.append(_k(t1, x=X0 - SEP_MANO + 70, y=Y0 + 20, rotacion=30, fase=1.0, easing="suave"))
-                der.append(_k(t1, x=X0 + SEP_MANO - 70, y=Y0 + 20, rotacion=-30, fase=1.0, easing="suave"))
+                izq.append(_k(t1, x=X0 - SEP_MANO + 40, y=Y0 + Y_AGARRE, rotacion=GIRO_AGARRE, fase=AGARRE, easing="suave"))
+                der.append(_k(t1, x=X0 + SEP_MANO - 40, y=Y0 + Y_AGARRE, rotacion=-GIRO_AGARRE, fase=AGARRE, easing="suave"))
             sfx.append((round(m, 3), "boing"))
         elif paso == "girar":          # gira de a cuartos de vuelta, con las manos que lo giran
             for k_ in range(3):
                 t1 = a + (b - a) * (k_ + 1) / 3
                 kc.append(_k(t1, rotacion=90 * (k_ + 1), fase=min(1.0, (k_ + 1) / 3), easing="salida"))
                 sfx.append((round(t1 - 0.08, 3), "tac"))
-            izq.append(_k(b, x=X0 - SEP_MANO + 20, y=Y0 + 40, rotacion=36, fase=1.0, easing="suave"))
-            der.append(_k(b, x=X0 + SEP_MANO - 20, y=Y0 + 40, rotacion=-36, fase=1.0, easing="suave"))
+            izq.append(_k(b, x=X0 - SEP_MANO, y=Y0 + Y_AGARRE, rotacion=GIRO_AGARRE, fase=AGARRE, easing="suave"))
+            der.append(_k(b, x=X0 + SEP_MANO, y=Y0 + Y_AGARRE, rotacion=-GIRO_AGARRE, fase=AGARRE, easing="suave"))
         elif paso == "apilar":         # otros iguales se apilan encima, uno por uno
             for k_ in range(3):
                 t1 = a + (b - a) * k_ / 3
@@ -140,7 +157,8 @@ def escena_uso(dur: float, prota: str, partes: dict, pasos: list[str], manga: st
     els += extra
     color_manga = manga or "#3d4f7a"
     for lado, kf in ((-1, izq), (1, der)):
-        els.append(_el("mano", kf[0]["x"], kf[0]["y"], escala=1.05, forma=lado, manga=color_manga, fase=0.0, detalle=True,
+        els.append(_el("mano", kf[0]["x"], kf[0]["y"], escala=ESCALA_MANO, forma=lado, manga=color_manga, fase=0.0,
+                       detalle=True,
                        keyframes=sorted(kf, key=lambda k: k["t"])))
     cam = [_k(0, zoom=1.0), _k(dur, zoom=1.06, easing="suave")]
     return {"elementos": els, "fondo": None, "camara": cam, "sfx": sorted(sfx), "actores": []}

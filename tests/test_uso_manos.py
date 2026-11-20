@@ -45,12 +45,13 @@ def test_la_secuencia_del_tupper_paso_a_paso():
     # la tapa sube al abrir y vuelve a su lugar al cerrar
     assert _valor(tapa, "y", 1.5 * tramo) < _valor(tapa, "y", 0) - 100
     assert abs(_valor(tapa, "y", 4.0 * tramo) - _valor(tapa, "y", 0)) < 20
-    # después de agarrar, las manos SIEMPRE tocan el objeto (a menos de 330 px del cuerpo, la tapa o la comida que meten)
+    # después de agarrar, las manos SIEMPRE tocan el objeto: la muñeca a menos de 400 px del cuerpo, la tapa o la comida
+    # (desde el agarre de costado del 2026-11-19 la muñeca queda afuera y los dedos entran ~230 px)
     for t in [tramo + k * 0.25 for k in range(int(4 * tramo / 0.25))]:
         for m in manos:
             x, y = _valor(m, "x", t), _valor(m, "y", t)
             cerca = min(math.hypot(x - _valor(o, "x", t), y - _valor(o, "y", t)) for o in (tapa, cuerpo, comida))
-            assert cerca < 330, (t, m["forma"], round(cerca))
+            assert cerca < 400, (t, m["forma"], round(cerca))
     assert _valor(manos[0], "fase", tramo) == 1.0               # al agarrar, los dedos se cierran
     Video.desde_dict({"fps": 30, "escenas": [{"duracion": 5.0, "fondo": "casa", "elementos": h["elementos"],
                                               "camara": h["camara"]}]})

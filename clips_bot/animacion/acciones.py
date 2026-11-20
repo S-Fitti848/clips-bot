@@ -1601,6 +1601,36 @@ def dejar_lugar_a_tito(elementos: list[dict], lado: str) -> None:
                 kf["x"] = round(float(kf["x"]) + delta, 1)
 
 
+# Siempre con gente (Santi, 2026-11-19, después del Lego): en la fábrica, obreros trabajando en las máquinas de la época;
+# una escena con un gráfico, un contador o un objeto solo, alguien que lo mira y reacciona (festeja si sube, se preocupa
+# si baja). Los primeros planos de manos no cuentan: ya son gente.
+GRAFICOS = {"grafico_sube", "grafico_baja", "contador"}
+
+
+def con_gente(e: "Escena", spec: dict, fondo: str, reservar: str | None, de_biblioteca: bool) -> None:
+    from . import escenas as _esc
+
+    x = 200.0 if reservar == "derecha" else 880.0
+    roles = [str(a.get("rol") or "") for a in spec.get("actores") or []]
+    if _esc.base_fondo(fondo) == "fabrica" and not any(a.get("rol") in ("obrero", "obrera") for a in e.actores):
+        if de_biblioteca or len(e.actores) < 2:
+            e.actor("obrera" if "obrera" in roles else "obrero", "trabajar", "centro", None, "normal",
+                    len(e.actores), x0=x, x1=x)
+        return
+    gente = [el for el in e.elementos if el.get("tipo") == "personaje" and not el.get("multitud")]
+    if gente:
+        return
+    nombres = {str(el.get("nombre") or el.get("tipo") or "") for el in e.elementos} |               {str(o.get("prop") or "") for o in spec.get("objetos") or []}
+    if "grafico_baja" in nombres:
+        accion, cara = "preocuparse", "triste"
+    elif nombres & GRAFICOS or spec.get("parte") == "final":
+        accion, cara = "festejar", "feliz"
+    else:
+        accion, cara = "usar", "feliz"
+    rol = roles[0] if roles and roles[0] else "empresario"
+    e.actor(rol, accion, "centro", None, cara, 0, x0=x, x1=x)
+
+
 def escena_accion(spec: dict, dur: float, i: int, primera: bool = False, tono: float = 0.0,
                   anio: int = 2026, variante: int = 0, reservar: str | None = None,
                   proyectil: str = "pelota", visual: dict | None = None,
@@ -1628,7 +1658,13 @@ def escena_accion(spec: dict, dur: float, i: int, primera: bool = False, tono: f
     hecha = lib_.construir(accion_, str(spec.get("plano") or ""), spec, dur, i, protagonista) \
         if accion_ in lib_.ACCIONES else None
     if hecha and hecha.get("fondo"):
-        fondo = hecha["fondo"]
+        # el escenario vacío con cortinas nunca reemplaza al lugar de la historia (la fábrica de 1949 del Lego, 2026-11-19)
+        if not (hecha["fondo"] == "escenario" and spec.get("fondo") and spec.get("fondo") != "escenario"):
+            fondo = hecha["fondo"]
+    # primer plano de manos u objeto (uso, plata, inspiración, la mesa desde arriba): ahí no va gente entera
+    ins_ = spec.get("inspiracion") or {}
+    cerca = bool(hecha) and (accion_ == "inspiracion" and bool(ins_.get("fuente") and ins_.get("pieza"))
+                             or any(el.get("nombre") in ("mano", "apreton") for el in hecha["elementos"]))
     e = Escena(dur, semilla=i + 1, fondo=fondo, espejo=_esc.espejado(semilla))
     e.anio = int(anio or 2026)
     if spec.get("multitud") or (hecha and hecha.get("multitud")):
@@ -1652,6 +1688,8 @@ def escena_accion(spec: dict, dur: float, i: int, primera: bool = False, tono: f
                 edad=a.get("edad") or "")
     if estadio:
         e.pases(protagonista or "pelota")
+    if not cerca:
+        con_gente(e, spec, fondo, reservar, hecha is not None)
     colores = (P.NARANJA, P.AZUL, P.ROJO, P.VERDE, P.VIOLETA)
     # Época (Santi, 2026-11-16): ningún objeto aparece antes del año en que existe (el protagonista, siempre).
     def _de_epoca(nombre: str) -> bool:
@@ -1735,7 +1773,7 @@ def escena_accion(spec: dict, dur: float, i: int, primera: bool = False, tono: f
     # La línea de producción (Santi, 2026-11-17): en la fábrica con obreros, una cinta adelante con el producto que
     # avanza y la gente trabajando en ella; nunca vacía.
     linea = []
-    if fondo == "fabrica" and not hecha and any(a.get("rol") in ("obrero", "obrera") for a in e.actores):
+    if _esc.base_fondo(fondo) == "fabrica" and accion_ != "fabrica_produce"             and any(a.get("rol") in ("obrero", "obrera") for a in e.actores):
         prod = protagonista if protagonista and _de_epoca(protagonista) else "caja"
         linea.append({"tipo": "prop", "nombre": "cinta_frente", "x": 540, "y": Y_CINTA, "linea": True,
                       "forma": 1 if e.anio < 1940 else 0})

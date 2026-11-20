@@ -54,8 +54,10 @@ def test_linea_de_produccion_con_producto_que_avanza():
     assert linea[0]["nombre"] == "cinta_frente" and linea[0]["forma"] == 1        # de madera en 1883
     prods = [el for el in linea[1:] if el["nombre"] == "chocolate"]
     assert len(prods) >= 4 and all(el["keyframes"][-1]["x"] > 1000 for el in prods)
-    # sin obreros, no hay cinta
-    assert not [el for el in _escena([{"rol": "empresario", "accion": "senalar"}])["elementos"] if el.get("linea")]
+    # sin obreros en el guion, se suma uno trabajando y la cinta (Santi, 2026-11-19: la fábrica nunca vacía)
+    d2 = _escena([{"rol": "empresario", "accion": "senalar"}])
+    assert any(el.get("rol") in ("obrero", "obrera") for el in d2["elementos"] if el.get("tipo") == "personaje")
+    assert [el for el in d2["elementos"] if el.get("linea")]
 
 
 def test_quieto_sin_rol_de_trabajo_no_valida():

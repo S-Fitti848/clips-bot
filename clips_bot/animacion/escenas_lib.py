@@ -98,9 +98,14 @@ def _rol(spec: dict, k: int, defecto: str) -> dict:
 
 
 def _objeto(spec: dict, protagonista: str) -> str:
-    for o in spec.get("objetos") or []:
-        if o.get("prop") and o["prop"] not in ("pregunta", "exclamacion", "lamparita", "flecha"):
-            return o["prop"]
+    """El objeto de la escena: el protagonista si está; si no, el primero que no es un ícono ni un gráfico (en el Lego
+    de 2015 la pila del contador era de gráficos, 2026-11-19)."""
+    props = [str(o.get("prop") or "") for o in spec.get("objetos") or []]
+    if protagonista and (protagonista in props or not props):
+        return protagonista
+    for p_ in props:
+        if p_ and p_ not in ac.ICONOS:
+            return p_
     return protagonista or "caja"
 
 
@@ -150,18 +155,23 @@ def _armar_mesa(plano, spec, dur, i, obj, rnd):
     if plano in ("arriba", "manos"):
         # desde arriba: la mesa de madera llena el cuadro, el objeto en el centro girando y armándose, y las
         # dos manos trabajando sobre él
-        z = 1.0 if plano == "arriba" else 1.35
-        els = [_el(obj, 540, 1060, escala=2.2, fase=0.0,
-                   keyframes=[{"t": 0, "rotacion": -18, "fase": 0.0}, {"t": dur, "rotacion": 22, "fase": 1.0, "easing": "suave"}])]
-        for lado, x0 in ((-1, 330), (1, 750)):
-            kf, t = [], 0.0
+        # manos humanas con el detalle de siempre que AGARRAN el objeto apoyado en la mesa (Santi, 2026-11-19: nada de
+        # manos de madera gigantes con el objeto flotando): lo giran apenas, sin levantarlo
+        from . import uso_v3 as _u
+
+        z = 1.0 if plano == "arriba" else 1.2
+        els = [_el(obj, 540, 1080, escala=2.0, fase=0.0,
+                   keyframes=[{"t": 0, "rotacion": -5, "fase": 0.0}, {"t": dur, "rotacion": 5, "fase": 1.0, "easing": "suave"}])]
+        for lado in (-1, 1):
+            kf, t, x0 = [], 0.0, 540 + lado * _u.SEP_MANO
             while t < dur:
-                ang = t * 5.5 + (0 if lado < 0 else math.pi)
-                kf.append({"t": round(t, 2), "x": round(x0 + 40 * math.cos(ang), 1),
-                           "y": round(1330 + 30 * math.sin(ang), 1), "rotacion": round(lado * (14 + 8 * math.sin(ang)), 1),
-                           "easing": "suave"})
-                t += 0.25
-            els.append(_el("mano", x0, 1330, escala=1.4, forma=lado, keyframes=kf))
+                ang = t * 4.0 + (0 if lado < 0 else math.pi)
+                kf.append({"t": round(t, 2), "x": round(x0 + 12 * math.cos(ang), 1),
+                           "y": round(1080 + _u.Y_AGARRE + 10 * math.sin(ang), 1), "rotacion": -lado * _u.GIRO_AGARRE,
+                           "fase": _u.AGARRE, "easing": "suave"})
+                t += 0.3
+            els.append(_el("mano", x0, 1080 + _u.Y_AGARRE, escala=_u.ESCALA_MANO, forma=lado, detalle=True, fase=_u.AGARRE,
+                           manga=_u.manga_de_epoca(spec), keyframes=kf))
         t = 0.3
         while t < dur:
             sfx.append((round(t, 2), "tac"))

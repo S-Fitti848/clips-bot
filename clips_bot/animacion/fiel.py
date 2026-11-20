@@ -24,16 +24,23 @@ plano) y cualquiera lo reconozca sin leer el nombre. Decí: la forma, los colore
 hacen inconfundible (por ejemplo, la pelota de vóley de la película Náufrago: blanca, con paneles curvos y una cara
 pintada a mano en rojo con la huella de una mano). Sin texto, letras, números ni logos en el dibujo: si el detalle es
 un logo, describí su forma o su color, nunca las letras. Si el texto de la historia dice cómo era, eso manda. Corto:
-como mucho 60 palabras en `descripcion`."""
+como mucho 60 palabras en `descripcion`.
+Además: `anio_desde` = el año desde el que existe el producto TAL COMO lo describís (el ladrillo de plástico de Lego,
+1949; 0 si no sabés), y `antes` = qué hacía la marca ANTES de ese año, descripto para dibujarlo (Lego antes de 1949:
+"un patito de madera pintado con ruedas"), o vacío si la historia no empieza antes."""
 SCHEMA_DESCRIBIR = {"type": "OBJECT", "properties": {
     "descripcion": {"type": "STRING"},
-    "detalles": {"type": "ARRAY", "items": {"type": "STRING"}}},
-    "required": ["descripcion", "detalles"]}
+    "detalles": {"type": "ARRAY", "items": {"type": "STRING"}},
+    "anio_desde": {"type": "INTEGER"},
+    "antes": {"type": "STRING"}},
+    "required": ["descripcion", "detalles", "anio_desde", "antes"]}
 
-SISTEMA_RECONOCE = """Te muestro UN dibujo de un objeto. Sin pensar en ningún nombre de marca: ¿qué objeto es? Después
-decí si una persona común reconocería que es el objeto que te digo, solo mirándolo (sin leer nada). Sé exigente: un
-círculo naranja no es "una pelota de vóley con una cara". En `falta`, lo que habría que agregar o cambiar para que se
-reconozca (vacío si ya se reconoce)."""
+# Más permisivo (Santi, 2026-11-19, el ladrillo de Lego: se veía bien y Haiku dijo que no): si se parece, sirve.
+SISTEMA_RECONOCE = """Te muestro UN dibujo simple (dibujo animado plano, sin letras) de un objeto. ¿Qué objeto es? Después
+decí si SE PARECE al objeto que te digo: la forma general y los colores principales alcanzan. No pidas logos, letras ni
+detalles finos: un dibujo animado es simple. Solo `reconocible` = false si parece OTRA cosa (un círculo naranja liso
+no es una pelota de vóley blanca). En `falta`, lo mínimo que habría que cambiar (vacío si ya se parece); nunca agregues
+piezas que el objeto real no tiene."""
 SCHEMA_RECONOCE = {"type": "OBJECT", "properties": {
     "que_ves": {"type": "STRING"}, "reconocible": {"type": "BOOLEAN"}, "falta": {"type": "STRING"}},
     "required": ["que_ves", "reconocible", "falta"]}
@@ -64,17 +71,26 @@ def _guardar(datos: dict) -> None:
         log.warning("no pude guardar %s: %s", ARCHIVO, e)
 
 
+def _anio(v) -> int:
+    try:
+        a = int(v or 0)
+    except (TypeError, ValueError):
+        return 0
+    return a if 1500 <= a <= 2100 else 0
+
+
 def describir(cliente, marca: str, que_es: str, anio: int = 0, fuente: str = "") -> dict:
     """{"descripcion", "detalles"} del producto real (de la caché si ya se pidió)."""
     clave = f"{marca}|{que_es}|{anio // 10 if anio else 0}"
     datos = _leer()
-    if clave in datos:
+    if clave in datos and "anio_desde" in datos[clave]:
         return datos[clave]
     pedido = (f"PRODUCTO: {que_es} de la marca {marca}" + (f", como era en {anio}" if anio else "")
               + (f"\n\nTEXTO DE LA HISTORIA (lo que dice manda):\n{fuente[:4000]}" if fuente else ""))
     r = json.loads(cliente.json(SISTEMA_DESCRIBIR, pedido, SCHEMA_DESCRIBIR, 0.2))
     out = {"descripcion": str(r.get("descripcion") or "").strip(),
-           "detalles": [str(x).strip() for x in r.get("detalles") or [] if str(x).strip()][:5]}
+           "detalles": [str(x).strip() for x in r.get("detalles") or [] if str(x).strip()][:5],
+           "anio_desde": _anio(r.get("anio_desde")), "antes": str(r.get("antes") or "").strip()}
     if out["descripcion"]:
         datos[clave] = out
         _guardar(datos)
@@ -105,6 +121,69 @@ def reconoce(cliente, nombre: str, que_es: str) -> tuple[bool, str, str]:
     return bool(r.get("reconocible")), str(r.get("falta") or ""), str(r.get("que_ves") or "")
 
 
+def _fijar_anio(nombre: str, anio: int) -> None:
+    from . import dibujos
+
+    f = dibujos.CARPETA / f"{nombre}.json"
+    try:
+        meta = json.loads(f.read_text(encoding="utf-8")) if f.exists() else {}
+        meta["anio_desde"] = int(anio)
+        f.write_text(json.dumps(meta, ensure_ascii=False), encoding="utf-8")
+    except (OSError, ValueError) as e:
+        log.warning("no pude anotar el año de %s: %s", nombre, e)
+
+
+# Producto antes de existir (Santi, 2026-11-19: el ladrillo de plástico de Lego en 1932, cuando hacían juguetes de
+# madera): en las escenas anteriores a `anio_desde`, el protagonista es lo que la marca hacía entonces.
+def _antecesor(cliente, d: dict, marca: str, desc: dict, viejo: str, nombre: str, hasta: int) -> str:
+    from . import dibujos
+    from . import marcas as mk
+
+    previas = [e_ for e_ in d.get("escenas") or [] if 0 < int(e_.get("anio_escena") or 0) < hasta]
+    if not hasta or not previas:
+        return ""
+    for e_ in previas:      # lo que el guion ya puso en esas escenas (el juguete de madera del Lego)
+        for o in e_.get("objetos") or []:
+            p = mk.prop_real(o)
+            if p and p not in (viejo, nombre) and o.get("prop") == mk.DIBUJO_NUEVO and dibujos.svg_de(p) is not None:
+                return p
+    if desc.get("antes") and cliente is not None:
+        otro = nombre_de(marca, "antes")
+        if dibujos.svg_de(otro) is None:
+            dibujos.dibujar(cliente, otro, desc["antes"], f"{marca}: lo que hacía antes de {hasta}")
+        _fijar_anio(otro, 0)
+        if dibujos.svg_de(otro) is not None:
+            return otro
+    return "caja"
+
+
+def de_la_escena(d: dict, anio: int, prota: str) -> str:
+    """El protagonista de una escena de `anio`: lo de antes si el producto todavía no existía."""
+    antes = (d.get("protagonista") or {}).get("antes") or {}
+    if antes.get("dibujo") and anio and anio < int(antes.get("hasta") or 0):
+        return str(antes["dibujo"])
+    return prota
+
+
+def epoca_de_escena(e: dict, prota: str, prota_e: str) -> dict:
+    """La escena con el producto de su época en objetos, uso e inspiración."""
+    if prota_e == prota or not prota:
+        return e
+    e = json.loads(json.dumps(e))
+    for o in e.get("objetos") or []:
+        if o.get("prop") == prota or o.get("dibujo") == prota:
+            o.pop("dibujo", None)
+            o["prop"] = prota_e
+    for clave in ("uso", "inspiracion"):
+        b = e.get(clave)
+        if isinstance(b, dict):
+            for dic in [b] + [v for v in b.values() if isinstance(v, dict)]:
+                for k_, v in list(dic.items()):
+                    if v == prota:
+                        dic[k_] = prota_e
+    return e
+
+
 def asegurar(cliente, d: dict, marca: str, fuente: str = "", avisar=log.info) -> list[str]:
     """El protagonista dibujado como el real y reconocible, en todas las escenas. Devuelve lo que hizo. Nunca frena el
     video: si algo falla, queda el dibujo de antes."""
@@ -129,7 +208,9 @@ def asegurar(cliente, d: dict, marca: str, fuente: str = "", avisar=log.info) ->
         if not ok:
             otro = (nombre[:27] + "_v2")[:30]
             if dibujos.svg_de(otro) is None:
-                dibujos.dibujar(cliente, otro, f"{texto}. Lo que faltaba para reconocerlo: {falta}",
+                # solo lo que falta: nada que el producto real no tenga (al ladrillo de Lego le puso ruedas, 2026-11-19)
+                dibujos.dibujar(cliente, otro, f"{texto}. Corregí solo esto: {falta}. No agregues ninguna pieza que "
+                                               f"no esté en la descripción del producto real.",
                                 f"{marca}: el protagonista (segunda versión)")
             ok2, falta2, vio2 = reconoce(cliente, otro, que_es)
             hechos.append(f"{nombre} no se reconocía ({vio[:60]}): {otro} " + ("sí" if ok2 else f"tampoco ({falta2[:60]})"))
@@ -138,6 +219,13 @@ def asegurar(cliente, d: dict, marca: str, fuente: str = "", avisar=log.info) ->
                 nombre = otro
         else:
             hechos.append(f"{nombre} se reconoce ({vio[:60]})")
+        hasta = int(desc.get("anio_desde") or 0)
+        if hasta:
+            _fijar_anio(nombre, hasta)
+        antes = _antecesor(cliente, d, marca, desc, viejo, nombre, hasta)
+        if antes:
+            pr["antes"] = {"dibujo": antes, "hasta": hasta}
+            hechos.append(f"antes de {hasta}, {antes}")
     except Exception as err:  # noqa: BLE001 — nunca frena el video
         avisar(f"protagonista fiel: {str(err)[:150]}; queda {viejo}")
         return hechos

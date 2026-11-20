@@ -36,6 +36,7 @@ from clips_bot import calidad
 from . import reemplazo as _rz
 
 from . import acciones as ac
+from . import fiel
 from . import escenas as esc
 from . import paleta as P
 from . import subtitulos_virales as sv
@@ -2036,10 +2037,14 @@ def linea_de_tiempo(d: dict, inicios: list[float], fin: float, palabras: list,
             if dur < 0.6:
                 continue
         e = {**e, "objetos": [{**o, "prop": prop_real(o)} for o in e.get("objetos") or [] if prop_real(o)]}
+        anio_e = anio_esc if 1800 <= anio_esc < presente else anio_actual
+        # antes de que exista el producto, lo que la marca hacía entonces (Lego de madera en 1932, 2026-11-19)
+        prota_e = fiel.de_la_escena(d, anio_e, prota)
+        e = fiel.epoca_de_escena(e, prota, prota_e)
         esc_d, fx = ac.escena_accion(e, dur, k, primera=(k == 0), tono=1.0 if pasado else 0.0,
-                                     anio=anio_esc if 1800 <= anio_esc < presente else anio_actual,
+                                     anio=anio_e,
                                      variante=variante, reservar=reservar, proyectil=proyectil, visual=vis,
-                                     protagonista=prota)
+                                     protagonista=prota_e)
         esc_d["frase"] = k          # para la revisión visual: qué frase del guion es esta escena
         if v3 and e.get("accion_escena") not in _lib.ACCIONES_V4:   # las escenas de uso traen su propia cámara
             gv.planos(esc_d)        # 2 planos o más por frase, ninguno de más de 3 s, siempre con zoom lento
