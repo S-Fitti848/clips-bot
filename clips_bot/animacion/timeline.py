@@ -335,6 +335,9 @@ class Elemento:
         if ciclo:
             e.inclinacion += ciclo[2] * CICLOS.get(ciclo[0], CICLOS["caminar"])[4] * math.sin(ciclo[1])
         e.agachar = recortar((1.0 - self.pista.valor("estirar", t, 1.0)) / 0.18)   # al agacharse, rodillas
+        if self.datos.get("perfil") and not e.perfil:     # de perfil quieto trabajando (biblioteca base, 2026-11-20)
+            lado = 1 if float(self.datos["perfil"]) > 0 else -1
+            e.perfil, e.perfil_fijo, e.mirada, e.zancada = lado, True, lado, 0.0
         return e, dy
 
 

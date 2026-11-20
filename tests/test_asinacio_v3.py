@@ -264,14 +264,15 @@ def test_apreton_las_manos_se_juntan_en_el_medio_y_se_ve_enganchado():
     mesa = next(el for el in els if el.get("nombre") == "mesa")
     assert not mesa.get("decorado") and els.index(mesa) > max(els.index(p_) for p_ in pjs)
     chica = next(el for el in els if el.get("nombre") == "apreton" and el.get("escala", 1) < 0.5)
+    # de PERFIL, enfrentados (biblioteca base, 2026-11-20): la mano de adelante de cada uno llega al medio
+    assert {el["perfil"] for el in pjs} == {1, -1}
     for el in pjs:
         gesto = el["gestos"][-1]["gesto"]
         assert per.gesto_valido(gesto)
-        e = per.estado_de_gesto(gesto)
-        brazo = per.personaje(el["nombre"], **el.get("cambios", {})).brazos(e)[0 if gesto.startswith("brazo_izq") else 1]
-        mx = el["x"] + brazo[-1][0] * el["escala"]
-        my = ac.PISO + brazo[-1][1] * el["escala"]
-        assert abs(mx - chica["x"]) < 6 and abs(my - chica["y"]) < 6, (el["nombre"], mx, my)
+        lx, ly = per.personaje(el["nombre"], **el.get("cambios", {})).mano_perfil(*per.GESTOS[gesto]["der"])
+        mx = el["x"] + el["perfil"] * lx * el["escala"]
+        my = ac.PISO + ly * el["escala"]
+        assert abs(mx - chica["x"]) < 12 and abs(my - chica["y"]) < 12, (el["nombre"], mx, my)
     grande = next(el for el in els if el.get("nombre") == "apreton" and el.get("escala", 1) > 1)
     ys = [k["y"] for k in grande["keyframes"] if "y" in k]
     arriba = sum(1 for y in ys if y < uso_v3.Y0 - 30)

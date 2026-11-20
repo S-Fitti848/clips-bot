@@ -465,12 +465,9 @@ para algo, elegí otro que se entienda sin leer.
 REGLA 8 — ESCENARIOS DE LA HISTORIA REAL (Santi, 2026-11-17). Cada momento pasa DONDE pasó de verdad según el
 artículo (`fondo`): playa, estadio, cocina, fábrica, tienda, laboratorio, oficina de época, calle, hospital, campo,
 puerto, escenario…; nunca un living o un taller genéricos para algo que pasó en otro lado (si la frase dice "en la
-playa", el fondo es `playa`, no `puerto`). La casa y el taller solo si la historia pasa ahí. CADA VIDEO ES ÚNICO:
-como mucho un tercio de las escenas puede repetir la misma acción y el mismo lugar de los últimos 10 videos del
-canal (te paso cuáles) y solo si la historia lo pide, y NINGUNA escena puede ser igual entera (lugar, acción,
-objetos, plano y movimiento) a una de esos videos. DISEÑÁ CADA ESCENA PARA ESTA HISTORIA y armala con las piezas que
-ya existen (personajes, manos, fondos, objetos, efectos: se reusan libremente); lo único que tiene que ser nuevo es
-la combinación. Si el LUGAR real no está en la lista de `fondo`, poné el más parecido en `fondo` y describilo en
+playa", el fondo es `playa`, no `puerto`). La casa y el taller solo si la historia pasa ahí. Las escenas de la
+BIBLIOTECA BASE (REGLA 15) se REPITEN entre videos todo lo que haga falta (Santi, 2026-11-20): lo que cambia es el
+producto, los personajes, el lugar, la época y los textos. Si el LUGAR real no está en la lista de `fondo`, poné el más parecido en `fondo` y describilo en
 `lugar_nuevo` (ej. "bolera de los años 50 con pistas de madera y pinos al fondo"): se dibuja una vez y queda guardado
 para los próximos videos; si está en la lista, `lugar_nuevo` vacío. Si falta un objeto, `dibujo_nuevo` (REGLA 13).
 Cuando cambia el momento, cambia el lugar: al menos 3 lugares
@@ -498,15 +495,20 @@ logos): se dibuja para este video y queda guardado. Para un personaje que no est
 rol parecido con un objeto que lo identifique (un dibujo nuevo en la mano). En los demás objetos, `dibujo`
 vacío.
 
-REGLA 15 — LO QUE SE VE ES LO QUE DICE LA VOZ (Santi, 2026-11-15). Cada escena muestra la ACCIÓN CONCRETA de
-su frase, con una escena de la BIBLIOTECA (`accion_escena`) y su `plano`:
+REGLA 15 — LO QUE SE VE ES LO QUE DICE LA VOZ, CON LA BIBLIOTECA BASE (Santi, 2026-11-15 y 2026-11-20). Cada
+escena muestra la ACCIÓN CONCRETA de su frase con una escena de la BIBLIOTECA (`accion_escena`) y su `plano`. POR
+DEFECTO usá las de la BIBLIOTECA BASE (★): están armadas y probadas, y se adaptan solas al producto de esa época, a
+los personajes que digas (rol, género, edad), al lugar (`fondo`) y al año (`anio_escena`). Una historia típica:
+taller_inventor (el origen) → fabrica_produce → vender_tienda → apreton_manos (un trato) → crisis (un problema) →
+exito_multitud → producto_en_uso → lanzamiento → cierre_tito (la última frase). Las demás de la lista, cuando la
+frase pide justo eso. `libre` o `nueva` SOLO si NINGUNA de la biblioteca sirve para esa frase:
 {{BIBLIOTECA}}
 Planos: arriba (cenital: las manos sobre la mesa), manos (primer plano de las manos), lejos, espaldas, cerca,
 frente (cada acción tiene los suyos; si pedís otro, va el primero). Ej.: "armó un rompecabezas" = armar_mesa
 desde arriba o de espaldas en la mesa; "lo vendió" = vender_tienda; "vendió millones" = contador_ventas. El
-objeto protagonista se MUEVE (gira, se resuelve, avanza en la cinta, vuela al barco, se apila). Usá `libre`
-(actores y objetos como hasta ahora) solo si ninguna sirve, y como mucho en 4 de cada 10 escenas; si la acción
-no está y la vas a necesitar seguido, `nueva` con `accion_nueva` = un nombre corto (se guarda para reusarla).
+objeto protagonista se MUEVE (gira, se resuelve, avanza en la cinta, vuela al barco, se apila). `libre` (actores y
+objetos como hasta ahora) o `nueva` con `accion_nueva` = un nombre corto, SOLO si ninguna escena de la biblioteca
+sirve para esa frase (si la nueva pasa el estándar del canal, se suma a la biblioteca para los próximos videos).
 `festejar` o `saltar` SOLO cuando la frase habla de un éxito; engranajes, martillo, el taller y la fábrica SOLO
 si la frase habla de una máquina, un taller o una fábrica. NADIE PARADO SIN HACER NADA: cada persona hace algo
 de lo que dice la frase (nada de `quieto`, ni una escena solo con `pensar` o `senalar`). EL GANCHO (escena 1)
@@ -1205,11 +1207,7 @@ def errores_uso(d: dict) -> list[str]:
         faltan = [i for i in range(2, len(escenas) + 2) if i not in con]
         errores.append(f"el producto ({prota}) no se ve en uso en las escenas {faltan[:6]}: mostralo funcionando aunque la "
                        "frase hable de otra cosa")
-    nuevas = [e_ for e_ in escenas if e_.get("accion_escena") == "nueva" and str(e_.get("accion_nueva") or "").strip()
-              and str(e_["accion_nueva"]).strip() not in _lib.todas_las_acciones()]
-    if not nuevas:
-        errores.append("falta algo NUEVO para la biblioteca: 1 escena con `accion_escena` = nueva y un `accion_nueva` que "
-                       "todavía no exista (una acción de este producto)")
+    # ya no se exige una escena nueva en cada video: la biblioteca base va por defecto (Santi, 2026-11-20)
     return errores
 
 
@@ -1495,7 +1493,9 @@ def validar_guion(d: dict, m: Marca, fuente: str, ganchos_previos: list[dict] | 
         errores.append("falta `pregunta_gancho`")
     errores += errores_escenas_con_sentido(escenas)
     errores += errores_lugares_y_personajes(escenas)
-    errores += errores_lugar(d) + errores_unicas(d)        # la historia real y cada video único (2026-11-17)
+    # la historia real (2026-11-17). Sin el tope de "un tercio repetido" ni "ninguna escena igual a otro video": las
+    # escenas de la biblioteca se repiten todo lo que haga falta (Santi, 2026-11-20)
+    errores += errores_lugar(d)
     errores += errores_gancho_repetido(escenas, ganchos_previos or [])
     errores += errores_protagonista(d)
     errores += errores_fieles(d)
@@ -1629,7 +1629,12 @@ def chequear_calidad(cliente, d: dict, m: Marca) -> list[str]:
 
 def sistema_guion() -> str:
     """El prompt del guion con la biblioteca de escenas de hoy (las recetas guardadas también)."""
-    lista = "\n".join(f"  - {k}: {v}" for k, v in sorted(_lib.todas_las_acciones().items()))
+    from . import plantillas as _pl
+
+    todas = _lib.todas_las_acciones()
+    base = [k for k in _pl.BASE if k in todas]          # la biblioteca base primero, marcada (Santi, 2026-11-20)
+    lista = "\n".join([f"  - ★ {k}: {todas[k]}" for k in base]
+                      + [f"  - {k}: {v}" for k, v in sorted(todas.items()) if k not in base])
     from clips_bot import aprendizaje as _aprendizaje
 
     from .director import REGLA_DIRECTOR
@@ -1661,7 +1666,7 @@ REGLA 16 — ESCENAS VIVAS (Santi, 2026-11-16; las 3 opciones de gancho y el dec
   escena de esa parte de la historia. El producto FLOTANDO o GIRANDO (`gira`, `aparece`, `crece`, `vuela`, `rebota`,
   soporte `aire`, `objeto_gira`) como mucho en 2 escenas y solo si la frase lo justifica.
 - NADIE PARADO SIN HACER NADA, nunca: cada persona hace algo con las manos o el cuerpo que muestra la frase.
-- ALGO NUEVO EN CADA VIDEO: al menos 1 escena con `accion_escena` = nueva y un `accion_nueva` que todavía no exista
+- ESCENAS NUEVAS SOLO SI HACEN FALTA: `accion_escena` = nueva con un `accion_nueva` que todavía no exista
   (una acción de ESTE producto), que queda en la biblioteca para los próximos videos.
 - El OBJETO PROTAGONISTA tiene que parecerse al real: el Tupper es un recipiente de plástico bajo con tapa
   hermética, no una olla. Si ningún dibujo de la lista ES ese objeto (no uno parecido), `dibujo_nuevo` con una
@@ -1684,9 +1689,7 @@ def escribir_guion(cliente, e: Elegido, fuente: str, reintentos: int = 6, avisar
               f"acá):\n{fuente[:20000]}" + (f"\n\n{extra}" if extra else "")
               + ("\n\nARRANQUES DE LOS VIDEOS ANTERIORES (el tuyo tiene que ser distinto: otro lugar, otra "
                  "acción, otro objeto):\n" + texto_ganchos(ganchos_previos) if ganchos_previos else "")
-              + ("\n\nESCENAS YA USADAS EN LOS ÚLTIMOS 10 VIDEOS (acción@lugar; como mucho un tercio de las tuyas "
-                 "puede repetirse, y solo si la historia lo pide): " + texto_escenas_recientes(ESCENAS_PREVIAS)
-                 if ESCENAS_PREVIAS else ""))
+              )
     from clips_bot.gemini import GeminiError
 
     from clips_bot import correcciones
@@ -1761,10 +1764,18 @@ def aviso_estilo(d: dict) -> str:
     return ("⚠️ salió sin cumplir estas reglas de estilo: " + "; ".join(p_[:140] for p_ in pend))[:600] if pend else ""
 
 
-def guardar_acciones_nuevas(d: dict) -> None:
-    """Las escenas `nueva` quedan en la biblioteca como receta (el protagonista y los roles como variables)."""
+def guardar_acciones_nuevas(d: dict, aprobadas: set[int] | None = None) -> None:
+    """Las escenas `nueva` quedan en la biblioteca como receta (el protagonista y los roles como variables), SOLO las
+    que pasaron el estándar (`aprobadas`: los números de frase desde 0; Santi, 2026-11-20). Sin `aprobadas` (antes de
+    la revisión) se arman como `libre` y no se guarda nada."""
     prota = prop_real(d.get("protagonista") or {})
-    for e in d.get("escenas") or []:
+    for k, e in enumerate(d.get("escenas") or []):
+        if e.get("accion_escena") == "nueva" and aprobadas is None:
+            e["_nueva"] = str(e.get("accion_nueva") or "")
+            e["accion_escena"] = _lib.LIBRE
+            continue
+        if e.get("_nueva") and aprobadas is not None and k in aprobadas:
+            e = {**e, "accion_escena": "nueva", "accion_nueva": e["_nueva"]}
         if e.get("accion_escena") == "nueva" and str(e.get("accion_nueva") or "").strip():
             nombre = re.sub(r"[^a-z0-9_]", "_", str(e["accion_nueva"]).lower())[:30]
             spec = json.loads(json.dumps(e))
@@ -2036,7 +2047,8 @@ def linea_de_tiempo(d: dict, inicios: list[float], fin: float, palabras: list,
             dur = round(dur - dg, 3)
             if dur < 0.6:
                 continue
-        e = {**e, "objetos": [{**o, "prop": prop_real(o)} for o in e.get("objetos") or [] if prop_real(o)]}
+        e = {**e, "objetos": [{**o, "prop": prop_real(o)} for o in e.get("objetos") or [] if prop_real(o)],
+             "_categoria": d.get("_categoria") or ""}
         anio_e = anio_esc if 1800 <= anio_esc < presente else anio_actual
         # antes de que exista el producto, lo que la marca hacía entonces (Lego de madera en 1932, 2026-11-19)
         prota_e = fiel.de_la_escena(d, anio_e, prota)
@@ -2046,7 +2058,7 @@ def linea_de_tiempo(d: dict, inicios: list[float], fin: float, palabras: list,
                                      variante=variante, reservar=reservar, proyectil=proyectil, visual=vis,
                                      protagonista=prota_e)
         esc_d["frase"] = k          # para la revisión visual: qué frase del guion es esta escena
-        if v3 and e.get("accion_escena") not in _lib.ACCIONES_V4:   # las escenas de uso traen su propia cámara
+        if v3 and e.get("accion_escena") not in _lib.ACCIONES_V4 | _lib.CON_CAMARA:   # las que traen su cámara
             gv.planos(esc_d)        # 2 planos o más por frase, ninguno de más de 3 s, siempre con zoom lento
             gv.sin_textos_repetidos(esc_d, str(e.get("frase") or ""))   # ningún texto se repite ni se pisa
         pisados = ac.superposiciones(esc_d)
@@ -2549,6 +2561,10 @@ def puntos_flojos(cliente, d: dict, datos: dict, carpeta: Path, avisar=log.info)
     return out
 
 
+GENERICOS_FIJOS = (set(ac.ICONOS) | ROTULOS | {"mesa", "estante", "mostrador", "cuadro", "ventana", "lampara",
+                                               "papel_firma", "billete", "moneda", "lapicera", "mano", "apreton"})
+
+
 def redibujar_objeto(cliente, nombre: str, como_es: str, avisar=log.info) -> str:
     """Santi, 2026-11-16 ("si un objeto no tiene dibujo bueno, dibujalo nuevo"): Sonnet lo dibuja de nuevo con detalle y
     la versión nueva reemplaza a la vieja en todas las escenas, también si era un dibujo de la biblioteca de código."""
@@ -2556,6 +2572,10 @@ def redibujar_objeto(cliente, nombre: str, como_es: str, avisar=log.info) -> str
 
     nombre = re.sub(r"[^a-z0-9_]", "", nombre)[:24]
     if not nombre or not esc.es_prop(nombre) or cliente is None:
+        return ""
+    # los objetos genéricos (carteles, cajas, muebles, íconos) NO se redibujan para todos: la revisión pedía "un cartel
+    # de LEY SECA" y el cartel de todos los videos pasó a ser un cartel de prohibido (2026-11-20)
+    if nombre in GENERICOS_FIJOS or nombre.startswith(tuple(f"{g}_det" for g in GENERICOS_FIJOS)):
         return ""
     nuevo = f"{nombre}_det"[:30]
     try:
@@ -3393,9 +3413,11 @@ def armar_video(conn, settings, carpeta: Path, cliente=None, wiki=None, hoy: dat
             revision.append(rescate)
     if revisado:
         try:
-            n_ok = _rz.guardar_aprobadas(d, _rz.escenas_que_pasaron(datos, claves_f, problemas_f),
-                                         f"{hoy.isoformat()}/{e.marca.nombre}/{e.angulo}", e.marca.nombre)
+            pasaron = _rz.escenas_que_pasaron(datos, claves_f, problemas_f)
+            n_ok = _rz.guardar_aprobadas(d, pasaron, f"{hoy.isoformat()}/{e.marca.nombre}/{e.angulo}", e.marca.nombre)
             avisar(f"biblioteca de escenas aprobadas: +{n_ok}")
+            # una escena nueva que pasó el estándar se suma a la biblioteca (Santi, 2026-11-20)
+            guardar_acciones_nuevas(d, set(pasaron))
         except Exception as err:  # noqa: BLE001 — guardar nunca frena el video
             avisar(f"biblioteca de escenas aprobadas: no pude guardar ({str(err)[:100]})")
     tiempos["revision_s"] = round(time.time() - t0, 1)

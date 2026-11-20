@@ -204,6 +204,9 @@ def fondo_oficina(semilla: int = 3) -> str:
     if decada and decada < 199:   # máquina de escribir y teléfono de disco
         p.append(rect(270, H * 0.62 - 90, 230, 90, "#3d4250", r=14))
         p.append(rect(300, H * 0.62 - 150, 170, 70, P.BLANCO, ancho=P.TRAZO_FINO))
+        for k in range(3):   # la hoja escrita (en blanco la revisión la leía como "un rótulo vacío", 2026-11-20)
+            p.append(f'<path d="M318 {H * 0.62 - 132 + k * 18:.0f} L{450 - 30 * (k == 2):.0f} {H * 0.62 - 132 + k * 18:.0f}" '
+                     f'stroke="#8a8f99" stroke-width="5" stroke-linecap="round"/>')
         for k in range(5):
             p.append(circulo(300 + k * 40, H * 0.62 - 30, 12, "#cfd3da", ancho=3))
         p.append(rect(560, H * 0.62 - 60, 110, 60, "#2b2b33", r=14) + circulo(615, H * 0.62 - 34, 20, "#ddd", ancho=3))

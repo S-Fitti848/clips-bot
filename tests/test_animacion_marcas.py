@@ -1094,9 +1094,13 @@ def test_receta_nueva_queda_guardada(tmp_path, monkeypatch):
     d = guion()
     d["escenas"][6]["accion_escena"] = "nueva"
     d["escenas"][6]["accion_nueva"] = "regalar_cajas"
+    # antes de la revisión se arma como libre y no se guarda (Santi, 2026-11-20: solo si pasa el estándar)
     mk.guardar_acciones_nuevas(d)
-    assert "regalar_cajas" in lib.recetas() and d["escenas"][6]["accion_escena"] == "regalar_cajas"
-    assert "regalar_cajas" in lib.todas_las_acciones()
+    assert "regalar_cajas" not in lib.recetas() and d["escenas"][6]["accion_escena"] == lib.LIBRE
+    mk.guardar_acciones_nuevas(d, aprobadas={1, 2})          # no pasó: sigue afuera
+    assert "regalar_cajas" not in lib.recetas()
+    mk.guardar_acciones_nuevas(d, aprobadas={6})             # pasó el estándar: entra a la biblioteca
+    assert "regalar_cajas" in lib.recetas() and "regalar_cajas" in lib.todas_las_acciones()
 
 
 def test_el_contador_usa_el_numero_de_la_frase_y_nunca_inventa():

@@ -769,11 +769,11 @@ class Escena:
             rol = roles[self.rnd.randrange(len(roles))]
             nombre, cambios, escala = ROLES[rol]
             x = 90 + k * (900 / max(1, n - 1)) + self.rnd.uniform(-25, 25)
-            accion = ("festejar", "saltar", "caminar")[k % 3]
+            # todos aplauden y uno de cada dos salta: parados o "caminando" en el lugar se leían quietos (2026-11-20)
+            accion = ("festejar", "saltar")[k % 2]
             gestos, kf = [{"t": 0, "gesto": "reposo"}], []
             t0, t = 0.1 + 0.07 * k, 0.1 + 0.07 * k
-            if accion == "festejar":
-                gestos += _alternar("aplaudir_a", "aplaudir_b", t0, self.dur, 0.18)
+            gestos += _alternar("aplaudir_a", "aplaudir_b", t0, self.dur, 0.16)
             while t < self.dur:
                 dy = -26 if (accion == "saltar" and int((t - t0) / 0.3) % 2 == 0) else 0
                 kf.append({"t": round(t, 3), "y": PISO - 150 + dy, "cabeza": 4 if int(t / 0.35) % 2 else -4,
@@ -1239,6 +1239,14 @@ CAJAS = {"mesa": (150, 0, 226), "estante": (140, 0, 70), "lampara": (110, -150, 
          "control": (190, -110, 130), "camion": (200, -110, 86), "cohete": (120, -200, 150),
          "martillo": (70, -90, 160), "lamparita": (90, -200, 140), "grafico_sube": (190, -170, 150),
          "grafico_baja": (190, -170, 150), "cartel": (190, -140, 230), "calendario": (130, -144, 130)}
+def factor_tam(prop: str, ref: float = 400.0) -> float:
+    """Cuánto agrandar `prop` para que mida como un objeto de `ref` px de alto a escala 1 (los dibujos guardados vienen
+    en una caja de ~300 px y salían más chicos que los de código con la misma escala; biblioteca base, 2026-11-20)."""
+    c = CAJAS.get(prop)
+    alto = (c[2] - c[1]) if c else 300.0
+    return ref / max(80.0, alto)
+
+
 NO_CHOCAN = {"pedazo", "lamparita", "gancho", "nube", "martillo", "pregunta", "exclamacion", "flecha", "idea_fallida",
              "polvo", "lineas_mov", "destello", "primer_plano", "rotulo", "dato", "cita", "cartel_comic", "tito_reaccion",
              "mano", "mostrador", "fuego"}
@@ -1617,7 +1625,7 @@ def con_gente(e: "Escena", spec: dict, fondo: str, reservar: str | None, de_bibl
             e.actor("obrera" if "obrera" in roles else "obrero", "trabajar", "centro", None, "normal",
                     len(e.actores), x0=x, x1=x)
         return
-    gente = [el for el in e.elementos if el.get("tipo") == "personaje" and not el.get("multitud")]
+    gente = [el for el in e.elementos if el.get("tipo") in ("personaje", "tito") and not el.get("multitud")]
     if gente:
         return
     nombres = {str(el.get("nombre") or el.get("tipo") or "") for el in e.elementos} |               {str(o.get("prop") or "") for o in spec.get("objetos") or []}
@@ -1659,7 +1667,8 @@ def escena_accion(spec: dict, dur: float, i: int, primera: bool = False, tono: f
         if accion_ in lib_.ACCIONES else None
     if hecha and hecha.get("fondo"):
         # el escenario vacío con cortinas nunca reemplaza al lugar de la historia (la fábrica de 1949 del Lego, 2026-11-19)
-        if not (hecha["fondo"] == "escenario" and spec.get("fondo") and spec.get("fondo") != "escenario"):
+        if hecha.get("fondo_fijo") or not (hecha["fondo"] == "escenario" and spec.get("fondo")
+                                             and spec.get("fondo") != "escenario"):
             fondo = hecha["fondo"]
     # primer plano de manos u objeto (uso, plata, inspiración, la mesa desde arriba): ahí no va gente entera
     ins_ = spec.get("inspiracion") or {}
@@ -1863,7 +1872,9 @@ def escena_accion(spec: dict, dur: float, i: int, primera: bool = False, tono: f
             if el.get("tipo") == "prop" and el.get("nombre") == protagonista:
                 el["color"] = True
     d = {"duracion": dur, "fondo": {"tipo": fondo, "semilla": semilla,
-                                    **({"momento": visual["momento"]} if visual and visual.get("momento") else {})},
+                                    **({"momento": visual["momento"]} if visual and visual.get("momento") else {}),
+                                    # la crisis va de noche (biblioteca base, 2026-11-20)
+                                    **({"momento": hecha["momento"]} if hecha and hecha.get("momento") else {})},
          "transicion": {"tipo": "corte" if primera else tr, "duracion": 0.3 if tr == "iris" else 0.25},
          "camara": camara, "elementos": elementos, "tono": tono}
     if e.anio < 1920:   # antes de 1920 una caja es un cajón de madera, no un paquete de colores con ventana

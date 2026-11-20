@@ -247,19 +247,7 @@ def reemplazar(haiku, d: dict, datos: dict, sfx: list, k: int, ids: list[str], a
             continue
         d2 = copy.deepcopy(d)
         d2["escenas"][k] = nuevo_spec
-        # cada video único (Santi, 2026-11-17): una escena de la biblioteca no puede pasar el tope de un tercio de
-        # escenas repetidas de los últimos 10 videos (si el video ya estaba pasado, por lo menos no lo empeora)
-        from . import marcas as _m
-
-        prev = _m.ESCENAS_PREVIAS
-        antes, despues = len(_m.repetidas(d, prev)), len(_m.repetidas(d2, prev))
-        if despues > _m.tope_repetidas(d2) and despues > antes:
-            avisar(f"reemplazo escena {k + 1}: la candidata {n} repite escenas de más ({_m.firma_escena(nuevo_spec)})")
-            continue
-        prota = _m.prop_real(d.get("protagonista") or {})
-        if _m.firma_completa(nuevo_spec, prota) in {f for v in _m.COMPLETAS_PREVIAS[-_m.VIDEOS_UNICOS:] for f in v}:
-            avisar(f"reemplazo escena {k + 1}: la candidata {n} quedaría igual a una escena de otro video")
-            continue
+        # sin el tope de escenas repetidas: las de la biblioteca se repiten lo que haga falta (Santi, 2026-11-20)
         try:
             datos2, sfx2 = armar(d2)
         except Exception as err:  # noqa: BLE001 — una candidata que no se arma se saltea

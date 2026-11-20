@@ -94,28 +94,23 @@ def test_las_escenas_de_cada_video_quedan_anotadas(tmp_path):
     assert len(prev) == 10 and prev[-1] == ["a11@tienda"] and ["a0@tienda"] not in prev
 
 
-def test_el_reemplazo_no_pasa_el_tope_de_repetidas(monkeypatch, tmp_path):
+def test_el_reemplazo_ya_no_tiene_tope_de_repetidas(monkeypatch, tmp_path):
+    """Santi, 2026-11-20: las escenas de la biblioteca se repiten todo lo que haga falta (sin el tope de un tercio)."""
     monkeypatch.setattr(esc, "es_prop", lambda n: True)
-    d = _guion(["vender_tienda@tienda", "a@fabrica", "b@campo", "c@oficina", "d@puerto", "e@laboratorio"])
+    d = _guion(["vender_tienda@tienda", "a@fabrica", "b@campo"])
     d["protagonista"] = {"prop": "pelota"}
     monkeypatch.setattr(mk, "ESCENAS_PREVIAS", [["firmar@fabrica", "vender_tienda@tienda"]])
     cand = {"video": "otro", "marca": "Otra", "k": 2, "parte": None, "accion_escena": "firmar", "plano": "",
             "frase": "x", "spec": {"accion_escena": "firmar", "objetos": [], "actores": []}}
     llamados = []
-    r = rz.reemplazar(object(), d, {"escenas": []}, [], 2, [], lambda d_: llamados.append(1), "v", "M", tmp_path,
-                      lib=[cand], avisar=lambda *_: None)
-    # vender_tienda@tienda ya estaba repetida (1 de tope 2); firmar@fabrica la haría 2: entra; con el tope en 1, no
-    assert r is None and llamados          # se armó (pasó el tope) y falló después por el empalme de juguete
-    d["escenas"] = d["escenas"][:4]       # 3 escenas: tope 1
-    llamados.clear()
     rz.reemplazar(object(), d, {"escenas": []}, [], 2, [], lambda d_: llamados.append(1), "v", "M", tmp_path,
                   lib=[cand], avisar=lambda *_: None)
-    assert not llamados
+    assert llamados          # se armó aunque repite
 
 
 def test_el_estandar_tiene_la_regla_nueva():
     from clips_bot import calidad
 
     ids = {r.id: r for r in calidad.reglas("asinacio")}
-    assert "AN-25" in ids and "un tercio" in ids["AN-25"].texto
+    assert "AN-25" in ids and "biblioteca base" in ids["AN-25"].texto
     assert "playa" in ids["AN-13"].texto and "vacías" in ids["AN-06"].texto

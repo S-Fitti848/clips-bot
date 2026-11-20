@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-11-19 | **Versión:** v1.40.0 (desplegado) | **Modo:** Fase 2: corriendo solo en la Pi. **Rots APAGADO. Así Nació PAUSADO desde el 19/11** (vuelve con 1 por día cuando una prueba pase 17/19 por menos de US$ 0,60). Pequeña Historia (3 por día, madrugada desde las 04:00) (**NO se publica sola desde el 17/11**: llega con ✅ Publicar / ❌ Cancelar y sin respuesta no sale) y **Así Nació** (2 por día, desde las 07:00, publican 13:00 y 20:00 en YouTube y Facebook con ❌ Cancelar), todo al privado de Santi
+**Snapshot:** 2026-11-20 | **Versión:** v1.43.0 (desplegado) | **Modo:** Fase 2: corriendo solo en la Pi. **Rots APAGADO. Así Nació PAUSADO desde el 19/11** (vuelve con 1 por día cuando una prueba pase 17/19 por menos de US$ 0,60). Pequeña Historia (3 por día, madrugada desde las 04:00) (**NO se publica sola desde el 17/11**: llega con ✅ Publicar / ❌ Cancelar y sin respuesta no sale) y **Así Nació** (2 por día, desde las 07:00, publican 13:00 y 20:00 en YouTube y Facebook con ❌ Cancelar), todo al privado de Santi
 
 > **SI ESTÁS EMPEZANDO UNA SESIÓN NUEVA, LEÉ §10.** Ahí está qué está hecho, qué quedó a medias,
 > qué falta, y las trampas que ya nos mordieron.
@@ -444,17 +444,24 @@ servicio systemd separado: `clips-bot`).
   ninguna pasa, aviso y esa regla va PRIMERA en las mejoras al motor (`bot_estado.mejoras_primero`). Tope: si las
   correcciones de un video pasan de US$ 0,50 (`reemplazo.TOPE_CORRECCIONES_USD`, contado desde las vueltas de
   revisión), se frena y el mensaje lo dice (💸).
-- **Así Nació: cada video único y en los lugares de la historia real (Santi, 2026-11-17, después del Frisbee; regla
-  para TODOS los videos, AN-25 del estándar):** el lugar de cada escena es donde pasó esa parte según el artículo
-  (playa, estadio, cocina, fábrica, tienda…; fondos `playa`, `estadio` y `cocina` nuevos), nunca un living o un taller
-  genéricos; si la frase dice "en la playa", el fondo es `playa` (`marcas.errores_lugar`, `LUGAR_DE_FRASE`). Como mucho
-  un tercio de las escenas (acción@lugar, `firma_escena`) repite los últimos 10 videos, y solo si la historia lo pide
-  (`errores_unicas`, `bot_estado.animacion_escenas`); el guion recibe la lista de las ya usadas. Vale también para el
-  reemplazo de escenas de la biblioteca (`reemplazo.reemplazar` saltea la candidata que pasa el tope).
-- **Así Nació único sin hacerlo todo desde cero (Santi, 2026-11-17; AN-25):** las piezas (personajes, manos, fondos,
-  objetos, efectos) se reusan; lo único es cada escena: ninguna repite entera (lugar, acción, objetos, plano y
-  movimiento, `firma_completa`) una de los últimos 10 videos, y como mucho un tercio repite lugar y acción. El guion
-  diseña cada escena para su historia y la arma con piezas; lo que falta se crea y queda guardado: objetos
+- **Así Nació: BIBLIOTECA BASE, reusar escenas y crear solo si hace falta (Santi, 2026-11-20; reemplaza el "cada video
+  único" del 17/11; AN-25):** 10 escenas armadas y probadas (`animacion/plantillas.py`): gancho (gancho_v3) ·
+  taller_inventor · fabrica_produce · vender_tienda · apreton_manos · crisis (de noche, el papel de ventas) ·
+  exito_multitud · producto_en_uso (si se toma o se come, a la boca) · lanzamiento · cierre_tito. El guion las usa POR
+  DEFECTO (★ en la lista, REGLA 15) cambiando el producto de esa época, los personajes según rol y año, el lugar y los
+  textos; `libre` o `nueva` SOLO si ninguna sirve para la frase, y una `nueva` entra a la biblioteca solo si pasa el
+  estándar (`guardar_acciones_nuevas(d, aprobadas)` después de la revisión; antes se arma como `libre`). **Sin tope de
+  escenas repetidas** (ni "un tercio" ni "ninguna igual a otro video"; `errores_unicas` ya no se llama). El lugar sigue
+  siendo el de la historia real (`errores_lugar`). La gente de las escenas base trabaja DE PERFIL (`perfil` en el
+  personaje, gestos `p_…` de personajes.py, `mano_perfil` para poner el producto en la mano) y cada escena trae su
+  cámara (plano medio → de cerca, `plantillas._cam`; gancho_v3.planos no la pisa). Santi aprueba la hoja antes de
+  probar 5 marcas; Así Nació se prende si 4 pasan 17/19.
+- **Así Nació: lugares de la historia real (Santi, 2026-11-17, después del Frisbee; AN-25):** el lugar de cada escena es
+  donde pasó esa parte según el artículo (playa, estadio, cocina, fábrica, tienda…; fondos `playa`, `estadio` y `cocina`
+  nuevos), nunca un living o un taller genéricos; si la frase dice "en la playa", el fondo es `playa`
+  (`marcas.errores_lugar`, `LUGAR_DE_FRASE`). (El tope de "un tercio repetido" de ese día se sacó el 20/11.)
+- **Así Nació sin hacerlo todo desde cero (Santi, 2026-11-17; AN-25):** las piezas (personajes, manos, fondos,
+  objetos, efectos) se reusan. Lo que falta se crea y queda guardado: objetos
   (`dibujo_nuevo`) y LUGARES (`lugar_nuevo` → `marcas.crear_lugares` → `dibujos.dibujar_fondo`, en
   `data/animacion/fondos/`; entran en la lista de `fondo` desde el próximo arranque). **Rescate** antes de retener un
   video: se rehacen enteras las escenas que fallan creando lo que falte y se vuelve a mirar (`RESCATE_USD` 0,50 aparte);
@@ -1291,6 +1298,20 @@ Problemas abiertos:
 
 ## 9. CHANGELOG
 
+- v1.43.0 (2026-11-20) — **Biblioteca base de Así Nació** (§1): `plantillas.py` con las escenas nuevas (taller,
+  crisis, éxito, en uso, lanzamiento, cierre con Tito) y la fábrica y la tienda rehechas; personajes de perfil
+  trabajando (`Estado.perfil_fijo`, gestos `p_sostener`, `p_cinta`, `p_dar`, `p_senalar`, `p_aplaudir`, `p_tomar`; el
+  perfil va en `_estado` para que el chequeo de composición lo vea); el apretón de perfil y sin destellos; la multitud
+  aplaude; los dibujos guardados miden como los de código (`plantillas.esc_de`, `acciones.factor_tam`, también en el
+  gancho). Guion: la base por defecto, nada nuevo obligatorio, sin tope de repetidas. **Encontrado:** el `cartel` de todos
+  los videos era un cartel de "prohibido" desde que una revisión pidió "un cartel de LEY SECA" y `redibujar_objeto` lo
+  reemplazó para todos (`reemplazos.json`: sacado en la Pi); ahora los genéricos (`GENERICOS_FIJOS`: carteles, cajas,
+  muebles, íconos) no se redibujan. La hoja de la oficina ya no es un rótulo en blanco. **Prueba de la biblioteca** con
+  la botella fiel de Coca-Cola (`output/biblio` en `~/clips_lib`, un worktree de prueba en la Pi): Haiku mira 3 cuadros
+  de cada escena con 14 reglas; tras 11 vueltas pasa sola **1 de 10** (el taller). Lo que más marca: la gente de atrás
+  "parada", fondos con pocos detalles de época (AN-18), las manos que no se ven agarrando (AN-06) y la frase de ejemplo
+  leída al pie de la letra (AN-02). Costo de las revisiones: < US$ 0,10 en Haiku. `tests/test_biblioteca_base.py`.
+  1897 tests OK.
 - v1.42.0 (2026-11-20) — Arreglos del Lego (producto antes de existir → lo de la época, manos humanas que agarran,
   fábrica con obreros y máquinas de época, gráficos siempre con gente, chequeo del fiel más permisivo sin agregados) y
   por tipo después de la ronda 1 (una sola escena de solo manos, `escenas_lib.una_de_manos`; festejar aplaudiendo,

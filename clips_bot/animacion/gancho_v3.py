@@ -103,6 +103,13 @@ def planos(esc_d: dict) -> None:
 
 
 def _objeto(prota: str, **kw) -> dict:
+    # el mismo tamaño para un dibujo guardado que para uno de código (la botella fiel salía chica, 2026-11-20)
+    f = ac.factor_tam(prota)
+    if "escala" in kw:
+        kw["escala"] = round(kw["escala"] * f, 3)
+    for k in kw.get("keyframes") or []:
+        if "escala" in k:
+            k["escala"] = round(k["escala"] * f, 3)
     return {"tipo": "prop", "nombre": prota, "color": True, **kw}
 
 

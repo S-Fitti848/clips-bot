@@ -276,25 +276,31 @@ def escena_plata(tipo: str, dur: float, manga: str = "", seed: int = 0, spec: di
         esc_mesa = 0.9
         y_mesa = ac.PISO - 226 * esc_mesa          # la tapa de la mesa (sus patas llegan al piso)
         y_mano = y_mesa - 58                       # las manos se juntan un poco arriba del contrato
+        # de PERFIL, enfrentados, cada uno con el brazo estirado hasta el medio (de frente se leían "parados mirando
+        # a cámara sin hacer nada", biblioteca base 2026-11-20)
+        from dataclasses import replace as _r
+
+        ropas, ys_mano = [], []
         for k_, (rol_def, gen_def) in enumerate(defectos):
             a_ = actores[k_] if k_ < len(actores) else {}
-            x_ = X0 + (SEP_TRATO if k_ else -SEP_TRATO)
-            e_.actor(a_.get("rol") or rol_def, "quieto", "centro", None, "feliz", k_, x0=x_, x1=x_,
+            e_.actor(a_.get("rol") or rol_def, "quieto", "centro", None, "feliz", k_, x0=X0, x1=X0,
                      genero=a_.get("genero") or gen_def, edad=a_.get("edad") or "adulto")
-        ropas = []
-        for k_, el in enumerate(e_.elementos):
+            el = e_.elementos[-1]
+            pj = per.ELENCO.get(el.get("nombre"), per.ELENCO["narrador"])
+            if el.get("cambios", {}).get("alto_cuerpo"):
+                pj = _r(pj, alto_cuerpo=float(el["cambios"]["alto_cuerpo"]))
+            lx, ly = pj.mano_perfil(*per.GESTOS["p_dar"]["der"])
             s_ = float(el.get("escala", 0.74))
-            alto = float(el.get("cambios", {}).get("alto_cuerpo") or per.ELENCO.get(el.get("nombre"),
-                                                                                per.ELENCO["narrador"]).alto_cuerpo)
-            hy = -420 * alto + 38                  # el hombro, en coordenadas del personaje
-            dx = SEP_TRATO / s_ - 92               # del hombro hasta el medio (hacia el otro)
-            dy = (y_mano - ac.PISO) / s_ - hy
-            h_, c_ = per.brazo_hacia(dx, dy)
+            lado = -1 if k_ else 1
+            el["x"] = round(X0 - lado * (s_ * lx - 6), 1)
+            el["perfil"] = lado
             el["hasta"] = t_corte
-            el["gestos"] = [{"t": 0, "gesto": "reposo"},
-                            {"t": 0.25, "gesto": f"{'brazo_izq' if k_ else 'brazo_der'}:{h_}:{c_}"}]
-            ropas.append(el.get("cambios", {}).get("ropa") or per.ELENCO.get(el.get("nombre"),
-                                                                             per.ELENCO["narrador"]).ropa)
+            el["gestos"] = [{"t": 0, "gesto": "p_sostener_a"}, {"t": 0.25, "gesto": "p_dar"}]
+            for kf in el.get("keyframes", []):
+                kf.pop("x", None)
+            ys_mano.append(ac.PISO + s_ * ly)
+            ropas.append(el.get("cambios", {}).get("ropa") or pj.ropa)
+        y_mano = sum(ys_mano) / len(ys_mano)
         els += e_.elementos
         ropas += ["#3d4f7a", "#5a3d2b"]
         # la mesa y el contrato van DELANTE de los dos (sin `decorado`, que los mandaba detrás de los personajes)
@@ -316,7 +322,7 @@ def escena_plata(tipo: str, dur: float, manga: str = "", seed: int = 0, spec: di
         mano["keyframes"].append(_k(min(dur, t_toca + 0.05 + n_sac * paso + 0.2), y=Y0, rotacion=0, easing="suave"))
         els.append(mano)
         sfx += [(round(t_toca, 3), "tac"), (round(min(dur - 0.1, t_toca + 0.9), 3), "ding")]
-        els += ac.destellos(min(dur - 0.5, t_toca + 0.8), rnd, (X0, Y0 - 200), n_=4)
+        # sin destellos: la revisión los leía como festejo en una compra (biblioteca base, 2026-11-20)
     else:                              # firmar: la lapicera escribe la firma mientras la otra mano sostiene el papel
         t0, t1 = dur * 0.18, dur * 0.85
         esc_p = 2.1

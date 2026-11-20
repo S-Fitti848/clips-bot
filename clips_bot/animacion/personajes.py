@@ -42,6 +42,9 @@ class Estado:
     zancada: float = 0.0
     corre: bool = False
     espaldas: bool = False        # de espaldas: la nuca con el pelo, sin cara ni botones
+    # De perfil QUIETO trabajando (biblioteca base, 2026-11-20: "parados mirando a cámara sin hacer nada"): los brazos
+    # salen de los gestos "p_…" con (hombro, codo) medidos en el plano: hombro 0 = colgando, 90 = horizontal adelante.
+    perfil_fijo: bool = False
 
 
 # Gestos: ángulos (hombro, codo) de cada brazo. Hombro 0 = colgando, 90 = horizontal hacia afuera,
@@ -87,6 +90,20 @@ GESTOS: dict[str, dict] = {
     # festejar aplaudiendo (2026-11-20): los brazos levantados con las manos vacías la revisión los rechaza siempre
     "aplaudir_a": {"izq": (34, -118), "der": (34, -118), "cejas": "arriba"},
     "aplaudir_b": {"izq": (24, -96), "der": (24, -96), "cejas": "arriba"},
+    # De perfil (con `perfil_fijo`): (hombro, codo) en el plano, hacia adelante (biblioteca base, 2026-11-20)
+    "p_sostener_a": {"izq": (26, 72), "der": (32, 70)},       # el objeto adelante, a la altura del pecho
+    "p_sostener_b": {"izq": (30, 64), "der": (36, 62)},
+    "p_cinta_a": {"izq": (40, 32), "der": (48, 28)},          # las manos abajo y adelante, sobre la cinta o la mesa
+    "p_cinta_b": {"izq": (50, 22), "der": (42, 36)},
+    "p_dar": {"izq": (30, 60), "der": (72, 16)},              # el brazo estirado hacia el otro (dar, recibir, cobrar)
+    "p_dar_b": {"izq": (34, 56), "der": (66, 22)},
+    "p_senalar": {"izq": (20, 30), "der": (88, 4), "cejas": "arriba"},
+    "p_senalar_b": {"izq": (24, 26), "der": (96, -2), "cejas": "arriba"},
+    "p_aplaudir_a": {"izq": (62, 58), "der": (70, 46), "cejas": "arriba"},   # aplaudiendo de costado
+    "p_aplaudir_b": {"izq": (54, 70), "der": (62, 60), "cejas": "arriba"},
+    "p_tomar_a": {"izq": (30, 60), "der": (70, 110)},        # se lleva el producto a la boca (tomar, comer)
+    "p_tomar_b": {"izq": (30, 60), "der": (62, 116)},
+    "levantar": {"izq": (30, -60), "der": (165, 12), "cejas": "arriba"},   # de frente: lo levanta arriba de la cabeza
 }
 
 
@@ -221,7 +238,22 @@ class Personaje:
         return out
 
     # -- de perfil (mirando a la derecha; a la izquierda se espeja) --
+    def mano_perfil(self, hombro: float, codo: float) -> tuple[float, float]:
+        """(x, y) local de la mano de adelante de perfil quieto (mirando a la derecha) con ese gesto."""
+        hy = -150 * self.alto_cuerpo - 270 * self.alto_cuerpo + 38
+        a1, a2 = math.radians(hombro), math.radians(hombro + codo)
+        return (4 + math.sin(a1) * self.LARGO_BRAZO + math.sin(a2) * self.LARGO_ANTEBRAZO,
+                hy + math.cos(a1) * self.LARGO_BRAZO + math.cos(a2) * self.LARGO_ANTEBRAZO)
+
     def _brazos_perfil(self, e: Estado, hy: float) -> list[list[tuple[float, float]]]:
+        if e.perfil_fijo:          # de perfil quieto: los brazos del gesto, hacia adelante
+            out = []
+            for dx, (h, c) in ((-6, e.brazo_izq), (4, e.brazo_der)):     # el de atrás primero
+                a1, a2 = math.radians(h), math.radians(h + c)
+                x1, y1 = dx + math.sin(a1) * self.LARGO_BRAZO, hy + math.cos(a1) * self.LARGO_BRAZO
+                out.append([(dx, hy), (x1, y1), (x1 + math.sin(a2) * self.LARGO_ANTEBRAZO,
+                                                 y1 + math.cos(a2) * self.LARGO_ANTEBRAZO)])
+            return out
         sw = (34 if e.corre else 26) * e.zancada
         codo = 70 if e.corre else 25
         out = []

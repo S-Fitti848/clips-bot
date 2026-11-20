@@ -58,6 +58,11 @@ ACCIONES = {
                "empresa, una deuda, un contrato, una patente)", ("manos",), None),
 }
 # Las de los pedidos del 16/11: solo se ofrecen al guion con `animacion.uso_manos` (las prende marcas.armar_video)
+# la biblioteca BASE (Santi, 2026-11-20): las escenas nuevas de plantillas.py, probadas una por una
+from . import plantillas as _pl  # noqa: E402
+
+ACCIONES.update(_pl.DESCRIPCION)
+CON_CAMARA = _pl.CON_CAMARA
 ACCIONES_V4 = {"uso_manos", "inspiracion", "contar_billetes", "abrir_caja", "apreton_manos", "firmar"}
 CON_V4 = False
 LIBRE = "libre"
@@ -404,3 +409,7 @@ def _despega(plano, spec, dur, i, obj, rnd):
         els.insert(0, lin)
     return {"elementos": els, "fondo": "cielo", "camara": [{"t": 0, "zoom": 1.0}, {"t": dur, "zoom": 1.1, "easing": "suave"}],
             "sfx": [(t0, "cohete")], "actores": []}
+
+
+# la biblioteca base pisa a las versiones viejas de la fábrica y la tienda (Santi, 2026-11-20)
+globals().update({f"_{k}": f for k, f in _pl.CONSTRUCTORES.items()})
