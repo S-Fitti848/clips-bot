@@ -126,3 +126,12 @@ def test_revision_calibrada_y_minimo_15():
     assert calidad.minimo("asinacio") == 15
     ficha = mk.ficha_escena({"frase": "Casi quiebran", "fondo": "oficina"}, {})
     assert ficha["emocion"] == "perdida" and "EMOCIÓN" in mk.texto_ficha(ficha)
+
+
+def test_una_escena_base_que_falla_no_se_cambia_por_otra_base():
+    """Pepsi (2026-11-20): la crisis y el trato pasaron a "en uso" en un living y el video quedó peor."""
+    d = {"escenas": [{"frase": "En 1923 quebró", "accion_escena": "crisis", "fondo": "oficina"}]}
+    assert rz.reemplazar_con_base(d, {}, [], 0, lambda d_: (_ for _ in ()).throw(AssertionError("no se arma"))) is None
+    assert rz.es_base({"accion_escena": "apreton_manos"}) and not rz.es_base({"accion_escena": "reunion"})
+    assert rz.base_para_frase("En 1898 pasó a llamarse Pepsi") == "taller_inventor"
+    assert rz.base_para_frase("Algo pasó", parte="problema") == "crisis"

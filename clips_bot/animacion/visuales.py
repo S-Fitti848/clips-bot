@@ -71,7 +71,9 @@ def validar(v: dict, frase: str, fuente: str, guion_txt: str) -> dict:
     num, txt = str(v.get("dato_numero") or "").strip()[:14], str(v.get("dato_texto") or "").strip()[:28]
     # un año como número gigante repite el del rótulo (Nintendo, 2026-11-19: "1889" tres veces en el mismo cuadro)
     es_anio = bool(re.fullmatch(r"(1[5-9]|20)\d\d", _digitos(num) or "")) and len(_digitos(num)) == len(num.strip())
-    if num and not es_anio and (_digitos(num) and _digitos(num) in _digitos(frase) or _norm(num).split(" ")[0] in _norm(frase)):
+    # el número gigante repetía SIEMPRE lo que ya dice el subtítulo (tiene que estar en la frase): AN-11 lo marcaba en
+    # cada video (Pepsi, 2026-11-20: "35 000 dólares aparece dos veces"). Ya no va.
+    if False and num and not es_anio and (_digitos(num) and _digitos(num) in _digitos(frase)):
         out["dato"] = f"{num.upper()}|{txt}"
     cita = str(v.get("cita_texto") or "").strip()
     if cita and len(cita) <= 160 and _norm(cita) and _norm(cita) in _norm(fuente):

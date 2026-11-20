@@ -2877,7 +2877,10 @@ mirando el video en el celular:
   éxito): cada cuadro trae la emoción de su frase.
 NO marques detalles del fondo (cuántos adornos tiene, la textura de la pared, un mueble de más o de menos), el estilo
 del dibujo, las proporciones, ni cosas que hay que buscar con lupa. Las reglas del estándar se juzgan con este mismo
-criterio: si un espectador no lo notaría en 1 segundo, la regla se cumple. Ante la duda, cumple."""
+criterio: si un espectador no lo notaría en 1 segundo, la regla se cumple. Ante la duda, cumple. En particular:
+AN-04 (producto en uso), AN-13 (lugar), AN-15 (ropa y rol), AN-17 y AN-18 (época y detalles del lugar) NO se cumplen
+solo si salta a la vista que está mal (un living para una fábrica, alguien vestido de hoy en 1890); un detalle
+discutible de la ropa, del decorado o de cuántas escenas muestran el producto, cumple."""
 
 
 MEJORAS_PRIMERO = "mejoras_primero"   # bot_estado: [{fecha, video, frase, reglas, que, enviada}]

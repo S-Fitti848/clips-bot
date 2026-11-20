@@ -62,6 +62,7 @@ CARAS = {"feliz": ("arriba", "sonrisa", 0.0), "enojado": ("enojo", "cerrada", 0.
 # Ciclos (2026-11-14): pasos por segundo de cada pierna, cuánto rebota el cuerpo, cuánto se balancean
 # los brazos (en contrafase con las piernas), cuánto se doblan los codos y cuánto se inclina la cabeza.
 CICLOS = {"caminar": (1.7, 16.0, 24.0, 18.0, 3.0), "correr": (2.8, 30.0, 40.0, 75.0, 4.0)}
+CABEZA_BAJA = {"devastado": 0.8, "triste": 0.5, "frustrado": 0.3, "concentrado": 0.35}
 GRIS_PAUSA = "#4a4f5c"
 TIPOS_ELEMENTO = ("personaje", "prop", "gancho", "texto", "tito", "contador")
 TRANSICIONES = ("corte", "fundido", "zoom", "barrido", "iris")
@@ -333,6 +334,8 @@ class Elemento:
         if cara in CARAS:
             cejas, boca, ap = CARAS[cara]
             e.cejas, e.boca, e.apertura = cejas, boca, ap
+            if cara in CABEZA_BAJA:      # devastado o triste: la cabeza cae, también de perfil (2026-11-20)
+                e.cabeza_baja = max(e.cabeza_baja, CABEZA_BAJA[cara])
         habla = self.datos.get("habla", False)
         if isinstance(habla, list):   # tramos [inicio, fin] locales
             habla = any(a <= t < b for a, b in habla)

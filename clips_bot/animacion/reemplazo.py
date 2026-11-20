@@ -272,25 +272,40 @@ def reemplazar(haiku, d: dict, datos: dict, sfx: list, k: int, ids: list[str], a
 # nuevos ni otra revisión con imágenes. Nunca se rehace el video entero." La escena base se elige por la frase (sin
 # Claude), se arma con el producto, el lugar, la época y la gente de esa escena y se empalma en su tramo.
 _BASE_POR_FRASE = (
-    ("crisis", r"quiebr|banca?rrot|fracas|perdi|deuda|cerr|nadie (lo )?compr|no se vend|cay[eó]|ruina|problema"),
+    ("crisis", r"quiebr|quebr|banca?rrot|fracas|perdi|deuda|cerr|nadie (lo )?compr|no se vend|cay[eó]|ruina|problema"),
     ("exito_multitud", r"millones|[ée]xito|furor|r[ée]cord|agot|todos lo quer|famos|se vend[ií]a(n)? solo"),
     ("lanzamiento", r"lanz|publicidad|anunci|present|comercial|campa[ñn]a|feria|exposici"),
     ("apreton_manos", r"trato|acuerdo|socio|firm|compr[oó] la (empresa|marca|f[oó]rmula)|invers|contrato|vendi[oó] la"),
     ("fabrica_produce", r"f[aá]brica|produc|fabric|embotell|en serie|planta|l[ií]nea"),
     ("vender_tienda", r"vend|tienda|almac[eé]n|negocio|mostrador|kiosco|supermercado|comprar"),
-    ("taller_inventor", r"invent|idea|cre[oó]|prob[oó]|laborator|taller|f[oó]rmula|receta|descubr|empez"),
+    ("taller_inventor", r"invent|idea|cre[oó]|prob[oó]|laborator|taller|f[oó]rmula|receta|descubr|empez|naci[oó]|"
+                        r"botica|farmac|qu[ií]mic|llam(arse|[oó])|nombre"),
     ("producto_en_uso", r"us(a|aba|aron)|tom(a|aba)|com(e|ía)|jug|todos los d[ií]as|en casa|en la cocina"),
 )
 
 
+_POR_PARTE = {"problema": "crisis", "idea": "taller_inventor", "giro": "lanzamiento", "que_paso": "vender_tienda"}
+
+
 def base_para_frase(frase: str, fallo: str = "", parte: str = "") -> str:
     """La escena de la biblioteca base que mejor cuenta la frase (sin Claude), distinta de la que falló."""
-    if parte == "final":
+    if parte == "final" and fallo != "cierre_tito":
         return "cierre_tito"
     for accion, rx in _BASE_POR_FRASE:
         if accion != fallo and re.search(rx, frase or "", re.I):
             return accion
+    por_parte = _POR_PARTE.get(parte, "")
+    if por_parte and por_parte != fallo:
+        return por_parte
     return "producto_en_uso" if fallo != "producto_en_uso" else "taller_inventor"
+
+
+def es_base(spec: dict) -> bool:
+    """¿La escena ya es de la biblioteca base? (Pepsi, 2026-11-20: cambiar una base que falló por OTRA base que no
+    cuenta lo mismo empeoraba el video: la crisis y el trato pasaron a "en uso" en un living.)"""
+    from . import plantillas
+
+    return str(spec.get("accion_escena") or "") in set(plantillas.BASE) | set(plantillas.CON_CAMARA)
 
 
 def spec_base(d: dict, k: int) -> dict:
@@ -314,6 +329,9 @@ def reemplazar_con_base(d: dict, datos: dict, sfx: list, k: int, armar, avisar=l
     """Cambia SOLO la escena k por la escena base que mejor sirve para su frase y la empalma en su tramo (misma
     duración: la voz, los subtítulos y lo demás quedan idénticos). Sin revisión con imágenes. (datos, sfx, d, texto)
     o None si no empalma."""
+    if es_base(d["escenas"][k]):
+        avisar(f"reemplazo escena {k + 1}: ya es la base {d['escenas'][k].get('accion_escena')}: queda como está")
+        return None
     nuevo_spec = spec_base(d, k)
     d2 = copy.deepcopy(d)
     d2["escenas"][k] = nuevo_spec
