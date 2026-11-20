@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-11-20 | **Versión:** v1.44.0 (desplegado) | **Modo:** Fase 2: corriendo solo en la Pi. **Rots APAGADO. Así Nació PAUSADO desde el 19/11** (vuelve con 1 por día, preparado la noche anterior, si 4 de 5 marcas nuevas dan 15/19 o más por menos de US$ 0,60). Pequeña Historia (3 por día, madrugada desde las 04:00) (**NO se publica sola desde el 17/11**: llega con ✅ Publicar / ❌ Cancelar y sin respuesta no sale) y **Así Nació** (2 por día, desde las 07:00, publican 13:00 y 20:00 en YouTube y Facebook con ❌ Cancelar), todo al privado de Santi
+**Snapshot:** 2026-11-20 | **Versión:** v1.45.0 (desplegado) | **Modo:** Fase 2: corriendo solo en la Pi. **Rots APAGADO. Así Nació PAUSADO desde el 19/11** (vuelve con 1 por día, preparado la noche anterior, si 4 de 5 marcas nuevas dan 15/19 o más por menos de US$ 0,60). Pequeña Historia (3 por día, madrugada desde las 04:00) (**NO se publica sola desde el 17/11**: llega con ✅ Publicar / ❌ Cancelar y sin respuesta no sale) y **Así Nació** (2 por día, desde las 07:00, publican 13:00 y 20:00 en YouTube y Facebook con ❌ Cancelar), todo al privado de Santi
 
 > **SI ESTÁS EMPEZANDO UNA SESIÓN NUEVA, LEÉ §10.** Ahí está qué está hecho, qué quedó a medias,
 > qué falta, y las trampas que ya nos mordieron.
@@ -1315,6 +1315,19 @@ Problemas abiertos:
 
 ## 9. CHANGELOG
 
+- v1.45.0 (2026-11-20, tarde) — **Prueba final de 5 marcas nuevas con el motor nuevo** (guion real con Sonnet, voz de
+  prueba, una revisión calibrada + reemplazo por escena base y una medida final; `output/animacion/prueba5b` en la Pi,
+  hoja `hoja_r2.jpg` mandada a Santi). Ronda 1 (guion nuevo): Pepsi 13, Levi's 14, Kellogg's 17, Gillette 11, Crayola 8;
+  US$ 0,23-0,28 por video (todo Claude, ~20 pedidos), 14-17 min en la Pi, 26-28 s. Ronda 2 (mismo guion, motor
+  arreglado, US$ 0,01-0,02 cada una): 18, 11, 13, 11, 8. **Solo 1 de 5 llega a 15/19: Así Nació sigue pausado.**
+  Arreglado con la prueba: una escena base que falla ya no se cambia por otra base (la crisis y el trato terminaban
+  "en uso" en un living); el reemplazo respeta el lugar de la escena; "la compró" va al apretón e "imaginó" al taller;
+  el químico vuelca el matraz sobre el producto (`p_verter`, prop `chorro`); el número gigante y el texto grande que
+  repiten la frase no van (AN-11 en casi todos); en el cierre el producto queda donde apunta el dedo de Tito y la ficha
+  dice que es Tito; un lugar inventado puesto directo en `fondo` también se crea; lo de la cara (maquinilla, cepillo) se
+  usa en la cara; las caras tristes bajan la cabeza. **Lo que sigue fallando:** la revisión varía mucho entre corridas
+  (Kellogg's 17 → 13 y Levi's 14 → 11 con el mismo guion), escenas `libre`/`nueva` que no se entienden (Crayola), el
+  gancho (AN-01) y la gente de la historia en escenas que el motor no tiene (una escuela, un supermercado).
 - v1.44.0 (2026-11-20) — **Motor de Así Nació que se autosustenta** (§1): manos con dedos (`manos.py`) en personajes y
   Tito, dedos sobre lo agarrado, tomar/comer/escribir/coser/armar/cargar completos, expresiones por emoción
   (`emociones.py`, caras nuevas: concentrado, preocupado, determinado, devastado, frustrado, eufórico; cejas
