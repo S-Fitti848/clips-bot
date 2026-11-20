@@ -501,11 +501,12 @@ def _firmar(plano, spec, dur, i, obj, rnd):
     mano = _de_perfil(e, 0, 1, "p_escribir_a", "p_escribir_b", dur, 0.22)
     y_mesa = ac.PISO - 226 * 0.72
     t0, t1 = dur * 0.15, dur * 0.85
+    # un escritorio ancho: el papel bajo la mano y el producto APOYADO en la otra punta (afuera quedaba flotando)
     els = list(e.elementos) + [
-        _mesa(mano[0] + 10),
+        _mesa(mano[0] + 50, 0.72),
         _el("papel_firma", mano[0] - 6, y_mesa - 6, escala=0.75, forma=1, fase=0.0,
             keyframes=[{"t": 0, "fase": 0.0}, {"t": t0, "fase": 0.0}, {"t": t1, "fase": 1.0, "easing": "lineal"}]),
-        _el(obj, mano[0] + 190, y_mesa - 75, escala=esc_de(obj, 150), color=True)]
+        _el(obj, mano[0] + 115, y_mesa - 55, escala=esc_de(obj, 110), color=True)]
     if len(spec.get("actores") or []) > 1:     # el otro del trato, del otro lado, esperando con la mano lista
         _persona(e, _rol(spec, 1, "empresario"), "usar", 820, "feliz", 1)
         _de_perfil(e, 1, -1, "p_sostener_a", "p_sostener_a", dur, 9.0)
