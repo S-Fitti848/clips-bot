@@ -72,8 +72,10 @@ SIN_DECO = {"mesa_arriba"}
 # Como mucho UNA escena de solo manos por video (las 5 marcas del 20/11: firmar, contar billetes y armar desde arriba
 # en el mismo video y la revisión decía "solo manos, sin gente, no se entiende sin la voz"). Se queda la de uso (el
 # producto en uso); las demás pasan a su versión con gente, sin pedirle nada a Claude.
-SOLO_MANOS = {"uso_manos", "contar_billetes", "abrir_caja", "firmar"}
-CON_GENTE = {"firmar": ("reunion", "lejos"), "contar_billetes": ("reunion", "lejos"),
+# firmar ya NO es de solo manos: es una persona firmando en su escritorio (biblioteca base, 2026-11-20); antes la
+# regla de "una sola de manos" la cambiaba por una reunión de dos personas paradas (Pepsi)
+SOLO_MANOS = {"uso_manos", "contar_billetes", "abrir_caja"}
+CON_GENTE = {"contar_billetes": ("reunion", "lejos"),
              "abrir_caja": ("vender_tienda", "cerca"), "uso_manos": ("armar_mesa", "lejos"),
              "armar_mesa": ("armar_mesa", "lejos")}
 

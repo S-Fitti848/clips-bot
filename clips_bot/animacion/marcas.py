@@ -2055,6 +2055,8 @@ def linea_de_tiempo(d: dict, inicios: list[float], fin: float, palabras: list,
             # el año de la escena manda (es el que decide la decoración): nunca un rótulo de 1958 con monitores de hoy
             anio_r = str(anio_esc) if anio_esc else (next((x for x in partes if x.isdigit()), "") or str(anio_actual))
             lugar_r = next((x for x in partes if not x.isdigit()), "") or ultimo_lugar
+            # el lugar corto: la ciudad sin la provincia ("New Bern, Carolina del N" se cortaba, AN-11: Pepsi)
+            lugar_r = lugar_r.split(",")[0].strip()[:20]
             ultimo_lugar = lugar_r or ultimo_lugar
             # si el subtítulo ya dice el año, el rótulo solo dice el lugar (AN-11: "1923 escrito dos veces", Pepsi)
             if anio_r and anio_r in str(e.get("frase") or "") and lugar_r:

@@ -206,7 +206,8 @@ def test_una_sola_escena_de_solo_manos():
                {"accion_escena": "vender_tienda", "plano": "lejos"}]
     out = lib.una_de_manos(escenas)
     assert [lib.solo_manos(e) for e in out] == [False, False, True, False, False]
-    assert out[0]["accion_escena"] == "reunion" and out[3]["accion_escena"] == "vender_tienda"
+    # firmar ya es una persona en su escritorio (2026-11-20): no es "solo manos" y queda como está
+    assert out[0]["accion_escena"] == "firmar" and out[3]["accion_escena"] == "vender_tienda"
     assert out[1] == {"accion_escena": "armar_mesa", "plano": "lejos"}
 
 

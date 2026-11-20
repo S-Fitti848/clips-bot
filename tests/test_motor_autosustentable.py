@@ -275,3 +275,10 @@ def test_escenas_del_pepsi_sin_manos_sueltas():
     assert any(el.get("tipo") == "personaje" for el in firma["elementos"])
     assert not any(el.get("nombre") == "mano" for el in firma["elementos"])
     assert uso_v3.ESC_APRETON_MEDIO >= 0.5
+
+
+def test_firmar_no_se_cambia_por_una_reunion():
+    from clips_bot.animacion import escenas_lib as lib
+
+    esc = [{"accion_escena": "uso_manos"}, {"accion_escena": "firmar"}]
+    assert [e["accion_escena"] for e in lib.una_de_manos(esc)] == ["uso_manos", "firmar"]
