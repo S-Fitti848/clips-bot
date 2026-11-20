@@ -1868,8 +1868,9 @@ def escena_accion(spec: dict, dur: float, i: int, primera: bool = False, tono: f
     if re.fullmatch(r"(1[5-9]|20)\d\d", texto):
         texto = ""
     if texto and not primera:
-        pal = {w for w in re.findall(r"[a-záéíóúñ0-9]{3,}", texto.lower())}
-        if pal & {w for w in re.findall(r"[a-záéíóúñ0-9]{3,}", str(spec.get("frase") or "").lower())}:
+        def _raices(t):      # "PROHIBIDOS" y "prohibieron" son lo mismo para el que mira
+            return {w[:6] for w in re.findall(r"[a-záéíóúñ0-9]{3,}", t.lower())}
+        if _raices(texto) & _raices(str(spec.get("frase") or "")):
             texto = ""
     if texto:
         elementos.append({"tipo": "gancho", "texto": texto, "y": Y_TEXTO_PANTALLA, "modo": "palabras" if primera else "rebote",

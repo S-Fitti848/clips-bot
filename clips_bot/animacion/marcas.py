@@ -2775,6 +2775,13 @@ def ficha_escena(esc_k: dict, d: dict) -> dict:
             if accion == "quieto" else ""
         gente.append({"quien": a.get("persona_real") or rol, "rol": rol, "genero": genero, "edad": a.get("edad") or "",
                       "ropa": piezas.replace("+", " + "), "sombrero": sombrero, "hace": hace, "en_las_manos": lleva})
+    if esc_k.get("accion_escena") == "cierre_tito":
+        # el cierre lo hace Tito, el narrador del canal, no la gente de la historia (Levi's, 2026-11-20: la revisión lo
+        # juzgaba como "el científico" del guion)
+        gente = [{"quien": "el Abuelo Tito (el narrador y la mascota del canal, de guardapolvo)", "rol": "narrador",
+                  "genero": "hombre", "edad": "mayor", "ropa": "guardapolvo", "sombrero": "ninguno",
+                  "hace": "señala el producto con el índice para cerrar el video", "en_las_manos": ""}]
+        anio = 2026
     return {"lugar": esc_k.get("lugar_nuevo") or esc_k.get("fondo") or "", "anio": anio, "gente": gente,
             "objetos": [o.get("prop") for o in esc_k.get("objetos") or [] if o.get("prop")],
             "accion_escena": esc_k.get("accion_escena") or "", "plano": esc_k.get("plano") or "",

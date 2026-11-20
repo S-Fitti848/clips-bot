@@ -449,13 +449,19 @@ def _lanzamiento(plano, spec, dur, i, obj, rnd):
 
 
 def _cierre_tito(plano, spec, dur, i, obj, rnd):
-    """Tito en su taller, de hoy, señalando con el índice el producto que brilla sobre su mesa."""
+    """Tito en su taller, de hoy, señalando con el índice el producto que brilla sobre su mesa. El producto queda
+    JUSTO donde apunta el dedo (Levi's, 2026-11-20: "la mano apunta hacia el aire")."""
     tito = {"tipo": "tito", "x": 360, "y": ac.PISO + 20, "escala": 0.7, "habla": True,
             "poses": [{"t": 0, "pose": "senala"}]}
-    y_m = ac.PISO - 226 * 0.9
-    els = [tito, _mesa(780, 0.9), _el(obj, 780, y_m - 110, escala=esc_de(obj, 220), color=True,
+    # la punta del índice de "senala" (tito.py: muñeca en 330, -606 + ~70 de dedo) a escala 0.7
+    punta = (360 + 0.7 * 400, ac.PISO + 20 + 0.7 * -640)
+    alto = 200
+    x_p = punta[0] + 120
+    y_m = punta[1] + alto * 0.45                 # la tapa de la mesa: el producto apoyado, con el medio a la altura del dedo
+    esc_mesa = round((ac.PISO - y_m) / 226, 3)
+    els = [tito, _mesa(x_p, esc_mesa), _el(obj, x_p, y_m - alto / 2, escala=esc_de(obj, alto), color=True,
                                      keyframes=[{"t": 0, "rotacion": -5}, {"t": dur, "rotacion": 5, "easing": "suave"}])]
-    els += ac.destellos(dur * 0.4, rnd, (780, y_m - 220), n_=4)
+    els += ac.destellos(dur * 0.4, rnd, (x_p, y_m - alto - 40), n_=4)
     return {"elementos": els, "fondo": "taller", "fondo_fijo": True,
             "camara": _cam(dur, (560, Y_MEDIO - 60, 1.5), (600, Y_MEDIO - 20, MEDIO)),
             "sfx": [(round(dur * 0.4, 2), "ding")], "actores": []}
