@@ -168,3 +168,14 @@ def test_preparado_la_noche_anterior(tmp_path):
     # se programa para ESE día a su hora, no esa misma noche
     t = m._hora_asinacio(s, "12:30", datetime(2026, 11, 21, 21, 40, tzinfo=m.AR), "2026-11-22")
     assert (t.date(), t.hour, t.minute) == (date(2026, 11, 22), 12, 30)
+
+
+def test_el_quimico_vuelca_el_matraz_sobre_el_producto_y_el_anio_no_se_repite():
+    """Pepsi (2026-11-20): "no se ve la acción de mezclar" y "1923 aparece dos veces"."""
+    lab = _armar("taller_inventor", fondo="laboratorio", _oficio="farmacéutico")
+    nombres = [el.get("nombre") for el in lab["elementos"]]
+    assert "chorro" in nombres and any(el.get("nombre") == "frasco" and el.get("agarre") for el in lab["elementos"])
+    assert rz.base_para_frase("Charles Guth, de la fábrica de golosinas Loft, la compró") == "apreton_manos"
+    d = ac.escena_accion({"frase": "En 1923 quebró", "fondo": "oficina", "texto_pantalla": "1923",
+                          "actores": [{"rol": "empresario", "accion": "preocuparse"}]}, 3.0, 2)[0]
+    assert not [el for el in d["elementos"] if el.get("tipo") == "gancho"]

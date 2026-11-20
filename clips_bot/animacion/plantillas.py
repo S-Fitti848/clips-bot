@@ -215,8 +215,20 @@ def _taller_inventor(plano, spec, dur, i, obj, rnd):
                                                                          {"t": dur, "rotacion": 8, "easing": "suave"}])]
         y_mesa = ac.PISO - 226 * 0.72
         if lugar == "laboratorio":
-            els_extra += [_el("frasco", mano[0] + 150, y_mesa, escala=0.55, color="#7fd36b"),
-                          _el("tubos", mano[0] + 300, y_mesa, escala=0.5)]
+            # MEZCLA (Pepsi, 2026-11-20: "no se ve la acción de mezclar"): vuelca el matraz sobre el producto que está
+            # en la mesa, con el chorro de color; los tubos al lado
+            els_extra.pop()                           # el producto no va en la mano: va en la mesa, recibiendo
+            mano = _de_perfil(e, 0, 1, "p_verter", "p_verter", dur, 9.0)
+            # la boca del matraz inclinado 100° (178 px de alto a escala 130/200) cae sobre el producto
+            boca = (mano[0] + 114, mano[1] - 10 + 20)
+            alto_p = 110
+            arriba_p = y_mesa - alto_p
+            els_extra += [_el(obj, boca[0] + 6, y_mesa - alto_p / 2, escala=esc_de(obj, alto_p), color=True),
+                          _agarrado("frasco", mano, 130, quien=e.actores[0],
+                                    keyframes=[{"t": 0, "rotacion": 20}, {"t": 0.6, "rotacion": 100, "easing": "suave"}]),
+                          _el("chorro", boca[0], boca[1], escala=round(max(0.2, (arriba_p - boca[1]) / 140), 3),
+                              desde=0.65, color="#7fd36b"),
+                          _el("tubos", mano[0] + 320, y_mesa, escala=0.5)]
         else:
             els_extra.append(_el("papel_firma", mano[0] + 150, ac.PISO - 160, escala=0.6, forma=1))
     dos = len(spec.get("actores") or []) > 1

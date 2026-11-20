@@ -2054,6 +2054,13 @@ def prop_frasco(color: str = P.VERDE, **_) -> str:
             + camino("M-12 -150 L-12 -110", borde=True, ancho=6, color="#ffffff"))
 
 
+def prop_chorro(color: str = P.VERDE, **_) -> str:
+    """El chorro de líquido que cae del matraz al producto, con burbujas (mezclar; el origen es arriba)."""
+    c = color if isinstance(color, str) and color.startswith("#") else P.VERDE
+    return (camino("M-8 0 Q-14 60 -6 140 L6 140 Q14 60 8 0 Z", c, borde=False)
+            + "".join(circulo(x, y, r, "#ffffff", borde=False) for x, y, r in ((-2, 40, 4), (3, 90, 3), (-3, 120, 5))))
+
+
 def prop_tubos(**_) -> str:
     """Una gradilla con tubos de ensayo de colores (el origen es la base)."""
     p = [rect(-130, -60, 260, 24, P.MADERA, r=4), rect(-130, -10, 260, 18, P.MADERA, r=4)]
@@ -2083,7 +2090,7 @@ PROPS = {"reloj_gigante": prop_reloj_gigante, "cinta_frente": prop_cinta_frente,
          "celular": prop_celular, "corona": prop_corona, "cohete": prop_cohete,
          "idea_fallida": prop_bombilla_rota, "rayos": prop_rayos,
          "caja_registradora": prop_caja_registradora, "papel_firma": prop_papel_firma, "lapicera": prop_lapicera,
-         "apreton": prop_apreton, "dedos": prop_dedos, "frasco": prop_frasco, "tubos": prop_tubos}
+         "apreton": prop_apreton, "dedos": prop_dedos, "frasco": prop_frasco, "tubos": prop_tubos, "chorro": prop_chorro}
 
 
 def _palabras(t: str) -> set[str]:

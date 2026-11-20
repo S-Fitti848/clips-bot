@@ -275,7 +275,9 @@ _BASE_POR_FRASE = (
     ("crisis", r"quiebr|quebr|banca?rrot|fracas|perdi|deuda|cerr|nadie (lo )?compr|no se vend|cay[eó]|ruina|problema"),
     ("exito_multitud", r"millones|[ée]xito|furor|r[ée]cord|agot|todos lo quer|famos|se vend[ií]a(n)? solo"),
     ("lanzamiento", r"lanz|publicidad|anunci|present|comercial|campa[ñn]a|feria|exposici"),
-    ("apreton_manos", r"trato|acuerdo|socio|firm|compr[oó] la (empresa|marca|f[oó]rmula)|invers|contrato|vendi[oó] la"),
+    # antes que la fábrica: "Guth, de la fábrica Loft, la compró" es un trato, no una fábrica (Pepsi, 2026-11-20)
+    ("apreton_manos", r"trato|acuerdo|socio|firm|\b(la|lo) compr[oó]|compr[oó] (la|el) (empresa|marca|f[oó]rmula|"
+                      r"compa[ñn][ií]a)|invers|contrato|vendi[oó] la|nuevo due[ñn]o|acreedor"),
     ("fabrica_produce", r"f[aá]brica|produc|fabric|embotell|en serie|planta|l[ií]nea"),
     ("vender_tienda", r"vend|tienda|almac[eé]n|negocio|mostrador|kiosco|supermercado|comprar"),
     ("taller_inventor", r"invent|idea|cre[oó]|prob[oó]|laborator|taller|f[oó]rmula|receta|descubr|empez|naci[oó]|"

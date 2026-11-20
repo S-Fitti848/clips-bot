@@ -19,6 +19,7 @@ Todo determinista (misma escena = mismo dibujo).
 from __future__ import annotations
 
 import math
+import re
 import random
 
 from . import paleta as P
@@ -1231,7 +1232,7 @@ def posiciones_finales(esc_d: dict) -> list[tuple[float, float]]:
 # dibujos de escenas.py (los muebles grandes tienen su caja real: la mesa es 300 × 226).
 CAJAS = {"mesa": (150, 0, 226), "estante": (140, 0, 70), "lampara": (110, -150, 187), "tele": (150, -190, 130),
          "cuadro": (130, -150, 90), "ventana": (170, -200, 200), "jarron": (100, -120, 120),
-         "botella": (80, -262, 230), "frasco": (90, -186, 14), "tubos": (130, -150, 8), "dedos": (30, -30, 30), "lata": (80, -170, 150), "caja": (140, -180, 170), "pelota": (70, -70, 70),
+         "botella": (80, -262, 230), "frasco": (90, -186, 14), "chorro": (20, 0, 140), "tubos": (130, -150, 8), "dedos": (30, -30, 30), "lata": (80, -170, 150), "caja": (140, -180, 170), "pelota": (70, -70, 70),
          "pelota_espuma": (78, -78, 78), "juego_mesa": (170, -90, 90), "hamburguesa": (130, -90, 130),
          "chocolate": (160, -80, 80), "galletitas": (100, -70, 70), "auto": (180, -100, 72),
          "telefono_disco": (120, -90, 60), "radio": (130, -90, 90), "consola": (150, -40, 170),
@@ -1861,6 +1862,9 @@ def escena_accion(spec: dict, dur: float, i: int, primera: bool = False, tono: f
             el["color"] = True
     elementos = e.fondo_el + e.elementos
     texto = str(spec.get("texto_pantalla") or "").strip()
+    # un año solo en grande repite el del rótulo y el del subtítulo (Pepsi, 2026-11-20: "1923 aparece dos veces")
+    if re.fullmatch(r"(1[5-9]|20)\d\d", texto):
+        texto = ""
     if texto:
         elementos.append({"tipo": "gancho", "texto": texto, "y": Y_TEXTO_PANTALLA, "modo": "palabras" if primera else "rebote",
                           "tam": 100, "desde": 0.0 if primera else 0.2})

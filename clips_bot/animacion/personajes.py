@@ -121,6 +121,7 @@ GESTOS: dict[str, dict] = {
     "p_coser_b": {"izq": (40, 40), "der": (92, 70), "cabeza_baja": 0.3},     # tira del hilo para arriba
     "p_armar_a": {"izq": (44, 44), "der": (56, 30), "cabeza_baja": 0.5},     # encaja una pieza
     "p_armar_b": {"izq": (54, 32), "der": (46, 46), "cabeza_baja": 0.5},
+    "p_verter": {"izq": (30, 60), "der": (60, 40)},                          # vuelca lo que tiene (se calcula abajo)
     "p_cargar_a": {"izq": (40, 92), "der": (46, 88)},                        # la caja contra el pecho
     "p_cargar_b": {"izq": (36, 96), "der": (42, 92)},
     # Emociones de cuerpo (Santi, 2026-11-20): de frente
@@ -144,7 +145,7 @@ _MANOS_PREFIJO = (
     ("p_senalar", {"der": "senala", "izq": "relajada"}), ("senalar", {"der": "senala"}),
     ("p_sostener", {"der": "agarra", "izq": "agarra"}), ("sostener", {"der": "agarra", "izq": "agarra"}),
     ("p_cinta", {"der": "agarra", "izq": "agarra"}), ("p_dar", {"der": "agarra", "izq": "relajada"}),
-    ("p_tomar", {"der": "agarra"}), ("p_comer", {"der": "agarra"}), ("p_escribir", {"der": "agarra", "izq": "abierta"}),
+    ("p_tomar", {"der": "agarra"}), ("p_verter", {"der": "agarra"}), ("p_comer", {"der": "agarra"}), ("p_escribir", {"der": "agarra", "izq": "abierta"}),
     ("p_coser", {"der": "agarra", "izq": "agarra"}), ("p_armar", {"der": "agarra", "izq": "agarra"}),
     ("p_cargar", {"der": "agarra", "izq": "agarra"}), ("cargar", {"der": "agarra", "izq": "agarra"}),
     ("pagar", {"der": "agarra", "izq": "agarra"}), ("dar_mano", {"der": "agarra", "izq": "agarra"}),
@@ -184,6 +185,7 @@ def _ajustar_emociones() -> None:
     GESTOS["arremangar"].update(izq=a(40, -300, True), der=a(-20, -316, True))
     # de perfil (perfil_fijo): la mano adelante y arriba de la boca, la botella inclinada hacia la boca
     GESTOS["p_tomar_alto"].update(der=brazo_hacia(146, -123))
+    GESTOS["p_verter"].update(der=brazo_hacia(150, -20))       # la mano adelante, a la altura del pecho alto
     GESTOS["rascar"].update(der=a(62, -612))
     GESTOS["rascar_b"].update(der=a(74, -600))
 
