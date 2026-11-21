@@ -2273,8 +2273,17 @@ def fotos_para_guion(wiki: Wiki, cliente, e: Evento, g: Guion, fotos_articulo: l
     if g.minimo_fotos < ilustrar.MIN_FOTOS_RESPALDO:
         raise NarrarError(f"solo {disponibles} fotos de época que sirvan")
     gen = generales(g)
-    g.fotos = ilustrar.completar_distintas(ilustrar.asignar(rankings, reserva, gen), rankings, reserva,
-                                           g.minimo_fotos, gen)
+    try:
+        asignadas = ilustrar.asignar(rankings, reserva, gen)
+    except ValueError as err:
+        # las frases del principio sin foto (no hay una anterior que alargar): plan B o el hecho siguiente
+        primeras = []
+        for i, r in enumerate(rankings):
+            if r:
+                break
+            primeras.append(i)
+        raise FraseSinFoto(pool, g, primeras or [0]) from err
+    g.fotos = ilustrar.completar_distintas(asignadas, rankings, reserva, g.minimo_fotos, gen)
     errores = ilustrar.errores_plan(plan_estimado(g, len(pool)), g.minimo_fotos)
     # Una frase sin una foto buena (2026-10-21): antes que una mala, una del tema general o la de la
     # frase anterior alargada (2026-11-09: nunca la foto de OTRA frase puntual, como los billetes de
@@ -2456,9 +2465,78 @@ def consultas_segunda(wiki: "Wiki", e: "Evento") -> list[str]:
     return list(dict.fromkeys(out))[:10]
 
 
+class FraseSinFoto(NarrarError):
+    """Una frase (del principio: no hay anterior que alargar) sin ninguna foto posible. Antes era un ValueError que
+    cortaba toda la propuesta (el 20 y el 21/11 no salió ni tecnología ni Latinoamérica): ahora primero se reescribe
+    SOLO esa frase para que hable de algo con foto y, si no, es un NarrarError: el hecho siguiente y después el banco."""
+
+    def __init__(self, pool: list, g: "Guion", frases: list[int]):
+        super().__init__(f"la frase {frases[0] + 1} no tiene ninguna foto posible")
+        self.pool, self.guion, self.frases = pool, g, frases
+
+
+SISTEMA_FRASE_CON_FOTO = (
+    "Sos editor de guiones de Shorts de historia. Algunas frases del guion no tienen ninguna foto que las muestre. "
+    "Reescribí SOLO esas frases para que hablen de algo que SÍ muestra una de las fotos disponibles (el lugar, la "
+    "persona, un objeto de la época), sin cambiar la historia ni el orden, con un largo parecido (±4 palabras) y usando "
+    "SOLO datos del texto del artículo. Si es la frase 1 es el GANCHO: el dato concreto más fuerte, sin fecha ni "
+    "'Un día como hoy', sin fórmulas de intriga genéricas. `mostrar`: qué se ve, en inglés, 3 a 7 palabras, con "
+    "año o década y lugar si es del pasado. `foto`: el número de la foto disponible que la va a mostrar.")
+SCHEMA_FRASE_CON_FOTO = {"type": "OBJECT", "properties": {"frases": {"type": "ARRAY", "items": {
+    "type": "OBJECT", "properties": {"n": {"type": "INTEGER"}, "frase": {"type": "STRING"},
+                                     "mostrar": {"type": "STRING"}, "foto": {"type": "INTEGER"}},
+    "required": ["n", "frase", "mostrar", "foto"]}}}, "required": ["frases"]}
+
+
+def reescribir_frases_con_foto(cliente, e: "Evento", fuente: str, g: "Guion", idxs: list[int], pool: list,
+                               avisar=log.info) -> bool:
+    """Plan B (Santi, 2026-11-21: "nunca más 'la frase 1 no tiene ninguna foto posible'"): reescribe SOLO esas
+    frases para que hablen de algo que muestra una foto que ya pasó los filtros (las que la elección dejó en alguna
+    frase y las del artículo del hecho), con los datos del artículo. Una sola llamada; True si quedaron válidas."""
+    from . import reglas
+    from .gemini import GeminiError
+
+    malas = set(g.descartadas or [])
+    usables = [k for k in dict.fromkeys([x for r in (g.ranking or []) for x in r] + list(g.del_hecho or []))
+               if 0 <= k < len(pool) and k not in malas]
+    if not usables or not idxs:
+        return False
+    lista = "\n".join(f"{k + 1}. {(pool[k].epigrafe or pool[k].archivo)[:140]}"
+                      + (f" ({pool[k].anio})" if getattr(pool[k], "anio", None) else "") for k in usables[:30])
+    prompt = ("Guion:\n" + "\n".join(f"{i + 1}. {f}" for i, f in enumerate(g.frases))
+              + "\n\nFrases SIN foto (reescribí solo estas): " + ", ".join(str(i + 1) for i in idxs)
+              + f"\n\nFOTOS DISPONIBLES:\n{lista}\n\nTEXTO DEL ARTÍCULO (lo único que podés usar):\n{fuente[:12000]}")
+    try:
+        r = json.loads(cliente.json(SISTEMA_FRASE_CON_FOTO, prompt, SCHEMA_FRASE_CON_FOTO, temperatura=0.3))
+    except (GeminiError, ValueError, NarrarError) as err:
+        avisar(f"  plan B de la frase sin foto: no respondió ({str(err)[:80]})")
+        return False
+    nuevas = {int(x.get("n") or 0) - 1: x for x in r.get("frases") or []}
+    cambios = {}
+    for i in idxs:
+        x = nuevas.get(i)
+        texto = str((x or {}).get("frase") or "").strip()
+        if not texto or abs(len(texto.split()) - len(g.frases[i].split())) > 6:
+            avisar(f"  plan B: la frase {i + 1} no volvió bien")
+            return False
+        if no_respaldados(texto, fuente + "\n" + e.texto + f" {e.anio}", e.anio):
+            avisar(f"  plan B: la frase {i + 1} nueva trae datos que no están en el artículo")
+            return False
+        if i == 0 and (reglas.gancho_generico(texto) or texto.lower().startswith("un día como hoy")):
+            avisar("  plan B: el gancho nuevo es genérico")
+            return False
+        cambios[i] = (texto, str(x.get("mostrar") or "").strip())
+    for i, (texto, mostrar) in cambios.items():
+        avisar(f"  plan B: frase {i + 1} reescrita para que tenga foto: «{texto[:90]}»")
+        g.frases[i] = texto
+        if mostrar and i < len(g.mostrar):
+            g.mostrar[i] = mostrar
+    return True
+
+
 def fotos_con_control(wiki: "Wiki", cliente, e: "Evento", g: "Guion", fotos_articulo: list,
                       carpeta: Path, avisar=log.info, elector=None, elector_reintento=None,
-                      **k) -> tuple[list, "Guion"]:
+                      reescribir=None, **k) -> tuple[list, "Guion"]:
     """fotos_para_guion con el control de calidad: si no llega al 70 % de fotos reales (o a 4 fotos),
     una SEGUNDA búsqueda con Claude: más fotos reales (Commons con el título de cada artículo del
     hecho), sin la regla de época, y en las frases centrales también el retrato del protagonista, el
@@ -2466,6 +2544,18 @@ def fotos_con_control(wiki: "Wiki", cliente, e: "Evento", g: "Guion", fotos_arti
     (FotosInsuficientes, o PocasFotos) y quien llama pasa al hecho siguiente."""
     try:
         return fotos_para_guion(wiki, cliente, e, g, fotos_articulo, carpeta, avisar, elector=elector, **k)
+    except FraseSinFoto as err:
+        # Plan B (Santi, 2026-11-21): la frase sin foto se reescribe para hablar de algo que sí tiene foto
+        if reescribir is None or not reescribir(err.guion, err.frases, err.pool):
+            raise
+        anterior, pool_antes = err.guion, err.pool
+        k2 = {**k, "pool": pool_antes, "descartadas": set(anterior.descartadas)}
+        try:
+            return fotos_para_guion(wiki, cliente, e, anterior, fotos_articulo, carpeta, avisar, elector=elector,
+                                    **k2)
+        except (FotosInsuficientes, FotosNoAlcanzan, PocasFotos) as err2:
+            avisar(f"  {err2}: segunda búsqueda de fotos con Claude")
+            anterior, pool_antes = err2.guion, err2.pool
     except (FotosInsuficientes, FotosNoAlcanzan, PocasFotos) as err:
         avisar(f"  {err}: segunda búsqueda de fotos con Claude")
         anterior, pool_antes = err.guion, err.pool
@@ -3051,7 +3141,9 @@ def proponer(wiki: Wiki, cliente, dia: date, carpeta: Path, avisar=log.info,
             bitacora.paso("fotos")
             pool, g = fotos_con_control(wiki, cliente, e, g, fotos, carpeta, avisar, videos=videos,
                                         elector=elector, elector_reintento=elector_reintento,
-                                        tope_s=tope_fotos_s)
+                                        tope_s=tope_fotos_s,
+                                        reescribir=lambda g_, idx, pool_: reescribir_frases_con_foto(
+                                            puntuador or escritor, e, fuente, g_, idx, pool_, avisar))
         except PocasFotos as pocas:
             # Menos de 4 fotos de época: al siguiente. Se guarda el que más tenga, por si ninguno llega.
             avisar(f"  {pocas}")

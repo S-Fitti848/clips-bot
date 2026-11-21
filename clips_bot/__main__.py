@@ -5079,6 +5079,11 @@ def efemeride_del_dia(settings: Settings, simular: bool = False) -> None:
     except Exception as e:
         log.exception("la efeméride del día falló")
         print(f"  la efeméride del día falló: {e}")
+        try:     # Santi, 2026-11-21: antes esto solo quedaba en el log y a él no le llegaba nada
+            _aviso(TelegramClient(env("TELEGRAM_BOT_TOKEN")),
+                   f"🔧 Claude Code: hoy no salió la de tecnología: {html.escape(str(e)[:160])}")
+        except Exception:  # noqa: BLE001
+            log.warning("no pude avisar la falla de la efeméride", exc_info=True)
     finally:
         conn.close()
 

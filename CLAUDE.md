@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-11-20 | **Versión:** v1.48.0 (desplegado) | **Modo:** Fase 2: corriendo solo en la Pi. **Rots APAGADO. Así Nació PAUSADO desde el 19/11** (vuelve con 1 por día, preparado la noche anterior, si 4 de 5 marcas nuevas dan 15/19 o más por menos de US$ 0,60). Pequeña Historia (3 por día, madrugada desde las 04:00) (**NO se publica sola desde el 17/11**: llega con ✅ Publicar / ❌ Cancelar y sin respuesta no sale) y **Así Nació** (2 por día, desde las 07:00, publican 13:00 y 20:00 en YouTube y Facebook con ❌ Cancelar), todo al privado de Santi
+**Snapshot:** 2026-11-20 | **Versión:** v1.49.0 (desplegado) | **Modo:** Fase 2: corriendo solo en la Pi. **Rots APAGADO. Así Nació PAUSADO desde el 19/11** (vuelve con 1 por día, preparado la noche anterior, si 4 de 5 marcas nuevas dan 15/19 o más por menos de US$ 0,60). Pequeña Historia (3 por día, madrugada desde las 04:00) (**NO se publica sola desde el 17/11**: llega con ✅ Publicar / ❌ Cancelar y sin respuesta no sale) y **Así Nació** (2 por día, desde las 07:00, publican 13:00 y 20:00 en YouTube y Facebook con ❌ Cancelar), todo al privado de Santi
 
 > **SI ESTÁS EMPEZANDO UNA SESIÓN NUEVA, LEÉ §10.** Ahí está qué está hecho, qué quedó a medias,
 > qué falta, y las trampas que ya nos mordieron.
@@ -1322,6 +1322,15 @@ Problemas abiertos:
 
 ## 9. CHANGELOG
 
+- v1.49.0 (2026-11-21) — **Plan B de la frase sin foto** (Santi: "nunca más"). El 20 y el 21/11 no salió ni la de
+  tecnología ni las de Latinoamérica: "la frase 1 no tiene ninguna foto posible" era un ValueError de
+  `ilustrar.asignar` (sin reserva ni generales desde v1.36, la PRIMERA frase sin ranking no tiene anterior que alargar)
+  que cortaba toda la propuesta, sin pasar al hecho siguiente ni al banco; y la de tecnología fallada no avisaba (solo
+  log). No tuvo que ver con los mensajes cortos. Ahora: `ef.FraseSinFoto` (NarrarError) → primero
+  `reescribir_frases_con_foto` (Haiku, una llamada: reescribe SOLO esas frases para hablar de algo que muestra una foto
+  que ya pasó los filtros, con los datos del artículo; validado con `no_respaldados` y, en el gancho,
+  `gancho_generico`) y se vuelven a elegir las fotos; si no se puede, el hecho siguiente y después el banco; solo si todo
+  falla, una línea a Santi (también la de tecnología). `tests/test_frase_sin_foto.py`. 2116 tests OK.
 - v1.48.0 (2026-11-20, noche) — (1) **Mensajes cortos** (regla en §1): `aviso_corto.py`, `enviar_clip(resumen=,
   motivo=)`, `marcas.enviar(caption=, teclado=)`, `send_video(teclado=)`, botón `det:` y `/detalle`, `_aviso` para los
   21 avisos e informes a Santi (los que se partían en varios mensajes ahora son uno de 3 líneas), la publicación de
