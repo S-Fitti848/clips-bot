@@ -12,7 +12,7 @@ vamos** (tarea programada `asinacio-plan-lunes`).
 
 | semana | meta | estado |
 |---|---|---|
-| 20/11 – 22/11 | manos y apretón | en curso: manos nuevas (v1.46.0) en todos lados; Pepsi tito5 18/19 (US$ 0,04); laboratorio, firma y apretón de cerca rehechos, hoja mandada el 20/11. Falta: OK de Santi a la hoja → video completo con la voz de Tito |
+| 20/11 – 22/11 | manos y apretón | manos y apretón aprobados por Santi; Pepsi completo con la voz de Tito mandado el 21/11 (tito6: 17/19, US$ 0,06). **Sumado por Santi (21/11), para todos los videos:** (1) física: todo apoyado en algo; en el Pepsi un barril flotaba sobre el escritorio (AN-07); (2) ningún texto se repite en pantalla; en el Pepsi "1923" salía dos veces en la misma escena (AN-11) |
 | 23/11 – 29/11 | escenas que faltan y expresiones | |
 | 30/11 – 06/12 | gancho y viaje al pasado | |
 | 07/12 – 10/12 | prueba final con 10 marcas | |
