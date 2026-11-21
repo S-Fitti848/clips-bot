@@ -660,8 +660,12 @@ def _manual_del_dia(conn, settings: Settings, elegidos: list, horarios) -> str |
 
 def enviar_clip(tg: TelegramClient, chat_id, conn, clip_id: str, meta: dict, numero: int,
                 horario: str | None, pedido: str = "", ultimo: bool = False,
-                cuantos_mas: int = 0, encabezado: str = "", extra_filas: list | None = None) -> int:
-    """`chat_id` puede ser uno o una lista. El mp4 se sube UNA vez: a partir del segundo destino se
+                cuantos_mas: int = 0, encabezado: str = "", extra_filas: list | None = None,
+                resumen: str | None = None, motivo: str = "") -> int:
+    """`resumen` (Santi, 2026-11-20, "demasiado texto"): el video va SOLO con título, hashtags, esa línea y, si
+    necesita aprobación, `motivo`; los botones van en el video y todo lo demás queda detrás de "📋 Detalle".
+
+    `chat_id` puede ser uno o una lista. El mp4 se sube UNA vez: a partir del segundo destino se
     manda el file_id que devolvió Telegram, que en la Pi ahorra varios minutos de subida.
 
     `encabezado` va arriba del caption y del mensaje (ej. "🔥 SUBIR YA" del modo en vivo).
@@ -714,6 +718,25 @@ def enviar_clip(tg: TelegramClient, chat_id, conn, clip_id: str, meta: dict, num
         caption = f"{plano} · {caption}"[:1024]
         cuerpo = encabezado + "\n\n" + cuerpo
     file_id, llegaron = None, 0
+    if resumen is not None:
+        from . import aviso_corto
+
+        aviso_corto.guardar(conn, clip_id, cuerpo)
+        cap = aviso_corto.caption(meta["textos"]["titulo"], meta["textos"].get("hashtags") or [], resumen, motivo)
+        base = teclado_voto(clip_id, pedido=pedido, ultimo=ultimo, cuantos_mas=cuantos_mas,
+                            subida=_estado_subida(conn, clip_id, meta), gameplay=_con_gameplay(meta))
+        base["inline_keyboard"] += list(extra_filas or [])
+        teclado = aviso_corto.con_detalle(base, clip_id)
+        for destino in destinos:
+            try:
+                enviado = tg.send_video(destino, video, cap, width=info.ancho, height=info.alto,
+                                        duration=round(info.duracion), thumbnail=thumb, file_id=file_id,
+                                        teclado=teclado)
+                file_id = file_id or (enviado or {}).get("video", {}).get("file_id")
+                llegaron += 1
+            except TelegramError as e:
+                log.warning("No pude entregar %s en %s: %s", clip_id, destino, e)
+        destinos = []          # el resto (mensaje largo y .srt) no va: queda en el detalle
     for destino in destinos:
         try:
             enviado = tg.send_video(destino, video, caption, width=info.ancho, height=info.alto,
@@ -1094,7 +1117,7 @@ def _informe_prueba_manual(settings: Settings, simular: bool = False, forzar: bo
         texto = pm.comparar(conn, youtube.Cliente("rots"), cfg.prueba_manual_desde,
                             cfg.prueba_manual_dias, hoy)
         if not forzar and not simular:
-            TelegramClient(env("TELEGRAM_BOT_TOKEN")).send_message(DUENO, "🔧 Claude Code: " + texto)
+            _aviso(TelegramClient(env("TELEGRAM_BOT_TOKEN")), "🔧 Claude Code: " + texto)
             db.set_valor(conn, pm.INFORME, hoy.isoformat())
         print("\n=== Prueba manual vs API\n" + re.sub(r"<[^>]+>", "", texto))
         return texto
@@ -2775,6 +2798,9 @@ def escuchar_telegram(settings: Settings, timeout_poll: int = 50) -> int:
                 if cb["data"].startswith("acc:"):
                     _seguro(tg, cb["chat_id"], cb["data"], _acceso_callback, conn, tg, cb)
                     continue
+                if cb["data"].startswith("det:"):
+                    _seguro(tg, cb["chat_id"], cb["data"], _detalle_callback, conn, tg, cb)
+                    continue
                 if cb["data"].startswith("sub:"):
                     _seguro(tg, cb["chat_id"], cb["data"], _subidas_callback, conn, tg, cb, settings)
                     continue
@@ -3038,6 +3064,8 @@ def _despachar(conn, tg: TelegramClient, c: dict, settings: Settings, cola: list
             _seguro(tg, c["chat_id"], "/metricas refresh", actualizar_metricas)
         respuesta = _seguro(tg, c["chat_id"], c["comando"], _texto_metricas, conn,
                             int(c["args"][0]) if c["args"] and c["args"][0].isdigit() else 10)
+    elif c["comando"] == "/detalle":
+        respuesta = _seguro(tg, c["chat_id"], c["comando"], _texto_detalle, conn, c["args"][0] if c["args"] else "")
     elif c["comando"] == "/costos":
         respuesta = _seguro(tg, c["chat_id"], c["comando"], _texto_costos, conn,
                             int(c["args"][0]) if c["args"] and c["args"][0].isdigit() else 7)
@@ -3694,10 +3722,10 @@ def _web_latam_tick(conn, tg: TelegramClient, settings: Settings, ahora=None) ->
             f"US$ {usd:.2f} ({busq} búsquedas, {pedidos} pedidos a Haiku; estimado US$ 0,25-0,40, tope "
             f"US$ {tope:.2f}). Historias del día: {origenes}.").replace("US$ 0.", "US$ 0,")
     if usd <= tope:
-        tg.send_message(DUENO, base + " Dentro de lo estimado: <b>queda andando</b>.")
+        _aviso(tg, base + " Dentro de lo estimado: <b>queda andando</b>.")
     else:
         db.set_valor(conn, WEB_APAGADO, f"{dia}: US$ {usd:.2f} > {tope:.2f}")
-        tg.send_message(DUENO, base + " Se pasó: <b>la apagué</b> (vuelve a Wikipedia sola). Para prenderla "
+        _aviso(tg, base + " Se pasó: <b>la apagué</b> (vuelve a Wikipedia sola). Para prenderla "
                                       "de nuevo hay que borrar web_latam_apagado.")
 
 
@@ -3811,7 +3839,7 @@ def _comunidad_tick(conn, tg: TelegramClient, settings: Settings, ahora=None, cl
             break
         motivos.append(f"«{str(cand['texto'] or '')[:70]}»: {por_que}")
     if not foto:
-        tg.send_message(DUENO, "🔧 Claude Code: hoy NO sale la publicación de comunidad: ninguna foto coincide con los "
+        _aviso(tg, "🔧 Claude Code: hoy NO sale la publicación de comunidad: ninguna foto coincide con los "
                                "temas que probé.\n" + html.escape("\n".join(motivos))[:900])
         return
     try:
@@ -3828,11 +3856,15 @@ def _comunidad_tick(conn, tg: TelegramClient, settings: Settings, ahora=None, cl
         (OUTPUT_DIR / "ready" / f"{clip_id}.json").write_text(json.dumps(
             {"clip_id": clip_id, "textos": {"titulo": txt["pregunta"]}, "efemeride": {"guion": [txt["pregunta"]]}},
             ensure_ascii=False), encoding="utf-8")
-        tg.send_photo(DUENO, img, html.escape(f"🔧 Claude Code: 🗣 publicación de comunidad programada para las "
-                                              f"{cfg.comunidad_hora}:\n\n{cf.mensaje(txt['texto'], txt['pregunta'], foto[1])}")[:1000])
+        from . import aviso_corto as _ac
+
+        # Santi, 2026-11-20: 2 líneas; el texto entero, detrás de 📋 Detalle
+        _ac.guardar(conn, clip_id, html.escape(cf.mensaje(txt['texto'], txt['pregunta'], foto[1])))
+        tg.send_photo(DUENO, img, html.escape(f"🗣 Comunidad · sale {cfg.comunidad_hora}\n{txt['pregunta']}")[:1000],
+                      teclado={"inline_keyboard": [[_ac.boton(clip_id)]]})
     except Exception as e:  # noqa: BLE001 — un día sin publicación de comunidad no frena nada
         log.warning("publicación de comunidad: %s", e)
-        tg.send_message(DUENO, f"🔧 Claude Code: la publicación de comunidad de hoy no salió: {html.escape(str(e)[:300])}")
+        _aviso(tg, f"🔧 Claude Code: la publicación de comunidad de hoy no salió: {html.escape(str(e)[:300])}")
 
 
 MEJORAS_DIA = "mejoras_motor_dia"     # bot_estado: el día (AR) en que ya se mandaron las mejoras
@@ -3920,7 +3952,7 @@ def _mejoras_motor_tick(conn, tg: TelegramClient, settings: Settings, ahora=None
         for x in todas_primero:
             x["enviada"] = True
         db.set_valor(conn, marcas.MEJORAS_PRIMERO, json.dumps(todas_primero[-60:], ensure_ascii=False))
-    tg.send_message(DUENO, f"🔧 Claude Code: 🛠 <b>Mejoras al motor de Así Nació</b> ({len(flojas)} videos de la semana). "
+    _aviso(tg, f"🔧 Claude Code: 🛠 <b>Mejoras al motor de Así Nació</b> ({len(flojas)} videos de la semana). "
                            "Ordenadas por impacto; decime cuáles apruebo y las programo."
                            + ("\n\n<b>Primero, lo que no se pudo corregir solo</b> (ni con una escena de la biblioteca): "
                               + ", ".join(f"{r_} ({n_} {'vez' if n_ == 1 else 'veces'})" for r_, n_ in
@@ -3933,11 +3965,13 @@ def _mejoras_motor_tick(conn, tg: TelegramClient, settings: Settings, ahora=None
         k = int(m_.get("imagen") or 0)
         if 1 <= k <= len(rutas):
             try:
-                tg.send_photo(DUENO, rutas[k - 1], caption[:1000])
+                from . import aviso_corto as _ac
+
+                tg.send_photo(DUENO, rutas[k - 1], _ac.recortar(caption)[0][:1000])
                 continue
             except Exception as e:  # noqa: BLE001 — sin la foto, va el texto
                 log.info("mejoras: no pude mandar el cuadro: %s", e)
-        tg.send_message(DUENO, caption)
+        _aviso(tg, caption)
 
 
 def _fb_proponer(conn, tg: TelegramClient, chats: list[str], dia, settings: Settings,
@@ -4044,8 +4078,7 @@ def _calendario_tick(conn, tg: TelegramClient, settings: Settings, ahora=None, w
     db.set_valor(conn, CAL_SEMANA, lunes.isoformat())
     from .telegram import partir_html
 
-    for parte in partir_html(calendario.texto_semana(conn, lunes)):
-        tg.send_message(DUENO, parte)
+    _aviso(tg, calendario.texto_semana(conn, lunes))
 
 
 def _medir_ph(conn, settings: Settings) -> dict:
@@ -4089,11 +4122,11 @@ def _analisis_y_mezcla(conn, tg: TelegramClient, datos: dict, hoy, cliente=None)
             texto = None
         if texto:
             db.borrar_valor(conn, mp.CLAVE_ANALISIS)
-            tg.send_message(DUENO, "🔧 Claude Code: " + texto)
+            _aviso(tg, "🔧 Claude Code: " + texto)
     comp = mp.comparar_mezcla(datos.get("yt") or {}, hoy)
     if comp and comp["rinde_mas"] and not db.get_valor(conn, mp.CLAVE_MEZCLA):
         db.set_valor(conn, mp.CLAVE_MEZCLA, hoy.isoformat())
-        tg.send_message(DUENO, (
+        _aviso(tg, (
             "🔧 Claude Code: <b>En YouTube, tecnología rinde más que Latinoamérica</b> (videos con 3 días o "
             f"más desde el 12/11): mediana de vistas {mp._f(comp['tec'])} (tecnología, {comp['n_tec']} videos) "
             f"contra {mp._f(comp['latam'])} (Latinoamérica, {comp['n_latam']}). Propuesta: en YouTube 2 de "
@@ -4124,8 +4157,7 @@ def _medicion_ph_tick(conn, tg: TelegramClient, settings: Settings, ahora=None, 
         reels = stats_fb.resumen_informe(conn)     # los Reels a las 24 h (Santi, 2026-11-16)
         if reels:
             texto += "\n\n" + reels
-        for parte in partir_html(texto):
-            tg.send_message(DUENO, parte)
+        _aviso(tg, texto)
 
 
 # Madrugada (Santi, 2026-11-12: "todas las propuestas del día en Telegram antes de las 5:30"): la
@@ -4196,7 +4228,7 @@ def _costo_claude_tick(conn, tg: TelegramClient, settings: Settings, ahora=None)
     dia = db.get_valor(conn, COSTO_PEDIDO)
     if dia and ahora.date().isoformat() > dia:
         db.borrar_valor(conn, COSTO_PEDIDO)
-        tg.send_message(DUENO, claude.texto_costo(conn, dia))
+        _aviso(tg, claude.texto_costo(conn, dia))
         if dia == (ahora.date() - timedelta(days=1)).isoformat():
             db.set_valor(conn, COSTO_ENVIADO, dia)
     # Presupuesto del mes (Santi, 2026-11-15: "avisame si un mes se acerca a los US$ 80"): en cada vuelta,
@@ -4208,7 +4240,7 @@ def _costo_claude_tick(conn, tg: TelegramClient, settings: Settings, ahora=None)
         if gastado >= claude.PRESUPUESTO_MES * umbral and umbral not in avisados:
             avisados.append(umbral)
             db.set_valor(conn, f"{COSTO_ALERTA}:{mes}", json.dumps(avisados))
-            tg.send_message(DUENO, f"🔧 Claude Code: ⚠️ <b>Claude este mes: US$ {gastado:.2f}</b> "
+            _aviso(tg, f"🔧 Claude Code: ⚠️ <b>Claude este mes: US$ {gastado:.2f}</b> "
                                    f"({umbral:.0%} del tope de US$ {claude.PRESUPUESTO_MES:.0f}; "
                                    f"a este ritmo, ≈ US$ {claude.proyeccion_mes(gastado, ahora.date().isoformat()):.0f}"
                                    " al cerrar el mes).")
@@ -4217,7 +4249,7 @@ def _costo_claude_tick(conn, tg: TelegramClient, settings: Settings, ahora=None)
         return
     db.set_valor(conn, COSTO_ENVIADO, ayer)
     if claude.resumen_costo(conn, ayer)[1]:
-        tg.send_message(DUENO, claude.texto_costo(conn, ayer))
+        _aviso(tg, claude.texto_costo(conn, ayer))
 
 
 def _texto_costos(conn, dias: int = 7, settings: Settings | None = None) -> str:
@@ -4243,7 +4275,7 @@ def _texto_costos(conn, dias: int = 7, settings: Settings | None = None) -> str:
 def _banco_usos_tick(conn, tg: TelegramClient, hoy=None) -> None:
     """Santi, 2026-11-16: si un canal usa el banco de reserva más de 2 veces en la semana, aviso (una vez)."""
     for texto in banco_mod.avisos_pendientes(conn, hoy or datetime.now(AR).date()):
-        tg.send_message(DUENO, texto)
+        _aviso(tg, texto)
 
 
 ELEVEN_REVISADO = "elevenlabs_revisado"   # bot_estado: cuándo se leyó la suscripción por última vez (UTC)
@@ -4282,7 +4314,7 @@ def _elevenlabs_tick(conn, tg: TelegramClient, settings: Settings, ahora=None, s
             hasta = sub["reinicio"].astimezone(AR).strftime("%d/%m") if sub.get("reinicio") else "?"
             extra = (" Se acabaron: la voz de Tito vuelve sola a la de Gemini hasta que se renueven."
                      if umbral >= 1 else "")
-            tg.send_message(DUENO, f"🔧 Claude Code: ⚠️ <b>ElevenLabs: {pct:.0%} de los créditos</b> "
+            _aviso(tg, f"🔧 Claude Code: ⚠️ <b>ElevenLabs: {pct:.0%} de los créditos</b> "
                                    f"({elevenlabs.miles(sub['usados'])} de {elevenlabs.miles(sub['limite'])}; "
                                    f"se renuevan el {hasta}).{extra}")
 
@@ -4306,7 +4338,7 @@ def _costos_semana_tick(conn, tg: TelegramClient, settings: Settings, ahora=None
     texto = bitacora.texto(filas, 7, descartes).replace("Costos y tiempos, últimos 7 días", "Resumen de la semana")
     if filas:
         texto += "\n\n<b>Ideas para bajar costo o tiempo</b>:\n" + "\n".join(f"• {i}" for i in bitacora.ideas(filas))
-    tg.send_message(DUENO, texto)
+    _aviso(tg, texto)
 
 
 CALIDAD_SEMANA = "calidad_semana_enviado"   # bot_estado: el lunes (AR) cuyo resumen del estándar ya salió
@@ -4317,7 +4349,7 @@ def _presupuesto_tick(conn, tg: TelegramClient, ahora=None) -> None:
     """Santi, 2026-11-18: el saldo de Claude hasta el 14/12 (presupuesto.py); si no alcanza, Así Nació a 1 por día."""
     from . import presupuesto
 
-    presupuesto.tick(conn, lambda texto: tg.send_message(DUENO, texto), ahora or datetime.now(AR))
+    presupuesto.tick(conn, lambda texto: _aviso(tg, texto), ahora or datetime.now(AR))
 
 
 SEMANA_RESUMEN = "resumen_semana_vistas"     # bot_estado: el lunes en que ya se mandó
@@ -4361,7 +4393,7 @@ def _resumen_semana_tick(conn, tg: TelegramClient, ahora=None) -> None:
         log.info("resumen semanal: sin YouTube de Así Nació (%s)", e)
         cliente = None
     horarios = horarios_an.resumen(conn, cliente, medidos, ahora)
-    tg.send_message(DUENO, aprendizaje.resumen_semana(medidos, _cambios_de_la_semana(desde, lunes), ahora, horarios))
+    _aviso(tg, aprendizaje.resumen_semana(medidos, _cambios_de_la_semana(desde, lunes), ahora, horarios))
 
 
 def _calidad_semana_tick(conn, tg: TelegramClient, ahora=None) -> None:
@@ -4376,7 +4408,7 @@ def _calidad_semana_tick(conn, tg: TelegramClient, ahora=None) -> None:
         return
     db.set_valor(conn, CALIDAD_SEMANA, lunes)
     desde, hasta = calidad.semana_anterior(ahora.date())
-    tg.send_message(DUENO, calidad.resumen_semana(conn, desde, hasta))
+    _aviso(tg, calidad.resumen_semana(conn, desde, hasta))
 
 
 def _voces_tick(conn, tg: TelegramClient, settings: Settings, ahora=None) -> None:
@@ -4387,7 +4419,7 @@ def _voces_tick(conn, tg: TelegramClient, settings: Settings, ahora=None) -> Non
     cfg = settings.efemerides
     uso = voces.uso_hoy(conn, cfg.lo_encontre_db, ahora)
     for texto in voces.avisos(conn, uso, cfg.tts_tope, cfg.tts_aviso):
-        tg.send_message(DUENO, texto)
+        _aviso(tg, texto)
 
 
 FB_DIA = "historias_fb_dia"   # bot_estado: el día (AR) en que ya se propuso la de Facebook
@@ -4545,7 +4577,7 @@ def _sin_video_tick(conn, tg: TelegramClient, settings: Settings, ahora=None) ->
     if not faltan:
         log.info("chequeo de las %s: todos los canales tienen video hoy", SIN_VIDEO_HORA)
         return
-    tg.send_message(DUENO, f"🚨 <b>Hoy ({hoy:%d/%m}) a las {SIN_VIDEO_HORA}, sin video</b> en: "
+    _aviso(tg, f"🚨 <b>Hoy ({hoy:%d/%m}) a las {SIN_VIDEO_HORA}, sin video</b> en: "
                            + ", ".join(faltan) + ".\nBancos de reserva: " + banco_mod.resumen(conn) + ".")
 
 
@@ -4611,14 +4643,25 @@ def _animacion_armar(conn, tg: TelegramClient, chats: list[str], settings: Setti
                   + ("🤖 <b>Se publica sola</b>: si no tocás nada sale a su hora; ❌ Cancelar la frena.\n"
                      if programado else "")
                   + "\n".join(avisos + ([html.escape(r.aviso)] if getattr(r, "aviso", "") else [])))
-    marcas.enviar(tg, chats, r, encabezado=encabezado, subida=programado or retenido)
-    if retenido:
-        for chat in chats:
-            tg.send_message(chat, "⏸ ¿Lo publico igual?", botones_retenido(clip_id))
-    if programado:
-        for chat in chats:
-            tg.send_message(chat, "¿La frenás?", {"inline_keyboard": [[
-                {"text": "❌ Cancelar la publicación", "callback_data": f"sub:x:{clip_id}"}]]})
+    # Santi, 2026-11-20 ("demasiado texto"): el video con título, hashtags y UNA línea, y los botones en el video;
+    # el mensaje largo de antes queda detrás de 📋 Detalle
+    from . import aviso_corto
+
+    horas_ = horas_asinacio(settings, hoy)
+    ok_, total_ = (calidad.puntaje("asinacio", est.get("fallas") or []) if est.get("revisado") else (None, None))
+    linea_ = aviso_corto.resumen(ok_, total_, r.costo_usd, horas_[min(k, len(horas_) - 1)] if programado else "",
+                                 retenido=retenido)
+    motivo_ = aviso_corto.motivo_retenido("asinacio", est.get("fallas") or [], True) if retenido else ""
+    botones_ = (botones_retenido(clip_id) if retenido else
+                {"inline_keyboard": [[{"text": "❌ Cancelar", "callback_data": f"sub:x:{clip_id}"}]]}
+                if programado else None)
+    try:
+        aviso_corto.guardar(conn, clip_id, marcas.texto_mensaje(r, encabezado, programado or retenido))
+    except Exception:  # noqa: BLE001 — sin el mensaje entero, al menos el encabezado; el video sale igual
+        log.warning("Así Nació: no pude armar el detalle de %s", clip_id, exc_info=True)
+        aviso_corto.guardar(conn, clip_id, encabezado)
+    marcas.enviar(tg, chats, r, caption=aviso_corto.caption(r.titulo, r.hashtags, linea_, motivo_),
+                  teclado=aviso_corto.con_detalle(botones_, clip_id))
     # Recién entregado entra en la rotación (un ángulo nunca se repite; la marca no vuelve en 7 días): así
     # el segundo del día es de otra marca.
     marcas.registrar(conn, r.marca, r.angulo, hoy, r.promedio, r.titulo, r.video)
@@ -4626,9 +4669,43 @@ def _animacion_armar(conn, tg: TelegramClient, chats: list[str], settings: Setti
              r.total_s, r.costo_usd)
     if (r.costo_usd or 0) > bitacora.AVISO_VIDEO_USD:     # Santi, 2026-11-17
         piezas = float(getattr(r, "piezas_usd", 0) or 0)
-        tg.send_message(DUENO, f"🔧 Claude Code: 💸 el video de Así Nació «{html.escape(r.titulo)}» costó US$ "
+        _aviso(tg, f"🔧 Claude Code: 💸 el video de Así Nació «{html.escape(r.titulo)}» costó US$ "
                                f"{r.costo_usd:.2f} de Claude (aviso desde US$ {bitacora.AVISO_VIDEO_USD:.2f})"
                                + (f"; piezas nuevas US$ {piezas:.2f}" if piezas else "") + ".")
+
+
+def _aviso(tg, texto: str, teclado: dict | None = None):
+    """Todo aviso o informe a Santi (Santi, 2026-11-20): como mucho 3 líneas; lo demás, detrás de 📋 Detalle."""
+    from . import aviso_corto
+
+    conn_ = None
+    try:
+        conn_ = db.connect(aviso_corto.DB or DB_PATH)
+        return aviso_corto.mandar_aviso(tg, DUENO, conn_, texto, teclado)
+    except Exception:  # noqa: BLE001 — sin base, el aviso sale igual (cortado)
+        log.warning("aviso: no pude guardar el detalle", exc_info=True)
+        corto = aviso_corto.recortar(texto)[0]
+        return tg.send_message(DUENO, corto, teclado=teclado) if teclado else tg.send_message(DUENO, corto)
+    finally:
+        if conn_ is not None:
+            conn_.close()
+
+
+def _texto_detalle(conn, clave: str = "") -> str:
+    """/detalle [clip]: lo que no va en el mensaje corto de un video o de un aviso (Santi, 2026-11-20)."""
+    from . import aviso_corto
+
+    return aviso_corto.leer(conn, clave) or "No tengo el detalle de ese video."
+
+
+def _detalle_callback(conn, tg: TelegramClient, cb: dict) -> None:
+    """📋 Detalle: manda el detalle guardado, partido si es largo."""
+    from .telegram import partir_html
+
+    clave = cb["data"].split(":", 1)[1]
+    tg.answer_callback(cb["callback_id"])
+    for parte in partir_html(_texto_detalle(conn, clave)):
+        tg.send_message(cb["chat_id"], parte)
 
 
 def _hora_asinacio(settings: Settings, hora: str, ahora: datetime | None = None, fecha=None) -> datetime:
@@ -5201,8 +5278,19 @@ def _efe_armar(conn, tg: TelegramClient, chat_id, token: str, settings: Settings
                    dia=calidad.hoy_ar())
     encabezado += "\n" + calidad.texto_estandar("pequena_historia", cal_fallas, cal_corregidas,
                                                 [f"{i} {q}" for i, q in codigo], revisado=cal_revisado)
+    # Santi, 2026-11-20 ("demasiado texto"): el video con título, hashtags y UNA línea; el resto, en 📋 Detalle
+    from . import aviso_corto
+
+    ok_, total_ = calidad.puntaje("pequena_historia", cal_fallas) if cal_revisado else (None, None)
+    hora_ = ""
+    if auto and not retenido:
+        m_ = re.search(r"\b(\d{1,2}:\d{2})\b", " ".join(avisos))
+        hora_ = m_.group(1) if m_ else ""
+    linea_ = aviso_corto.resumen(ok_, total_, bitacora.costo_activo(), hora_, retenido=retenido)
+    motivo_ = aviso_corto.motivo_retenido("pequena_historia", cal_fallas, bajo) if retenido else ""
     enviar_clip(tg, chat_id, conn, meta["clip_id"], meta, 1, None,
-                encabezado=f"{encabezado}\n🎙 {html.escape(ef.texto_voz(motor))}", extra_filas=extra)
+                encabezado=f"{encabezado}\n🎙 {html.escape(ef.texto_voz(motor))}", extra_filas=extra,
+                resumen=linea_, motivo=motivo_)
     bitacora.cerrar(conn, "retenido" if retenido else "programado" if auto else "entregado")
     if not extra or retenido:
         db.borrar_valor(conn, f"efe:{token}")
@@ -5310,8 +5398,7 @@ def cmd_calendario(args: argparse.Namespace) -> int:
             from .telegram import partir_html
 
             tg = TelegramClient(env("TELEGRAM_BOT_TOKEN"))
-            for parte in partir_html(texto):
-                tg.send_message(DUENO, parte)
+            _aviso(tg, texto)
     finally:
         conn.close()
     return 0
@@ -5364,8 +5451,7 @@ def cmd_medicion_ph(args: argparse.Namespace) -> int:
             from .telegram import partir_html
 
             tg = TelegramClient(env("TELEGRAM_BOT_TOKEN"))
-            for parte in partir_html(texto):
-                tg.send_message(DUENO, parte)
+            _aviso(tg, texto)
     finally:
         conn.close()
     return 0
@@ -5586,7 +5672,7 @@ def _chequeo_subidas_tick(conn, tg, cliente_de=None) -> int:
                    else f"uploadStatus {e.get('uploadStatus')}, failureReason {e.get('failureReason')}, "
                         f"rejectionReason {e.get('rejectionReason')}")
             try:
-                tg.send_message(DUENO, f"⚠️ La subida #{s['id']} (<code>{html.escape(s['video_id'])}</code>, "
+                _aviso(tg, f"⚠️ La subida #{s['id']} (<code>{html.escape(s['video_id'])}</code>, "
                                        f"{html.escape(s['clip_id'])}) a los 2 minutos: {html.escape(que)}.")
             except TelegramError as err:
                 log.warning("no pude avisar del chequeo: %s", err)
@@ -6315,6 +6401,10 @@ SECCIONES = [
          "/historia 10/11 Epecuén"),
     ]),
     ("⚙️ Configuración", [
+        ("/detalle [video]",
+         "todo lo que no va en el mensaje corto (reglas, correcciones, puntajes, fotos y los textos); a secas, "
+         "el del último video o aviso. Es lo mismo que el botón «📋 Detalle».",
+         "/detalle"),
         ("/subidas",
          "lo programado para subirse solo a YouTube (Rots y Pequeña Historia), con un botón para "
          "cancelar cada uno. Se programa con «📤 Subir» debajo de cada video (el 👍 solo vota). "

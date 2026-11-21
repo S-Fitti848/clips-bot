@@ -56,8 +56,8 @@ def test_llega_con_el_boton_de_cancelar(conn, tmp_path, monkeypatch):
 
     monkeypatch.setattr(marcas, "armar_video", lambda *a, **k: R())
     monkeypatch.setattr(marcas, "registrar", lambda *a, **k: None)
-    monkeypatch.setattr(marcas, "enviar", lambda tg, chats, r, encabezado="", subida=False:
-                        enviados.append((encabezado, subida)))
+    monkeypatch.setattr(marcas, "enviar", lambda tg, chats, r, caption="", teclado=None, **k:
+                        enviados.append((caption, teclado)))
     monkeypatch.setattr(m, "_animacion_subir", lambda *a: ["📤 Programado para el 15/11 a las 19:00 (AR)."])
     monkeypatch.setattr(m, "DATA_DIR", tmp_path / "data")
 
@@ -66,9 +66,12 @@ def test_llega_con_el_boton_de_cancelar(conn, tmp_path, monkeypatch):
             mensajes.append((chat, teclado))
 
     m._animacion_armar(conn, TG(), [m.DUENO], s, date(2026, 11, 15))
-    assert enviados[0][1] is True and "Se publica sola" in enviados[0][0]
-    chat, teclado = mensajes[0]
-    assert chat == m.DUENO and teclado["inline_keyboard"][0][0]["callback_data"] == "sub:x:asinacio_20261115"
+    caption, teclado = enviados[0]
+    assert len(caption.splitlines()) <= 4 and "sale " in caption          # Santi, 2026-11-20: título, tags y 1 línea
+    assert teclado["inline_keyboard"][0][0]["callback_data"] == "sub:x:asinacio_20261115"
+    assert teclado["inline_keyboard"][-1][0]["callback_data"] == "det:asinacio_20261115"
+    from clips_bot import aviso_corto
+    assert "Se publica sola" in aviso_corto.leer(conn, "asinacio_20261115")
 
 
 def test_sin_la_pagina_de_facebook_avisa_y_no_rompe(conn, monkeypatch):

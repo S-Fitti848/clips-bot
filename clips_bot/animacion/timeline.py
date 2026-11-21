@@ -226,7 +226,7 @@ class Elemento:
             # `color: True` es la marca de "queda a color en el pasado", no un color: al dibujo solo le llega un color
             # de verdad (2026-11-16: con True, la botella o la lata salían rellenas de negro)
             params = {k: val for k, val in self.datos.items()
-                      if k in ("texto", "color", "encendida", "rota", "forma", "manga", "detalle")
+                      if k in ("texto", "color", "encendida", "rota", "forma", "manga", "manga2", "detalle")
                       and not (k == "color" and not isinstance(val, str))}
             if "fase" in self.datos or any("fase" in k for k in self.pista.claves):
                 params["fase"] = round(v["fase"], 3)     # 0..1: un objeto que cambia (el cubo que se resuelve)
@@ -545,7 +545,9 @@ class Video:
         for el in escena.elementos:
             if el.visible(t):
                 # en el pasado (sepia), el objeto protagonista va aparte: queda a todo color
-                destino = fijo if el.fijo else (color if separar and el.datos.get("color") else frente)
+                # solo `color: True` (Santi, 2026-11-20: el apretón salía a color en una escena sepia porque su
+                # `color` era el de una manga): un color de verdad es el del dibujo, no "quedar a color"
+                destino = fijo if el.fijo else (color if separar and el.datos.get("color") is True else frente)
                 destino.append(el.svg(t, ap, cuadro))
         return CapaEscena(escena.fondo, escena.camara_en(t), "".join(frente), "".join(fijo), "".join(color))
 

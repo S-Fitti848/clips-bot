@@ -176,3 +176,14 @@ def _claude_falso_permitido(monkeypatch):
     """Los tests corren con origen "prueba", donde el bot no usa Claude de verdad (Santi, 2026-11-18); acá Claude
     nunca es de verdad (`_sin_claude` y los clientes falsos), así que el bloqueo no hace falta."""
     monkeypatch.setenv("CLIPS_CLAUDE_REAL", "1")
+
+
+@pytest.fixture(autouse=True)
+def _avisos_y_pruebas_sin_la_base_real(monkeypatch, tmp_path):
+    """El detalle de los avisos (Santi, 2026-11-20) y el tope de las pruebas leen y escriben la base: en los tests,
+    nunca la de data/."""
+    from clips_bot import aviso_corto, claude
+
+    monkeypatch.setattr(aviso_corto, "DB", tmp_path / "avisos.db")
+    monkeypatch.setattr(claude, "_gasto_original", claude.gasto_pruebas_hoy, raising=False)
+    monkeypatch.setattr(claude, "gasto_pruebas_hoy", lambda *a, **k: 0.0)

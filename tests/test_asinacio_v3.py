@@ -263,7 +263,10 @@ def test_apreton_las_manos_se_juntan_en_el_medio_y_se_ve_enganchado():
     assert len(pjs) == 2 and all("hasta" in el for el in pjs)
     mesa = next(el for el in els if el.get("nombre") == "mesa")
     assert not mesa.get("decorado") and els.index(mesa) > max(els.index(p_) for p_ in pjs)
-    chica = next(el for el in els if el.get("nombre") == "apreton" and el.get("escala", 1) <= uso_v3.ESC_APRETON_MEDIO)
+    # Santi, 2026-11-20: en el plano medio, NADA del apretón grande: las manos de los personajes y sus dedos encima
+    assert not any(el.get("nombre") == "apreton" and not el.get("desde") for el in els)
+    chica = next(el for el in els if el.get("nombre") == "dedos")
+    assert chica["escala"] < 1.3 and chica.get("color") is not True       # tamaño de mano de personaje, en sepia
     # de PERFIL, enfrentados (biblioteca base, 2026-11-20): la mano de adelante de cada uno llega al medio
     assert {el["perfil"] for el in pjs} == {1, -1}
     for el in pjs:
@@ -272,9 +275,10 @@ def test_apreton_las_manos_se_juntan_en_el_medio_y_se_ve_enganchado():
         lx, ly = per.personaje(el["nombre"], **el.get("cambios", {})).mano_perfil(*per.GESTOS[gesto]["der"])
         mx = el["x"] + el["perfil"] * lx * el["escala"]
         my = ac.PISO + ly * el["escala"]
-        # la muñeca llega al puño de la camisa del apretón (más grande desde el 2026-11-20), no al medio
-        assert abs(abs(mx - chica["x"]) - 160 * chica["escala"]) < 14 and abs(my - chica["y"]) < 12, (el["nombre"], mx, my)
+        # el brazo llega continuo: la muñeca queda a SOLAPE_MEDIO del medio y las dos manos se cruzan
+        assert abs(abs(mx - uso_v3.X0) - uso_v3.SOLAPE_MEDIO) < 2 and abs(my - chica["y"]) < 12, (el["nombre"], mx, my)
     grande = next(el for el in els if el.get("nombre") == "apreton" and el.get("escala", 1) > 1)
+    assert grande.get("color") is True          # el primer plano, a color como lo aprobó Santi
     ys = [k["y"] for k in grande["keyframes"] if "y" in k]
     arriba = sum(1 for y in ys if y < uso_v3.Y0 - 30)
     assert 2 <= arriba <= 3

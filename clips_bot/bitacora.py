@@ -246,6 +246,17 @@ def costo_entre_activa(desde: int) -> float:
     return costo_entre(_ACTIVA.conn, desde, _ultima_fila(_ACTIVA.conn))
 
 
+def costo_activo() -> float:
+    """Lo gastado en Claude por el video en curso: sus tramos anteriores más el actual (0 sin bitácora)."""
+    if _ACTIVA is None or _ACTIVA.conn is None:
+        return 0.0
+    try:
+        tramos = list(_ACTIVA.tramos) + [[_ACTIVA.fila0, _ultima_fila(_ACTIVA.conn)]]
+        return round(sum(costo_entre(_ACTIVA.conn, a, b) for a, b in tramos if b > a), 4)
+    except Exception:  # noqa: BLE001
+        return 0.0
+
+
 def costo_entre(conn, desde: int, hasta: int) -> float:
     from . import claude
 

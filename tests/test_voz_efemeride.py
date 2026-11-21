@@ -44,6 +44,7 @@ class TG:
 
     def send_video(self, chat, video, caption, **k):
         self.videos.append(caption)
+        self.teclado = k.get("teclado")
         return {"video": {"file_id": "F"}}
 
     def send_message(self, chat, texto, teclado=None):
@@ -85,7 +86,8 @@ def _entregar(tmp_path, monkeypatch, motor):
 
 def test_con_laomedeia_dice_la_voz_y_no_hay_boton(tmp_path, monkeypatch):
     conn, tg = _entregar(tmp_path, monkeypatch, "gemini:Laomedeia")
-    texto, teclado = tg.mensajes[-1]
+    from clips_bot import aviso_corto
+    texto, teclado = aviso_corto.leer(conn, "efemeride_1004_1957"), tg.teclado
     assert "Voz: Laomedeia" in texto
     assert not any("Rehacer" in b["text"] for f in teclado["inline_keyboard"] for b in f)
     assert db.get_valor(conn, "efe:tok") is None
@@ -93,7 +95,8 @@ def test_con_laomedeia_dice_la_voz_y_no_hay_boton(tmp_path, monkeypatch):
 
 def test_con_piper_boton_para_rehacer_y_la_propuesta_se_guarda(tmp_path, monkeypatch):
     conn, tg = _entregar(tmp_path, monkeypatch, "piper:es_AR-daniela-high|sin cuota")
-    texto, teclado = tg.mensajes[-1]
+    from clips_bot import aviso_corto
+    texto, teclado = aviso_corto.leer(conn, "efemeride_1004_1957"), tg.teclado
     assert "Voz: Piper (respaldo, sin cuota)" in texto
     botones = [b for f in teclado["inline_keyboard"] for b in f]
     assert {"text": "🔁 Rehacer con Laomedeia", "callback_data": "efe:voz:tok"} in botones

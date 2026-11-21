@@ -47,8 +47,13 @@ def test_el_analisis_espera_a_analytics_y_sale_una_vez(conn):
     m._analisis_y_mezcla(conn, tg, {"yt": {}}, date(2026, 11, 14), cliente=Cliente(con_datos=False))
     assert tg.mensajes == [] and db.get_valor(conn, mp.CLAVE_ANALISIS) == "intel"   # todavía no
     m._analisis_y_mezcla(conn, tg, {"yt": {}}, date(2026, 11, 16), cliente=Cliente())
-    (chat, texto), = tg.mensajes
-    assert chat == m.DUENO and "Vistas: 3220" in texto and "feed de Shorts 93 %" in texto
+    (chat, corto), = tg.mensajes
+    assert chat == m.DUENO and len(corto.splitlines()) <= 3          # Santi, 2026-11-20: 3 líneas; el resto en 📋
+    from clips_bot import aviso_corto
+
+    c2 = db.connect(aviso_corto.DB)
+    texto = aviso_corto.leer(c2) or corto
+    assert "Vistas: 3220" in texto and "feed de Shorts 93 %" in texto
     assert "segundo empujón" in texto and "tuvo segundo empujón" in texto
     assert db.get_valor(conn, mp.CLAVE_ANALISIS) is None
 

@@ -1838,7 +1838,7 @@ def _mano_detalle(forma: int = 1, color: str = "", fase: float = 0.0, manga: str
     return manga_svg + puño + pulgar + palma + lado_sombra + tendones + nudillos + dedos
 
 
-def prop_apreton(manga: str = "", color: str = "", forma: int = 1, **_) -> str:
+def prop_apreton(manga: str = "", color: str = "", forma: int = 1, manga2: str = "", **_) -> str:
     """Dos manos que se dan un apretón, vistas DE COSTADO (Santi, 2026-11-16: "puño contra puño no; la palma de una
     contra la palma de la otra, los dedos envolviendo la mano del otro y los pulgares cruzados arriba"). La de la
     izquierda (manga `manga`) muestra el dorso con sus cuatro dedos doblados sobre la mano de la derecha (manga
@@ -1846,7 +1846,8 @@ def prop_apreton(manga: str = "", color: str = "", forma: int = 1, **_) -> str:
     El centro (0, 0) es donde se juntan las palmas. `forma` 0 = mangas cortas (para el plano medio, sobre los brazos
     de los personajes)."""
     m_izq = manga if isinstance(manga, str) and manga.startswith("#") else "#3d4f7a"
-    m_der = color if isinstance(color, str) and color.startswith("#") else "#5a3d2b"
+    # `manga2` (2026-11-20): la manga de la derecha; `color` queda para "a color en el pasado" (el primer plano)
+    m_der = next((c for c in (manga2, color) if isinstance(c, str) and c.startswith("#")), "#5a3d2b")
     largo = 420 if int(forma if forma is not None else 1) else 110
     p1, p2 = P.PIEL[0], P.PIEL[1]
     s1, s2 = oscurecer(p1, 0.16), oscurecer(p2, 0.16)

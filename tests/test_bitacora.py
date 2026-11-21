@@ -120,7 +120,9 @@ def test_resumen_de_los_lunes_una_vez(conn, monkeypatch):
     assert tg.m == []
     m._costos_semana_tick(conn, tg, s, ahora=datetime(2026, 11, 23, 9, 30, tzinfo=m.AR))
     m._costos_semana_tick(conn, tg, s, ahora=datetime(2026, 11, 23, 11, 0, tzinfo=m.AR))
-    assert len(tg.m) == 1 and "Resumen de la semana" in tg.m[0] and "Ideas" in tg.m[0]
+    from clips_bot import aviso_corto
+    assert len(tg.m) == 1 and "Resumen de la semana" in tg.m[0] and len(tg.m[0].splitlines()) <= 3
+    assert "Ideas" in aviso_corto.leer(db.connect(aviso_corto.DB))
 
 
 def test_paso_de_cada_funcion():

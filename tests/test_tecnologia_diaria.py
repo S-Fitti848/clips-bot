@@ -61,7 +61,7 @@ def test_las_pruebas_frenan_al_llegar_a_1_dolar(tmp_path, monkeypatch):
     conn.execute("INSERT INTO gemini_uso (ts, dia, funcion, modelo, clave, entrada, salida, origen) "
                  "VALUES ('t', '2026-11-20', 'x', 'claude-sonnet-5-5', 'claude', 200000, 80000, 'prueba')")
     conn.commit()
-    assert claude.gasto_pruebas_hoy(conn, "2026-11-20") >= claude.TOPE_PRUEBAS_DIA
+    assert claude._gasto_original(conn, "2026-11-20") >= claude.TOPE_PRUEBAS_DIA
     monkeypatch.setattr(gemini, "ORIGEN", gemini.PRUEBA)
     monkeypatch.setenv("CLIPS_CLAUDE_REAL", "1")
     monkeypatch.setattr(claude, "gasto_pruebas_hoy", lambda *a, **k: 1.02)

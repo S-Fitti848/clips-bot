@@ -50,8 +50,8 @@ def test_asi_nacio_bajo_no_se_programa(conn, tmp_path, monkeypatch):
     enviados, mensajes, programados = [], [], []
     monkeypatch.setattr(marcas, "armar_video", lambda *a, **k: R())
     monkeypatch.setattr(marcas, "registrar", lambda *a, **k: None)
-    monkeypatch.setattr(marcas, "enviar", lambda tg, chats, r, encabezado="", subida=False:
-                        enviados.append(encabezado))
+    monkeypatch.setattr(marcas, "enviar", lambda tg, chats, r, caption="", teclado=None, **k:
+                        enviados.append((caption, teclado)))
     monkeypatch.setattr(m, "_programar_subida", lambda *a: programados.append(a) or "📤 x")
     monkeypatch.setattr(m, "_subir_facebook_asinacio", lambda *a: programados.append(a) or "📘 x")
     monkeypatch.setattr(m, "DATA_DIR", tmp_path / "data")
@@ -62,8 +62,11 @@ def test_asi_nacio_bajo_no_se_programa(conn, tmp_path, monkeypatch):
 
     m._animacion_armar(conn, TG(), [m.DUENO], s, date(2026, 11, 17))
     assert not programados                                         # nada a YouTube ni a Facebook
-    assert "NO se publica sola" in enviados[0] and "14/19" in enviados[0]
-    botones = [b["callback_data"] for b in mensajes[0][1]["inline_keyboard"][0]]
+    caption, teclado = enviados[0]
+    assert "⏸ 14/19" in caption and "Motivo:" in caption
+    from clips_bot import aviso_corto
+    assert "NO se publica sola" in aviso_corto.leer(conn, "asinacio_20261117")
+    botones = [b["callback_data"] for b in teclado["inline_keyboard"][0]]
     assert botones == ["sub:pub:asinacio_20261117", "sub:no:asinacio_20261117"]
     meta = tmp_path / "output" / "animacion" / "20261117" / "asinacio_20261117.json"
     assert json.loads(meta.read_text(encoding="utf-8"))["clip_id"] == "asinacio_20261117"

@@ -212,6 +212,7 @@ def escena_inspiracion(dur: float, fuente: str, pieza: str, producto: str, seed:
 # están lavando") ------------------------------------------------------------------------------------------------
 PLATA = ("contar_billetes", "abrir_caja", "apreton_manos", "firmar")
 ZOOM_APRETON_MEDIO = 1.6    # el plano medio del apretón, de la cintura para arriba (era 1,22: se veían enteros y chicos)
+SOLAPE_MEDIO = 20.0         # px: cada muñeca a esta distancia del medio, del lado de su dueño (las manos se cruzan)
 ESC_APRETON_MEDIO = 0.5      # el apretón del plano medio (era 0,26: las manos quedaban chiquitas)
 
 
@@ -295,29 +296,35 @@ def escena_plata(tipo: str, dur: float, manga: str = "", seed: int = 0, spec: di
             lx, ly = pj.mano_perfil(*per.GESTOS["p_dar"]["der"])
             s_ = float(el.get("escala", 0.74))
             lado = -1 if k_ else 1
-            # la muñeca llega justo al puño de la camisa del apretón (que va más grande: Santi, 2026-11-20, "las manos
-            # chiquitas en el medio y los brazos no conectados")
-            el["x"] = round(X0 - lado * (s_ * lx + 160 * ESC_APRETON_MEDIO - 10), 1)
+            # Santi, 2026-11-20 (Pepsi): en el plano medio las manos son LAS DE LOS PERSONAJES (mismo estilo, tamaño y
+            # sepia), con el brazo continuo desde el cuerpo: las muñecas quedan a SOLAPE_MEDIO del medio y las dos
+            # manos se cruzan; el apretón grande queda solo para el primer plano
+            el["x"] = round(X0 - lado * (s_ * lx + SOLAPE_MEDIO), 1)
             el["perfil"] = lado
             el["hasta"] = t_corte
             el["gestos"] = [{"t": 0, "gesto": "p_sostener_a"}, {"t": 0.25, "gesto": "p_dar"}]
             for kf in el.get("keyframes", []):
                 kf.pop("x", None)
             ys_mano.append(ac.PISO + s_ * ly)
-            ropas.append(el.get("cambios", {}).get("ropa") or pj.ropa)
+            cambios_ = {k: v for k, v in (el.get("cambios") or {}).items() if k in per.Personaje.__dataclass_fields__}
+            ropas.append((per.personaje(el.get("nombre") or "narrador", **cambios_).piel, s_))
         y_mano = sum(ys_mano) / len(ys_mano)
         cam_medio = (y_mano - 960 - 170)         # la cámara del plano medio: las manos abajo del centro, caras arriba
         els += e_.elementos
-        ropas += ["#3d4f7a", "#5a3d2b"]
+        from . import manos as _M
+
+        piel_, s_der = ropas[-1]
         # la mesa y el contrato van DELANTE de los dos (sin `decorado`, que los mandaba detrás de los personajes)
         els += [_el("mesa", X0, y_mesa, escala=esc_mesa, hasta=t_corte, en_medio=True),
                 _el("papel_firma", X0, y_mesa + 4, escala=0.9, forma=1, hasta=t_corte),
-                # las dos manos ya enganchadas, chicas, donde se tocan (aparecen cuando los brazos llegan)
-                _el("apreton", X0, y_mano, escala=ESC_APRETON_MEDIO, forma=0, manga=ropas[0], color=ropas[1], desde=0.5,
-                    hasta=t_corte, keyframes=[_k(0.5, y=y_mano), _k(0.75, y=y_mano - 10, easing="suave"),
-                                              _k(1.0, y=y_mano + 8, easing="suave"), _k(t_corte, y=y_mano)])]
+                # los dedos del de la derecha (el de adelante) cerrados SOBRE la mano del otro, cuando los brazos
+                # llegan: el prop `dedos` del juego fijo de manos, a la escala de las manos de los personajes
+                _el("dedos", X0 - 6, y_mano, escala=round(s_der * _M.ESCALA_PERSONAJE, 3), color=piel_, forma=-1,
+                    desde=0.3, hasta=t_corte)]
         t_toca = t_corte + 0.18
-        mano = _el("apreton", X0, Y0, escala=1.35, manga=manga or "#3d4f7a", color="#5a3d2b", desde=t_corte,
+        # el primer plano queda como lo aprobó Santi (a color también en el pasado): `color: True`
+        mano = _el("apreton", X0, Y0, escala=1.35, manga=manga or "#3d4f7a", manga2="#5a3d2b", color=True,
+                   desde=t_corte,
                    keyframes=[_k(t_corte, y=Y0, escala=1.3, rotacion=0), _k(t_toca, escala=1.4, easing="salida")])
         n_sac = 3 if dur - t_toca > 1.3 else 2
         paso = min(0.3, (dur - t_toca - 0.2) / n_sac)

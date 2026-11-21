@@ -466,6 +466,8 @@ def test_costo_real_de_claude_del_dia(conn):
     m._costo_claude_tick(conn, tg, s, ahora=datetime(2026, 11, 14, 23, 50, tzinfo=m.AR))
     assert tg.m == []                                     # el día todavía no terminó
     m._costo_claude_tick(conn, tg, s, ahora=datetime(2026, 11, 15, 0, 5, tzinfo=m.AR))
-    assert len(tg.m) == 1 and "US$ 0.08" in tg.m[0][1] and "Rots: textos" in tg.m[0][1]
+    from clips_bot import aviso_corto
+    assert len(tg.m) == 1 and "US$ 0.08" in tg.m[0][1] and len(tg.m[0][1].splitlines()) <= 3
+    assert "Rots: textos" in aviso_corto.leer(db.connect(aviso_corto.DB))
     m._costo_claude_tick(conn, tg, s, ahora=datetime(2026, 11, 15, 9, 0, tzinfo=m.AR))
     assert len(tg.m) == 1                                 # una sola vez

@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-11-20 | **Versión:** v1.47.0 (desplegado) | **Modo:** Fase 2: corriendo solo en la Pi. **Rots APAGADO. Así Nació PAUSADO desde el 19/11** (vuelve con 1 por día, preparado la noche anterior, si 4 de 5 marcas nuevas dan 15/19 o más por menos de US$ 0,60). Pequeña Historia (3 por día, madrugada desde las 04:00) (**NO se publica sola desde el 17/11**: llega con ✅ Publicar / ❌ Cancelar y sin respuesta no sale) y **Así Nació** (2 por día, desde las 07:00, publican 13:00 y 20:00 en YouTube y Facebook con ❌ Cancelar), todo al privado de Santi
+**Snapshot:** 2026-11-20 | **Versión:** v1.48.0 (desplegado) | **Modo:** Fase 2: corriendo solo en la Pi. **Rots APAGADO. Así Nació PAUSADO desde el 19/11** (vuelve con 1 por día, preparado la noche anterior, si 4 de 5 marcas nuevas dan 15/19 o más por menos de US$ 0,60). Pequeña Historia (3 por día, madrugada desde las 04:00) (**NO se publica sola desde el 17/11**: llega con ✅ Publicar / ❌ Cancelar y sin respuesta no sale) y **Así Nació** (2 por día, desde las 07:00, publican 13:00 y 20:00 en YouTube y Facebook con ❌ Cancelar), todo al privado de Santi
 
 > **SI ESTÁS EMPEZANDO UNA SESIÓN NUEVA, LEÉ §10.** Ahí está qué está hecho, qué quedó a medias,
 > qué falta, y las trampas que ya nos mordieron.
@@ -254,6 +254,11 @@ servicio systemd separado: `clips-bot`).
   las 2-3 finalistas por frase se miran con imagen, con Haiku (`describir_fotos` + `elegir_fotos`; `_elector_fotos`
   es Haiku); (5) una sola revisión, la del video terminado, con todos los cortes en UN mosaico y todas las reglas
   (`calidad.mosaico`); la de la hoja de antes de la voz ya no corre.
+- **Mensajes cortos (Santi, 2026-11-20: "demasiado texto, no los leo"; `aviso_corto.py`):** cada video llega SOLO con
+  título, hashtags y una línea ("✅ 11/13 · US$ 0,31 · sale 11:00"); si necesita aprobación, ✅ / ❌ en el video y una
+  línea "Motivo: …". Todo el detalle (reglas, correcciones, puntajes, fotos, textos) queda en `bot_estado`
+  (`detalle:<clip>`) y sale con el botón "📋 Detalle" o `/detalle [clip]`. Los avisos e informes a Santi pasan por
+  `_aviso`: 3 líneas como mucho y el resto detrás de 📋. Lo Encontré (repo bot-videos) lo hace su propia sesión.
 - **Pruebas: tope de US$ 1 por día (Santi, 2026-11-20),** aparte de la producción; al llegar se frena hasta el día
   siguiente y se avisa en una línea; render local siempre que se pueda.
 - **Pruebas sin Claude real (Santi, 2026-11-18):** con origen "prueba" (scripts y CLI a mano) Claude y la búsqueda
@@ -1317,6 +1322,17 @@ Problemas abiertos:
 
 ## 9. CHANGELOG
 
+- v1.48.0 (2026-11-20, noche) — (1) **Mensajes cortos** (regla en §1): `aviso_corto.py`, `enviar_clip(resumen=,
+  motivo=)`, `marcas.enviar(caption=, teclado=)`, `send_video(teclado=)`, botón `det:` y `/detalle`, `_aviso` para los
+  21 avisos e informes a Santi (los que se partían en varios mensajes ahora son uno de 3 líneas), la publicación de
+  comunidad en 2 líneas y las fotos de las mejoras al motor recortadas. `bitacora.costo_activo` para el costo de
+  Pequeña Historia. (2) **Apretón de lejos** (Santi: "manos muy grandes y a color en una escena sepia"): en el plano
+  medio ya no va el dibujo grande escalado (≈2,4 veces una mano de personaje) sino las manos de los propios personajes,
+  con las muñecas a 20 px del medio (`uso_v3.SOLAPE_MEDIO`) y los dedos del de adelante cerrados encima (prop `dedos`
+  a la escala de los personajes); el primer plano queda igual (`color: True`, mangas `manga`/`manga2`). **Bug para
+  todos los videos:** en el pasado quedaba a color todo elemento con un `color` de texto (la manga del apretón, los
+  dedos), no solo los marcados `color: True`: ahora solo `True` (`timeline._capa`). Hoja del Pepsi mandada a Santi.
+  `tests/test_mensajes_cortos.py`.
 - v1.47.0 (2026-11-20, noche) — (1) **Plan de Así Nació hasta el 15/12** (en PENDIENTES.md, 5 líneas a Santi los
   lunes con la tarea programada `asinacio-plan-lunes`). (2) **Tope de pruebas: US$ 1 por día** aparte de la producción
   (`claude.TOPE_PRUEBAS_DIA`, `gasto_pruebas_hoy`, `TopePruebas`; avisa una vez por día). El 20/11 las pruebas ya iban

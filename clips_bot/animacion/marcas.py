@@ -3694,8 +3694,23 @@ def texto_mensaje(r: Resultado, encabezado: str = "", subida: bool = False) -> s
     return "\n".join(partes)
 
 
-def enviar(tg, chats, r: Resultado, encabezado: str = "", subida: bool = False) -> int:
-    """El mp4 (con ancho, alto y duración: si no, Telegram lo muestra angosto) + el mensaje."""
+def enviar(tg, chats, r: Resultado, encabezado: str = "", subida: bool = False, caption: str | None = None,
+           teclado: dict | None = None) -> int:
+    """El mp4 (con ancho, alto y duración: si no, Telegram lo muestra angosto) + el mensaje. Con `caption`
+    (Santi, 2026-11-20, mensajes cortos): SOLO el video con ese texto y `teclado`, sin el mensaje largo."""
+    if caption is not None:
+        from clips_bot.media import miniatura, probe
+
+        video = Path(r.video)
+        info = probe(video)
+        thumb = miniatura(video, video.with_suffix(".thumb.jpg"), 1.0)
+        n, file_id = 0, None
+        for chat in ([chats] if isinstance(chats, (str, int)) else list(chats)):
+            enviado = tg.send_video(chat, video, caption[:1024], width=info.ancho, height=info.alto,
+                                    duration=round(info.duracion), thumbnail=thumb, file_id=file_id, teclado=teclado)
+            file_id = file_id or (enviado or {}).get("video", {}).get("file_id")
+            n += 1
+        return n
     from clips_bot.media import miniatura, probe
     from clips_bot.telegram import partir_html
 

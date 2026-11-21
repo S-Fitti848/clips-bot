@@ -104,7 +104,7 @@ def test_publicacion_de_comunidad_programada(tmp_path, monkeypatch):
             return json.dumps({"pregunta": "¿Tu abuelo te contó esta historia?", "texto": "En 1907 un maquinista salvó a Nacozari."})
 
     hechos = []
-    tg.send_photo = lambda chat, path, caption="": hechos.append((Path(path), caption))
+    tg.send_photo = lambda chat, path, caption="", teclado=None: hechos.append((Path(path), caption))
     m._comunidad_tick(conn, tg, s, ahora=ahora, cliente=Cli(), wiki=object(), revisor=object(),
                       programar=lambda img, msg, cuando, v, p, t: hechos.append((cuando, msg)) or "post_1")
     cuando, msg = hechos[0]

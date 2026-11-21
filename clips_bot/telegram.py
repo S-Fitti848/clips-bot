@@ -168,7 +168,8 @@ class TelegramClient:
 
     def send_video(self, chat_id: str, path: Path, caption: str = "", *, width: int | None = None,
                    height: int | None = None, duration: int | None = None,
-                   thumbnail: Path | None = None, file_id: str | None = None) -> dict:
+                   thumbnail: Path | None = None, file_id: str | None = None,
+                   teclado: dict | None = None) -> dict:
         """Sin width/height (y sin miniatura) la app de Telegram no sabe que es vertical y lo muestra
         en un cuadro que no corresponde, con negro arriba y abajo. Siempre pasar las dimensiones.
 
@@ -177,6 +178,8 @@ class TelegramClient:
         varios minutos cada vez. Devuelve el mensaje, del que sale el file_id para los siguientes.
         """
         data = {"chat_id": chat_id, "caption": caption[:MAX_CAPTION], "supports_streaming": "true"}
+        if teclado:
+            data["reply_markup"] = json.dumps(teclado, ensure_ascii=False)
         for clave, valor in (("width", width), ("height", height), ("duration", duration)):
             if valor:
                 data[clave] = str(valor)
@@ -503,7 +506,7 @@ def videos(updates: list[dict]) -> list[dict]:
 # Todos los botones que atiende la escucha, menos los votos (esos los toma `votos`). Si un teclado
 # nuevo usa otro prefijo, va acá: hasta el 2026-09-27 la lista era ("st", "add") y los botones de
 # /ayuda, /destinos, ➕ más y ✅ del guion de /narrar se tiraban en silencio.
-PREFIJOS_BOTONES = ("st", "add", "gui", "ay", "dst", "ped", "pas", "ser", "efe", "sub", "bu", "acc", "gp")
+PREFIJOS_BOTONES = ("st", "add", "gui", "ay", "dst", "ped", "pas", "ser", "efe", "sub", "bu", "acc", "gp", "det")
 
 
 def callbacks(updates: list[dict], prefijos: tuple[str, ...] = PREFIJOS_BOTONES) -> list[dict]:
