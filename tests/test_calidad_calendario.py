@@ -274,7 +274,7 @@ def test_sonnet_no_puede_saltear_el_calendario():
 
     class Sonnet:
         def json(self, sistema, prompt, schema, **k):
-            assert "★ CALENDARIO" in prompt and "SIEMPRE primero" in sistema
+            assert "★ CALENDARIO" in prompt and "van primero" in sistema
             return json.dumps({"elegidos": [{"n": 1, "articulo": "A10", "articulo_lugar": "", "motivo": ""},
                                             {"n": 2, "articulo": "A3", "articulo_lugar": "", "motivo": ""}]})
 

@@ -287,7 +287,7 @@ def test_la_historia_va_a_facebook_a_su_hora_y_a_youtube(conn, monkeypatch):
     avisos = m._subir(conn, settings, meta, "pequena_historia")
     # Desde el 2026-11-12 la historia de Latinoamérica va también a YouTube (historias_fb.youtube).
     assert avisos[-1] == "📘 Programado en Facebook para las 19:00."
-    assert yt == (["pequena_historia"] if settings.youtube_upload_enabled else [])
+    assert yt == (["pequena_historia"] if settings.youtube_upload_enabled and settings.historias_fb.youtube else [])
     assert horas == [m.hora_historia_fb(settings, "Argentina", datetime.now(m.AR).date())]  # su país
     [r] = json.loads(db.get_valor(conn, m.HISTORIAS_FB_REGISTRO))
     assert r["tipo"] == "momento_emotivo" and r["lugar"] == "Villa Epecuén" and r["video_id"] == "123"
