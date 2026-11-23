@@ -27,7 +27,8 @@ vamos** (tarea programada `asinacio-plan-lunes`).
 - [ ] Horarios: con 2 semanas de datos, comparar 11:00 contra 20:00 (Santi: "o los que mejor rindan").
 - [ ] 15/12: canal de YouTube nuevo para Latinoamérica (lo crea Santi; después, `youtube-auth` y `historias_fb.youtube`).
 - [x] El 400 del resumen de 24 h (id de foto en vez de publicación) y los tokens en los logs (tapados, v1.51.0).
-- [ ] Medir la temperatura del próximo render sin el Fan SHIM, con los disipadores (14/11: pico 86,2 °C con ventilador).
+- [x] 23/11, sin Fan SHIM y con disipadores: pico 84,2 °C, 250 s arriba de 80 (racha máx. 120 s), 1.326 MHz de media (14/11 con ventilador: 86,2 °C, 1.434 MHz).
+- [ ] El turno pesado no se soltó al reiniciar la escucha a las 12:32 (SIGTERM con un video armándose): ver por qué.
 - [ ] Así Nació: Santi decide si renueva el token de la página de Pequeña Historia (quedó en logs de la Pi).
 
 ## Pequeña Historia: tecnología todos los días (2026-11-20)
