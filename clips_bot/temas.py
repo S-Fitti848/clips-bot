@@ -23,6 +23,9 @@ GRUPOS_LATAM = ("futbol", "idolo", "curiosidad", "humana", "procer")
 NOMBRE_LATAM = {"futbol": "fútbol", "idolo": "ídolos de antes", "curiosidad": "curiosidades",
                 "humana": "historias humanas", "procer": "próceres y fundaciones"}
 # Lo que Santi pidió para Facebook (2026-11-23), aunque los números todavía no alcancen: base del orden.
+# Santi, 2026-11-23: la mayoría de marcas, el resto videojuegos; inventos e internet solo si la historia es muy fuerte
+BASE_TEC = {"marcas": 1.0, "empresas": 0.8, "videojuegos": 0.5, "inventos": -0.75, "internet": -0.75}
+DIAS_MIN = 3        # un Short con menos de 3 días todavía no juntó sus vistas (Analytics llega con 2-3 días de atraso)
 BASE_LATAM = {"futbol": 1.0, "idolo": 0.6, "curiosidad": 0.6, "humana": 0.0, "procer": -1.0}
 MAX_BONUS = 0.75
 MIN_N = 2
@@ -109,13 +112,24 @@ def _bonus(por_grupo: dict[str, list[float]]) -> dict[str, float]:
     return out
 
 
-def vistas_tec(yt: dict) -> dict[str, list[float]]:
-    """{subtema: [vistas]} de los Shorts de tecnología medidos (medicion_ph["yt"]), con más de 2 días."""
+def vistas_tec(yt: dict, publicas: dict | None = None, hoy=None) -> dict[str, list[float]]:
+    """{subtema: [vistas]} de los Shorts de tecnología medidos (medicion_ph["yt"]) con DIAS_MIN días o más.
+    `publicas` ({video_id: vistas} de videos.list): las de hoy, que le ganan a las de Analytics (el 23/11 ARPANET y
+    Chicago figuraban con 0 y tenían 1.176 y 1.256)."""
+    from datetime import date, timedelta
+
+    hoy = hoy or date.today()
     out: dict[str, list[float]] = {}
-    for x in (yt or {}).values():
-        if x.get("tipo") != "tecnologia" or x.get("vistas") is None:
+    for vid, x in (yt or {}).items():
+        if x.get("tipo") != "tecnologia":
             continue
-        out.setdefault(subtema_tec(x.get("titulo") or x.get("clip_id") or ""), []).append(float(x["vistas"]))
+        pub = str(x.get("publicado") or x.get("fecha") or "")[:10]
+        if pub and pub > (hoy - timedelta(days=DIAS_MIN)).isoformat():
+            continue
+        v = (publicas or {}).get(vid, x.get("vistas"))
+        if v is None:
+            continue
+        out.setdefault(subtema_tec(x.get("titulo") or x.get("clip_id") or ""), []).append(float(v))
     return out
 
 
@@ -134,16 +148,17 @@ def vistas_latam(fb: dict, registro: list[dict]) -> tuple[dict[str, list[float]]
     return por, sorted(filas, reverse=True)
 
 
-def calcular(conn) -> dict:
+def calcular(conn, publicas: dict | None = None, hoy=None) -> dict:
     """Los pesos de hoy, desde las mediciones guardadas; los guarda y los devuelve."""
     from . import medicion_ph as mp
 
     datos = mp.cargar(conn)
     registro = json.loads(db.get_valor(conn, "historias_fb_registro") or "[]")
-    tec = vistas_tec(datos.get("yt") or {})
+    tec = vistas_tec(datos.get("yt") or {}, publicas, hoy)
     lat, _ = vistas_latam(datos.get("fb") or {}, registro)
     b_lat = _bonus(lat)
-    pesos = {"tec": _bonus(tec),
+    b_tec = _bonus(tec)
+    pesos = {"tec": {g: round(BASE_TEC.get(g, 0.0) + b_tec.get(g, 0.0), 2) for g in SUBTEMAS_TEC},
              "latam": {g: round(BASE_LATAM.get(g, 0.0) + b_lat.get(g, 0.0), 2) for g in GRUPOS_LATAM},
              "n_tec": {g: len(v) for g, v in tec.items()}, "n_latam": {g: len(v) for g, v in lat.items()},
              "med_tec": {g: _mediana(v) for g, v in tec.items()}, "med_latam": {g: _mediana(v) for g, v in lat.items()}}
@@ -159,7 +174,7 @@ def leer(conn) -> dict:
 
 
 def pesos_tec(conn) -> dict[str, float]:
-    return dict(leer(conn).get("tec") or {})
+    return dict(leer(conn).get("tec") or BASE_TEC)
 
 
 def pesos_latam(conn) -> dict[str, float]:

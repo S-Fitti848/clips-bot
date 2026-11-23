@@ -445,7 +445,10 @@ PUNTUÁ cada elegido del 1 al 10 en cuatro cosas (sé exigente):
 - `final`: ¿se puede cerrar con un dato que impacte?
 EJEMPLO DE 10 EN LAS CUATRO: "el error que le hizo perder a Netscape la guerra de los navegadores",
 contado con giro (dominaba la web, se saltó una versión entera, la siguiente salió lenta y rota, e
-Internet Explorer se quedó con todo). Un estándar técnico que nadie conoce (UML) no pasa de 3 en marca."""}
+Internet Explorer se quedó con todo). Un estándar técnico que nadie conoce (UML) no pasa de 3 en marca.
+QUÉ HISTORIAS PRIMERO (Santi, 2026-11-23, con las vistas de YouTube): la MAYORÍA, historias de MARCAS y empresas
+conocidas (cómo nació, cuando casi quiebra, su rival, el producto que fracasó); el resto, VIDEOJUEGOS y consolas.
+Inventos e internet (protocolos, la primera web, redes) SOLO si la historia es muy fuerte: elegilos últimos."""}
 
 
 NO_ES_DE_HOY = ("ESTA HISTORIA NO PASÓ UN DÍA COMO HOY (es del banco de reserva): no digas «hoy», «un día como "
@@ -458,6 +461,13 @@ class SinTema(NarrarError):
 
 CRITERIOS_TEC = ("marca", "sorpresa", "consecuencia", "final")
 PUNTAJE_TEC_MIN = 7.5     # Santi, 2026-11-13
+# Santi, 2026-11-23: la mayoría de marcas, el resto videojuegos; inventos e internet solo si la historia es muy fuerte.
+SUBTEMAS_FUERTES = ("inventos", "internet")
+PUNTAJE_TEC_FUERTE = 8.5
+
+
+def minimo_tec(subtema: str | None) -> float:
+    return PUNTAJE_TEC_FUERTE if subtema in SUBTEMAS_FUERTES else PUNTAJE_TEC_MIN
 
 
 def elegir(cliente, eventos: list[Evento], cuantos: int = ELEGIDOS, tema: str = "",
@@ -3024,7 +3034,7 @@ def proponer(wiki: Wiki, cliente, dia: date, carpeta: Path, avisar=log.info,
              imagen_frase: bool = False, elector=None, elector_reintento=None,
              tema: str = "", corto: bool = False, texto=None, mas_video: bool = False,
              puntuador=None, piso: float | None = None, banco: list[dict] | None = None,
-             solo_banco: bool = False, pesos: dict | None = None) -> Propuesta:
+             solo_banco: bool = False, pesos: dict | None = None, evitar=()) -> Propuesta:
     """`solo_banco` (Santi, 2026-11-23, la reserva de tecnología): sin los hechos del día, directo del `banco` (historias
     que no dependen de la fecha). `pesos` ({subtema: bonus}, temas.py): los subtemas que más rinden van primero.
 
@@ -3060,6 +3070,12 @@ def proponer(wiki: Wiki, cliente, dia: date, carpeta: Path, avisar=log.info,
             motivos[m] = motivos.get(m, 0) + 1
         elif not hecho or _norm(hecho) in _norm(e.texto):
             candidatos.append(e)
+    if evitar:      # Santi, 2026-11-23: ninguna marca de Así Nació de esta semana
+        from .marcas_semana import menciona as _menciona
+        sacados = [e for e in candidatos if _menciona(e.texto + " " + " ".join(e.paginas), evitar)]
+        candidatos = [e for e in candidatos if e not in sacados]
+        if sacados:
+            motivos["marca de Así Nació esta semana"] = len(sacados)
     avisar(f"{len(todos)} hechos del {dia:%d/%m}; {len(candidatos)} pasan el primer filtro {motivos}")
     if not candidatos and not solo_banco:
         raise NarrarError("Ningún hecho de hoy pasa el filtro de temas sensibles"
@@ -3078,7 +3094,14 @@ def proponer(wiki: Wiki, cliente, dia: date, carpeta: Path, avisar=log.info,
         # Santi, 2026-11-23: del banco, primero los subtemas que más rinden (temas.py)
         orden = sorted(banco or [], key=lambda it: -(float(it.get("puntaje") or 0) + (pesos or {}).get(
             it.get("subtema") or _t.subtema_tec(it.get("texto") or ""), 0.0)))
+        from .marcas_semana import menciona as _menciona
+
         for item in orden:
+            if evitar and _menciona(str(item.get("texto") or "") + " " + " ".join(item.get("paginas") or []), evitar):
+                continue
+            sub = item.get("subtema") or _t.subtema_tec(item.get("texto") or "")
+            if tema == "tecnologia" and float(item.get("puntaje") or 0) < minimo_tec(sub):
+                continue        # inventos e internet del banco, solo los muy fuertes (Santi, 2026-11-23)
             ev = Evento(item.get("lang", "es"), int(item["anio"]), item["texto"], list(item["paginas"]))
             candidatos.append(ev)
             i = len(candidatos) - 1
@@ -3104,12 +3127,14 @@ def proponer(wiki: Wiki, cliente, dia: date, carpeta: Path, avisar=log.info,
         for i, _ in elegidos:
             n = notas.get(i, {})
             avisar(f"  {n.get('puntaje', 0):.2f} {candidatos[i].anio} {candidatos[i].texto[:60]} {n}")
-        flojos = [i for i, _ in elegidos if notas.get(i, {}).get("puntaje", 0) < PUNTAJE_TEC_MIN]
+        flojos = [i for i, _ in elegidos
+                  if notas.get(i, {}).get("puntaje", 0) < minimo_tec(notas.get(i, {}).get("subtema"))]
         if flojos:   # a la bitácora: los que no llegan, con su parte del pedido de puntaje
             parte = bitacora.costo_entre_activa(fila_elegir) / max(1, len(elegidos))
             for i in flojos:
                 bitacora.descarte(f"{candidatos[i].anio} {candidatos[i].texto[:90]}",
-                                  f"puntaje {notas.get(i, {}).get('puntaje', 0):.2f} < {PUNTAJE_TEC_MIN:g}",
+                                  f"puntaje {notas.get(i, {}).get('puntaje', 0):.2f} < "
+                                  f"{minimo_tec(notas.get(i, {}).get('subtema')):g}",
                                   "puntaje", costo=parte)
         todos_tec = list(elegidos)
         # Santi, 2026-11-23: los subtemas que más rinden en YouTube (temas.py) suman al ORDEN, no al mínimo

@@ -96,6 +96,10 @@ def metricas_post(post_id: str, token: str, page_id: str, version: str, session=
 
     s = session or requests.Session()
     base = GRAPH.format(version=version)
+    # La subida de una foto devuelve el id de la FOTO; la publicación es <página>_<foto> (con el id solo, Facebook
+    # contesta 400 "nonexisting field (permalink_url)": pasaba cada 30 min con la comunidad del 21/11).
+    if "_" not in str(post_id) and page_id:
+        post_id = f"{page_id}_{post_id}"
     p = s.get(f"{base}/{post_id}", timeout=30, params={
         "access_token": token, "fields": "permalink_url,reactions.summary(true).limit(0),comments.summary(true).limit(0),shares"})
     p.raise_for_status()

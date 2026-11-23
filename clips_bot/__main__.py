@@ -2741,6 +2741,8 @@ def escuchar_telegram(settings: Settings, timeout_poll: int = 50) -> int:
             _seguro(tg, str(chat_ultimo or ""), "la historia de Facebook", _auto(_fb_tick), conn, tg, settings)
             _seguro(tg, str(chat_ultimo or ""), "la reserva de tecnología", _auto(_reserva_tec_tick), conn, tg, settings)
             _seguro(tg, str(chat_ultimo or ""), "los temas de la semana", _temas_semana_tick, conn, tg)
+            _seguro(tg, str(chat_ultimo or ""), "el plan de Así Nació", _plan_an_tick, conn, tg)
+            _seguro(tg, str(chat_ultimo or ""), "los videos esperando aprobación", _espera_tick, conn, tg)
             _seguro(tg, str(chat_ultimo or ""), "el video de marcas", _auto(_animacion_tick), conn, tg, settings)
             _seguro(tg, str(chat_ultimo or ""), "el calendario", _calendario_tick, conn, tg, settings)
             _seguro(tg, str(chat_ultimo or ""), "la medición de Pequeña Historia",
@@ -3567,7 +3569,7 @@ def _efe_proponer(conn, tg: TelegramClient, chats: list[str], dia, settings: Set
                         # nunca un día sin video (Santi, 2026-11-15): piso de 6 y, debajo, el banco
                         piso=None if hecho else banco_mod.PISO_ABSOLUTO,
                         banco=None if hecho else banco_mod.leer(conn, "tecnologia"),
-                        pesos=_pesos_tec(conn))
+                        pesos=_pesos_tec(conn), evitar=_marcas_evitar(conn))
     except (NarrarError, ef.WikiError, GeminiError) as e:
         bitacora.fallo("", str(e))
         bitacora.cerrar(conn, "fallido")
@@ -3584,6 +3586,13 @@ def _efe_proponer(conn, tg: TelegramClient, chats: list[str], dia, settings: Set
     for chat in chats:
         _efe_mostrar(conn, tg, chat, token, estado)   # el mismo token: se aprueba desde cualquiera
     return None
+
+
+def _marcas_evitar(conn) -> set:
+    """Las marcas de Así Nació de esta semana: Pequeña Historia no las usa (Santi, 2026-11-23)."""
+    from . import marcas_semana
+
+    return marcas_semana.usadas_an(conn, datetime.now(AR).date())
 
 
 def _pesos_tec(conn) -> dict:
@@ -4280,6 +4289,11 @@ def _entregar_de_reserva(conn, tg: TelegramClient, chats, settings: Settings, it
 
     estado = _efe_estado(conn, item["token"])
     meta = _meta_de(item["clip_id"])
+    if not meta and item.get("meta") and Path(item["meta"]).exists():
+        try:
+            meta = json.loads(Path(item["meta"]).read_text(encoding="utf-8"))
+        except ValueError:
+            meta = {}
     if not estado or not meta or not Path(meta.get("salida", "")).exists():
         log.warning("reserva de tecnología: %s ya no está (sin propuesta o sin video)", item.get("clip_id"))
         return False
@@ -4340,7 +4354,7 @@ def _reserva_armar(conn, tg: TelegramClient, settings: Settings, hoy) -> str | N
                         elector=_elector_fotos(settings), elector_reintento=_elector_fotos(settings, reintento=True),
                         tema="tecnologia", corto=cfg.corto, texto=_texto_efemeride(settings, gemini),
                         mas_video=cfg.estilo_nuevo, puntuador=_puntuador(settings),
-                        banco=banco_mod.leer(conn, "tecnologia"), solo_banco=True, pesos=_pesos_tec(conn))
+                        banco=banco_mod.leer(conn, "tecnologia"), solo_banco=True, pesos=_pesos_tec(conn), evitar=_marcas_evitar(conn))
     except (NarrarError, ef.WikiError, GeminiError) as e:
         bitacora.fallo("", str(e))
         bitacora.cerrar(conn, "fallido")
@@ -4374,6 +4388,15 @@ TEMAS_SEMANA = "temas_semana_enviado"     # bot_estado: el lunes (AR) en que ya 
 TEMAS_SEMANA_HORA = (10, 15)
 
 
+def _plan_an_tick(conn, tg: TelegramClient, ahora=None) -> None:
+    """Los lunes desde las 10:00, cómo vamos con el plan de Así Nació en 5 líneas (Santi, 2026-11-23: lo manda el
+    bot desde la Pi; antes era una tarea de su compu). Sin Claude: plan_an.py."""
+    from . import plan_an
+    from .config import ROOT
+
+    plan_an.tick(conn, lambda t: tg.send_message(DUENO, t), ROOT, ahora or datetime.now(AR))
+
+
 def _temas_semana_tick(conn, tg: TelegramClient, ahora=None) -> None:
     """Los lunes (Santi, 2026-11-23): qué temas de tecnología (YouTube) y de Latinoamérica (Facebook) rinden más; los que
     andan suben en el orden de elección desde ese momento (temas.py). Los pesos se recalculan también si no hay."""
@@ -4382,12 +4405,33 @@ def _temas_semana_tick(conn, tg: TelegramClient, ahora=None) -> None:
     ahora = ahora or datetime.now(AR)
     lunes = ahora.date().isoformat()
     if not temas.leer(conn):
-        temas.calcular(conn)
+        temas.calcular(conn, hoy=ahora.date())
     if (ahora.weekday() != 0 or (ahora.hour, ahora.minute) < TEMAS_SEMANA_HORA
             or db.get_valor(conn, TEMAS_SEMANA) == lunes):
         return
     db.set_valor(conn, TEMAS_SEMANA, lunes)
-    _aviso(tg, temas.texto_semana(temas.calcular(conn)))
+    _aviso(tg, temas.texto_semana(temas.calcular(conn, publicas=_vistas_publicas_tec(conn), hoy=ahora.date())))
+
+
+def _vistas_publicas_tec(conn) -> dict:
+    """{video_id: vistas} de hoy de los Shorts de tecnología (videos.list, 1 unidad cada 50): Analytics llega con 2-3
+    días de atraso y daba 0 a videos con 1.200 vistas."""
+    from . import medicion_ph as mp
+    from . import youtube
+
+    ids = [v for v, x in (mp.cargar(conn).get("yt") or {}).items() if x.get("tipo") == "tecnologia"]
+    out: dict = {}
+    try:
+        c = youtube.Cliente("pequena_historia")
+        for i in range(0, len(ids), 50):
+            r = c.session.get("https://www.googleapis.com/youtube/v3/videos", headers=c._headers(), timeout=60,
+                              params={"part": "statistics", "id": ",".join(ids[i:i + 50])})
+            r.raise_for_status()
+            for v in r.json().get("items") or []:
+                out[v["id"]] = int((v.get("statistics") or {}).get("viewCount") or 0)
+    except Exception as e:  # noqa: BLE001 — sin token o YouTube caído: quedan las de Analytics
+        log.info("vistas públicas de tecnología: %s", e)
+    return out
 
 
 COSTO_PEDIDO = "costo_claude_pedido"   # bot_estado: el día (AR) cuyo costo de Claude pidió Santi
@@ -4815,6 +4859,7 @@ def _animacion_armar(conn, tg: TelegramClient, chats: list[str], settings: Setti
                                f"con el estándar {ok_}/{total_}: hoy no sale")
     if retenido:
         _animacion_meta(settings, r, carpeta, hoy, k)
+        _espera_anotar(conn, clip_asinacio(hoy, k), getattr(r, "titulo", ""))
         avisos = []
     else:
         avisos = _animacion_subir(conn, settings, r, carpeta, hoy, k) if settings.animacion.subir else []
@@ -4943,6 +4988,61 @@ def _animacion_subir(conn, settings: Settings, r, carpeta: Path, hoy, k: int = 0
     """Programa el video de Así Nació en YouTube (y en Facebook, si está conectado) para su horario (el
     k-ésimo de horas_asinacio). Guarda el meta al lado del video (para ❌ Cancelar). Devuelve los avisos."""
     return _animacion_programar(conn, settings, _animacion_meta(settings, r, carpeta, hoy, k))
+
+
+ESPERA = "esperando_aprobacion"          # bot_estado: {clip_id: {"titulo", "desde"}} de los videos con ✅ / ❌
+ESPERA_HORAS = ("10:00", "15:00")       # Santi, 2026-11-23: recordatorio en una línea a esas horas
+ESPERA_VIGENCIA_H = 36                  # después de esto ya no se publica: no se recuerda más
+
+
+def _espera_leer(conn) -> dict:
+    try:
+        return json.loads(db.get_valor(conn, ESPERA) or "{}")
+    except ValueError:
+        return {}
+
+
+def _espera_anotar(conn, clip_id: str, titulo: str) -> None:
+    d = _espera_leer(conn)
+    d[clip_id] = {"titulo": titulo or clip_id, "desde": datetime.now(AR).isoformat()}
+    db.set_valor(conn, ESPERA, json.dumps(d, ensure_ascii=False))
+
+
+def _espera_sacar(conn, clip_id: str) -> None:
+    d = _espera_leer(conn)
+    if d.pop(clip_id, None) is not None:
+        db.set_valor(conn, ESPERA, json.dumps(d, ensure_ascii=False))
+
+
+def _espera_tick(conn, tg, ahora=None) -> None:
+    """A las 10:00 y a las 15:00, si hay videos esperando ✅ / ❌, una línea a Santi (Santi, 2026-11-23)."""
+    ahora = ahora or datetime.now(AR)
+    hm = ahora.strftime("%H:%M")
+    turno = max((h for h in ESPERA_HORAS if h <= hm), default=None)
+    if turno is None:
+        return
+    clave = f"{ESPERA}_aviso:{ahora.date().isoformat()}:{turno}"
+    if db.get_valor(conn, clave):
+        return
+    db.set_valor(conn, clave, "1")
+    d = _espera_leer(conn)
+    vigentes = {}
+    for cid, x in d.items():
+        try:
+            edad_h = (ahora - datetime.fromisoformat(x["desde"])).total_seconds() / 3600
+        except (KeyError, ValueError, TypeError):
+            continue
+        ya = (db.get_valor(conn, f"{NO_SUBIR}:{cid}")
+              or db.subidas(conn, ("programada", "publicada"), clip_id=cid))
+        if edad_h <= ESPERA_VIGENCIA_H and not ya:
+            vigentes[cid] = x
+    if vigentes != d:
+        db.set_valor(conn, ESPERA, json.dumps(vigentes, ensure_ascii=False))
+    if not vigentes:
+        return
+    titulos = ", ".join(f"«{x['titulo'][:40]}»" for x in vigentes.values())
+    n = len(vigentes)
+    tg.send_message(DUENO, f"🔧 Claude Code: ⏳ {n} video{'s' if n > 1 else ''} esperando tu ✅: {titulos}")
 
 
 def botones_retenido(clip_id: str, igual: bool = True) -> dict:
@@ -5434,7 +5534,12 @@ def _efe_armar(conn, tg: TelegramClient, chat_id, token: str, settings: Settings
     relajado = "\n".join(x for x in ((getattr(prop, "local", None) or {}).get("aviso"),
                                       meta.get("efemeride", {}).get("aviso_fotos")) if x)
     if reserva:
-        return {"clip_id": meta["clip_id"], "fallas": cal_fallas, "corregidas": cal_corregidas,
+        # El meta (textos, créditos, salida) lo guarda enviar_clip en ready/ al mandarlo: en la reserva todavía no se
+        # manda, así que va al lado del video (el 23/11 el primero de la reserva se perdió por no tenerlo).
+        from .process import guardar_meta
+        ruta_meta = Path(estado["carpeta"]) / f"{meta['clip_id']}.json"
+        guardar_meta(ruta_meta, meta)
+        return {"clip_id": meta["clip_id"], "meta": str(ruta_meta), "fallas": cal_fallas, "corregidas": cal_corregidas,
                 "revisado": cal_revisado, "motor": motor, "relajado": relajado, "local": prop.local or {},
                 "costo": bitacora.costo_activo(), "titulo": (meta.get("textos") or {}).get("titulo", "")}
     return _efe_entregar(conn, tg, chat_id, token, settings, prop, meta, cal_fallas, cal_corregidas, cal_revisado,
@@ -5467,6 +5572,7 @@ def _efe_entregar(conn, tg: TelegramClient, chat_id, token: str, settings: Setti
                   "❌ Cancelar o no responder = NO sale.")
         encabezado = f"{titulo}\n" + (calidad.texto_retenido("pequena_historia", cal_fallas) if bajo else espera)
         extra = extra + botones_retenido(meta["clip_id"], igual=bajo)["inline_keyboard"]
+        _espera_anotar(conn, meta["clip_id"], (meta.get("textos") or {}).get("titulo", ""))
     elif auto:
         bitacora.paso("subida")
         avisos = _subir(conn, settings, meta, "pequena_historia")
@@ -5509,6 +5615,13 @@ def _efe_entregar(conn, tg: TelegramClient, chat_id, token: str, settings: Setti
     bitacora.cerrar(conn, "retenido" if retenido else "programado" if auto else "entregado")
     if not fb and auto:      # Santi, 2026-11-23: cuántos de tecnología salieron hoy (2 por día; los que falten, de la reserva)
         reserva_tec.contar_entregado(conn, datetime.now(AR).date())
+    if not fb:               # la marca de este video no sale en Así Nació esta semana (marcas_semana.py)
+        from . import marcas_semana
+
+        ev = getattr(prop, "evento", None) or {}
+        marcas_semana.anotar_ph(conn, datetime.now(AR).date(), " ".join(
+            [str(ev.get("texto") or ""), " ".join(ev.get("paginas") or []),
+             str((meta.get("textos") or {}).get("titulo") or "")]))
     if not extra or retenido:
         db.borrar_valor(conn, f"efe:{token}")
     # El ✅ arma el video; subirlo es aparte, con "📤 Subir" debajo del video (2026-09-30).
@@ -6474,6 +6587,7 @@ def _retenido_callback(conn, tg: TelegramClient, cb: dict, settings: Settings, d
     """✅ Publicar igual / ❌ Cancelar de un video con el estándar debajo del mínimo (Santi, 2026-11-17). ✅ lo programa
     en su horario (o en 30 min si ya pasó, nunca al día siguiente); ❌ (o no responder) = no sale."""
     clip_id = ":".join(d["crudos"])
+    _espera_sacar(conn, clip_id)
     meta = _meta_de(clip_id)
     if not meta:
         return tg.answer_callback(cb["callback_id"], "Ese video ya no está.")
@@ -7604,6 +7718,8 @@ def main(argv: list[str] | None = None) -> int:
         level=logging.DEBUG if args.verbose else logging.INFO,
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     )
+    from . import logseguro
+    logseguro.instalar()      # nunca una clave ni un token en los logs (Santi, 2026-11-23)
     for ruidoso in ("httpx", "huggingface_hub", "faster_whisper"):
         logging.getLogger(ruidoso).setLevel(logging.DEBUG if args.verbose else logging.WARNING)
     try:

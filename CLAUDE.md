@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-11-23 | **Versión:** v1.50.0 (desplegado) | **Modo:** Fase 2: corriendo solo en la Pi. **Rots APAGADO. Así Nació PAUSADO desde el 19/11** (vuelve con 1 por día, preparado la noche anterior, si 4 de 5 marcas nuevas dan 15/19 o más por menos de US$ 0,60). **Pequeña Historia: TECNOLOGÍA ES LA PRIORIDAD NÚMERO UNO desde el 23/11** (2 por día en YouTube, 11:00 y 20:00, con una reserva de 3 videos ya armados; el canal de YouTube es solo de tecnología) y **Latinoamérica 2 por día SOLO en Facebook** hasta el 15/12. Nada se publica solo desde el 17/11: llega con ✅ Publicar / ❌ Cancelar y sin respuesta no sale. Todo al privado de Santi
+**Snapshot:** 2026-11-23 | **Versión:** v1.51.0 (desplegado) | **Modo:** Fase 2: corriendo solo en la Pi. **Rots APAGADO. Así Nació PAUSADO desde el 19/11** (vuelve con 1 por día, preparado la noche anterior, si 4 de 5 marcas nuevas dan 15/19 o más por menos de US$ 0,60). **Pequeña Historia: TECNOLOGÍA ES LA PRIORIDAD NÚMERO UNO desde el 23/11** (2 por día en YouTube, 11:00 y 20:00, con una reserva de 3 videos ya armados; el canal de YouTube es solo de tecnología) y **Latinoamérica 2 por día SOLO en Facebook** hasta el 15/12. Nada se publica solo desde el 17/11: llega con ✅ Publicar / ❌ Cancelar y sin respuesta no sale. Todo al privado de Santi
 
 > **SI ESTÁS EMPEZANDO UNA SESIÓN NUEVA, LEÉ §10.** Ahí está qué está hecho, qué quedó a medias,
 > qué falta, y las trampas que ya nos mordieron.
@@ -1344,6 +1344,21 @@ Problemas abiertos:
 
 ## 9. CHANGELOG
 
+- v1.51.0 (2026-11-23, tarde) — **Después del corte de luz** (Santi desenchufó la Pi para poner disipadores, SIN el Fan
+  SHIM). Tarjeta y bases bien (`integrity_check` ok, solo un "orphan cleanup" del ext4). El video de la reserva que se
+  armaba quedó cortado con el turno pesado tomado: un turno de antes del arranque ya no cuenta (`db.arranque_sistema`).
+  **El primero de la reserva se había perdido antes del corte** (11:25): la reserva no guardaba el meta (lo guarda
+  `enviar_clip` al mandar); ahora va al lado del video (`item["meta"]`). `ventilador.service` desactivado (no hay
+  ventilador; la pausa para enfriar entre renders sigue). **Tokens en los logs:** `logseguro.py` (formateador que tapa
+  con *** claves y tokens, en todos los `basicConfig`) + `sed` en `correr.sh` y `escuchar.sh`; tapados los ya escritos
+  en /var/log/clips-bot (40 del token de la página de Facebook, 5 del bot de Telegram). El 400 del resumen de 24 h era
+  la comunidad del 21/11: se guardaba el id de la FOTO y la publicación es `<página>_<foto>` (`metricas_post`).
+  **Internet "con 0 vistas":** eran mediciones de Analytics de antes de tiempo (ARPANET 1.176, Chicago 1.256, el
+  navegador de hoy recién publicado, todos públicos y procesados): `temas` ignora los de menos de 3 días y usa las vistas
+  de hoy (`videos.list`). **Tecnología:** marcas primero, después videojuegos; inventos e internet solo con 8,5 o más
+  (`temas.BASE_TEC`, `ef.minimo_tec`, el prompt). **Ninguna marca en Pequeña Historia y Así Nació la misma semana**
+  (`marcas_semana.py`). **Plan de Así Nació de los lunes desde la Pi** (`plan_an.py`, 10:00; la tarea de la compu se
+  borró). **Recordatorio de videos esperando ✅** a las 10:00 y 15:00 (`_espera_tick`, `bot_estado.esperando_aprobacion`).
 - v1.50.0 (2026-11-23) — **Tecnología, prioridad número uno** (regla en §1): 2 por día en YouTube (11:00 y 20:00),
   reserva de 3 videos ya armados (`reserva_tec.py`, `_reserva_tec_tick`, `_tec_del_dia_tick`, `_efe_entregar` separado de
   `_efe_armar`), recortes del presupuesto en orden sin tocar tecnología, temas que rinden (`temas.py`, lunes 10:15),

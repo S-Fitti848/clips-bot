@@ -84,6 +84,8 @@ def main(argv=None) -> int:
     ap.add_argument("--una-vez", action="store_true", help="decide y sale (para probar)")
     a = ap.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
+    from . import logseguro
+    logseguro.instalar()
     bucle(a.una_vez)
     return 0
 

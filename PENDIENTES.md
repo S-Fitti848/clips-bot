@@ -26,8 +26,9 @@ vamos** (tarea programada `asinacio-plan-lunes`).
 - [ ] 24/11 madrugada: el del día + uno de la reserva, los dos con "💻 Tecnología" en el mensaje.
 - [ ] Horarios: con 2 semanas de datos, comparar 11:00 contra 20:00 (Santi: "o los que mejor rindan").
 - [ ] 15/12: canal de YouTube nuevo para Latinoamérica (lo crea Santi; después, `youtube-auth` y `historias_fb.youtube`).
-- [ ] Visto en el log: el resumen de 24 h del Reel 122129360859498795 da 400 cada 30 min y el log guarda la URL con el
-      token de la página.
+- [x] El 400 del resumen de 24 h (id de foto en vez de publicación) y los tokens en los logs (tapados, v1.51.0).
+- [ ] Medir la temperatura del próximo render sin el Fan SHIM, con los disipadores (14/11: pico 86,2 °C con ventilador).
+- [ ] Así Nació: Santi decide si renueva el token de la página de Pequeña Historia (quedó en logs de la Pi).
 
 ## Pequeña Historia: tecnología todos los días (2026-11-20)
 

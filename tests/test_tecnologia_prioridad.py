@@ -161,3 +161,121 @@ def test_dos_horarios_de_youtube():
     primero = m.hora_ph_youtube(s, [], ahora)
     assert primero.strftime("%H:%M") == "11:00"
     assert m.hora_ph_youtube(s, [primero], ahora).strftime("%H:%M") == "20:00"
+
+
+# ---- 2026-11-23 (tarde): después del corte de luz ---------------------------------------------------------------
+
+def test_un_turno_de_antes_del_arranque_no_cuenta(tmp_path, monkeypatch):
+    import time
+
+    c = _conn(tmp_path)
+    db.set_valor(c, db._clave_turno(db.RECURSO_PESADO), json.dumps([["efemeride:reserva", time.time() - 600]]))
+    monkeypatch.setattr(db, "arranque_sistema", lambda: time.time() - 60)
+    assert db.hay_trabajo_pesado(c) is None
+    monkeypatch.setattr(db, "arranque_sistema", lambda: time.time() - 6000)
+    assert db.hay_trabajo_pesado(c) == "efemeride:reserva"
+
+
+def test_los_logs_tapan_claves_y_tokens():
+    from clips_bot import logseguro
+
+    t = logseguro.tapar("400 for url: https://graph.facebook.com/v23.0/1?access_token=EAAWcWL520RABSZBVdYdGcb08P6tQ&x=1"
+                        " /bot8824436710:AAHfake_token-123/getUpdates key=AIzaSyA1234567890123456789012345678901"
+                        " sk-ant-api03-abcdef")
+    for secreto in ("EAAWc", "AAHfake", "AIzaSy", "sk-ant-api03"):
+        assert secreto not in t
+    assert "access_token=***" in t and "/bot***" in t
+
+
+def test_el_formateador_tapa_tambien_el_traceback():
+    import logging
+
+    from clips_bot import logseguro
+
+    f = logseguro.Formateador(logging.Formatter("%(message)s"))
+    try:
+        raise ValueError("url?access_token=EAAabcdefghijklmnopqrstuvwxyz")
+    except ValueError:
+        import sys
+        rec = logging.LogRecord("x", logging.INFO, "", 0, "falló %s", ("token=secreto123",), sys.exc_info())
+    salida = f.format(rec)
+    assert "secreto123" not in salida and "EAAabc" not in salida
+
+
+def test_comunidad_usa_el_id_de_la_publicacion():
+    from clips_bot import stats_fb
+
+    pedidos = []
+
+    class R:
+        status_code = 200
+
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return {}
+
+    class S:
+        def get(self, url, **k):
+            pedidos.append(url)
+            return R()
+
+    stats_fb.metricas_post("122129360859498795", "t", "1406770815844323", "v23.0", session=S())
+    assert pedidos[0].endswith("/1406770815844323_122129360859498795")
+
+
+def test_marcas_primero_y_internet_solo_si_es_muy_fuerte():
+    from clips_bot import efemerides as ef
+
+    assert temas.BASE_TEC["marcas"] > temas.BASE_TEC["videojuegos"] > 0 > temas.BASE_TEC["internet"]
+    assert ef.minimo_tec("internet") > ef.minimo_tec("marcas") == ef.PUNTAJE_TEC_MIN
+
+
+def test_temas_ignora_los_muy_nuevos_y_usa_las_vistas_de_hoy():
+    yt = {"a": {"tipo": "tecnologia", "titulo": "Así nació ARPANET", "vistas": 0, "publicado": "2026-11-21"},
+          "b": {"tipo": "tecnologia", "titulo": "El primer navegador de la web", "vistas": 0, "publicado": "2026-11-23"}}
+    v = temas.vistas_tec(yt, {"a": 1176}, date(2026, 11, 24))
+    assert v == {"internet": [1176.0]}
+
+
+def test_ninguna_marca_en_los_dos_canales_la_misma_semana(tmp_path):
+    from clips_bot import marcas_semana as ms
+
+    c = _conn(tmp_path)
+    ms.anotar_ph(c, date(2026, 11, 20), "1971 Intel lanza el 4004 Intel_4004 El chip que su creador firmó")
+    assert ms.usadas_ph(c, date(2026, 11, 24), ["Intel", "Nintendo", "Ford"]) == {"Intel"}
+    assert ms.usadas_ph(c, date(2026, 11, 28), ["Intel"]) == set()          # pasaron los 7 días
+    assert ms.menciona("La Ford Motor Company", ["Ford"]) == ["Ford"] and not ms.menciona("Oxford", ["Ford"])
+
+
+def test_recordatorio_de_videos_esperando(tmp_path):
+    c = _conn(tmp_path)
+    mandados = []
+
+    class TG:
+        def send_message(self, chat, texto, **k):
+            mandados.append(texto)
+
+    m._espera_anotar(c, "efemeride_1124_1971", "El chip de Intel")
+    m._espera_tick(c, TG(), ahora=datetime(2026, 11, 24, 9, 0, tzinfo=m.AR))
+    assert mandados == []
+    m._espera_tick(c, TG(), ahora=datetime(2026, 11, 24, 10, 5, tzinfo=m.AR))
+    m._espera_tick(c, TG(), ahora=datetime(2026, 11, 24, 11, 0, tzinfo=m.AR))
+    assert len(mandados) == 1 and "«El chip de Intel»" in mandados[0] and len(mandados[0].splitlines()) == 1
+    m._espera_sacar(c, "efemeride_1124_1971")
+    m._espera_tick(c, TG(), ahora=datetime(2026, 11, 24, 15, 0, tzinfo=m.AR))
+    assert len(mandados) == 1
+
+
+def test_plan_de_asi_nacio_en_5_lineas():
+    from clips_bot import plan_an
+
+    pend = ("| 20/11 – 22/11 | manos y apretón | aprobados por Santi |\n"
+            "| 23/11 – 29/11 | escenas que faltan y expresiones | |\n")
+    res = [{"ok": 17, "total": 19, "costo": 0.064, "_marca": "pepsi",
+            "fallas": [{"id": "AN-07"}, {"id": "AN-11"}]}]
+    t = plan_an.texto(date(2026, 11, 30 - 7), pend, res, {"2026-11-22": 0.3})
+    lineas = t.splitlines()
+    assert len(lineas) == 5 and lineas[0].startswith("🔧 Claude Code:") and "23/11" in lineas[0]
+    assert "17/19" in lineas[2] and "AN-07" in lineas[3] and "1 de 1" in lineas[4]

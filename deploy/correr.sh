@@ -19,8 +19,8 @@ ESPERA_REINTENTO_S="${CLIPS_BOT_REINTENTO_S:-600}"
 mkdir -p "$LOG_DIR" 2>/dev/null || true
 
 correr() {
-  # tee manda a stdout (lo toma journald) y al archivo; pipefail conserva el código de python.
-  "$DIR/.venv/bin/python" -m clips_bot "$COMANDO" 2>&1 | tee -a "$LOG"
+  # sed tapa claves y tokens (Santi, 2026-11-23); tee manda a stdout (lo toma journald) y al archivo; pipefail conserva el código de python.
+  "$DIR/.venv/bin/python" -m clips_bot "$COMANDO" 2>&1 | sed -u -E 's/(access_token|token|key)=[^&[:space:]"]+/\1=***/g; s#/bot[0-9]+:[A-Za-z0-9_-]+#/bot***#g; s/EAA[A-Za-z0-9]{20,}/***/g; s/AIza[0-9A-Za-z_-]{30,}/***/g; s/sk-ant-[A-Za-z0-9_-]+/***/g' | tee -a "$LOG"
   return "${PIPESTATUS[0]}"
 }
 

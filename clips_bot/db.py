@@ -404,7 +404,21 @@ def turnos_activos(conn: sqlite3.Connection, recurso: str,
         activos = json.loads(crudo) if crudo else []
     except ValueError:
         activos = []
-    return [(str(t), float(ts)) for t, ts in activos if ahora - float(ts) < vencimiento_s]
+    # Un turno tomado antes del último arranque de la máquina es de un proceso que ya no existe (Santi desenchufó la
+    # Pi el 23/11 con un video de la reserva armándose y el turno quedó tomado una hora).
+    desde = arranque_sistema()
+    return [(str(t), float(ts)) for t, ts in activos
+            if ahora - float(ts) < vencimiento_s and (desde is None or float(ts) >= desde)]
+
+
+def arranque_sistema() -> float | None:
+    """Cuándo arrancó la máquina (epoch), de /proc/uptime; None fuera de Linux."""
+    import time
+
+    try:
+        return time.time() - float(open("/proc/uptime").read().split()[0])
+    except (OSError, ValueError, IndexError):
+        return None
 
 
 TEMP_ARRANQUE_C = float(__import__("os").environ.get("CLIPS_TEMP_ARRANQUE", "65"))

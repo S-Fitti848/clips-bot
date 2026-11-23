@@ -3121,6 +3121,13 @@ def proponer(conn, cliente, wiki, hoy: date, catalogo: list[Marca] | None = None
             raise SinCandidato(f"el guion no pasó la validación: {err}") from err
     catalogo = catalogo if catalogo is not None else cargar_catalogo()
     fallidas = fallidos_de(conn, hoy) if conn is not None else set()
+    if conn is not None:     # Santi, 2026-11-23: ninguna marca que Pequeña Historia (tecnología) usó esta semana
+        from clips_bot import marcas_semana
+
+        de_ph = marcas_semana.usadas_ph(conn, hoy, [m.nombre for m in catalogo])
+        if de_ph:
+            avisar(f"marcas de Pequeña Historia esta semana (no van): {', '.join(sorted(de_ph))}")
+        fallidas = set(fallidas) | de_ph
     cands = candidatos(conn, catalogo, hoy, n, excluir=fallidas)
 
     def con_banco(motivo: str, errores_previos: list[str] | None = None):
@@ -3745,6 +3752,8 @@ def main(argv=None) -> int:
     ap.add_argument("--procesos", type=int, default=2)
     a = ap.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
+    from .. import logseguro
+    logseguro.instalar()
     hoy = date.fromisoformat(a.dia) if a.dia else date.today()
     settings = load_settings()
     conn = db.connect(DB_PATH)
