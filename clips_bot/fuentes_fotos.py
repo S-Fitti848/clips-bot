@@ -48,6 +48,7 @@ _ARGENTINO = re.compile(r"argentin|buenos aires|rosario|c[oó]rdoba|mendoza|la p
 # con lo que haya.
 
 TIMEOUT_S = 10
+TIMEOUT_OPENVERSE_S = 30
 MAX_FALLAS = 2
 
 
@@ -96,20 +97,24 @@ def _anio(texto) -> int | None:
 class Fuentes:
     def __init__(self, session: requests.Session | None = None, timeout: float = TIMEOUT_S, sleep=time.sleep):
         self.s = session or requests.Session()
-        self.s.headers["User-Agent"] = user_agent()
+        from .config import user_agent_corto
+
+        # sin el mail de contacto (es para Wikimedia): Openverse, Europeana, Flickr, Pexels… (2026-11-23)
+        self.s.headers["User-Agent"] = user_agent_corto()
         self.timeout = timeout
         self._sleep = sleep
 
-    def _json(self, url: str, **kw) -> dict:
+    def _json(self, url: str, timeout: float | None = None, **kw) -> dict:
         self._sleep(PAUSA_S)
-        r = self.s.get(url, timeout=self.timeout, **kw)
+        r = self.s.get(url, timeout=timeout or self.timeout, **kw)
         r.raise_for_status()
         return r.json()
 
     # ---- cada fuente: dicts con archivo, url, ancho, alto, licencia, autor, epigrafe, pagina, anio
 
     def openverse(self, q: str, n: int = POR_FUENTE) -> list[dict]:
-        d = self._json("https://api.openverse.org/v1/images/", params={
+        # 2026-11-23: la API tarda ~17 s (medido en la Pi): con 10 s daba timeout y se salteaba toda la corrida
+        d = self._json("https://api.openverse.org/v1/images/", timeout=TIMEOUT_OPENVERSE_S, params={
             "q": q, "license": "cc0,by,pdm", "page_size": n * 3, "mature": "false"})
         out = []
         for r in d.get("results") or []:
@@ -190,6 +195,42 @@ class Fuentes:
                         "autor": p.get("ownername") or "", "epigrafe": p.get("title") or "",
                         "pagina": f"https://www.flickr.com/photos/{p.get('owner')}/{p['id']}",
                         "anio": _anio(p.get("datetaken"))})
+        return out[:n]
+
+    def archive(self, q: str, n: int = POR_FUENTE) -> list[dict]:
+        """Internet Archive (Santi, 2026-11-23): imágenes cuya ficha dice dominio público, CC0 o CC BY (nada de NC, ND
+        ni SA, como los videos de archive.org). Medido: pocas y con mucho dibujo de fans; va al final."""
+        from .config import user_agent_corto
+
+        d = self._json("https://archive.org/advancedsearch.php", timeout=30, headers={"User-Agent": user_agent_corto()},
+                       params={"q": f"({q}) AND mediatype:image", "fl[]": ["identifier", "title", "licenseurl",
+                                                                           "date", "creator"],
+                               "rows": 30, "output": "json"})
+        out = []
+        for it in (d.get("response") or {}).get("docs") or []:
+            lu = str(it.get("licenseurl") or "")
+            lic = ("CC0" if "publicdomain/zero" in lu else "Dominio público" if "publicdomain/mark" in lu
+                   else "CC BY" if re.search(r"/licenses/by/", lu) else "")
+            if not lic or len(out) >= n:
+                continue
+            ident = it.get("identifier")
+            try:
+                meta = self._json(f"https://archive.org/metadata/{ident}", timeout=30,
+                                  headers={"User-Agent": user_agent_corto()})
+            except (requests.RequestException, ValueError):
+                continue
+            imgs = [f for f in meta.get("files") or [] if str(f.get("name", "")).lower().endswith((".jpg", ".jpeg", ".png"))
+                    and f.get("source") == "original" and int(f.get("size") or 0) < MAX_BYTES]
+            if not imgs:
+                continue
+            f = max(imgs, key=lambda x: int(x.get("size") or 0))
+            titulo = it.get("title")
+            creador = it.get("creator")
+            out.append({"archivo": f"archive:{ident}", "url": f"https://archive.org/download/{ident}/{f['name']}",
+                        "ancho": MIN_ANCHO, "alto": 0, "licencia": lic,
+                        "autor": ", ".join(creador) if isinstance(creador, list) else str(creador or ""),
+                        "epigrafe": (" ".join(titulo) if isinstance(titulo, list) else str(titulo or ""))[:160],
+                        "pagina": f"https://archive.org/details/{ident}", "anio": _anio(it.get("date"))})
         return out[:n]
 
     def nasa(self, q: str, n: int = POR_FUENTE) -> list[dict]:
@@ -274,7 +315,7 @@ class Fuentes:
         from .efemerides import _NO_FOTO
 
         fuentes = [("openverse", self.openverse), ("smithsonian", self.smithsonian),
-                   ("europeana", self.europeana), ("flickr", self.flickr)]
+                   ("europeana", self.europeana), ("flickr", self.flickr), ("archive", self.archive)]
         if de_espacio:
             fuentes.append(("nasa", self.nasa))
         if presente:   # fotos modernas: solo para lo que habla de hoy
@@ -317,7 +358,13 @@ def bajar(url: str, destino: Path, cache: Path | None, session: requests.Session
         return destino
     s = session or requests.Session()
     sleep(PAUSA_S)
-    r = s.get(url, timeout=60, stream=True, headers={"User-Agent": user_agent()})
+    from urllib.parse import urlparse
+
+    from .config import user_agent_corto
+
+    # Wikimedia pide el User-Agent con contacto; Flickr lo rechaza (403): el corto para todo lo demás (2026-11-23)
+    ua = user_agent() if urlparse(url).netloc.endswith("wikimedia.org") else user_agent_corto()
+    r = s.get(url, timeout=60, stream=True, headers={"User-Agent": ua})
     r.raise_for_status()
     datos = b""
     for trozo in r.iter_content(65536):

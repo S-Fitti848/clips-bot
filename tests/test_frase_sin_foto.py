@@ -62,9 +62,9 @@ def test_fotos_con_control_usa_el_plan_b_y_si_no_sigue_como_narrarerror(monkeypa
     monkeypatch.setattr(ef, "fotos_para_guion", fpg)
     e = ef.Evento("es", 1985, "Windows 1.0", ["Windows 1.0"])
     pool, g = ef.fotos_con_control(object(), None, e, _g(), [], tmp_path, lambda *_: None,
-                                   reescribir=lambda g_, idx, p_: True)
+                                   reescribir=lambda g_, idx, p_, forz=None: True)
     assert len(llamadas) == 2 and llamadas[1] is not None
     llamadas.clear()
     with pytest.raises(ef.NarrarError):           # sin plan B posible: el hecho siguiente (no un ValueError)
         ef.fotos_con_control(object(), None, e, _g(), [], tmp_path, lambda *_: None,
-                             reescribir=lambda g_, idx, p_: False)
+                             reescribir=lambda g_, idx, p_, forz=None: False)

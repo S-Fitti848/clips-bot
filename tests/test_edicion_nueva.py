@@ -169,7 +169,7 @@ def test_sin_tarjeta_con_un_texto_que_no_tiene_que_ver():
     g = _guion(frases=["Ese año salió Pokémon Escarlata.", "Y vendió millones."], claves=["Pokémon"])
     assert ef.texto_tarjeta(g, 0, 2022, solo_clave=True) == "POKÉMON"
     assert ef.texto_tarjeta(g, 1, 2022, solo_clave=True) is None      # nada de "2022" suelto
-    assert ef.texto_tarjeta(g, 1, 2022) == "2022"                      # sin la regla, como antes
+    assert ef.texto_tarjeta(g, 1, 2022) is None   # 2026-11-23 (Meucci): el año solo si la frase lo dice
 
 
 def test_central_y_al_pasar():

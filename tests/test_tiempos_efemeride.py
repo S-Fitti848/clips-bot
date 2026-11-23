@@ -39,7 +39,8 @@ def test_cada_pedido_tiene_10_s_y_una_fuente_caida_se_saltea_despues_de_2_fallas
                        avisar=avisos.append)
     openverse = [u for u, _ in s.pedidos if "openverse" in u]
     assert len(openverse) == 2                                   # después de 2 fallas, no más
-    assert all(t == 10 for _, t in s.pedidos)
+    # Openverse tarda ~17 s (medido 2026-11-23) y archive.org es lento: 30 s; el resto, 10
+    assert all(t == (30 if "openverse" in u or "archive.org" in u else 10) for u, t in s.pedidos)
     assert any("la salteo el resto de la corrida" in a for a in avisos)
 
 

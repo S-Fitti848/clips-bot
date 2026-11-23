@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-11-23 | **Versión:** v1.51.0 (desplegado) | **Modo:** Fase 2: corriendo solo en la Pi. **Rots APAGADO. Así Nació PAUSADO desde el 19/11** (vuelve con 1 por día, preparado la noche anterior, si 4 de 5 marcas nuevas dan 15/19 o más por menos de US$ 0,60). **Pequeña Historia: TECNOLOGÍA ES LA PRIORIDAD NÚMERO UNO desde el 23/11** (2 por día en YouTube, 11:00 y 20:00, con una reserva de 3 videos ya armados; el canal de YouTube es solo de tecnología) y **Latinoamérica 2 por día SOLO en Facebook** hasta el 15/12. Nada se publica solo desde el 17/11: llega con ✅ Publicar / ❌ Cancelar y sin respuesta no sale. Todo al privado de Santi
+**Snapshot:** 2026-11-23 | **Versión:** v1.52.0 (desplegado) | **Modo:** Fase 2: corriendo solo en la Pi. **Rots APAGADO. Así Nació PAUSADO desde el 19/11** (vuelve con 1 por día, preparado la noche anterior, si 4 de 5 marcas nuevas dan 15/19 o más por menos de US$ 0,60). **Pequeña Historia: TECNOLOGÍA ES LA PRIORIDAD NÚMERO UNO desde el 23/11** (2 por día en YouTube, 11:00 y 20:00, con una reserva de 3 videos ya armados; el canal de YouTube es solo de tecnología) y **Latinoamérica 2 por día SOLO en Facebook** hasta el 15/12. Nada se publica solo desde el 17/11: llega con ✅ Publicar / ❌ Cancelar y sin respuesta no sale. Todo al privado de Santi
 
 > **SI ESTÁS EMPEZANDO UNA SESIÓN NUEVA, LEÉ §10.** Ahí está qué está hecho, qué quedó a medias,
 > qué falta, y las trampas que ya nos mordieron.
@@ -302,6 +302,16 @@ servicio systemd separado: `clips-bot`).
   Colón campeón 14.730 reproducciones, Chapecoense 967, niños de Morelia 1.165, Huetamo 808, Pedro Infante 421;
   fundaciones y próceres 11-280. (7) El mensaje corto dice cuál es ("💻 Tecnología · ⏸ 6/9 …"): el 23/11 Santi no se dio
   cuenta de que el de tecnología había llegado.
+- **Fotos antes de gastar y tarjetas como último recurso (Santi, 2026-11-23, el Mundial 96 de la reserva: 6/9 y
+  US$ 0,61; la reserva gastó US$ 2,50 ese día reintentando Bell y AlphaGo):** (1) antes de pedir el guion se cuentan las
+  fotos usables sin Claude (artículo + Commons con el título, `ef.fotos_previas`); con menos de 4 (`PRECHEQUEO_MIN`) no
+  se escribe. (2) Una historia que falla por fotos queda marcada (`banco.marcar_sin_fotos`, `bot_estado.sin_fotos:tecnologia`),
+  sale del banco y no se vuelve a intentar ni a cosechar. (3) La reserva prueba primero marcas, empresas y videojuegos
+  (`ef.SUBTEMAS_FACILES`). (4) Una frase sin foto real se REESCRIBE hacia una foto que ya pasó los filtros (plan B,
+  `frases_flojas` + `reescribir_frases_con_foto`, Haiku) antes que una tarjeta; como mucho 2 tarjetas por video
+  (`MAX_TARJETAS`); las tarjetas (también las del armado) no se juzgan como foto. (5) Una tarjeta con un año o número
+  aparece justo cuando la voz lo dice (`alinear_tarjetas`, por los subtítulos; el año solo en una frase que lo dice), y
+  la revisión final lo controla sin Claude (PH-26). (6) Pausa de la reserva: `bot_estado.reserva_tec_pausa` = "1".
 - **Pequeña Historia NO se publica sola (Santi, 2026-11-17, después del Short de Colón con Cristina Kirchner en
   Atucha):** `efemerides.publicar_sola: false`: los 3 videos se siguen armando solos (`sin_aprobar`), pero llegan con
   ✅ Publicar / ❌ Cancelar y, si Santi no responde, NO salen. Se vuelve a prender SOLO cuando Santi lo diga.
@@ -1344,6 +1354,18 @@ Problemas abiertos:
 
 ## 9. CHANGELOG
 
+- v1.52.0 (2026-11-23, noche) — **Fotos antes de gastar, plan B y tarjetas a tiempo** (regla en §1). Fuentes de
+  fotos medidas en los 5 videos de tecnología de la semana (segundos en pantalla): Commons 35 %, Pexels 33 %, tarjetas
+  30 %, video 2 %; Openverse, Smithsonian, Flickr y Europeana, 0. Por qué: Openverse tarda ~17 s y el timeout era de
+  10 (se salteaba toda la corrida), y TODAS sus fotos de Flickr daban 403 al bajarlas por el User-Agent largo (el de
+  Wikimedia, con el mail; con el corto, 200): timeout 30 s y `config.user_agent_corto` para todo lo que no es Wikimedia
+  (además, el mail ya no va a Openverse, Europeana ni Pexels). Sin `FLICKR_API_KEY`, `SMITHSONIAN_API_KEY` ni
+  `UNSPLASH_ACCESS_KEY` en la Pi. Nuevo: Internet Archive (imágenes con PD/CC0/CC BY en la ficha; pocas). La Library of
+  Congress sigue con Cloudflare (403, probado otra vez) y las salas de prensa de las marcas y de los videojuegos no
+  tienen API y sus fotos tienen derechos (uso editorial): no se suman. Chequeo previo medido sobre 18 historias: separa
+  solo los casos extremos (AlphaGo 0, Max Headroom 0, WorldWideWeb 3); Intel 4004 pasó con 7 y New Shepard falló con 17.
+  Marcadas sin fotos en la Pi: Teléfono (Bell), AlphaGo versus Lee Sedol, Pokémon y Martin Cooper. Informe de una vez el
+  24/11 a las 22:05 (`reserva_tec.informe`, `_informe_fotos_tick`). `tests/test_fotos_antes_del_guion.py`. 2154 tests OK.
 - v1.51.0 (2026-11-23, tarde) — **Después del corte de luz** (Santi desenchufó la Pi para poner disipadores, SIN el Fan
   SHIM). Tarjeta y bases bien (`integrity_check` ok, solo un "orphan cleanup" del ext4). El video de la reserva que se
   armaba quedó cortado con el turno pesado tomado: un turno de antes del arranque ya no cuenta (`db.arranque_sistema`).

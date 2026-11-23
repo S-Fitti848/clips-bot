@@ -1053,8 +1053,8 @@ def proponer(wiki: ef.Wiki, sonnet, haiku, gemini, dia: date, carpeta: Path, avi
             pool, g = ef.fotos_con_control(wiki, gemini, e, g, fotos, carpeta, avisar, videos=videos,
                                            tope_s=tope_fotos_s, elector=elector,
                                            elector_reintento=elector_reintento,
-                                           reescribir=lambda g_, idx, pool_: ef.reescribir_frases_con_foto(
-                                               haiku or sonnet, e, fuente, g_, idx, pool_, avisar))
+                                           reescribir=lambda g_, idx, pool_, forz=None: ef.reescribir_frases_con_foto(
+                                               haiku or sonnet, e, fuente, g_, idx, pool_, avisar, forz))
         except ef.PocasFotos as pocas:
             avisar(f"  {pocas}")
             fallas.append(f"{e.anio}: {pocas}")

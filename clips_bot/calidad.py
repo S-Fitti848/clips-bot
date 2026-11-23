@@ -437,7 +437,9 @@ def revisar_y_reemplazar(revisor, salida: Path, plan: list, g, cortes: list[dict
     if not revisado:
         return out
     malas: set[int] = set()
-    con_tarjeta: set[int] = set()   # cortes que ya pasaron a tarjeta: no se juzgan como foto
+    # cortes con tarjeta: no se juzgan como foto. Desde el 2026-11-23 también las del armado (el 22/11 «1987» en una
+    # frase de 17 segundos se contó como PH-02); antes solo las que ponía esta revisión.
+    con_tarjeta: set[int] = {k for k, c in enumerate(cortes) if str(c.get("archivo") or "").startswith("tarjeta")}
     rk = g.rankings()
     for _vuelta in range(VUELTAS_REEMPLAZO):
         de_foto = [f for f in fallas if f["id"] in REGLAS_FOTO and 1 <= int(f.get("cuadro") or 0) <= len(plan)]

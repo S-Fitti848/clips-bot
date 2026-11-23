@@ -377,7 +377,8 @@ def test_la_fabrica_de_tarjetas_usa_la_clave_y_despues_el_anio(tmp_path):
         rutas.append(r)
     pool = [ef.Foto(archivo=f"F{i}.jpg", url="", ancho=800, alto=600, licencia="CC0", autor="x",
                     epigrafe="e", pagina="", articulo="A", ruta=str(r)) for i, r in enumerate(rutas)]
-    g = _guion(frases=["El acta se firmó.", "Fue rápido."], ranking=[[0], [1]], del_hecho=[0, 1],
+    # 2026-11-23 (Meucci): el año solo en la tarjeta de una frase que lo dice
+    g = _guion(frases=["El acta se firmó.", "Fue rápido, en 1811."], ranking=[[0], [1]], del_hecho=[0, 1],
                claves=["acta"])
     nueva = ef.fabrica_tarjetas(g, 1811, tmp_path, lambda k: pool[k],
                                 lambda f: (pool.append(f), len(pool) - 1)[1])

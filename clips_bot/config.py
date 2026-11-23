@@ -770,6 +770,13 @@ def user_agent() -> str:
     return f"PequenaHistoriaBot/0.28 ({contacto}) python-requests/{requests.__version__}"
 
 
+def user_agent_corto() -> str:
+    """El User-Agent para lo que NO es Wikimedia (Flickr, archive.org…): el nombre del bot sin el contacto. Medido el
+    2026-11-23: live.staticflickr.com da 403 a todas las fotos con el User-Agent largo (el de Wikimedia, con el link y
+    el mail) y 200 con este; además el mail solo lo tiene que ver Wikimedia."""
+    return "PequenaHistoriaBot/0.28"
+
+
 def load_twitch_creds() -> TwitchCreds:
     load_dotenv(ROOT / ".env")
     cid = os.getenv("TWITCH_CLIENT_ID", "").strip()

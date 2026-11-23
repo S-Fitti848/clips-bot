@@ -51,14 +51,48 @@ def agregar(conn, canal: str, nuevos: list[dict]) -> int:
     """Suma los que no estaban (por `id`). Devuelve cuántos sumó."""
     items = leer(conn, canal)
     ids = {x.get("id") for x in items}
+    malas = sin_fotos(conn, canal)
     sumados = []
     for x in nuevos:
+        if _art(x.get("articulo") or (x.get("paginas") or [""])[0]) in malas:
+            continue
         if x.get("id") and x["id"] not in ids and float(x.get("puntaje") or 0) >= PUNTAJE_BANCO:
             ids.add(x["id"])
             sumados.append(x)
     if sumados:
         guardar(conn, canal, items + sumados)
     return len(sumados)
+
+
+SIN_FOTOS = "sin_fotos:{}"     # bot_estado: {articulo: {"dia", "motivo"}} — historias que fallaron por fotos
+
+
+def _art(x) -> str:
+    import unicodedata
+
+    t = unicodedata.normalize("NFKD", str(x or "").replace("_", " ")).encode("ascii", "ignore").decode().lower()
+    return " ".join(t.split())
+
+
+def sin_fotos(conn, canal: str) -> set[str]:
+    """Los artículos que ya fallaron por fotos en ese canal (Santi, 2026-11-23: "marcá las que fallaron por fotos
+    para no repetirlas"). No vencen: las fotos de Commons de un artículo cambian muy poco."""
+    try:
+        return set(json.loads(db.get_valor(conn, SIN_FOTOS.format(canal)) or "{}"))
+    except ValueError:
+        return set()
+
+
+def marcar_sin_fotos(conn, canal: str, articulo: str, motivo: str, hoy: date | None = None) -> None:
+    try:
+        d = json.loads(db.get_valor(conn, SIN_FOTOS.format(canal)) or "{}")
+    except ValueError:
+        d = {}
+    d[_art(articulo)] = {"dia": (hoy or _hoy_ar()).isoformat(), "motivo": str(motivo)[:160]}
+    db.set_valor(conn, SIN_FOTOS.format(canal), json.dumps(d, ensure_ascii=False))
+    # sale del banco (sin contarlo como uso): no se vuelve a intentar
+    guardar(conn, canal, [x for x in leer(conn, canal)
+                          if _art(x.get("articulo") or (x.get("paginas") or [""])[0]) != _art(articulo)])
 
 
 def quitar(conn, canal: str, id_: str | None) -> None:

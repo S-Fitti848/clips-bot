@@ -70,6 +70,55 @@ def anotar_falla(conn, dia: date) -> None:
     db.set_valor(conn, FALLAS.format(dia.isoformat()), str(fallas_hoy(conn, dia) + 1))
 
 
+PAUSA = "reserva_tec_pausa"   # bot_estado: "1" = no se arma nada (Santi, 2026-11-23: "pausá la reserva hasta el deploy")
+
+
+def pausada(conn) -> bool:
+    return (db.get_valor(conn, PAUSA) or "") == "1"
+
+
 def hay_que_armar(conn, objetivo: int, dia: date, hm: str) -> bool:
-    return (DESDE <= hm < HASTA and len(leer(conn)) < int(objetivo)
+    return (not pausada(conn) and DESDE <= hm < HASTA and len(leer(conn)) < int(objetivo)
             and fallas_hoy(conn, dia) < MAX_FALLAS_DIA)
+
+
+# ---- informe del día siguiente al cambio (Santi, 2026-11-23: "avisame cuánto mejora el % de fotos reales y cuánto
+# gastó la reserva al día siguiente") -------------------------------------------------------------------------------
+INFORME = "informe_fotos_pedido"     # bot_estado: el día (AR) a informar, apenas termina (22:05)
+ANTES_PCT_REAL = 70                  # 17-23/11: 5 videos de tecnología, 30 % del tiempo con tarjetas (medido en la Pi)
+ANTES_RESERVA_USD = 2.50             # 23/11: 6 intentos de la reserva, 3 entraron
+
+
+def pct_real(cortes: list[dict]) -> float | None:
+    total = sum(float(c.get("dur") or 0) for c in cortes)
+    if total <= 0:
+        return None
+    tarjetas = sum(float(c.get("dur") or 0) for c in cortes if str(c.get("archivo") or "").startswith("tarjeta"))
+    return 100 * (1 - tarjetas / total)
+
+
+def informe(conn, dia: date, raiz_output) -> str:
+    from pathlib import Path
+
+    filas = conn.execute("select estado, coalesce(costo_usd, 0) from videos_registro where dia = ? and formato = "
+                         "'tecnologia_reserva'", (dia.isoformat(),)).fetchall()
+    gasto = sum(c for _, c in filas)
+    entraron = sum(1 for e, _ in filas if e == "reserva")
+    pcts = []
+    for p in Path(raiz_output, "efemerides").glob(f"*/efemeride_{dia:%m%d}_*.json"):
+        try:
+            d = json.loads(p.read_text(encoding="utf-8")).get("efemeride") or {}
+        except (OSError, ValueError):
+            continue
+        x = pct_real(d.get("cortes") or [])
+        if x is not None:
+            pcts.append(x)
+    medio = f"{sum(pcts) / len(pcts):.0f} %" if pcts else "sin videos armados"
+
+    def usd(x: float) -> str:
+        return f"US$ {x:.2f}".replace(".", ",")
+
+    return "\n".join([
+        f"🔧 Claude Code: fotos y reserva de tecnología, {dia:%d/%m} (primer día con el chequeo previo y el plan B).",
+        f"Fotos reales: {medio} del tiempo en {len(pcts)} videos (antes {ANTES_PCT_REAL} %).",
+        f"Reserva: {len(filas)} intentos, {entraron} entraron, {usd(gasto)} (el 23/11: {usd(ANTES_RESERVA_USD)})."])

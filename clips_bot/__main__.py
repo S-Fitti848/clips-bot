@@ -2743,6 +2743,7 @@ def escuchar_telegram(settings: Settings, timeout_poll: int = 50) -> int:
             _seguro(tg, str(chat_ultimo or ""), "los temas de la semana", _temas_semana_tick, conn, tg)
             _seguro(tg, str(chat_ultimo or ""), "el plan de Así Nació", _plan_an_tick, conn, tg)
             _seguro(tg, str(chat_ultimo or ""), "los videos esperando aprobación", _espera_tick, conn, tg)
+            _seguro(tg, str(chat_ultimo or ""), "el informe de fotos y reserva", _informe_fotos_tick, conn, tg)
             _seguro(tg, str(chat_ultimo or ""), "el video de marcas", _auto(_animacion_tick), conn, tg, settings)
             _seguro(tg, str(chat_ultimo or ""), "el calendario", _calendario_tick, conn, tg, settings)
             _seguro(tg, str(chat_ultimo or ""), "la medición de Pequeña Historia",
@@ -3569,7 +3570,8 @@ def _efe_proponer(conn, tg: TelegramClient, chats: list[str], dia, settings: Set
                         # nunca un día sin video (Santi, 2026-11-15): piso de 6 y, debajo, el banco
                         piso=None if hecho else banco_mod.PISO_ABSOLUTO,
                         banco=None if hecho else banco_mod.leer(conn, "tecnologia"),
-                        pesos=_pesos_tec(conn), evitar=_marcas_evitar(conn))
+                        pesos=_pesos_tec(conn), evitar=_marcas_evitar(conn),
+                        **({} if hecho else _sin_fotos_tec(conn)))
     except (NarrarError, ef.WikiError, GeminiError) as e:
         bitacora.fallo("", str(e))
         bitacora.cerrar(conn, "fallido")
@@ -3586,6 +3588,13 @@ def _efe_proponer(conn, tg: TelegramClient, chats: list[str], dia, settings: Set
     for chat in chats:
         _efe_mostrar(conn, tg, chat, token, estado)   # el mismo token: se aprueba desde cualquiera
     return None
+
+
+def _sin_fotos_tec(conn) -> dict:
+    """Santi, 2026-11-23: las historias de tecnología que ya fallaron por fotos no se vuelven a intentar (y las que
+    fallan ahora quedan anotadas y salen del banco)."""
+    return {"sin_fotos": banco_mod.sin_fotos(conn, "tecnologia"),
+            "al_fallar_fotos": lambda art, motivo: banco_mod.marcar_sin_fotos(conn, "tecnologia", art, motivo)}
 
 
 def _marcas_evitar(conn) -> set:
@@ -4354,7 +4363,8 @@ def _reserva_armar(conn, tg: TelegramClient, settings: Settings, hoy) -> str | N
                         elector=_elector_fotos(settings), elector_reintento=_elector_fotos(settings, reintento=True),
                         tema="tecnologia", corto=cfg.corto, texto=_texto_efemeride(settings, gemini),
                         mas_video=cfg.estilo_nuevo, puntuador=_puntuador(settings),
-                        banco=banco_mod.leer(conn, "tecnologia"), solo_banco=True, pesos=_pesos_tec(conn), evitar=_marcas_evitar(conn))
+                        banco=banco_mod.leer(conn, "tecnologia"), solo_banco=True, pesos=_pesos_tec(conn), evitar=_marcas_evitar(conn),
+                        **_sin_fotos_tec(conn))
     except (NarrarError, ef.WikiError, GeminiError) as e:
         bitacora.fallo("", str(e))
         bitacora.cerrar(conn, "fallido")
@@ -5012,6 +5022,19 @@ def _espera_sacar(conn, clip_id: str) -> None:
     d = _espera_leer(conn)
     if d.pop(clip_id, None) is not None:
         db.set_valor(conn, ESPERA, json.dumps(d, ensure_ascii=False))
+
+
+def _informe_fotos_tick(conn, tg, ahora=None) -> None:
+    """Una vez (Santi, 2026-11-23): el día pedido en `reserva_tec.INFORME`, desde las 22:05, cuánto mejoró el % de
+    fotos reales y cuánto gastó la reserva, en 3 líneas."""
+    from .config import OUTPUT_DIR
+
+    dia = db.get_valor(conn, reserva_tec.INFORME)
+    ahora = ahora or datetime.now(AR)
+    if not dia or ahora.date().isoformat() < dia or (ahora.date().isoformat() == dia and ahora.strftime("%H:%M") < "22:05"):
+        return
+    db.borrar_valor(conn, reserva_tec.INFORME)
+    tg.send_message(DUENO, reserva_tec.informe(conn, date.fromisoformat(dia), OUTPUT_DIR))
 
 
 def _espera_tick(conn, tg, ahora=None) -> None:

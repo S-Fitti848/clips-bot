@@ -128,6 +128,11 @@ def _norm(t: str) -> str:
     return re.sub(r"\s+", " ", sin.lower())
 
 
+def _norm_art(t) -> str:
+    """Un título de artículo comparable: sin tildes, en minúsculas y con espacios en vez de guiones bajos."""
+    return _norm(str(t or "").replace("_", " ")).strip()
+
+
 def sin_html(t: str) -> str:
     """Commons a veces manda el HTML escapado ("&lt;abbr ..."): se desescapa ANTES de sacar tags.
     Los bloques <style> y <script> se sacan ENTEROS: el 5/11 el autor de una foto de Commons trajo
@@ -464,6 +469,25 @@ PUNTAJE_TEC_MIN = 7.5     # Santi, 2026-11-13
 # Santi, 2026-11-23: la mayoría de marcas, el resto videojuegos; inventos e internet solo si la historia es muy fuerte.
 SUBTEMAS_FUERTES = ("inventos", "internet")
 PUNTAJE_TEC_FUERTE = 8.5
+
+
+SUBTEMAS_FACILES = ("marcas", "empresas", "videojuegos")   # fotos fáciles: la reserva los prueba primero
+PRECHEQUEO_MIN = 4      # fotos usables (artículo + Commons) para pedir el guion: medido el 23/11, AlphaGo 0, Max
+#                         Headroom 0 y WorldWideWeb 3 (los tres sin 70 % de fotos); Engelbart 4 y Martin Cooper 4 pasan
+
+
+def fotos_previas(wiki: "Wiki", e: "Evento", fotos_articulo: list) -> int:
+    """Cuántas fotos usables hay para el hecho SIN Claude ni descargas: las del artículo que pasan las reglas más las
+    de Commons buscando el título del artículo (Santi, 2026-11-23: "contá las fotos antes de pedir el guion")."""
+    titulo = e.paginas[0].replace("_", " ")
+    vistos = {clave_archivo(f.archivo) for f in fotos_articulo}
+    try:
+        infos = wiki.buscar_commons(titulo, cuantas=12)
+        nuevas, _ = filtrar_infos(wiki, "commons", infos, titulo, e.anio)
+    except Exception as err:     # noqa: BLE001 — Commons caído: que no frene, cuenta solo el artículo
+        log.info("chequeo previo de fotos: Commons «%s» falló (%s)", titulo, str(err)[:80])
+        return len(vistos) + PRECHEQUEO_MIN     # sin datos no se descarta
+    return len(vistos | {clave_archivo(f.archivo) for f in nuevas})
 
 
 def minimo_tec(subtema: str | None) -> float:
@@ -2109,8 +2133,9 @@ def fotos_para_guion(wiki: Wiki, cliente, e: Evento, g: Guion, fotos_articulo: l
                      descartadas: set[int] | None = None, videos: bool = False,
                      buscador=None, fuentes=None,
                      tope_s: float | None = None, elector=None,
-                     segunda: bool = False) -> tuple[list[Foto], Guion]:
-    """`segunda`: la segunda búsqueda del control de calidad (ver fotos_con_control).
+                     segunda: bool = False, forzadas: dict | None = None) -> tuple[list[Foto], Guion]:
+    """`segunda`: la segunda búsqueda del control de calidad (ver fotos_con_control). `forzadas` ({frase: foto}):
+    las frases reescritas para hablar de una foto (plan B, 2026-11-23) van primero con esa foto.
 
     Busca candidatas para cada frase (las del artículo + Commons con su `mostrar`), las baja,
     Gemini elige, y arma la foto de cada frase con las reglas de `ilustrar`. Devuelve el pool (las
@@ -2276,6 +2301,9 @@ def fotos_para_guion(wiki: Wiki, cliente, e: Evento, g: Guion, fotos_articulo: l
     g.videos = {str(i): v.a_dict() for i, v in elegidos.items()}
     g.con_video = sorted(elegidos)
     descartadas |= vistas_malas
+    for i, f in (forzadas or {}).items():
+        if 0 <= i < len(rankings) and 0 <= f < len(pool) and f not in descartadas:
+            rankings[i] = [f] + [x for x in rankings[i] if x != f]
     g.ranking, g.descartadas = rankings, sorted(descartadas)
     g.del_hecho, g.modernas, g.presente = del_hecho, sorted(modernas), presente
     reserva = de_reserva(g, len(pool))
@@ -2305,12 +2333,14 @@ def fotos_para_guion(wiki: Wiki, cliente, e: Evento, g: Guion, fotos_articulo: l
     vacias = [i for i, r in enumerate(rankings) if not r]
     sin_propia = list(vacias)
     base = next(iter(dict.fromkeys(list(reserva) + [x for r in rankings for x in r])), None)
-    while vacias and base is not None and any("aparecen más de" in x or "seguidos" in x
-                                              for x in errores):
+    while (vacias and base is not None and len(set(g.tarjetas_fotos or [])) < MAX_TARJETAS
+           and any("aparecen más de" in x or "seguidos" in x for x in errores)):
         i = vacias.pop()
         # La palabra clave de la frase o, si no tiene, el año (Santi, 2026-11-11: la de "2022"
-        # queda bien; el 2026-11-10 se había sacado el año).
+        # queda bien; el 2026-11-10 se había sacado el año). Desde el 2026-11-23, el año solo si la frase lo dice.
         texto = texto_tarjeta(g, i, e.anio)
+        if not texto:
+            continue
         t = tarjeta(pool[base], texto, carpeta / f"tarjeta_{i + 1:02d}.jpg")
         pool.append(t)
         rankings[i] = [len(pool) - 1]
@@ -2503,7 +2533,7 @@ SCHEMA_FRASE_CON_FOTO = {"type": "OBJECT", "properties": {"frases": {"type": "AR
 
 
 def reescribir_frases_con_foto(cliente, e: "Evento", fuente: str, g: "Guion", idxs: list[int], pool: list,
-                               avisar=log.info) -> bool:
+                               avisar=log.info, forzadas: dict | None = None) -> bool:
     """Plan B (Santi, 2026-11-21: "nunca más 'la frase 1 no tiene ninguna foto posible'"): reescribe SOLO esas
     frases para que hablen de algo que muestra una foto que ya pasó los filtros (las que la elección dejó en alguna
     frase y las del artículo del hecho), con los datos del artículo. Una sola llamada; True si quedaron válidas."""
@@ -2539,13 +2569,30 @@ def reescribir_frases_con_foto(cliente, e: "Evento", fuente: str, g: "Guion", id
         if i == 0 and (reglas.gancho_generico(texto) or texto.lower().startswith("un día como hoy")):
             avisar("  plan B: el gancho nuevo es genérico")
             return False
-        cambios[i] = (texto, str(x.get("mostrar") or "").strip())
-    for i, (texto, mostrar) in cambios.items():
+        k = int(x.get("foto") or 0) - 1
+        cambios[i] = (texto, str(x.get("mostrar") or "").strip(), k if k in usables else None)
+    for i, (texto, mostrar, k) in cambios.items():
+        if forzadas is not None and k is not None:
+            forzadas[i] = k
         avisar(f"  plan B: frase {i + 1} reescrita para que tenga foto: «{texto[:90]}»")
         g.frases[i] = texto
         if mostrar and i < len(g.mostrar):
             g.mostrar[i] = mostrar
     return True
+
+
+def frases_flojas(g: "Guion", pool: list) -> list[int]:
+    """Las frases que se quedaron sin foto real (ninguna, o solo tarjetas, o una sola en el corto, que necesita 2
+    para no repetir): las que el plan B reescribe antes de poner tarjetas (Santi, 2026-11-23)."""
+    out = set(g.tarjetas or [])
+    for i, r in enumerate(g.rankings()):
+        reales = [x for x in r if 0 <= x < len(pool) and not es_tarjeta(pool[x])]
+        if not reales or (g.corto and len(reales) < 2 and i > 0):
+            out.add(i)
+    return sorted(out)[:MAX_REESCRITAS]
+
+
+MAX_REESCRITAS = 4     # frases que el plan B reescribe de una vez (más que eso, es otra historia)
 
 
 def fotos_con_control(wiki: "Wiki", cliente, e: "Evento", g: "Guion", fotos_articulo: list,
@@ -2554,16 +2601,19 @@ def fotos_con_control(wiki: "Wiki", cliente, e: "Evento", g: "Guion", fotos_arti
     """fotos_para_guion con el control de calidad: si no llega al 70 % de fotos reales (o a 4 fotos),
     una SEGUNDA búsqueda con Claude: más fotos reales (Commons con el título de cada artículo del
     hecho), sin la regla de época, y en las frases centrales también el retrato del protagonista, el
-    lugar, un monumento o el documento del hecho. Si tampoco llega, la excepción sigue de largo
-    (FotosInsuficientes, o PocasFotos) y quien llama pasa al hecho siguiente."""
+    lugar, un monumento o el documento del hecho. Si tampoco llega, el PLAN B (Santi, 2026-11-23: "si una frase se
+    queda sin foto, primero reescribir esa frase para que hable de algo que sí tenga foto; la tarjeta, último
+    recurso"): las frases sin foto real se reescriben (Haiku, un pedido) hacia una foto que ya pasó los filtros y se
+    eligen las fotos otra vez. Si tampoco llega, la excepción sigue de largo y quien llama pasa al hecho siguiente."""
     try:
         return fotos_para_guion(wiki, cliente, e, g, fotos_articulo, carpeta, avisar, elector=elector, **k)
     except FraseSinFoto as err:
         # Plan B (Santi, 2026-11-21): la frase sin foto se reescribe para hablar de algo que sí tiene foto
-        if reescribir is None or not reescribir(err.guion, err.frases, err.pool):
+        forzadas: dict = {}
+        if reescribir is None or not reescribir(err.guion, err.frases, err.pool, forzadas):
             raise
         anterior, pool_antes = err.guion, err.pool
-        k2 = {**k, "pool": pool_antes, "descartadas": set(anterior.descartadas)}
+        k2 = {**k, "pool": pool_antes, "descartadas": set(anterior.descartadas), "forzadas": forzadas}
         try:
             return fotos_para_guion(wiki, cliente, e, anterior, fotos_articulo, carpeta, avisar, elector=elector,
                                     **k2)
@@ -2574,8 +2624,22 @@ def fotos_con_control(wiki: "Wiki", cliente, e: "Evento", g: "Guion", fotos_arti
         avisar(f"  {err}: segunda búsqueda de fotos con Claude")
         anterior, pool_antes = err.guion, err.pool
     k = {**k, "pool": pool_antes, "descartadas": set(anterior.descartadas)}
-    return fotos_para_guion(wiki, cliente, e, anterior, fotos_articulo, carpeta, avisar,
-                            elector=elector_reintento or elector, segunda=True, **k)
+    try:
+        return fotos_para_guion(wiki, cliente, e, anterior, fotos_articulo, carpeta, avisar,
+                                elector=elector_reintento or elector, segunda=True, **k)
+    except (FotosInsuficientes, FotosNoAlcanzan) as err3:
+        idxs = frases_flojas(err3.guion, err3.pool)
+        forzadas = {}
+        if reescribir is None or not idxs or not reescribir(err3.guion, idxs, err3.pool, forzadas):
+            raise
+        avisar(f"  plan B: reescribí las frases {[i + 1 for i in idxs]} hacia fotos que hay; elijo de nuevo")
+        k3 = {**k, "pool": err3.pool, "descartadas": set(err3.guion.descartadas), "forzadas": forzadas}
+        try:
+            return fotos_para_guion(wiki, cliente, e, err3.guion, fotos_articulo, carpeta, avisar,
+                                    elector=elector_reintento or elector, segunda=True, **k3)
+        except (FotosInsuficientes, FotosNoAlcanzan) as err4:
+            # el que más se acercó, para que `proponer` pueda decidir con el mejor de los dos
+            raise (err4 if getattr(err4, "pct", 0) >= getattr(err3, "pct", 0) else err3) from err4
 
 
 def _control_real(g, pct: float, avisar=log.info) -> None:
@@ -2599,14 +2663,22 @@ def respaldo_sirve(pocas: "PocasFotos") -> bool:
         return False
 
 
+MAX_TARJETAS = 2     # Santi, 2026-11-23: la tarjeta es el último recurso, como mucho 2 por video
+
+
+def dice_anio(g: Guion, i: int, anio: int) -> bool:
+    return i < len(g.frases) and re.search(r"(?<!\d)" + str(anio) + r"(?!\d)", g.frases[i]) is not None
+
+
 def texto_tarjeta(g: Guion, i: int, anio: int, solo_clave: bool = False) -> str | None:
-    """La palabra clave de esa frase (si alguna de `g.claves` está en ella) o, si no, el año.
+    """La palabra clave de esa frase (si alguna de `g.claves` está en ella) o, si no, el año, SOLO si esa frase lo
+    dice (Santi, 2026-11-23: en Meucci salió «1876» mientras la voz decía 1854).
     `solo_clave`: sin clave, None (no hay tarjeta: el año suelto no tiene que ver con la frase)."""
     frase = _norm(g.frases[i]) if i < len(g.frases) else ""
     for c in g.claves:
         if _norm(c) and _norm(c) in frase:
             return c.upper()
-    return None if solo_clave else str(anio)
+    return None if solo_clave or not dice_anio(g, i, anio) else str(anio)
 
 
 def tarjeta(base: Foto, texto: str, salida: Path) -> Foto:
@@ -2653,9 +2725,12 @@ def fabrica_tarjetas(g: Guion, anio: int, carpeta: Path, foto_de, agregar):
             pass
 
     def nueva(i: int, propia: bool = False) -> int | None:
+        # Santi, 2026-11-23: como mucho MAX_TARJETAS por video (contando las del armado).
+        if len(set(g.tarjetas_fotos or [])) >= MAX_TARJETAS:
+            return None
         # `propia` (2026-11-20, la tarjeta «MELAZA» en la frase de Paint): solo la clave de ESA frase o el año, nunca
-        # la clave de otra frase (la revisión final la marca como PH-02).
-        textos = [texto_tarjeta(g, i, anio, solo_clave=True), str(anio)] + (
+        # la clave de otra frase (la revisión final la marca como PH-02). El año, solo si esa frase lo dice.
+        textos = [texto_tarjeta(g, i, anio, solo_clave=True), str(anio) if dice_anio(g, i, anio) else None] + (
             [] if propia else [c.upper() for c in g.claves])
         texto = next((t for t in textos if t and t not in usados), None)
         bases = [x for x in dict.fromkeys(generales(g) + [x for r in g.rankings() for x in r])
@@ -3034,8 +3109,13 @@ def proponer(wiki: Wiki, cliente, dia: date, carpeta: Path, avisar=log.info,
              imagen_frase: bool = False, elector=None, elector_reintento=None,
              tema: str = "", corto: bool = False, texto=None, mas_video: bool = False,
              puntuador=None, piso: float | None = None, banco: list[dict] | None = None,
-             solo_banco: bool = False, pesos: dict | None = None, evitar=()) -> Propuesta:
-    """`solo_banco` (Santi, 2026-11-23, la reserva de tecnología): sin los hechos del día, directo del `banco` (historias
+             solo_banco: bool = False, pesos: dict | None = None, evitar=(), sin_fotos=(),
+             al_fallar_fotos=None) -> Propuesta:
+    """`sin_fotos` (Santi, 2026-11-23): artículos que ya fallaron por fotos (no se vuelven a intentar);
+    `al_fallar_fotos(articulo, motivo)`: se llama cuando uno falla por fotos (o no pasa el chequeo previo), para
+    anotarlo. Antes de pedir el guion, `fotos_previas` cuenta las fotos usables sin Claude (artículo + Commons).
+
+    `solo_banco` (Santi, 2026-11-23, la reserva de tecnología): sin los hechos del día, directo del `banco` (historias
     que no dependen de la fecha). `pesos` ({subtema: bonus}, temas.py): los subtemas que más rinden van primero.
 
     `piso` y `banco` (Santi, 2026-11-15, "nunca un día sin video"): si ningún hecho de tecnología
@@ -3092,8 +3172,16 @@ def proponer(wiki: Wiki, cliente, dia: date, carpeta: Path, avisar=log.info,
         from . import temas as _t
 
         # Santi, 2026-11-23: del banco, primero los subtemas que más rinden (temas.py)
-        orden = sorted(banco or [], key=lambda it: -(float(it.get("puntaje") or 0) + (pesos or {}).get(
-            it.get("subtema") or _t.subtema_tec(it.get("texto") or ""), 0.0)))
+        # Santi, 2026-11-23: primero marcas, empresas y videojuegos (fotos fáciles: productos, logos de época,
+        # consolas), después inventos y personas poco conocidas; dentro de cada grupo, por puntaje y por lo que rinde.
+        def clave_banco(it):
+            sub = it.get("subtema") or _t.subtema_tec(it.get("texto") or "")
+            facil = 0 if tema != "tecnologia" or sub in SUBTEMAS_FACILES else 1
+            return (facil, -(float(it.get("puntaje") or 0) + (pesos or {}).get(sub, 0.0)))
+
+        sin = {_norm_art(x) for x in sin_fotos or ()}
+        orden = sorted([it for it in banco or [] if _norm_art(it.get("articulo") or (it.get("paginas") or [""])[0])
+                        not in sin], key=clave_banco)
         from .marcas_semana import menciona as _menciona
 
         for item in orden:
@@ -3169,6 +3257,20 @@ def proponer(wiki: Wiki, cliente, dia: date, carpeta: Path, avisar=log.info,
         for k, v in desc.items():
             descartes[k] = descartes.get(k, 0) + v
         avisar(f"{e.anio} {e.texto[:60]}: {len(fotos)} fotos del artículo pasan las reglas {desc}")
+        if _norm_art(articulo) in {_norm_art(x) for x in sin_fotos or ()}:
+            avisar(f"  {articulo}: ya falló por fotos antes, no lo intento")
+            return None
+        # Santi, 2026-11-23: contar las fotos usables ANTES de pagar el guion (sin Claude: artículo + Commons)
+        previas = fotos_previas(wiki, e, fotos)
+        if previas < PRECHEQUEO_MIN:
+            motivo = f"solo {previas} fotos usables antes del guion (mínimo {PRECHEQUEO_MIN})"
+            avisar(f"  {motivo}: no pido el guion")
+            fallas.append(f"{e.anio}: {motivo}")
+            bitacora.descarte(f"{e.anio} {e.texto[:90]}", motivo, "fotos", costo=0.0,
+                              encontrado=f"{previas} fotos (artículo + Commons)")
+            if al_fallar_fotos:
+                al_fallar_fotos(articulo, motivo)
+            return None
         fuente = texto_fuente(wiki, e)
         guiones += 1
         fila_h, g = bitacora.fila_actual(), None
@@ -3183,8 +3285,8 @@ def proponer(wiki: Wiki, cliente, dia: date, carpeta: Path, avisar=log.info,
             pool, g = fotos_con_control(wiki, cliente, e, g, fotos, carpeta, avisar, videos=videos,
                                         elector=elector, elector_reintento=elector_reintento,
                                         tope_s=tope_fotos_s,
-                                        reescribir=lambda g_, idx, pool_: reescribir_frases_con_foto(
-                                            puntuador or escritor, e, fuente, g_, idx, pool_, avisar))
+                                        reescribir=lambda g_, idx, pool_, forz=None: reescribir_frases_con_foto(
+                                            puntuador or escritor, e, fuente, g_, idx, pool_, avisar, forz))
         except PocasFotos as pocas:
             # Menos de 4 fotos de época: al siguiente. Se guarda el que más tenga, por si ninguno llega.
             avisar(f"  {pocas}")
@@ -3194,6 +3296,8 @@ def proponer(wiki: Wiki, cliente, dia: date, carpeta: Path, avisar=log.info,
                               encontrado=f"{pocas.disponibles} fotos de época que sirven ({len(pocas.pool)} en el pool)")
             if respaldo_sirve(pocas) and (respaldo is None or pocas.disponibles > respaldo[3]):
                 respaldo = (e, fuente, pocas, pocas.disponibles)
+            if al_fallar_fotos:
+                al_fallar_fotos(articulo, str(pocas))
             return None
         except NarrarError as err:
             avisar(f"  no salió: {err}")
@@ -3201,6 +3305,8 @@ def proponer(wiki: Wiki, cliente, dia: date, carpeta: Path, avisar=log.info,
             if isinstance(err, FotosInsuficientes) and (insuf is None or err.pct > insuf[0].pct):
                 insuf = (err, e, fuente, i)
             en_fotos = g is not None
+            if en_fotos and al_fallar_fotos:
+                al_fallar_fotos(articulo, str(err))
             bitacora.descarte(f"{e.anio} {e.texto[:90]}", str(err), "fotos" if en_fotos else "guion", desde_fila=fila_h,
                               buscado=list(g.mostrar) if en_fotos else None,
                               encontrado=f"{len(fotos)} fotos del artículo; {str(err)[:150]}" if en_fotos else "")
@@ -3527,6 +3633,77 @@ def insertar_tramo(plan: list, movs: list | None, desde: float, dur: float, item
         if j is not None:
             limpio[j] = (limpio[j][0], limpio[j][1], round(limpio[j][2] + arrastre, 3))
     return limpio, limpio_m
+
+
+# ---- tarjetas con un número, justo cuando la voz lo dice (Santi, 2026-11-23: en Meucci «1876» apareció mientras
+# la voz decía 1854) -------------------------------------------------------------------------------------------------
+TARJETA_TOLERANCIA_S = 0.15     # la tarjeta puede entrar hasta esto antes de que se diga el número (un cuadro y algo)
+_NUMERO = re.compile(r"\d[\d.,]*\d|\d")
+
+
+def _digitos(t: str) -> str:
+    return re.sub(r"\D", "", str(t or ""))
+
+
+def numeros_de_tarjeta(foto) -> list[str]:
+    """Los números de una tarjeta ("tarjeta: 1876" → ["1876"]); [] si no es tarjeta o no tiene números."""
+    if not es_tarjeta(foto):
+        return []
+    epi = foto.get("epigrafe") if isinstance(foto, dict) else getattr(foto, "epigrafe", "")
+    return [_digitos(x) for x in _NUMERO.findall(str(epi or "").removeprefix("tarjeta:"))]
+
+
+def momentos_de_numero(palabras: list, num: str) -> list[float]:
+    """Cuándo dice la voz `num` (todas las veces), por los tiempos de los subtítulos."""
+    return [float(w.inicio) for w in palabras if _digitos(getattr(w, "texto", "")) == num and num]
+
+
+def tarjetas_a_destiempo(plan: list, fotos: list, palabras: list) -> list[int]:
+    """Los cortes con una tarjeta de un número que aparece ANTES de que la voz lo diga (o que la voz no dice mientras
+    está en pantalla). Sin Claude: lo controla la revisión final."""
+    malos, t = [], 0.0
+    for k, (_i, f, s) in enumerate(plan):
+        a, b = t, t + s
+        t = b
+        if not (0 <= f < len(fotos)):
+            continue
+        for num in numeros_de_tarjeta(fotos[f]):
+            if not any(a - TARJETA_TOLERANCIA_S <= m < b for m in momentos_de_numero(palabras, num)):
+                malos.append(k)
+                break
+    return malos
+
+
+def alinear_tarjetas(plan: list, movs: list | None, fotos: list, palabras: list, avisar=log.info):
+    """Mueve cada tarjeta con un número al momento en que la voz lo dice: lo que queda antes en ese corte vuelve a la
+    imagen anterior; si la voz no lo dice en ese corte pero sí después, la tarjeta va ahí (insertar_tramo); si no lo
+    dice nunca, ese corte vuelve a la imagen anterior. El largo total no cambia."""
+    movs = list(movs) if movs is not None else [""] * len(plan)
+    for _ in range(len(plan) + 2):
+        malos = tarjetas_a_destiempo(plan, fotos, palabras)
+        if not malos:
+            break
+        k = malos[0]
+        i, f, s = plan[k]
+        a = sum(x[2] for x in plan[:k])
+        b = a + s
+        previa = next((plan[j][1] for j in range(k - 1, -1, -1) if not (0 <= plan[j][1] < len(fotos)
+                       and es_tarjeta(fotos[plan[j][1]]))), None)
+        if previa is None:
+            previa = next((x[1] for x in plan[k + 1:] if not (0 <= x[1] < len(fotos) and es_tarjeta(fotos[x[1]]))), f)
+        num = numeros_de_tarjeta(fotos[f])[0]
+        momentos = momentos_de_numero(palabras, num)
+        luego = next((m for m in momentos if m >= a - TARJETA_TOLERANCIA_S), None)
+        plan[k] = (i, previa, s)          # el corte vuelve a la imagen anterior
+        if luego is not None and luego < sum(x[2] for x in plan):
+            total = sum(x[2] for x in plan)
+            dur = round(min(max(s, 1.5), FOTO_MAX_S, total - luego), 3)
+            if dur >= 0.5:
+                plan, movs = insertar_tramo(plan, movs, luego, dur, f, movs[k] if k < len(movs) else "in")
+                avisar(f"tarjeta «{num}»: la corrí a {luego:.1f} s, cuando la voz lo dice (estaba en {a:.1f} s)")
+                continue
+        avisar(f"tarjeta «{num}»: la voz no lo dice después de {a:.1f} s; ese corte vuelve a la imagen anterior")
+    return plan, movs
 
 
 def plan_de(p: Propuesta, duraciones: list[float] | None = None) -> list[tuple[int, int, float]]:
@@ -4188,6 +4365,9 @@ def hacer_video(p: Propuesta, settings, carpeta: Path, avisar=log.info, conn=Non
                            + (f" (llega cuando dice «{lugar}», {t_lugar:.1f} s)" if t_lugar is not None else ""))
         except (WikiError, OSError, KeyError, ValueError, RuntimeError, subprocess.SubprocessError) as err:
             avisar(f"mapa con zoom: no salió ({str(err)[:100]})")
+    # Santi, 2026-11-23: una tarjeta con un año o un número aparece justo cuando la voz lo dice, nunca antes.
+    plan, movs_al = alinear_tarjetas(plan, movimientos, p.fotos, palabras, avisar)
+    movimientos = movs_al if movimientos is not None else None
     tramos = [(rutas_video[i] if f == VIDEO else ruta_mapa if f == MAPA else Path(p.fotos[f]["ruta"]), s)
               for i, f, s in plan]
     if cfg_ef.graficos:
@@ -4245,6 +4425,24 @@ def hacer_video(p: Propuesta, settings, carpeta: Path, avisar=log.info, conn=Non
             revisor, salida, plan, g, cortes_de(plan, p), e, p.local or {}, armar,
             lambda i: tarjeta_nueva(i, propia=True), avisar)
         salida = Path(revision_final.get("salida") or salida)
+        # Control sin Claude (PH-26): las tarjetas que la revisión puso pueden quedar antes de que la voz diga su
+        # número: ese corte vuelve a la imagen anterior; si igual queda alguna, cuenta como falla.
+        destiempo = tarjetas_a_destiempo(plan, p.fotos, palabras)
+        if destiempo:
+            for k in destiempo:
+                i, _f, s_ = plan[k]
+                previa = next((plan[j][1] for j in range(k - 1, -1, -1)
+                               if not (0 <= plan[j][1] < len(p.fotos) and es_tarjeta(p.fotos[plan[j][1]]))), None)
+                if previa is not None:
+                    plan[k] = (i, previa, s_)
+            salida = armar(set(destiempo))
+            revision_final["salida"] = str(salida)
+            avisar(f"tarjetas a destiempo en los cortes {[k + 1 for k in destiempo]}: vuelven a la imagen anterior")
+        quedan = tarjetas_a_destiempo(plan, p.fotos, palabras)
+        if quedan:
+            revision_final.setdefault("fallas", []).append(
+                {"id": "PH-26", "cuadro": quedan[0] + 1,
+                 "que": f"tarjeta con un número antes de que la voz lo diga (cortes {[k + 1 for k in quedan]})"})
     for problema in chequear_audio(salida):
         avisar(f"⚠️ audio: {problema}")
     from .videos_libres import creditos as creditos_videos

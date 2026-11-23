@@ -108,7 +108,7 @@ def test_el_aviso_del_respaldo_sale_en_la_aprobacion_y_en_la_hoja(tmp_path):
 def test_la_tarjeta_lleva_la_clave_de_la_frase_o_el_anio(tmp_path):
     g = _guion(["Bitcoin superó su récord.", "La gente festejó."])
     assert ef.texto_tarjeta(g, 0, 2021) == "BITCOIN"
-    assert ef.texto_tarjeta(g, 1, 2021) == "2021"
+    assert ef.texto_tarjeta(g, 1, 2021) is None    # 2026-11-23: el año solo si la frase lo dice
     Image.new("RGB", (800, 600), (40, 90, 160)).save(tmp_path / "base.jpg")
     base = ef.Foto("File:b.jpg", "u", 800, 600, "CC BY 4.0", "Ana", "e", "pag", "art",
                    ruta=str(tmp_path / "base.jpg"), anio=2021)

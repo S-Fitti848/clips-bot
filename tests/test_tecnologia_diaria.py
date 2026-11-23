@@ -20,7 +20,7 @@ def test_la_tarjeta_de_la_revision_solo_usa_la_clave_de_su_frase(tmp_path):
     Image.new("RGB", (1200, 900), (90, 90, 90)).save(base)
     pool = [ef.Foto(archivo="b.jpg", url="", ancho=1200, alto=900, licencia="CC0", autor="a", epigrafe="b",
                     pagina="", articulo="", ruta=str(base))]
-    g = ef.Guion(titulo="t", descripcion="d", hashtags=[], frases=["la llamaron melaza", "traía Paint"],
+    g = ef.Guion(titulo="t", descripcion="d", hashtags=[], frases=["la llamaron melaza", "en 1985 traía Paint"],
                  fotos=[0, 0], descartadas=[])
     g.claves = ["melaza"]
     nueva = ef.fabrica_tarjetas(g, 1985, tmp_path, lambda k: pool[k], lambda f: (pool.append(f), len(pool) - 1)[1])
