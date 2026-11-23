@@ -352,8 +352,13 @@ class EfemeridesCfg:
     estilo_nuevo: bool = False
     # Los 3 videos del día en YouTube (2 de Latinoamérica + 1 de tecnología): estos horarios (AR),
     # siempre a separacion_youtube_h o más entre sí.
-    horas_youtube: tuple = ("11:00", "15:30", "20:00")
+    horas_youtube: tuple = ("11:00", "20:00")
     separacion_youtube_h: float = 4.0
+    # Tecnología, prioridad número uno (Santi, 2026-11-23: ~10.000 vistas por video): `por_dia` videos de tecnología
+    # por día en YouTube (el del día + los que falten, de la reserva) y `reserva` videos ya armados y revisados de
+    # historias que no dependen de la fecha (reserva_tec.py), que se reponen solos.
+    por_dia: int = 2
+    reserva: int = 3
     # Voces de Gemini por día (plan gratis, por PROYECTO de Google; Google no publica el número): con
     # Lo Encontré, que usa la misma clave principal. Aviso a Santi al llegar a tts_aviso de tts_tope.
     tts_tope: int = 10
@@ -438,7 +443,7 @@ class HistoriasFb:
     # Nicho (Santi, 2026-11-12): historias reales de Latinoamérica, `por_dia` por día, sin repetir
     # país si se puede, en YouTube Y en Facebook (`youtube`).
     por_dia: int = 2
-    youtube: bool = True
+    youtube: bool = False     # Santi, 2026-11-23: YouTube queda solo para tecnología
     # Fuentes web (Santi, 2026-11-16, opción C): historias de diarios, museos y sitios de historia con Haiku,
     # y cada dato verificado con 2 fuentes antes del guion (web_historias.py). La prueba de un día real la mide
     # `_web_latam_tick` y, si se pasa de `web_tope_usd` por día, la apaga sola (bot_estado.web_latam_apagado).

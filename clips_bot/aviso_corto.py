@@ -23,9 +23,10 @@ def plata(usd: float | None) -> str:
 
 
 def resumen(ok: int | None, total: int | None, costo: float | None, hora: str = "",
-            retenido: bool = False) -> str:
-    """✅ 11/13 · US$ 0,31 · sale 11:00 (⏸ si espera el OK)."""
-    partes = []
+            retenido: bool = False, etiqueta: str = "") -> str:
+    """✅ 11/13 · US$ 0,31 · sale 11:00 (⏸ si espera el OK). `etiqueta` adelante ("💻 Tecnología"): Santi, 2026-11-23,
+    no se dio cuenta de que le había llegado el de tecnología porque el mensaje corto no decía cuál era."""
+    partes = [etiqueta] if etiqueta else []
     if total:
         partes.append(f"{'⏸' if retenido else '✅'} {ok}/{total}")
     elif retenido:

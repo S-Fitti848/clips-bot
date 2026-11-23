@@ -34,7 +34,10 @@ TIPOS = ("heroe_de_pueblo", "gente_comun", "anecdota", "momento_emotivo", "funda
          # Santi, 2026-11-15: "historias curiosas y reales de Latinoamérica", no solo héroes y personas
          "lugar_curioso", "invento", "costumbre", "record", "misterio", "dato_sorprendente",
          # Santi, 2026-11-16: ídolos latinoamericanos de antes (época de oro del cine, cantantes, actores, deportistas)
-         "idolo", "otro")
+         "idolo",
+         # Santi, 2026-11-23 (con los números de Facebook: Colón campeón 14.730 reproducciones, los próceres ~200): el
+         # fútbol aparte, y los próceres, conquistadores y batallas aparte, para mandarlos al final
+         "futbol", "procer", "otro")
 
 # Lugares de Latinoamérica: países, sus gentilicios y las provincias, estados y ciudades que más
 # aparecen en las páginas de cada día. Sin esto, Haiku vería ~150 líneas por día.
@@ -493,14 +496,18 @@ hecho de la lista decí:
   vive algo notable, o un lugar, un invento, una costumbre, un récord, un misterio o un dato sorprendente con
   algo que contar (cómo nació, qué tiene de raro, qué pasó). false si es un trámite institucional, una ley, un
   cambio de gobierno, una elección, un tratado, la fundación de una empresa, un canal de TV, un club o una
-  universidad sin nada curioso detrás, un resultado deportivo suelto o política partidaria.
+  universidad sin nada curioso detrás, un resultado deportivo suelto sin historia o política partidaria. El
+  FÚTBOL con historia SÍ es humana: un club que sale campeón después de años, un partido histórico, un ídolo, una
+  hinchada, un arquero o un gol que se recuerda.
 - `lugar`: el pueblo o la ciudad CONCRETA donde pasó; si es un dato de un país entero, el país. Vacío si no
   hay ninguno.
 - `region`: la provincia, estado o departamento, si se sabe. `pais`: el país de hoy.
 - `tipo`: heroe_de_pueblo, gente_comun, anecdota, momento_emotivo, fundacion, lugar_curioso, invento,
   costumbre, record, misterio, dato_sorprendente, idolo (un ídolo latinoamericano de antes: la época de oro del cine
   mexicano y argentino, cantantes, actores, deportistas; contado como historia real de su vida, con un giro y
-  emoción, no como ficha biográfica) u otro.
+  emoción, no como ficha biográfica), futbol (clubes, ídolos del fútbol, partidos históricos, títulos, hinchadas,
+  mundiales), procer (próceres, conquistadores, virreyes, generales, batallas, independencia, revueltas, gobernantes)
+  u otro.
 - `tragedia_sola`: true si lo central es una muerte, un desastre, un crimen o una represión SIN un acto
   heroico o algo luminoso que contar. (Un maquinista que muere salvando a su pueblo: false. Un terremoto
   con miles de muertos: true. Una heroína fusilada por defender la independencia: false.)
@@ -565,14 +572,27 @@ def otro_pais_primero(lista: list[Candidato], evitar: set | None) -> list[Candid
     return sorted(lista, key=lambda c: _sin_tildes(str(c.clasif.get("pais") or "")).strip() in malos)
 
 
-def buenos(cands: list[Candidato]) -> list[Candidato]:
-    """Historias con un lugar concreto, sin tragedias solas, de mejor a peor. Calendario (Santi,
-    2026-11-11: "esos días tienen prioridad sobre cualquier otro hecho"): primero las fechas que se
-    recuerdan hoy (aunque Haiku no las vea como historia humana), y entre ellas los países con más
-    público; después, el interés."""
+def peso_tema(c: Candidato, pesos: dict | None = None) -> float:
+    """Santi, 2026-11-23: fútbol, ídolos de antes y curiosidades primero; próceres y fundaciones al final (temas.py,
+    con lo que rinde cada grupo en Facebook)."""
+    from . import temas
+
+    return float((pesos or temas.BASE_LATAM).get(temas.grupo_latam(c.clasif.get("tipo"), c.texto), 0.0))
+
+
+def es_procer(c: Candidato) -> bool:
+    from . import temas
+
+    return temas.grupo_latam(c.clasif.get("tipo"), c.texto) == "procer"
+
+
+def buenos(cands: list[Candidato], pesos: dict | None = None) -> list[Candidato]:
+    """Historias con un lugar concreto, sin tragedias solas, de mejor a peor. Desde el 2026-11-23 (Santi) manda el
+    tema: fútbol, ídolos y curiosidades primero, próceres y fundaciones al final (aunque sean del calendario). Dentro de
+    cada tema, el calendario (Santi, 2026-11-11), los países con más público y el interés."""
     ok = [c for c in cands if (c.clasif.get("humana") or en_calendario(c))
           and str(c.clasif.get("lugar") or "").strip() and not c.clasif.get("tragedia_sola")]
-    return sorted(ok, key=lambda c: (not en_calendario(c), prioridad_pais(c.clasif.get("pais")),
+    return sorted(ok, key=lambda c: (-peso_tema(c, pesos), not en_calendario(c), prioridad_pais(c.clasif.get("pais")),
                                      -int(c.clasif.get("interes") or 0)))
 
 
@@ -592,8 +612,13 @@ Ordená del mejor al peor (hasta {cuantos}) los que más se parecen a eso, y pun
 - ídolos latinoamericanos de antes (época de oro del cine mexicano y argentino, cantantes, actores, deportistas:
   Jorge Negrete, Carlos Gardel, Pedro Infante, Tita Merello…), contados como una historia real de su vida, con
   persona, giro y emoción (el momento que cambió su carrera, lo que nadie sabía de él con un dato concreto);
+- LO QUE MÁS RINDE EN FACEBOOK (Santi, 2026-11-23, medido en los Reels): el FÚTBOL (clubes, ídolos, partidos
+  históricos, títulos después de años: Colón campeón tras 116 años hizo 14.730 reproducciones, 50 veces más que el
+  resto), los ídolos de antes y las curiosidades; después, historias humanas de gente común. Los PRÓCERES,
+  conquistadores, batallas, revueltas y fundaciones de ciudades rinden lo peor (~200): ponelos al final aunque sean
+  del calendario;
 - los marcados ★ CALENDARIO se recuerdan HOY (aniversario, fundación, día nacional, fiesta del
-  lugar): van SIEMPRE primero, antes que cualquier otro, y entre ellos primero México, Colombia,
+  lugar): van primero dentro de cada grupo (salvo próceres y fundaciones), y entre ellos primero México, Colombia,
   Argentina, Perú, Chile y Venezuela (es cuando la gente lo comparte);
 - que se pueda contar en 40 segundos y se entienda sin saber historia;
 - nada de tragedias solas (muertes, desastres, crímenes sin un acto heroico), ni política
@@ -677,8 +702,9 @@ def elegir(sonnet, cands: list[Candidato], cuantos: int = A_PUNTUAR) -> list[tup
         c.clasif["puntaje"] = (round(sum(notas[k] for k in CRITERIOS) / len(CRITERIOS), 2)
                                if all(k in notas for k in CRITERIOS) else 0.0)
         out.append((c, art, lug if lug != art else ""))
-    # El calendario manda aunque Sonnet no lo respete (sorted es estable: dentro de cada grupo, su orden).
-    out.sort(key=lambda x: not en_calendario(x[0]))
+    # El calendario manda aunque Sonnet no lo respete (sorted es estable: dentro de cada grupo, su orden), salvo los
+    # próceres y las fundaciones, que van al final (Santi, 2026-11-23: son lo que peor rinde en Facebook).
+    out.sort(key=lambda x: (es_procer(x[0]), not en_calendario(x[0])))
     return out[:cuantos]
 
 
@@ -814,7 +840,8 @@ def proponer(wiki: ef.Wiki, sonnet, haiku, gemini, dia: date, carpeta: Path, avi
              elector_reintento=None, excluir: set | None = None,
              evitar_paises: set | None = None, mas_video: bool = False,
              piso_alternativo: float | None = None, puntuador=None,
-             banco: list[dict] | None = None, solo_banco: bool = False, web=None) -> ef.Propuesta:
+             banco: list[dict] | None = None, solo_banco: bool = False, web=None,
+             pesos: dict | None = None) -> ef.Propuesta:
     """`web` (web_historias.ClienteWeb, Santi 2026-11-16): suma historias de la web a las de Wikipedia y
     verifica CADA dato de la elegida con 2 fuentes antes del guion (el guion sale solo de lo verificado).
 
@@ -852,9 +879,9 @@ def proponer(wiki: ef.Wiki, sonnet, haiku, gemini, dia: date, carpeta: Path, avi
         for c in cands:     # un aniversario de fundación: el lugar es la ciudad misma
             if c.seccion == "fundacion" and c.clasif and not str(c.clasif.get("lugar") or "").strip():
                 c.clasif["lugar"] = c.paginas[0]
-        lista = buenos(cands)
+        lista = buenos(cands, pesos)
         if web_cands:       # las de la web entran siempre a la tanda que se puntúa
-            lista = lista[:max(0, A_PUNTUAR - len(web_cands))] + buenos(web_cands)
+            lista = lista[:max(0, A_PUNTUAR - len(web_cands))] + buenos(web_cands, pesos)
         if hecho:
             # Lo eligió una persona (/historia 10/11 Epecuén, o el fijado para el día): Haiku no lo
             # descarta. Medido el 2026-11-09: con Epecuén solo en la lista dijo "no es una historia
@@ -902,8 +929,9 @@ def proponer(wiki: ef.Wiki, sonnet, haiku, gemini, dia: date, carpeta: Path, avi
                     bitacora.descarte(f"{c.anio} {c.clasif.get('lugar') or ''}: {c.texto[:80]}",
                                       f"puntaje {c.clasif.get('puntaje', 0):.2f} < {PUNTAJE_MIN:g}", "puntaje",
                                       costo=parte_puntaje)
-            # Las mejores primero (el calendario igual manda).
-            elegidos.sort(key=lambda x: (not en_calendario(x[0]), -x[0].clasif.get("puntaje", 0)))
+            # Las mejores primero, con el tema que rinde (Santi, 2026-11-23): próceres al final; el calendario suma medio punto.
+            elegidos.sort(key=lambda x: (es_procer(x[0]), -(x[0].clasif.get("puntaje", 0) + peso_tema(x[0], pesos)
+                                                            + (0.5 if en_calendario(x[0]) else 0.0))))
             if not elegidos:
                 raise ef.NarrarError(f"Hoy ninguna historia llega a {PUNTAJE_MIN:g} de promedio (persona, "
                                      "peligro, giro y emoción): no saco una floja. "

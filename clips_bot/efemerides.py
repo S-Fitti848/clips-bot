@@ -486,6 +486,10 @@ def elegir(cliente, eventos: list[Evento], cuantos: int = ELEGIDOS, tema: str = 
                 n = {k: x.get(k) for k in CRITERIOS_TEC if isinstance(x.get(k), int)}
                 notas[i - 1] = {**n, "puntaje": round(sum(n.values()) / len(CRITERIOS_TEC), 2)
                                 if len(n) == len(CRITERIOS_TEC) else 0.0}
+                if tema == "tecnologia":     # Santi, 2026-11-23: qué subtema rinde más (temas.py)
+                    from . import temas
+
+                    notas[i - 1]["subtema"] = temas.subtema_tec(eventos[i - 1].texto)
     return out[:cuantos]
 
 
@@ -3019,8 +3023,12 @@ def proponer(wiki: Wiki, cliente, dia: date, carpeta: Path, avisar=log.info,
              tope_fotos_s: float | None = None, hablado: bool = False,
              imagen_frase: bool = False, elector=None, elector_reintento=None,
              tema: str = "", corto: bool = False, texto=None, mas_video: bool = False,
-             puntuador=None, piso: float | None = None, banco: list[dict] | None = None) -> Propuesta:
-    """`piso` y `banco` (Santi, 2026-11-15, "nunca un día sin video"): si ningún hecho de tecnología
+             puntuador=None, piso: float | None = None, banco: list[dict] | None = None,
+             solo_banco: bool = False, pesos: dict | None = None) -> Propuesta:
+    """`solo_banco` (Santi, 2026-11-23, la reserva de tecnología): sin los hechos del día, directo del `banco` (historias
+    que no dependen de la fecha). `pesos` ({subtema: bonus}, temas.py): los subtemas que más rinden van primero.
+
+    `piso` y `banco` (Santi, 2026-11-15, "nunca un día sin video"): si ningún hecho de tecnología
     llega a PUNTAJE_TEC_MIN, sale el mejor si tiene `piso` (6) o más; si tampoco (o no hay ninguno),
     uno del banco de reserva (historias que no dependen de la fecha, puntuadas de antemano con 8+).
 
@@ -3044,7 +3052,7 @@ def proponer(wiki: Wiki, cliente, dia: date, carpeta: Path, avisar=log.info,
 
     fuentes_fotos.nueva_corrida()   # las fuentes caídas se cuentan en toda la propuesta
     bitacora.paso("busqueda")
-    todos = wiki.eventos("es", dia) + wiki.eventos("en", dia)
+    todos = [] if solo_banco else wiki.eventos("es", dia) + wiki.eventos("en", dia)
     candidatos, motivos = [], {}
     for e in todos:
         m = motivo_evento(e, date.today())
@@ -3053,7 +3061,7 @@ def proponer(wiki: Wiki, cliente, dia: date, carpeta: Path, avisar=log.info,
         elif not hecho or _norm(hecho) in _norm(e.texto):
             candidatos.append(e)
     avisar(f"{len(todos)} hechos del {dia:%d/%m}; {len(candidatos)} pasan el primer filtro {motivos}")
-    if not candidatos:
+    if not candidatos and not solo_banco:
         raise NarrarError("Ningún hecho de hoy pasa el filtro de temas sensibles"
                           + (f" (con «{hecho}»)" if hecho else "") + ".")
     escritor = texto or cliente     # 2026-11-12: el texto con Claude; `cliente` (Gemini) para las fotos
@@ -3065,11 +3073,17 @@ def proponer(wiki: Wiki, cliente, dia: date, carpeta: Path, avisar=log.info,
 
     def usar_banco(motivo: str) -> list[tuple[int, str]]:
         nonlocal del_banco, aviso_puntaje
-        for item in banco or []:
+        from . import temas as _t
+
+        # Santi, 2026-11-23: del banco, primero los subtemas que más rinden (temas.py)
+        orden = sorted(banco or [], key=lambda it: -(float(it.get("puntaje") or 0) + (pesos or {}).get(
+            it.get("subtema") or _t.subtema_tec(it.get("texto") or ""), 0.0)))
+        for item in orden:
             ev = Evento(item.get("lang", "es"), int(item["anio"]), item["texto"], list(item["paginas"]))
             candidatos.append(ev)
             i = len(candidatos) - 1
-            notas[i] = dict(item.get("notas") or {}, puntaje=item.get("puntaje"))
+            notas[i] = dict(item.get("notas") or {}, puntaje=item.get("puntaje"),
+                            subtema=item.get("subtema") or _t.subtema_tec(item["texto"]))
             del_banco = del_banco or {}
             del_banco[i] = item.get("id")
             yield_ = (i, item.get("articulo") or ev.paginas[0])
@@ -3081,7 +3095,7 @@ def proponer(wiki: Wiki, cliente, dia: date, carpeta: Path, avisar=log.info,
 
     elegidos_banco: list = []
     if tema and not elegidos:
-        if not usar_banco("hoy no hay ningún hecho del tema"):
+        if not usar_banco("reserva de tecnología" if solo_banco else "hoy no hay ningún hecho del tema"):
             raise SinTema(f"Hoy no hay ningún hecho de «{tema}» que sirva y el banco de reserva está vacío.")
         elegidos = list(elegidos_banco)
     if tema == "tecnologia":
@@ -3098,8 +3112,10 @@ def proponer(wiki: Wiki, cliente, dia: date, carpeta: Path, avisar=log.info,
                                   f"puntaje {notas.get(i, {}).get('puntaje', 0):.2f} < {PUNTAJE_TEC_MIN:g}",
                                   "puntaje", costo=parte)
         todos_tec = list(elegidos)
+        # Santi, 2026-11-23: los subtemas que más rinden en YouTube (temas.py) suman al ORDEN, no al mínimo
         elegidos = sorted([x for x in elegidos if x[0] not in flojos],
-                          key=lambda x: -notas.get(x[0], {}).get("puntaje", 0))
+                          key=lambda x: -(notas.get(x[0], {}).get("puntaje", 0)
+                                          + (pesos or {}).get(notas.get(x[0], {}).get("subtema"), 0.0)))
         if not elegidos and not elegidos_banco:
             mejor = max(todos_tec, key=lambda x: notas.get(x[0], {}).get("puntaje", 0), default=None)
             nota = notas.get(mejor[0], {}).get("puntaje", 0) if mejor else 0
@@ -3168,8 +3184,8 @@ def proponer(wiki: Wiki, cliente, dia: date, carpeta: Path, avisar=log.info,
             if 0 <= k < len(pool):
                 avisar(f"    descartada {k + 1}: {pool[k].epigrafe[:90]}")
         n = notas.get(i) or {}
-        local = ({"puntaje": n.get("puntaje"), "puntajes": {k: n.get(k) for k in CRITERIOS_TEC}}
-                 if tema else {})
+        local = ({"puntaje": n.get("puntaje"), "puntajes": {k: n.get(k) for k in CRITERIOS_TEC},
+                  "subtema": n.get("subtema")} if tema else {})
         if del_banco and i in del_banco:
             local["banco_id"] = del_banco[i]
         if aviso_puntaje:
@@ -3210,8 +3226,8 @@ def proponer(wiki: Wiki, cliente, dia: date, carpeta: Path, avisar=log.info,
     if insuf and not respaldo and aceptar_relajado(insuf[0], avisar):
         err, e, fuente, i = insuf
         n = notas.get(i) or {}
-        local = ({"puntaje": n.get("puntaje"), "puntajes": {k: n.get(k) for k in CRITERIOS_TEC}}
-                 if tema else {})
+        local = ({"puntaje": n.get("puntaje"), "puntajes": {k: n.get(k) for k in CRITERIOS_TEC},
+                  "subtema": n.get("subtema")} if tema else {})
         if del_banco and i in del_banco:
             local["banco_id"] = del_banco[i]
         if aviso_puntaje:

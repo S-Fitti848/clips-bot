@@ -18,6 +18,17 @@ vamos** (tarea programada `asinacio-plan-lunes`).
 | 07/12 – 10/12 | prueba final con 10 marcas | |
 | **10/12** | **decisión**: si 8 de 10 pasan 15/19 con menos de US$ 0,60 por video, queda listo para el 15/12 | |
 
+## Tecnología, prioridad número uno (Santi, 2026-11-23, v1.50.0)
+
+- [x] 2 por día en YouTube (11:00 y 20:00), reserva de 3 armados, presupuesto primero para tecnología, temas que
+      rinden, YouTube solo de tecnología, Facebook con fútbol primero. Resumen de Facebook en 5 líneas mandado a Santi.
+- [ ] 23/11: que la reserva arme sus primeros videos (~US$ 0,30 cada uno) y que el segundo de hoy salga a las 20:00.
+- [ ] 24/11 madrugada: el del día + uno de la reserva, los dos con "💻 Tecnología" en el mensaje.
+- [ ] Horarios: con 2 semanas de datos, comparar 11:00 contra 20:00 (Santi: "o los que mejor rindan").
+- [ ] 15/12: canal de YouTube nuevo para Latinoamérica (lo crea Santi; después, `youtube-auth` y `historias_fb.youtube`).
+- [ ] Visto en el log: el resumen de 24 h del Reel 122129360859498795 da 400 cada 30 min y el log guarda la URL con el
+      token de la página.
+
 ## Pequeña Historia: tecnología todos los días (2026-11-20)
 
 - [x] El 20/11 el de tecnología (Windows 1.0) SÍ se armó y se mandó a las 04:26, pero retenido por el estándar: la

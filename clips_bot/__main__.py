@@ -38,6 +38,7 @@ from . import __version__, db, metricas
 from . import gemini as gemini_mod
 from . import bitacora
 from . import banco as banco_mod
+from . import reserva_tec
 from .idioma import L
 from .candidates import (MOTIVO_COSTREAM, Resultado, buscar_candidatos, buscar_catalogo, buscar_kick,
                          consolidar_evento)
@@ -2735,7 +2736,11 @@ def escuchar_telegram(settings: Settings, timeout_poll: int = 50) -> int:
                     _auto(_efe_reintento_tick), conn, tg, settings)
             _seguro(tg, str(chat_ultimo or ""), "la madrugada (Rots y la de tecnología)",
                     _auto(_madrugada_tick), conn, tg, settings)
+            # Tecnología primero (Santi, 2026-11-23): el segundo del día (o los dos, si el del día falló) sale de la reserva
+            _seguro(tg, str(chat_ultimo or ""), "la tecnología de la reserva", _tec_del_dia_tick, conn, tg, settings)
             _seguro(tg, str(chat_ultimo or ""), "la historia de Facebook", _auto(_fb_tick), conn, tg, settings)
+            _seguro(tg, str(chat_ultimo or ""), "la reserva de tecnología", _auto(_reserva_tec_tick), conn, tg, settings)
+            _seguro(tg, str(chat_ultimo or ""), "los temas de la semana", _temas_semana_tick, conn, tg)
             _seguro(tg, str(chat_ultimo or ""), "el video de marcas", _auto(_animacion_tick), conn, tg, settings)
             _seguro(tg, str(chat_ultimo or ""), "el calendario", _calendario_tick, conn, tg, settings)
             _seguro(tg, str(chat_ultimo or ""), "la medición de Pequeña Historia",
@@ -3493,8 +3498,8 @@ def _encabezado_fb(local: dict) -> str:
     notas = local.get("puntajes") or {}
     puntaje = (f"\n⭐ {local['puntaje']:.1f} (persona {notas.get('persona')}, peligro {notas.get('peligro')}, "
                f"giro {notas.get('giro')}, emoción {notas.get('emocion')})" if local.get("puntaje") else "")
-    # Desde el 2026-11-12 la de Latinoamérica va a YouTube y a Facebook.
-    return (f"🌎 <b>LATINOAMÉRICA</b> (YouTube y Facebook) · {html.escape(lugar)} · "
+    # Desde el 2026-11-23 (Santi) la de Latinoamérica va SOLO a Facebook: YouTube queda para tecnología.
+    return (f"🌎 <b>LATINOAMÉRICA</b> (solo Facebook) · {html.escape(lugar)} · "
             f"{html.escape(str(local.get('tipo') or '').replace('_', ' '))}{html.escape(conm)}{puntaje}")
 
 
@@ -3561,7 +3566,8 @@ def _efe_proponer(conn, tg: TelegramClient, chats: list[str], dia, settings: Set
                         mas_video=settings.efemerides.estilo_nuevo, puntuador=_puntuador(settings),
                         # nunca un día sin video (Santi, 2026-11-15): piso de 6 y, debajo, el banco
                         piso=None if hecho else banco_mod.PISO_ABSOLUTO,
-                        banco=None if hecho else banco_mod.leer(conn, "tecnologia"))
+                        banco=None if hecho else banco_mod.leer(conn, "tecnologia"),
+                        pesos=_pesos_tec(conn))
     except (NarrarError, ef.WikiError, GeminiError) as e:
         bitacora.fallo("", str(e))
         bitacora.cerrar(conn, "fallido")
@@ -3578,6 +3584,26 @@ def _efe_proponer(conn, tg: TelegramClient, chats: list[str], dia, settings: Set
     for chat in chats:
         _efe_mostrar(conn, tg, chat, token, estado)   # el mismo token: se aprueba desde cualquiera
     return None
+
+
+def _pesos_tec(conn) -> dict:
+    """Santi, 2026-11-23: los subtemas de tecnología que más rinden en YouTube van primero (temas.py)."""
+    from . import temas
+
+    try:
+        return temas.pesos_tec(conn)
+    except Exception:  # noqa: BLE001 — un dato que falta nunca frena la propuesta
+        return {}
+
+
+def _pesos_latam(conn) -> dict | None:
+    """Santi, 2026-11-23: en Facebook, fútbol, ídolos de antes y curiosidades primero; próceres al final (temas.py)."""
+    from . import temas
+
+    try:
+        return temas.pesos_latam(conn)
+    except Exception:  # noqa: BLE001
+        return None
 
 
 def _sin_aprobar(settings: Settings) -> dict:
@@ -3675,9 +3701,16 @@ def _web_latam(conn, settings: Settings):
     """El cliente de la búsqueda web (Santi, 2026-11-16, opción C), o None si está apagada."""
     from . import web_historias
 
-    if not settings.historias_fb.web or db.get_valor(conn, WEB_APAGADO):
+    if not settings.historias_fb.web or db.get_valor(conn, WEB_APAGADO) or _recorte(conn) >= 2:
         return None
     return web_historias.cliente_web()
+
+
+def _recorte(conn) -> int:
+    """El nivel de recorte por presupuesto (presupuesto.RECORTES; Santi, 2026-11-23: tecnología nunca se recorta)."""
+    from . import presupuesto
+
+    return presupuesto.nivel(conn)
 
 
 def costo_web_dia(conn, dia: str, origen: str | None = "produccion") -> tuple[float, int, int]:
@@ -3805,7 +3838,7 @@ def _comunidad_tick(conn, tg: TelegramClient, settings: Settings, ahora=None, cl
     from .config import OUTPUT_DIR
 
     cfg = settings.historias_fb
-    if not cfg.comunidad:
+    if not cfg.comunidad or _recorte(conn) >= 2:      # presupuesto: lo primero que se recorta después de Así Nació
         return
     ahora = ahora or datetime.now(AR)
     dia = ahora.date()
@@ -4004,6 +4037,7 @@ def _fb_proponer(conn, tg: TelegramClient, chats: list[str], dia, settings: Sett
                              excluir={v for x in _latam_del_dia(conn, dia)
                                       for v in (x.get("texto"), x.get("articulo")) if v},
                              evitar_paises={x["pais"] for x in _latam_del_dia(conn, dia) if x.get("pais")},
+                             pesos=_pesos_latam(conn),
                              mas_video=settings.efemerides.estilo_nuevo,
                              puntuador=_puntuador(settings), web=_web_latam(conn, settings),
                              **(dict(banco=banco_mod.leer(conn, "latam"), solo_banco=True) if solo_banco
@@ -4210,6 +4244,152 @@ def _madrugada_tick(conn, tg: TelegramClient, settings: Settings, ahora=None, la
         db.soltar_turno(conn, db.RECURSO_PESADO, turno, VENCIMIENTO_PESADO_S)
 
 
+def _es_tecnologia(settings: Settings) -> bool:
+    return settings.efemerides.diaria and settings.efemerides.tema == "tecnologia"
+
+
+def _tec_del_dia_tick(conn, tg: TelegramClient, settings: Settings, ahora=None) -> None:
+    """Santi, 2026-11-23: tecnología es la prioridad número uno, 2 por día (efemerides.por_dia). Apenas termina el
+    intento del día (bien o mal), los que falten salen de la reserva de videos ya armados (reserva_tec.py), con
+    ✅ Publicar / ❌ Cancelar como siempre. Si la reserva completa el día, los reintentos del del día ya no hacen falta."""
+    cfg = settings.efemerides
+    if not _es_tecnologia(settings):
+        return
+    ahora = ahora or datetime.now(AR)
+    hoy, hm = ahora.date(), ahora.strftime("%H:%M")
+    if not cfg.hora_propuesta <= hm < "21:00" or db.get_valor(conn, EFE_DIA) != hoy.isoformat():
+        return
+    if db.hay_trabajo_pesado(conn, VENCIMIENTO_PESADO_S):     # el intento del día todavía está andando
+        return
+    faltan = reserva_tec.faltan_hoy(conn, hoy, cfg.por_dia)
+    chats = [c.strip() for c in cfg.chat.split(",") if c.strip()] or db.destinos(conn)
+    while faltan > 0 and chats:
+        item = reserva_tec.sacar_primero(conn)
+        if item is None:
+            break
+        if _entregar_de_reserva(conn, tg, chats, settings, item):
+            faltan -= 1
+    if reserva_tec.faltan_hoy(conn, hoy, cfg.por_dia) == 0 and db.get_valor(conn, EFE_REINTENTO):
+        db.borrar_valor(conn, EFE_REINTENTO)
+        log.info("tecnología: la reserva completó el día; sin más reintentos del de hoy")
+
+
+def _entregar_de_reserva(conn, tg: TelegramClient, chats, settings: Settings, item: dict) -> bool:
+    """Manda un video de la reserva como si se hubiera armado recién (mismo mensaje corto y botones)."""
+    from . import efemerides as ef
+
+    estado = _efe_estado(conn, item["token"])
+    meta = _meta_de(item["clip_id"])
+    if not estado or not meta or not Path(meta.get("salida", "")).exists():
+        log.warning("reserva de tecnología: %s ya no está (sin propuesta o sin video)", item.get("clip_id"))
+        return False
+    prop = ef.Propuesta(**estado["propuesta"])
+    armado = str(item.get("armado") or "")
+    nota = f"📦 De la reserva de tecnología (armado el {armado[8:10]}/{armado[5:7]})" if armado else ""
+    _efe_entregar(conn, tg, chats, item["token"], settings, prop, meta, item.get("fallas") or [],
+                  item.get("corregidas") or [], bool(item.get("revisado")), item.get("motor") or "",
+                  item.get("relajado") or "", auto=True, costo=item.get("costo"), nota=nota)
+    log.info("tecnología: sale de la reserva %s (%s)", item["clip_id"], item.get("titulo"))
+    return True
+
+
+def _reserva_tec_tick(conn, tg: TelegramClient, settings: Settings, ahora=None, armar=None) -> None:
+    """Repone la reserva de tecnología (Santi, 2026-11-23: "tené siempre 3 listos"): de a un video por vez, fuera de la
+    madrugada, con el turno pesado libre y del banco de historias que no dependen de la fecha."""
+    cfg = settings.efemerides
+    if not _es_tecnologia(settings) or int(cfg.reserva) <= 0:
+        return
+    ahora = ahora or datetime.now(AR)
+    if not reserva_tec.hay_que_armar(conn, cfg.reserva, ahora.date(), ahora.strftime("%H:%M")):
+        return
+    if not banco_mod.leer(conn, "tecnologia") or db.hay_trabajo_pesado(conn, VENCIMIENTO_PESADO_S):
+        return
+    turno = "efemeride:reserva"
+    if not db.tomar_turno(conn, db.RECURSO_PESADO, turno, maximo=1, vencimiento_s=VENCIMIENTO_PESADO_S):
+        return
+    try:
+        (armar or _reserva_armar)(conn, tg, settings, ahora.date())
+    except Exception:
+        reserva_tec.anotar_falla(conn, ahora.date())     # que un error no lo haga reintentar en cada vuelta
+        bitacora.cerrar(conn, "fallido")
+        raise
+    finally:
+        db.soltar_turno(conn, db.RECURSO_PESADO, turno, VENCIMIENTO_PESADO_S)
+
+
+def _reserva_armar(conn, tg: TelegramClient, settings: Settings, hoy) -> str | None:
+    """Arma UN video de la reserva: propuesta solo del banco de tecnología (guion que no dice "hoy"), video y revisión
+    del video terminado. Si no llega al estándar mínimo, no entra (se anota la falla). Devuelve el error, o None."""
+    import secrets
+
+    from . import calidad
+    from . import efemerides as ef
+    from .config import OUTPUT_DIR
+
+    gemini = _gemini(settings)
+    if gemini is None:
+        return "sin GEMINI_API_KEY"
+    cfg = settings.efemerides
+    token = secrets.token_hex(3)
+    carpeta = OUTPUT_DIR / "efemerides" / f"reserva_{token}"
+    bitacora.abrir(conn, token, "pequena_historia", "tecnologia_reserva")
+    log.info("reserva de tecnología: armo uno (hay %d de %d)", len(reserva_tec.leer(conn)), cfg.reserva)
+    try:
+        p = ef.proponer(ef.Wiki(), gemini, hoy, carpeta, avisar=log.info, videos=cfg.videos,
+                        tope_fotos_s=cfg.tope_fotos_min * 60, imagen_frase=cfg.imagen_frase,
+                        elector=_elector_fotos(settings), elector_reintento=_elector_fotos(settings, reintento=True),
+                        tema="tecnologia", corto=cfg.corto, texto=_texto_efemeride(settings, gemini),
+                        mas_video=cfg.estilo_nuevo, puntuador=_puntuador(settings),
+                        banco=banco_mod.leer(conn, "tecnologia"), solo_banco=True, pesos=_pesos_tec(conn))
+    except (NarrarError, ef.WikiError, GeminiError) as e:
+        bitacora.fallo("", str(e))
+        bitacora.cerrar(conn, "fallido")
+        reserva_tec.anotar_falla(conn, hoy)
+        log.info("reserva de tecnología: no salió la propuesta (%s)", e)
+        return str(e)
+    banco_mod.quitar(conn, "tecnologia", (p.local or {}).get("banco_id"))
+    estado = {"propuesta": p.__dict__, "carpeta": str(carpeta), "chat_id": ""}
+    db.set_valor(conn, f"efe:{token}", json.dumps(estado, ensure_ascii=False))
+    bitacora.dato(titulo=(p.guion or {}).get("titulo", ""))
+    r = _efe_armar(conn, tg, None, token, settings, auto=True, reserva=True)
+    if not isinstance(r, dict):
+        reserva_tec.anotar_falla(conn, hoy)
+        db.borrar_valor(conn, f"efe:{token}")
+        log.info("reserva de tecnología: no salió el video (%s)", r)
+        return str(r)
+    if calidad.retener("pequena_historia", r["fallas"], r["revisado"]):
+        bitacora.cerrar(conn, "descartado")
+        reserva_tec.anotar_falla(conn, hoy)
+        db.borrar_valor(conn, f"efe:{token}")
+        log.info("reserva de tecnología: %s no llega al estándar mínimo, no entra", r["clip_id"])
+        return "debajo del estándar"
+    bitacora.cerrar(conn, "reserva")
+    reserva_tec.agregar(conn, {**r, "token": token, "armado": hoy.isoformat(),
+                               "subtema": (p.local or {}).get("subtema")})
+    log.info("reserva de tecnología: +1 %s «%s» (hay %d)", r["clip_id"], r["titulo"], len(reserva_tec.leer(conn)))
+    return None
+
+
+TEMAS_SEMANA = "temas_semana_enviado"     # bot_estado: el lunes (AR) en que ya salió la comparación de temas
+TEMAS_SEMANA_HORA = (10, 15)
+
+
+def _temas_semana_tick(conn, tg: TelegramClient, ahora=None) -> None:
+    """Los lunes (Santi, 2026-11-23): qué temas de tecnología (YouTube) y de Latinoamérica (Facebook) rinden más; los que
+    andan suben en el orden de elección desde ese momento (temas.py). Los pesos se recalculan también si no hay."""
+    from . import temas
+
+    ahora = ahora or datetime.now(AR)
+    lunes = ahora.date().isoformat()
+    if not temas.leer(conn):
+        temas.calcular(conn)
+    if (ahora.weekday() != 0 or (ahora.hour, ahora.minute) < TEMAS_SEMANA_HORA
+            or db.get_valor(conn, TEMAS_SEMANA) == lunes):
+        return
+    db.set_valor(conn, TEMAS_SEMANA, lunes)
+    _aviso(tg, temas.texto_semana(temas.calcular(conn)))
+
+
 COSTO_PEDIDO = "costo_claude_pedido"   # bot_estado: el día (AR) cuyo costo de Claude pidió Santi
 
 
@@ -4349,7 +4529,11 @@ def _presupuesto_tick(conn, tg: TelegramClient, ahora=None) -> None:
     """Santi, 2026-11-18: el saldo de Claude hasta el 14/12 (presupuesto.py); si no alcanza, Así Nació a 1 por día."""
     from . import presupuesto
 
-    presupuesto.tick(conn, lambda texto: _aviso(tg, texto), ahora or datetime.now(AR))
+    settings = load_settings()
+    # un recorte de algo que ya está apagado no ahorra nada (Así Nació pausado, comunidad apagada)
+    activos = {1: settings.animacion.activo, 2: settings.historias_fb.comunidad or settings.historias_fb.web,
+               3: settings.historias_fb.activo, 4: settings.historias_fb.activo}
+    presupuesto.tick(conn, lambda texto: _aviso(tg, texto), ahora or datetime.now(AR), activos)
 
 
 SEMANA_RESUMEN = "resumen_semana_vistas"     # bot_estado: el lunes en que ya se mandó
@@ -4431,7 +4615,7 @@ def _fb_tick(conn, tg: TelegramClient, settings: Settings, ahora=None, proponer=
     turno pesado libre, propone la historia de Facebook. Una falla se avisa y no se reintenta sola
     (para eso está /historia)."""
     cfg = settings.historias_fb
-    if not cfg.activo:
+    if not cfg.activo or _recorte(conn) >= 4:
         return
     ahora = ahora or datetime.now(AR)
     hoy = ahora.date().isoformat()
@@ -4456,6 +4640,8 @@ def _fb_tick(conn, tg: TelegramClient, settings: Settings, ahora=None, proponer=
     # Nicho (Santi, 2026-11-12): historias_fb.por_dia (2) historias de Latinoamérica por día, cada
     # una con otro hecho y, si se puede, otro país. Si no hay suficientes buenas, salen menos y se avisa.
     n = max(1, int(cfg.por_dia))
+    if _recorte(conn) >= 3:      # Santi, 2026-11-23: el presupuesto va primero para tecnología
+        n = 1
     log.info("historias de Latinoamérica: propongo %d a %s%s", n, chats, f" ({hecho})" if hecho else "")
     errores, salieron = [], 0
     try:
@@ -5195,10 +5381,13 @@ def _efe_video(conn, tg: TelegramClient, chat_id: str, token: str, settings: Set
         db.soltar_turno(conn, db.RECURSO_PESADO, turno, VENCIMIENTO_PESADO_S)
 
 
-def _efe_armar(conn, tg: TelegramClient, chat_id, token: str, settings: Settings, auto: bool = False):
+def _efe_armar(conn, tg: TelegramClient, chat_id, token: str, settings: Settings, auto: bool = False,
+               reserva: bool = False):
     """Arma el video de la propuesta `token` y lo entrega. NO toma el turno pesado (lo tiene quien
     llama). `auto` (efemerides.sin_aprobar, 2026-11-14): lo programa en YouTube/Facebook ANTES de
-    mandarlo, así llega con "📤 Programado" y ❌ Cancelar; si nadie lo cancela, sale solo."""
+    mandarlo, así llega con "📤 Programado" y ❌ Cancelar; si nadie lo cancela, sale solo.
+    `reserva` (Santi, 2026-11-23): lo arma y lo revisa pero NO lo manda; devuelve lo necesario para entregarlo después
+    con `_efe_entregar` (un dict), o el error (str)."""
     from . import efemerides as ef
 
     estado = _efe_estado(conn, token)
@@ -5244,6 +5433,23 @@ def _efe_armar(conn, tg: TelegramClient, chat_id, token: str, settings: Settings
     motor = meta.get("efemeride", {}).get("voz", "")
     relajado = "\n".join(x for x in ((getattr(prop, "local", None) or {}).get("aviso"),
                                       meta.get("efemeride", {}).get("aviso_fotos")) if x)
+    if reserva:
+        return {"clip_id": meta["clip_id"], "fallas": cal_fallas, "corregidas": cal_corregidas,
+                "revisado": cal_revisado, "motor": motor, "relajado": relajado, "local": prop.local or {},
+                "costo": bitacora.costo_activo(), "titulo": (meta.get("textos") or {}).get("titulo", "")}
+    return _efe_entregar(conn, tg, chat_id, token, settings, prop, meta, cal_fallas, cal_corregidas, cal_revisado,
+                         motor, relajado, auto)
+
+
+def _efe_entregar(conn, tg: TelegramClient, chat_id, token: str, settings: Settings, prop, meta: dict,
+                  cal_fallas: list, cal_corregidas: list, cal_revisado: bool, motor: str, relajado: str, auto: bool,
+                  costo: float | None = None, nota: str = ""):
+    """La entrega de un video de Pequeña Historia ya armado (antes, el final de `_efe_armar`). `costo` y `nota`: los de
+    la reserva de tecnología, que se armaron antes y se entregan el día que hacen falta."""
+    from . import calidad
+    from . import efemerides as ef
+
+    fb = getattr(prop, "destino", "") == "facebook"
     # Con Piper (Gemini sin cuota o sin respuesta): el botón para rehacerla con Laomedeia
     # cuando vuelva la cuota. Por eso la propuesta se guarda hasta que salga con Laomedeia.
     extra = ([[{"text": "🔁 Rehacer con Laomedeia", "callback_data": f"efe:voz:{token}"}]]
@@ -5277,6 +5483,8 @@ def _efe_armar(conn, tg: TelegramClient, chat_id, token: str, settings: Settings
                       "📅 <b>Pequeña Historia</b> — subilo al canal de efemérides")
     if relajado:
         encabezado += "\n" + html.escape(relajado)
+    if nota:
+        encabezado += "\n" + nota
     aviso_fotos = meta.get("efemeride", {}).get("aviso_fotos") or ""
     codigo = [("PH-21", aviso_fotos)] if aviso_fotos else []
     calidad.anotar(conn, "pequena_historia", meta["clip_id"], cal_fallas, cal_corregidas, codigo, cal_revisado,
@@ -5291,12 +5499,16 @@ def _efe_armar(conn, tg: TelegramClient, chat_id, token: str, settings: Settings
     if auto and not retenido:
         m_ = re.search(r"\b(\d{1,2}:\d{2})\b", " ".join(avisos))
         hora_ = m_.group(1) if m_ else ""
-    linea_ = aviso_corto.resumen(ok_, total_, bitacora.costo_activo(), hora_, retenido=retenido)
+    linea_ = aviso_corto.resumen(ok_, total_, bitacora.costo_activo() if costo is None else costo, hora_,
+                                 retenido=retenido,
+                                 etiqueta="🌎 Latinoamérica" if fb else "💻 Tecnología")
     motivo_ = aviso_corto.motivo_retenido("pequena_historia", cal_fallas, bajo) if retenido else ""
     enviar_clip(tg, chat_id, conn, meta["clip_id"], meta, 1, None,
                 encabezado=f"{encabezado}\n🎙 {html.escape(ef.texto_voz(motor))}", extra_filas=extra,
                 resumen=linea_, motivo=motivo_)
     bitacora.cerrar(conn, "retenido" if retenido else "programado" if auto else "entregado")
+    if not fb and auto:      # Santi, 2026-11-23: cuántos de tecnología salieron hoy (2 por día; los que falten, de la reserva)
+        reserva_tec.contar_entregado(conn, datetime.now(AR).date())
     if not extra or retenido:
         db.borrar_valor(conn, f"efe:{token}")
     # El ✅ arma el video; subirlo es aparte, con "📤 Subir" debajo del video (2026-09-30).

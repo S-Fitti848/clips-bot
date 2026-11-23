@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-11-20 | **Versión:** v1.49.0 (desplegado) | **Modo:** Fase 2: corriendo solo en la Pi. **Rots APAGADO. Así Nació PAUSADO desde el 19/11** (vuelve con 1 por día, preparado la noche anterior, si 4 de 5 marcas nuevas dan 15/19 o más por menos de US$ 0,60). Pequeña Historia (3 por día, madrugada desde las 04:00) (**NO se publica sola desde el 17/11**: llega con ✅ Publicar / ❌ Cancelar y sin respuesta no sale) y **Así Nació** (2 por día, desde las 07:00, publican 13:00 y 20:00 en YouTube y Facebook con ❌ Cancelar), todo al privado de Santi
+**Snapshot:** 2026-11-23 | **Versión:** v1.50.0 (desplegado) | **Modo:** Fase 2: corriendo solo en la Pi. **Rots APAGADO. Así Nació PAUSADO desde el 19/11** (vuelve con 1 por día, preparado la noche anterior, si 4 de 5 marcas nuevas dan 15/19 o más por menos de US$ 0,60). **Pequeña Historia: TECNOLOGÍA ES LA PRIORIDAD NÚMERO UNO desde el 23/11** (2 por día en YouTube, 11:00 y 20:00, con una reserva de 3 videos ya armados; el canal de YouTube es solo de tecnología) y **Latinoamérica 2 por día SOLO en Facebook** hasta el 15/12. Nada se publica solo desde el 17/11: llega con ✅ Publicar / ❌ Cancelar y sin respuesta no sale. Todo al privado de Santi
 
 > **SI ESTÁS EMPEZANDO UNA SESIÓN NUEVA, LEÉ §10.** Ahí está qué está hecho, qué quedó a medias,
 > qué falta, y las trampas que ya nos mordieron.
@@ -280,6 +280,28 @@ servicio systemd separado: `clips-bot`).
   emoción), con 10 búsquedas; una verificación sin JSON se reformatea en vez de caerse (`web_historias.json_de`); y
   una historia del día que solo falló por fotos (50-70 %) sale con el mínimo relajado antes de ir al banco.
   Tecnología: si los de 7,5 fallan por fotos, prueba los demás desde 6 y después el banco (el 18/11 no salió nada).
+- **TECNOLOGÍA, PRIORIDAD NÚMERO UNO (Santi, 2026-11-23; es lo que mejor anda en YouTube: el chip de Intel 24.105
+  vistas, el procesador barato 14.345; el resto de los Shorts ~1.200):** (1) **2 por día en YouTube**
+  (`efemerides.por_dia: 2`, `horas_youtube` 11:00 y 20:00): el del día (04:00) y los que falten de la reserva
+  (`_tec_del_dia_tick`, apenas termina el intento del día; si la reserva completa el día, se borran los reintentos).
+  (2) **Reserva de 3 videos ya armados y revisados** (`efemerides.reserva`, `reserva_tec.py`, `bot_estado.reserva_tec`):
+  del banco de tecnología (historias que no dependen de la fecha, guion sin "hoy"), `ef.proponer(solo_banco=True)` +
+  `_efe_armar(reserva=True)` (arma y revisa sin mandar) y entran solo si pasan el estándar; se reponen solas de a uno
+  (`_reserva_tec_tick`, 06:30-22:00, turno pesado libre, como mucho 3 fallas por día); sacar del banco para la reserva
+  NO cuenta como uso del banco (`banco.quitar`). (3) **Presupuesto primero para tecnología** (`presupuesto.RECORTES`,
+  `bot_estado.presupuesto_nivel`): si el saldo no llega al 14/12 se recorta, en orden, Así Nació a 1 por día →
+  comunidad y búsqueda web de Latinoamérica → Latinoamérica a 1 por día → sin Latinoamérica; tecnología nunca.
+  (4) **Temas** (`temas.py`, `bot_estado.temas_pesos`): subtema de cada video de tecnología (videojuegos, internet,
+  empresas, marcas, inventos) y grupo de cada Reel de Latinoamérica (fútbol, ídolos, curiosidades, historias humanas,
+  próceres y fundaciones), por palabras y el `tipo` de Haiku; los lunes desde las 10:15 (`_temas_semana_tick`) la
+  mediana de vistas por tema en 3 líneas y los que rinden suman al ORDEN de elección (nunca al mínimo). (5) **YouTube
+  solo de tecnología**: Latinoamérica sale solo en Facebook (`historias_fb.youtube: false`) hasta el 15/12, cuando se
+  crea su propio canal; las 2 de Latinoamérica del 23/11 ya programadas en YouTube se pasaron a privado. (6) **Facebook:
+  fútbol, ídolos de antes y curiosidades primero; próceres, conquistadores, batallas y fundaciones al final aunque sean
+  del calendario** (tipos `futbol` y `procer`, `locales.buenos`/`elegir`, la búsqueda web). Medido el 23/11 (21 Reels):
+  Colón campeón 14.730 reproducciones, Chapecoense 967, niños de Morelia 1.165, Huetamo 808, Pedro Infante 421;
+  fundaciones y próceres 11-280. (7) El mensaje corto dice cuál es ("💻 Tecnología · ⏸ 6/9 …"): el 23/11 Santi no se dio
+  cuenta de que el de tecnología había llegado.
 - **Pequeña Historia NO se publica sola (Santi, 2026-11-17, después del Short de Colón con Cristina Kirchner en
   Atucha):** `efemerides.publicar_sola: false`: los 3 videos se siguen armando solos (`sin_aprobar`), pero llegan con
   ✅ Publicar / ❌ Cancelar y, si Santi no responde, NO salen. Se vuelve a prender SOLO cuando Santi lo diga.
@@ -1322,6 +1344,14 @@ Problemas abiertos:
 
 ## 9. CHANGELOG
 
+- v1.50.0 (2026-11-23) — **Tecnología, prioridad número uno** (regla en §1): 2 por día en YouTube (11:00 y 20:00),
+  reserva de 3 videos ya armados (`reserva_tec.py`, `_reserva_tec_tick`, `_tec_del_dia_tick`, `_efe_entregar` separado de
+  `_efe_armar`), recortes del presupuesto en orden sin tocar tecnología, temas que rinden (`temas.py`, lunes 10:15),
+  YouTube solo de tecnología y Facebook con fútbol primero. **Por qué Santi creyó que no le había llegado el de hoy:**
+  llegó a las 04:45 (Tim Berners-Lee y el primer navegador, del banco porque los del día no llegaron a las fotos,
+  retenido 6/9: PH-02, PH-07, PH-08) y alguien tocó ✅ a las 08:39 (sale 11:00, `7Evb2o9sMxs`), pero el mensaje corto
+  no decía que era el de tecnología. Visto en el log, sin arreglar: el resumen de 24 h del Reel `122129360859498795`
+  da 400 cada 30 min (y el log guarda la URL con el token de la página). `tests/test_tecnologia_prioridad.py`.
 - v1.49.0 (2026-11-21) — **Plan B de la frase sin foto** (Santi: "nunca más"). El 20 y el 21/11 no salió ni la de
   tecnología ni las de Latinoamérica: "la frase 1 no tiene ninguna foto posible" era un ValueError de
   `ilustrar.asignar` (sin reserva ni generales desde v1.36, la PRIMERA frase sin ranking no tiene anterior que alargar)
@@ -3283,7 +3313,9 @@ clips" queda sin uso mientras Rots siga apagado.
 | **07:00** | **Así Nació: arma los 2 videos del día** de a uno (nunca 03:45-06:00), los programa y los manda al privado con ❌ Cancelar; si uno falla, reintento en 1 h hasta las 22:00 | `_animacion_tick` |
 | 08:30 del país (11:00 AR sin país) | Latinoamérica en Facebook (≥ 4 h entre las dos) | `hora_historia_fb` |
 | desde 09:00 | medición de Pequeña Historia + análisis pedido de un Short + propuesta de mezcla | `_medicion_ph_tick` → `_analisis_y_mezcla` |
-| 11:00 / 15:30 / 20:00 | Pequeña Historia en YouTube (primer horario libre, ≥ 4 h entre videos) | `efemerides.horas_youtube` |
+| 11:00 / 20:00 | Pequeña Historia en YouTube, SOLO tecnología desde el 23/11 (2 por día; el segundo, de la reserva) | `efemerides.horas_youtube`, `_tec_del_dia_tick` |
+| 06:30-22:00 | reposición de la reserva de tecnología (de a uno, hasta 3) | `_reserva_tec_tick` |
+| lunes 10:15 | qué temas rinden (tecnología en YouTube, Latinoamérica en Facebook) | `_temas_semana_tick` |
 | **13:00 / 20:00** | **Así Nació se publica** en YouTube (@asinacio.oficial) y en su página de Facebook | `animacion.horas_publicacion` |
 | lunes 08:00 | lista de fechas de la semana a Santi | `_calendario_tick` |
 | al terminar el día pedido | costo real de Claude a Santi | `_costo_claude_tick` |

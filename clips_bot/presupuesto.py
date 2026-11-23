@@ -16,6 +16,13 @@ COSTO_VIDEO_AN = 0.90               # lo que suma por día el segundo video de A
 FILA = "presupuesto_fila"
 DIA = "presupuesto_dia"
 UN_VIDEO = "asinacio_un_video"     # "1" = Así Nació a 1 por día por el presupuesto
+# Tecnología va primero (Santi, 2026-11-23): si el saldo no alcanza, se recorta TODO lo demás antes, en este orden, y
+# tecnología (los 2 por día y su reserva) nunca. Cada nivel incluye los anteriores; el ahorro es por día, estimado.
+NIVEL = "presupuesto_nivel"        # bot_estado: 0 = nada recortado
+RECORTES = ((1, "Así Nació a 1 video por día", 0.90),
+            (2, "sin publicación de comunidad ni búsqueda web de Latinoamérica", 0.35),
+            (3, "Latinoamérica a 1 por día", 0.40),
+            (4, "sin Latinoamérica", 0.40))
 
 
 def gasto_desde(conn, fila: int) -> tuple[float, dict[str, float]]:
@@ -47,7 +54,38 @@ def evaluar(gastado: float, por_dia: dict[str, float], hoy: date, reducido: bool
     return con_dos > SALDO, round(promedio, 2), round(proyeccion, 2)
 
 
-def tick(conn, avisar, ahora: datetime) -> None:
+def _ahorro(hasta: int, activos: dict | None = None) -> float:
+    return sum(a for n, _, a in RECORTES if n <= hasta and (activos or {}).get(n, True))
+
+
+def nivel_necesario(gastado: float, por_dia: dict[str, float], hoy: date, actual: int,
+                    activos: dict | None = None) -> tuple[int, float]:
+    """(nivel de recorte que hace falta para llegar al 14/12, promedio por día). El promedio de hoy ya trae el ahorro del
+    nivel `actual`: se le suma para saber cuánto se gastaría sin recortes (si no, recortar y volver oscilaría).
+    `activos` {nivel: bool}: un recorte de algo que ya está apagado (Así Nació pausado) no ahorra nada."""
+    completos = sorted(d for d in por_dia if d < hoy.isoformat())[-7:]
+    promedio = (sum(por_dia[d] for d in completos) / len(completos) if completos
+                else por_dia.get(hoy.isoformat(), 0.0))
+    sin_recorte = promedio + _ahorro(actual, activos)
+    hoy_ya = por_dia.get(hoy.isoformat(), 0.0)
+    dias = max(0, (HASTA - hoy).days + 1)
+    for n in range(0, len(RECORTES) + 1):
+        if gastado - hoy_ya + max(0.0, sin_recorte - _ahorro(n, activos)) * dias <= SALDO:
+            return n, round(promedio, 2)
+    return len(RECORTES), round(promedio, 2)
+
+
+def nivel(conn) -> int:
+    """El recorte vigente (0 = nada)."""
+    from . import db
+
+    try:
+        return int(db.get_valor(conn, NIVEL) or 0)
+    except ValueError:
+        return 0
+
+
+def tick(conn, avisar, ahora: datetime, activos: dict | None = None) -> None:
     """Una vez por día (desde las 06:30, antes de Así Nació): recalcula y, si cambia, avisa en una línea."""
     from . import db
 
@@ -58,17 +96,23 @@ def tick(conn, avisar, ahora: datetime) -> None:
     arrancar(conn)
     fila = db.get_valor(conn, FILA)
     gastado, por_dia = gasto_desde(conn, int(fila))
-    antes = db.get_valor(conn, UN_VIDEO) == "1"
-    uno, promedio, proy = evaluar(gastado, por_dia, hoy, antes)
+    antes = nivel(conn)
+    if antes == 0 and db.get_valor(conn, UN_VIDEO) == "1":      # el estado de antes del 23/11
+        antes = 1
+    nuevo, promedio = nivel_necesario(gastado, por_dia, hoy, antes, activos)
     queda = SALDO - gastado
-    if uno != antes:
-        db.set_valor(conn, UN_VIDEO, "1" if uno else "0")
-        if uno:
-            avisar(f"🔧 Claude Code: 💸 a US$ {_f(promedio)}/día no llegamos al 14/12 (quedan US$ {_f(queda)}): "
-                   "Así Nació baja a 1 video por día.")
-        else:
-            avisar(f"🔧 Claude Code: 💸 ahora alcanza (quedan US$ {_f(queda)}, US$ {_f(promedio)}/día): Así Nació "
-                   "vuelve a 2 por día.")
+    db.set_valor(conn, UN_VIDEO, "1" if nuevo >= 1 else "0")
+    if nuevo == antes:
+        return
+    db.set_valor(conn, NIVEL, str(nuevo))
+    if nuevo > antes:
+        recorte = "; ".join(t for n, t, _ in RECORTES if antes < n <= nuevo)
+        avisar(f"🔧 Claude Code: 💸 a US$ {_f(promedio)}/día no llegamos al 14/12 (quedan US$ {_f(queda)}): {recorte}. "
+               "Tecnología sigue igual.")
+    else:
+        vuelve = "; ".join(t for n, t, _ in RECORTES if nuevo < n <= antes)
+        avisar(f"🔧 Claude Code: 💸 ahora alcanza (quedan US$ {_f(queda)}, US$ {_f(promedio)}/día): se deshace "
+               f"«{vuelve}».")
 
 
 def _f(x: float) -> str:

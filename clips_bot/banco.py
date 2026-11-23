@@ -61,6 +61,13 @@ def agregar(conn, canal: str, nuevos: list[dict]) -> int:
     return len(sumados)
 
 
+def quitar(conn, canal: str, id_: str | None) -> None:
+    """Sale del banco SIN contarlo como uso (la reserva de tecnología arma sus videos desde acá: Santi, 2026-11-23;
+    eso no es "el día no tuvo nada")."""
+    if id_:
+        guardar(conn, canal, [x for x in leer(conn, canal) if x.get("id") != id_])
+
+
 def sacar(conn, canal: str, id_: str | None, hoy: date | None = None) -> None:
     """La historia ya se usó: sale del banco (nunca se repite) y queda anotado el uso (USOS)."""
     if not id_:

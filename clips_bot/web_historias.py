@@ -187,6 +187,9 @@ con dinamita encendida y salvó al pueblo: gente concreta que hace algo notable 
 lugar insólito, un invento de la región, una costumbre, un récord, un misterio o un dato que haga decir
 "no puede ser". También ídolos latinoamericanos de antes (época de oro del cine mexicano y argentino, cantantes,
 actores, deportistas), contados como una historia real de su vida con un giro y emoción.
+LO QUE MÁS RINDE (Santi, 2026-11-23, medido en Facebook): el FÚTBOL (clubes que salen campeones después de años,
+partidos históricos, ídolos, arqueros, hinchadas, mundiales), los ídolos de antes y las curiosidades. Buscá
+primero eso. Próceres, conquistadores, batallas, revueltas y fundaciones de ciudades rinden lo peor: solo si no hay otra.
 
 Dónde buscar: diarios de cada país (sus secciones de historia y de "un día como hoy" / efemérides), sitios
 de historia, museos, archivos nacionales, bibliotecas, sitios de gobiernos locales y blogs especializados.
@@ -202,7 +205,7 @@ Al final respondé SOLO con un bloque ```json con esta forma:
 {"historias": [{"texto": "qué pasó, 2-3 oraciones con nombres, año y lugar", "anio": 1907,
   "fecha": "07/11" (día/mes del hecho, o "" si no se sabe), "lugar": "pueblo o ciudad", "region": "",
   "pais": "México", "tipo": "heroe_de_pueblo|gente_comun|anecdota|momento_emotivo|lugar_curioso|invento|
-  costumbre|record|misterio|dato_sorprendente|idolo|otro", "articulo_wikipedia": "título exacto del artículo de
+  costumbre|record|misterio|dato_sorprendente|idolo|futbol|procer|otro", "articulo_wikipedia": "título exacto del artículo de
   es.wikipedia del hecho o del protagonista, o vacío", "articulo_lugar": "título exacto del artículo de
   es.wikipedia del lugar, o vacío", "interes": 1-10, "fuentes": ["url", "url"]}]}
 Entre 8 y 12 historias, de países distintos si se puede, cada una con los links donde la leíste.
