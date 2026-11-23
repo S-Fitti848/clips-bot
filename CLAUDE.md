@@ -1358,7 +1358,7 @@ Problemas abiertos:
   fotos medidas en los 5 videos de tecnología de la semana (segundos en pantalla): Commons 35 %, Pexels 33 %, tarjetas
   30 %, video 2 %; Openverse, Smithsonian, Flickr y Europeana, 0. Por qué: Openverse tarda ~17 s y el timeout era de
   10 (se salteaba toda la corrida), y TODAS sus fotos de Flickr daban 403 al bajarlas por el User-Agent largo (el de
-  Wikimedia, con el mail; con el corto, 200): timeout 30 s y `config.user_agent_corto` para todo lo que no es Wikimedia
+  Wikimedia, con el mail) y, de a ratos, por la palabra "Bot": `config.user_agent_corto` = "PequenaHistoria/0.28 python-requests/…" baja 15 de 15: timeout 30 s y ese User-Agent para todo lo que no es Wikimedia (la API de Openverse igual da 504 de a ratos)
   (además, el mail ya no va a Openverse, Europeana ni Pexels). Sin `FLICKR_API_KEY`, `SMITHSONIAN_API_KEY` ni
   `UNSPLASH_ACCESS_KEY` en la Pi. Nuevo: Internet Archive (imágenes con PD/CC0/CC BY en la ficha; pocas). La Library of
   Congress sigue con Cloudflare (403, probado otra vez) y las salas de prensa de las marcas y de los videojuegos no
