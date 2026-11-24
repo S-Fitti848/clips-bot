@@ -158,3 +158,11 @@ def test_resumen_de_fallas_del_viernes():
     assert "Alibaba" not in t and "Viejo" not in t
     assert fallas.toca(date(2026, 11, 27), "10:05", None) and not fallas.toca(date(2026, 11, 27), "10:05", "2026-11-27")
     assert not fallas.toca(date(2026, 11, 26), "10:05", None)
+
+
+def test_banco_de_tecnologia_con_el_minimo_del_video_del_dia():
+    conn = sqlite3.connect(":memory:")
+    conn.execute("create table bot_estado (clave text primary key, valor text)")
+    assert banco.agregar(conn, "tecnologia", [{"id": "tec:a", "articulo": "a", "puntaje": 7.5},
+                                              {"id": "tec:b", "articulo": "b", "puntaje": 7.25}]) == 1
+    assert banco.agregar(conn, "latam", [{"id": "latam:a", "articulo": "a", "puntaje": 7.5}]) == 0

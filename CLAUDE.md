@@ -275,7 +275,8 @@ servicio systemd separado: `clips-bot`).
   de la semana (`fallas.py`).
 - **Banco de tecnología (Santi, 2026-11-24):** solo marcas, empresas y videojuegos (separados por palabras antes de
   puntuar) y solo con 6 o más fotos libres contadas sin Claude (`ef.fotos_libres`: artículo, Commons, Openverse, Flickr,
-  Internet Archive; `banco.FOTOS_BANCO_MIN`).
+  Internet Archive; `banco.FOTOS_BANCO_MIN`), con el mismo mínimo de puntaje que el video del día (7,5; con 8 sumó 2
+  en 60 días, `banco.minimo_banco`).
 - **Ventilador (Santi, 2026-11-24):** volvió el Fan SHIM; `ventilador.service` prendido de nuevo (siempre prendido en
   los renders).
 - **Pruebas: tope de US$ 1 por día (Santi, 2026-11-20),** aparte de la producción; al llegar se frena hasta el día

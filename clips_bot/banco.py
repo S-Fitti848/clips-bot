@@ -56,12 +56,22 @@ def agregar(conn, canal: str, nuevos: list[dict]) -> int:
     for x in nuevos:
         if _art(x.get("articulo") or (x.get("paginas") or [""])[0]) in malas:
             continue
-        if x.get("id") and x["id"] not in ids and float(x.get("puntaje") or 0) >= PUNTAJE_BANCO:
+        if x.get("id") and x["id"] not in ids and float(x.get("puntaje") or 0) >= minimo_banco(canal):
             ids.add(x["id"])
             sumados.append(x)
     if sumados:
         guardar(conn, canal, items + sumados)
     return len(sumados)
+
+
+def minimo_banco(canal: str) -> float:
+    """Tecnología: el mismo mínimo que el video del día para marcas, empresas y videojuegos (7,5; Santi, 2026-11-24:
+    con 8 el banco sumó 2 historias en 60 días). Los demás bancos, PUNTAJE_BANCO (8)."""
+    if canal == "tecnologia":
+        from . import efemerides as ef
+
+        return ef.PUNTAJE_TEC_MIN
+    return PUNTAJE_BANCO
 
 
 SIN_FOTOS = "sin_fotos:{}"     # bot_estado: {articulo: {"dia", "motivo"}} — historias que fallaron por fotos
@@ -257,7 +267,7 @@ def cosechar_tecnologia(wiki, puntuador, dia: date, avisar=log.info, contar_foto
     out = []
     for i, art in ef.elegir(puntuador, cands, tema="tecnologia", notas=notas):
         n = notas.get(i) or {}
-        if n.get("puntaje", 0) < PUNTAJE_BANCO:
+        if n.get("puntaje", 0) < minimo_banco("tecnologia"):
             continue
         e = cands[i]
         paginas = [art] + [x for x in e.paginas if x != art]
