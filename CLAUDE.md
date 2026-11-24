@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-11-24 | **Versión:** v1.53.0 (desplegado) | **Modo:** Fase 2: corriendo solo en la Pi. **Rots APAGADO. Así Nació PAUSADO desde el 19/11** (vuelve con 1 por día, preparado la noche anterior, si 4 de 5 marcas nuevas dan 15/19 o más por menos de US$ 0,60). **Pequeña Historia: TECNOLOGÍA ES LA PRIORIDAD NÚMERO UNO desde el 23/11** (2 por día en YouTube, 11:00 y 20:00, con una reserva de 3 videos ya armados; el canal de YouTube es solo de tecnología) y **Latinoamérica 2 por día SOLO en Facebook** hasta el 15/12. Nada se publica solo desde el 17/11: llega con ✅ Publicar / ❌ Cancelar y sin respuesta no sale. Todo al privado de Santi
+**Snapshot:** 2026-11-24 | **Versión:** v1.54.0 (desplegado) | **Modo:** Fase 2: corriendo solo en la Pi. **Rots APAGADO. Así Nació PAUSADO desde el 19/11** (vuelve con 1 por día, preparado la noche anterior, si 4 de 5 marcas nuevas dan 15/19 o más por menos de US$ 0,60). **Pequeña Historia: TECNOLOGÍA ES LA PRIORIDAD NÚMERO UNO desde el 23/11** (2 por día en YouTube, 11:00 y 20:00, con una reserva de 3 videos ya armados; el canal de YouTube es solo de tecnología) y **Latinoamérica 2 por día SOLO en Facebook** hasta el 15/12. Nada se publica solo desde el 17/11: llega con ✅ Publicar / ❌ Cancelar y sin respuesta no sale. Todo al privado de Santi
 
 > **SI ESTÁS EMPEZANDO UNA SESIÓN NUEVA, LEÉ §10.** Ahí está qué está hecho, qué quedó a medias,
 > qué falta, y las trampas que ya nos mordieron.
@@ -263,6 +263,21 @@ servicio systemd separado: `clips-bot`).
   recorta en el orden de siempre (comunidad y búsqueda web de Latinoamérica, después Latinoamérica a 1); tecnología nunca.
 - **Calor (Santi, 2026-11-24, hasta que resuelva el enfriamiento):** un render a la vez, 4 min de pausa como mínimo entre
   renders y hasta bajar de 58 °C (30 min como mucho), y el freno de 80 °C (`freno-calor.service`).
+- **Reintentos inteligentes (Santi, 2026-11-24; todo Pequeña Historia):** un video que falla por fotos no pasa a otra
+  historia a ciegas: (1) segunda búsqueda, y cada frase sin foto real (o con una que no muestra lo que dice) se busca
+  otra vez con otras palabras (el producto o la persona en inglés, modelo, año; `ef.consultas_frase`, nunca la cosa
+  genérica sola) en Commons, Openverse (Flickr CC), Smithsonian, Europeana, Flickr e Internet Archive; (2) plan B:
+  reescribir solo esas frases hacia una foto que hay; (3) recién ahí otra historia. Library of Congress (Cloudflare) y
+  las salas de prensa (sin API, fotos con derechos) siguen afuera; la LoC entra por su categoría en Commons. Cada falla
+  queda en `candidatos_descartados` con `detalle.intentos`. Reserva: como mucho 5 intentos por día, de a UNA historia,
+  y no arranca si no entra en el tope de US$ 2,50 (`reserva_tec.COSTO_INTENTO` 0,35); una historia del banco que falla
+  (fotos, guion, video o estándar) no se vuelve a intentar. Viernes desde las 10:00, el resumen de los motivos de falla
+  de la semana (`fallas.py`).
+- **Banco de tecnología (Santi, 2026-11-24):** solo marcas, empresas y videojuegos (separados por palabras antes de
+  puntuar) y solo con 6 o más fotos libres contadas sin Claude (`ef.fotos_libres`: artículo, Commons, Openverse, Flickr,
+  Internet Archive; `banco.FOTOS_BANCO_MIN`).
+- **Ventilador (Santi, 2026-11-24):** volvió el Fan SHIM; `ventilador.service` prendido de nuevo (siempre prendido en
+  los renders).
 - **Pruebas: tope de US$ 1 por día (Santi, 2026-11-20),** aparte de la producción; al llegar se frena hasta el día
   siguiente y se avisa en una línea; render local siempre que se pueda.
 - **Pruebas sin Claude real (Santi, 2026-11-18):** con origen "prueba" (scripts y CLI a mano) Claude y la búsqueda
@@ -1358,6 +1373,11 @@ Problemas abiertos:
 
 ## 9. CHANGELOG
 
+- v1.54.0 (2026-11-24, tarde) — **Reintentos inteligentes, banco de tecnología con fotos comprobadas y ventilador** (reglas
+  en §1). Las fallas del 23 y 24/11 eran todas de fotos (5 de 7 por "% de fotos reales" o "5 fotos distintas"), y la
+  segunda búsqueda solo miraba Commons y Europeana con el título del artículo: ahora busca cada frase floja en todas las
+  fuentes con otras palabras antes del plan B. `fallas.py` + `_fallas_semana_tick`; `bitacora.descarte(intentos=)`;
+  `ef.proponer(max_guiones=)`; `Wiki.en_ingles`. `tests/test_reintentos_inteligentes.py`. 2167 tests OK.
 - v1.53.0 (2026-11-24) — **La Pi se colgó por calor y tope diario de Claude** (Santi). (1) Cuelgue: la Pi (con
   disipadores, sin ventilador) se colgó a las ~07:01 renderizando un video de la reserva de tecnología (Netscape/Mozilla,
   1998); Santi la desenchufó y arrancó a las 07:03. Tarjeta y bases sanas (`integrity_check` ok, solo el "orphan

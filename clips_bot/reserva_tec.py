@@ -22,7 +22,10 @@ from . import db
 CLAVE = "reserva_tec"
 ENTREGADOS = "tec_entregados:{}"
 FALLAS = "reserva_tec_fallas:{}"
-MAX_FALLAS_DIA = 3          # armar uno que no pasa el estándar cuesta ~US$ 0,30: como mucho 3 intentos fallidos por día
+# Santi, 2026-11-24: "que reintente con equilibrio: máximo 5 intentos por día y nunca pasar el tope de US$ 2,50".
+# Cada intento es UNA historia (con todos sus arreglos de fotos adentro); una que falla no se vuelve a intentar.
+MAX_FALLAS_DIA = 5
+COSTO_INTENTO = 0.35        # lo que puede costar un intento (guion + 2 búsquedas + plan B): no arranca si no entra
 DESDE, HASTA = "06:30", "22:00"   # nunca en la madrugada (03:30-06:30 es de los videos del día)
 
 
@@ -77,9 +80,19 @@ def pausada(conn) -> bool:
     return (db.get_valor(conn, PAUSA) or "") == "1"
 
 
+def entra_en_tope(conn, dia: date) -> bool:
+    """¿Un intento más entra en el tope diario de producción (presupuesto.TOPE_DIA)?"""
+    from . import presupuesto
+
+    try:
+        return presupuesto.gasto_hoy(conn, dia.isoformat()) + COSTO_INTENTO <= presupuesto.TOPE_DIA
+    except Exception:  # noqa: BLE001 — sin gemini_uso (tests): no frena
+        return True
+
+
 def hay_que_armar(conn, objetivo: int, dia: date, hm: str) -> bool:
     return (not pausada(conn) and DESDE <= hm < HASTA and len(leer(conn)) < int(objetivo)
-            and fallas_hoy(conn, dia) < MAX_FALLAS_DIA)
+            and fallas_hoy(conn, dia) < MAX_FALLAS_DIA and entra_en_tope(conn, dia))
 
 
 # ---- informe del día siguiente al cambio (Santi, 2026-11-23: "avisame cuánto mejora el % de fotos reales y cuánto

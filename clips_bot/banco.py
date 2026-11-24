@@ -235,14 +235,24 @@ def cosechar_latam(wiki, haiku, puntuador, dia: date, avisar=log.info) -> list[d
     return out
 
 
-def cosechar_tecnologia(wiki, puntuador, dia: date, avisar=log.info) -> list[dict]:
-    """Hechos de tecnología de `dia` con 8 o más (contados como historia, sin la fecha)."""
+SUBTEMAS_BANCO_TEC = ("marcas", "empresas", "videojuegos")   # Santi, 2026-11-24: el banco, con marcas y videojuegos
+FOTOS_BANCO_MIN = 6     # fotos libres (sin Claude) para entrar al banco; con 4 pasaban y después fallaban (23-24/11)
+
+
+def cosechar_tecnologia(wiki, puntuador, dia: date, avisar=log.info, contar_fotos=None) -> list[dict]:
+    """Hechos de tecnología de `dia` con 8 o más (contados como historia, sin la fecha). Desde el 2026-11-24 (Santi:
+    "llenalo con historias de marcas y videojuegos, comprobando antes que tengan fotos libres suficientes, sin gastar
+    en Claude para el control") solo marcas, empresas y videojuegos (se separan por palabras ANTES de puntuar: Haiku
+    no ve los demás) y solo los que tienen FOTOS_BANCO_MIN fotos libres (`efemerides.fotos_libres`, sin Claude)."""
     from . import efemerides as ef
+    from . import temas
 
     todos = wiki.eventos("es", dia) + wiki.eventos("en", dia)
-    cands = [e for e in todos if not ef.motivo_evento(e, date.today())]
+    cands = [e for e in todos if not ef.motivo_evento(e, date.today())
+             and temas.subtema_tec(e.texto) in SUBTEMAS_BANCO_TEC]
     if not cands:
         return []
+    contar = contar_fotos or (lambda ev: ef.fotos_libres(wiki, ev, FOTOS_BANCO_MIN))
     notas: dict = {}
     out = []
     for i, art in ef.elegir(puntuador, cands, tema="tecnologia", notas=notas):
@@ -250,10 +260,19 @@ def cosechar_tecnologia(wiki, puntuador, dia: date, avisar=log.info) -> list[dic
         if n.get("puntaje", 0) < PUNTAJE_BANCO:
             continue
         e = cands[i]
+        paginas = [art] + [x for x in e.paginas if x != art]
+        try:
+            libres = contar(ef.Evento(e.lang, e.anio, e.texto, paginas))
+        except Exception as err:  # noqa: BLE001 — sin poder contar, no entra
+            avisar(f"banco tecnología: no pude contar las fotos de {art} ({str(err)[:80]})")
+            continue
+        if libres < FOTOS_BANCO_MIN:
+            avisar(f"banco tecnología: {art} afuera, {libres} fotos libres (mínimo {FOTOS_BANCO_MIN})")
+            continue
         out.append({"id": f"tec:{art}", "lang": e.lang, "anio": e.anio, "texto": e.texto,
-                    "paginas": [art] + [x for x in e.paginas if x != art], "articulo": art,
-                    "puntaje": n.get("puntaje"), "notas": {k: n.get(k) for k in ef.CRITERIOS_TEC},
-                    "de_dia": dia.isoformat()})
+                    "paginas": paginas, "articulo": art, "subtema": temas.subtema_tec(e.texto),
+                    "fotos_libres": libres, "puntaje": n.get("puntaje"),
+                    "notas": {k: n.get(k) for k in ef.CRITERIOS_TEC}, "de_dia": dia.isoformat()})
     return out
 
 

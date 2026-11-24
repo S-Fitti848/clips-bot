@@ -300,6 +300,15 @@ class Wiki:
                 return l.get("*")
         return None
 
+    def en_ingles(self, titulo_es: str) -> str | None:
+        """El artículo equivalente en en.wikipedia (Santi, 2026-11-24: buscar fotos con el nombre en inglés)."""
+        d = self._get(API.format(lang="es"), {"action": "query", "format": "json", "prop": "langlinks",
+                                              "lllang": "en", "redirects": 1, "titles": titulo_es})
+        for p in d["query"]["pages"].values():
+            for l in p.get("langlinks") or []:
+                return l.get("*")
+        return None
+
     def archivos(self, lang: str, titulo: str) -> list[str]:
         d = self._get(API.format(lang=lang), {"action": "query", "format": "json", "prop": "images",
                                               "imlimit": 50, "redirects": 1, "titles": titulo})
@@ -488,6 +497,42 @@ def fotos_previas(wiki: "Wiki", e: "Evento", fotos_articulo: list) -> int:
         log.info("chequeo previo de fotos: Commons «%s» falló (%s)", titulo, str(err)[:80])
         return len(vistos) + PRECHEQUEO_MIN     # sin datos no se descarta
     return len(vistos | {clave_archivo(f.archivo) for f in nuevas})
+
+
+def fotos_libres(wiki: "Wiki", e: "Evento", minimo: int, fuentes=None) -> int:
+    """Fotos libres que hay para la historia, SIN Claude ni descargas (Santi, 2026-11-24: "el banco, comprobando antes
+    que tengan fotos libres suficientes, sin gastar en Claude para el control"): las del artículo y de Commons
+    (`fotos_previas`) y, si no llegan a `minimo`, las de Openverse (Flickr CC, museos), Flickr e Internet Archive con el
+    nombre del artículo (también en inglés). Corta apenas llega a `minimo`."""
+    fotos, _ = fotos_del_evento(wiki, e)
+    n = fotos_previas(wiki, e, fotos)
+    if n >= minimo:
+        return n
+    from . import fuentes_fotos
+
+    nombres = [e.paginas[0].replace("_", " ")]
+    if e.lang == "es":
+        try:
+            en = wiki.en_ingles(e.paginas[0])
+        except Exception:  # noqa: BLE001
+            en = None
+        if en:
+            nombres.insert(0, en.replace("_", " "))
+    otras = fuentes or fuentes_fotos.Fuentes()
+    vistos = set()
+    # Cada fuente directo (sin `buscar`): no toca la corrida de fotos del video que se esté armando en paralelo.
+    for fuente in (otras.openverse, otras.flickr, otras.archive):
+        for q in dict.fromkeys(re.sub(r"\s*\(.*?\)", "", x).strip() for x in nombres):
+            try:
+                halladas = fuente(q)
+            except Exception:  # noqa: BLE001 — una fuente caída no cuenta
+                continue
+            for h in halladas:
+                if h.get("url") and h.get("licencia") and not _NO_FOTO.search(str(h.get("epigrafe") or "")):
+                    vistos.add(h.get("archivo"))
+            if n + len(vistos) >= minimo:
+                return n + len(vistos)
+    return n + len(vistos)
 
 
 def minimo_tec(subtema: str | None) -> float:
@@ -2133,9 +2178,13 @@ def fotos_para_guion(wiki: Wiki, cliente, e: Evento, g: Guion, fotos_articulo: l
                      descartadas: set[int] | None = None, videos: bool = False,
                      buscador=None, fuentes=None,
                      tope_s: float | None = None, elector=None,
-                     segunda: bool = False, forzadas: dict | None = None) -> tuple[list[Foto], Guion]:
+                     segunda: bool = False, forzadas: dict | None = None,
+                     flojas: list[int] | None = None, puntual: dict | None = None) -> tuple[list[Foto], Guion]:
     """`segunda`: la segunda búsqueda del control de calidad (ver fotos_con_control). `forzadas` ({frase: foto}):
-    las frases reescritas para hablar de una foto (plan B, 2026-11-23) van primero con esa foto.
+    las frases reescritas para hablar de una foto (plan B, 2026-11-23) van primero con esa foto. `flojas` (con
+    `segunda`): las frases que en la primera vuelta se quedaron sin foto real (o con una que no mostraba lo que dicen):
+    se buscan otra vez con otras palabras (el nombre del producto o la persona, en inglés, con el modelo y el año) en
+    Commons y en todas las otras fuentes (Santi, 2026-11-24); `puntual` ({frase: (consultas, fotos nuevas)}) lo anota.
 
     Busca candidatas para cada frase (las del artículo + Commons con su `mostrar`), las baja,
     Gemini elige, y arma la foto de cada frase con las reglas de `ilustrar`. Devuelve el pool (las
@@ -2256,6 +2305,29 @@ def fotos_para_guion(wiki: Wiki, cliente, e: Evento, g: Guion, fotos_articulo: l
                          if h["fuente"] == "pexels"]
         propias.append([i for i in sumar(halladas, len(halladas) if orden else FOTOS_BUSQUEDA_MAX)
                         if i not in descartadas])
+    if segunda and flojas:
+        for i in flojas:
+            if not 0 <= i < len(propias) or corrida.vencida():
+                continue
+            qs = consultas_frase(wiki, e, g, i)
+            halladas = []
+            for q in qs[:4]:
+                if len(halladas) >= FOTOS_PUNTUAL_FRASE or corrida.vencida():
+                    break
+                nuevas, desc = filtrar_infos(wiki, "commons", wiki.buscar_commons(q), f"Commons (puntual): {q}",
+                                             e.anio)
+                for k_, v in desc.items():
+                    descartes[k_] = descartes.get(k_, 0) + v
+                halladas += [f for f in nuevas if f.archivo not in {h.archivo for h in halladas}]
+            if len(halladas) < FOTOS_PUNTUAL_FRASE and not corrida.vencida():
+                # Openverse (Flickr CC, museos), Smithsonian, Europeana, Flickr e Internet Archive; nada de stock
+                for h in otras.buscar(qs, False, False, FOTOS_PUNTUAL_FRASE - len(halladas), avisar):
+                    halladas.append(_foto_de(h, qs[0]))
+            nuevas_idx = [x for x in sumar(halladas, FOTOS_PUNTUAL_FRASE) if x not in descartadas]
+            propias[i] = list(dict.fromkeys(nuevas_idx + propias[i]))
+            if puntual is not None:
+                puntual[i] = (qs[:4], len(nuevas_idx))
+            avisar(f"    fotos: frase {i + 1} buscada otra vez ({' | '.join(qs[:3])}): +{len(nuevas_idx)}")
     # Regla fija de época: las fotos sacadas más de MARGEN_EPOCA años después del hecho no son
     # candidatas de las frases del pasado. Las del artículo del hecho quedan de respaldo igual
     # (de_reserva): antes una del artículo repetida que una moderna.
@@ -2509,6 +2581,42 @@ def consultas_segunda(wiki: "Wiki", e: "Evento") -> list[str]:
     return list(dict.fromkeys(out))[:10]
 
 
+FOTOS_PUNTUAL_FRASE = 5     # fotos nuevas por frase floja en la búsqueda puntual (Santi, 2026-11-24)
+
+
+def consultas_frase(wiki: "Wiki", e: "Evento", g: "Guion", i: int) -> list[str]:
+    """Otras palabras para buscar la foto de una frase que se quedó sin una (Santi, 2026-11-24: "el nombre del producto,
+    el modelo, el año, en inglés"): el nombre del artículo del hecho (y su título en inglés) con las claves de esa frase
+    o con el año, ese nombre con la cosa que se ve, y lo que la frase muestra sin el año. Nunca la cosa genérica sola:
+    eso trae fotos de banco que no son ESE producto ni ESA persona."""
+    from .videos_libres import sin_anios
+
+    nombres = []
+    for t in e.paginas[:2]:
+        nombres.append(t.replace("_", " "))
+        if e.lang == "es":
+            try:
+                en = wiki.en_ingles(t)
+            except Exception:  # noqa: BLE001 — sin el título en inglés, con el de siempre
+                en = None
+            if en:
+                nombres.append(en.replace("_", " "))
+    nombres = [re.sub(r"\s*\(.*?\)", "", n).strip() for n in dict.fromkeys(nombres)]
+    nombres = list(dict.fromkeys(n for n in nombres if n))
+    frase = _norm(g.frases[i]) if i < len(g.frases) else ""
+    claves = [c for c in g.claves if _norm(c) and _norm(c) in frase]
+    mostrar = sin_anios(g.mostrar[i]) if i < len(g.mostrar) else ""
+    obj = sin_anios(g.objeto[i]) if i < len(g.objeto) else ""
+    nombres = nombres[:3]
+    # de la más puntual a la más general: el modelo, el año, lo que muestra la frase, la cosa con su nombre, el nombre
+    out = [f"{n} {c}" for n in nombres for c in claves[:2] if _norm(c) not in _norm(n)]
+    out += [f"{n} {e.anio}" for n in nombres if e.anio]
+    out += [mostrar] if mostrar else []
+    out += [f"{n} {obj}" for n in nombres if obj]
+    out += nombres
+    return [q for q in dict.fromkeys(" ".join(x.split()) for x in out) if q][:10]
+
+
 class FraseSinFoto(NarrarError):
     """Una frase (del principio: no hay anterior que alargar) sin ninguna foto posible. Antes era un ValueError que
     cortaba toda la propuesta (el 20 y el 21/11 no salió ni tecnología ni Latinoamérica): ahora primero se reescribe
@@ -2598,48 +2706,85 @@ MAX_REESCRITAS = 4     # frases que el plan B reescribe de una vez (más que eso
 def fotos_con_control(wiki: "Wiki", cliente, e: "Evento", g: "Guion", fotos_articulo: list,
                       carpeta: Path, avisar=log.info, elector=None, elector_reintento=None,
                       reescribir=None, **k) -> tuple[list, "Guion"]:
-    """fotos_para_guion con el control de calidad: si no llega al 70 % de fotos reales (o a 4 fotos),
-    una SEGUNDA búsqueda con Claude: más fotos reales (Commons con el título de cada artículo del
-    hecho), sin la regla de época, y en las frases centrales también el retrato del protagonista, el
-    lugar, un monumento o el documento del hecho. Si tampoco llega, el PLAN B (Santi, 2026-11-23: "si una frase se
-    queda sin foto, primero reescribir esa frase para que hable de algo que sí tenga foto; la tarjeta, último
-    recurso"): las frases sin foto real se reescriben (Haiku, un pedido) hacia una foto que ya pasó los filtros y se
-    eligen las fotos otra vez. Si tampoco llega, la excepción sigue de largo y quien llama pasa al hecho siguiente."""
+    """fotos_para_guion con el control de calidad. Si falla, primero se arregla lo que falló, en orden (Santi,
+    2026-11-24: "que no pase a otra historia a ciegas"):
+    1. SEGUNDA búsqueda con Claude: Commons con el título de cada artículo del hecho, sin la regla de época, y las
+       frases que se quedaron sin foto real (o con una que no mostraba lo que dicen: el elector la descarta) se buscan
+       otra vez, una por una, con otras palabras (el producto o la persona, en inglés, con el modelo y el año) en
+       Commons y en todas las otras fuentes (`consultas_frase`).
+    2. PLAN B (Santi, 2026-11-21/23): las frases que siguen sin foto real se reescriben (Haiku, un pedido) para que
+       hablen de algo que muestra una foto que ya pasó los filtros, y se eligen las fotos otra vez.
+    3. Recién si nada de eso funciona, la excepción sigue de largo (quien llama pasa a otra historia), con
+       `.intentos`: qué falló y qué se intentó, para la bitácora."""
+    pasos: list[str] = []
+    try:
+        return _fotos_con_control(wiki, cliente, e, g, fotos_articulo, carpeta, avisar, elector, elector_reintento,
+                                  reescribir, pasos, **k)
+    except NarrarError as err:
+        if not getattr(err, "intentos", None):
+            err.intentos = pasos + [f"final: {err}"]
+        raise
+
+
+def _texto_puntual(puntual: dict) -> str:
+    if not puntual:
+        return "búsqueda puntual: ninguna frase sin foto"
+    partes = [f"frase {i + 1} con «{(qs or [''])[0]}» +{n}" for i, (qs, n) in sorted(puntual.items())]
+    return "búsqueda puntual en todas las fuentes: " + "; ".join(partes)
+
+
+def _fotos_con_control(wiki, cliente, e, g, fotos_articulo, carpeta, avisar, elector, elector_reintento,
+                       reescribir, pasos: list, **k):
     try:
         return fotos_para_guion(wiki, cliente, e, g, fotos_articulo, carpeta, avisar, elector=elector, **k)
     except FraseSinFoto as err:
+        pasos.append(f"1.ª búsqueda: {err}")
         # Plan B (Santi, 2026-11-21): la frase sin foto se reescribe para hablar de algo que sí tiene foto
         forzadas: dict = {}
         if reescribir is None or not reescribir(err.guion, err.frases, err.pool, forzadas):
+            pasos.append(f"reescribir la frase {err.frases[0] + 1} hacia una foto: no se pudo")
+            err.intentos = pasos + [f"final: {err}"]
             raise
+        pasos.append(f"reescrita la frase {[i + 1 for i in err.frases]} hacia una foto")
         anterior, pool_antes = err.guion, err.pool
         k2 = {**k, "pool": pool_antes, "descartadas": set(anterior.descartadas), "forzadas": forzadas}
         try:
             return fotos_para_guion(wiki, cliente, e, anterior, fotos_articulo, carpeta, avisar, elector=elector,
                                     **k2)
         except (FotosInsuficientes, FotosNoAlcanzan, PocasFotos) as err2:
+            pasos.append(f"con la frase reescrita: {err2}")
             avisar(f"  {err2}: segunda búsqueda de fotos con Claude")
             anterior, pool_antes = err2.guion, err2.pool
     except (FotosInsuficientes, FotosNoAlcanzan, PocasFotos) as err:
+        pasos.append(f"1.ª búsqueda: {err}")
         avisar(f"  {err}: segunda búsqueda de fotos con Claude")
         anterior, pool_antes = err.guion, err.pool
+    puntual: dict = {}
     k = {**k, "pool": pool_antes, "descartadas": set(anterior.descartadas)}
     try:
         return fotos_para_guion(wiki, cliente, e, anterior, fotos_articulo, carpeta, avisar,
-                                elector=elector_reintento or elector, segunda=True, **k)
+                                elector=elector_reintento or elector, segunda=True,
+                                flojas=frases_flojas(anterior, pool_antes), puntual=puntual, **k)
     except (FotosInsuficientes, FotosNoAlcanzan) as err3:
+        pasos.append(f"2.ª búsqueda ({_texto_puntual(puntual)}): {err3}")
         idxs = frases_flojas(err3.guion, err3.pool)
         forzadas = {}
         if reescribir is None or not idxs or not reescribir(err3.guion, idxs, err3.pool, forzadas):
+            pasos.append(f"reescribir las frases {[i + 1 for i in idxs]} hacia una foto: no se pudo")
+            err3.intentos = list(pasos)
             raise
+        pasos.append(f"reescritas las frases {[i + 1 for i in idxs]} hacia fotos que hay")
         avisar(f"  plan B: reescribí las frases {[i + 1 for i in idxs]} hacia fotos que hay; elijo de nuevo")
         k3 = {**k, "pool": err3.pool, "descartadas": set(err3.guion.descartadas), "forzadas": forzadas}
         try:
             return fotos_para_guion(wiki, cliente, e, err3.guion, fotos_articulo, carpeta, avisar,
                                     elector=elector_reintento or elector, segunda=True, **k3)
         except (FotosInsuficientes, FotosNoAlcanzan) as err4:
+            pasos.append(f"con las frases reescritas: {err4}")
             # el que más se acercó, para que `proponer` pueda decidir con el mejor de los dos
-            raise (err4 if getattr(err4, "pct", 0) >= getattr(err3, "pct", 0) else err3) from err4
+            mejor = err4 if getattr(err4, "pct", 0) >= getattr(err3, "pct", 0) else err3
+            mejor.intentos = list(pasos)
+            raise mejor from err4
 
 
 def _control_real(g, pct: float, avisar=log.info) -> None:
@@ -3110,10 +3255,11 @@ def proponer(wiki: Wiki, cliente, dia: date, carpeta: Path, avisar=log.info,
              tema: str = "", corto: bool = False, texto=None, mas_video: bool = False,
              puntuador=None, piso: float | None = None, banco: list[dict] | None = None,
              solo_banco: bool = False, pesos: dict | None = None, evitar=(), sin_fotos=(),
-             al_fallar_fotos=None) -> Propuesta:
+             al_fallar_fotos=None, max_guiones: int = MAX_GUIONES) -> Propuesta:
     """`sin_fotos` (Santi, 2026-11-23): artículos que ya fallaron por fotos (no se vuelven a intentar);
     `al_fallar_fotos(articulo, motivo)`: se llama cuando uno falla por fotos (o no pasa el chequeo previo), para
-    anotarlo. Antes de pedir el guion, `fotos_previas` cuenta las fotos usables sin Claude (artículo + Commons).
+    anotarlo; con una historia del banco, también si falla el guion (Santi, 2026-11-24: "nunca una que ya falló").
+    `max_guiones`: cuántas historias se intentan (la reserva, de a una: cada intento cuenta en su tope del día). Antes de pedir el guion, `fotos_previas` cuenta las fotos usables sin Claude (artículo + Commons).
 
     `solo_banco` (Santi, 2026-11-23, la reserva de tecnología): sin los hechos del día, directo del `banco` (historias
     que no dependen de la fecha). `pesos` ({subtema: bonus}, temas.py): los subtemas que más rinden van primero.
@@ -3293,7 +3439,8 @@ def proponer(wiki: Wiki, cliente, dia: date, carpeta: Path, avisar=log.info,
             fallas.append(f"{e.anio}: {pocas}")
             bitacora.descarte(f"{e.anio} {e.texto[:90]}", str(pocas), "fotos", desde_fila=fila_h,
                               buscado=list(getattr(pocas.guion, "mostrar", []) or []),
-                              encontrado=f"{pocas.disponibles} fotos de época que sirven ({len(pocas.pool)} en el pool)")
+                              encontrado=f"{pocas.disponibles} fotos de época que sirven ({len(pocas.pool)} en el pool)",
+                              intentos=getattr(pocas, "intentos", None))
             if respaldo_sirve(pocas) and (respaldo is None or pocas.disponibles > respaldo[3]):
                 respaldo = (e, fuente, pocas, pocas.disponibles)
             if al_fallar_fotos:
@@ -3305,11 +3452,12 @@ def proponer(wiki: Wiki, cliente, dia: date, carpeta: Path, avisar=log.info,
             if isinstance(err, FotosInsuficientes) and (insuf is None or err.pct > insuf[0].pct):
                 insuf = (err, e, fuente, i)
             en_fotos = g is not None
-            if en_fotos and al_fallar_fotos:
+            if al_fallar_fotos and (en_fotos or (del_banco and i in del_banco)):
                 al_fallar_fotos(articulo, str(err))
             bitacora.descarte(f"{e.anio} {e.texto[:90]}", str(err), "fotos" if en_fotos else "guion", desde_fila=fila_h,
                               buscado=list(g.mostrar) if en_fotos else None,
-                              encontrado=f"{len(fotos)} fotos del artículo; {str(err)[:150]}" if en_fotos else "")
+                              encontrado=f"{len(fotos)} fotos del artículo; {str(err)[:150]}" if en_fotos else "",
+                              intentos=getattr(err, "intentos", None))
             return None
         for k in g.descartadas:        # para poder juzgar si el descarte visual es razonable
             if 0 <= k < len(pool):
@@ -3337,7 +3485,7 @@ def proponer(wiki: Wiki, cliente, dia: date, carpeta: Path, avisar=log.info,
                 cola.append(x)
                 extra_aviso[x[0]] = f"⚠️ salió con puntaje {nota:.1f} (mínimo {PUNTAJE_TEC_MIN:g})".replace(".", ",", 1)
     for i, articulo in cola:
-        if guiones >= MAX_GUIONES:
+        if guiones >= max_guiones:
             break
         if i in extra_aviso:
             aviso_puntaje = extra_aviso[i]
@@ -3349,7 +3497,7 @@ def proponer(wiki: Wiki, cliente, dia: date, carpeta: Path, avisar=log.info,
     if tema == "tecnologia" and banco and not elegidos_banco and usar_banco("los de hoy no llegaron a las fotos"):
         guiones = 0
         for i, articulo in list(elegidos_banco):
-            if guiones >= MAX_GUIONES:
+            if guiones >= max_guiones:
                 break
             prop = intentar(i, articulo)
             if prop is not None:

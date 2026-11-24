@@ -266,8 +266,10 @@ def costo_entre(conn, desde: int, hasta: int) -> float:
 
 
 def descarte(candidato: str, motivo: str, paso_: str | None = None, desde_fila: int | None = None,
-             costo: float | None = None, buscado: list | None = None, encontrado: str = "") -> None:
+             costo: float | None = None, buscado: list | None = None, encontrado: str = "",
+             intentos: list | None = None) -> None:
     """Un candidato que se cae antes de armar el video. `paso_`: si no viene, sale de la etapa en curso.
+    `intentos` (Santi, 2026-11-24): qué se intentó para arreglarlo antes de dejarlo, en orden.
     El costo: `costo` (una parte de un pedido compartido) o lo gastado desde `desde_fila` hasta ahora."""
     bit = _ACTIVA
     if bit is None or bit.conn is None:
@@ -280,6 +282,8 @@ def descarte(candidato: str, motivo: str, paso_: str | None = None, desde_fila: 
         det = {}
         if buscado is not None or encontrado:
             det = {"buscado": [str(x) for x in (buscado or [])][:15], "encontrado": str(encontrado)[:300]}
+        if intentos:
+            det["intentos"] = [str(x)[:300] for x in intentos][:10]
         conn.execute("INSERT INTO candidatos_descartados (video_id, bot, canal, formato, dia, ts, candidato, paso, "
                      "motivo, costo_usd, detalle) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
                      (bit.id, BOT, bit.canal, bit.formato, (ahora_utc() - timedelta(hours=3)).date().isoformat(),

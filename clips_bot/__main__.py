@@ -2745,6 +2745,7 @@ def escuchar_telegram(settings: Settings, timeout_poll: int = 50) -> int:
             _seguro(tg, str(chat_ultimo or ""), "los videos esperando aprobación", _espera_tick, conn, tg)
             _seguro(tg, str(chat_ultimo or ""), "el informe de fotos y reserva", _informe_fotos_tick, conn, tg)
             _seguro(tg, str(chat_ultimo or ""), "el tope diario de Claude", _tope_dia_tick, conn, tg)
+            _seguro(tg, str(chat_ultimo or ""), "las fallas de la semana", _fallas_semana_tick, conn, tg)
             _seguro(tg, str(chat_ultimo or ""), "el video de marcas", _auto(_animacion_tick), conn, tg, settings)
             _seguro(tg, str(chat_ultimo or ""), "el calendario", _calendario_tick, conn, tg, settings)
             _seguro(tg, str(chat_ultimo or ""), "la medición de Pequeña Historia",
@@ -4366,7 +4367,7 @@ def _reserva_armar(conn, tg: TelegramClient, settings: Settings, hoy) -> str | N
                         tema="tecnologia", corto=cfg.corto, texto=_texto_efemeride(settings, gemini),
                         mas_video=cfg.estilo_nuevo, puntuador=_puntuador(settings),
                         banco=banco_mod.leer(conn, "tecnologia"), solo_banco=True, pesos=_pesos_tec(conn), evitar=_marcas_evitar(conn),
-                        **_sin_fotos_tec(conn))
+                        max_guiones=1, **_sin_fotos_tec(conn))
     except (NarrarError, ef.WikiError, GeminiError) as e:
         bitacora.fallo("", str(e))
         bitacora.cerrar(conn, "fallido")
@@ -4377,15 +4378,18 @@ def _reserva_armar(conn, tg: TelegramClient, settings: Settings, hoy) -> str | N
     estado = {"propuesta": p.__dict__, "carpeta": str(carpeta), "chat_id": ""}
     db.set_valor(conn, f"efe:{token}", json.dumps(estado, ensure_ascii=False))
     bitacora.dato(titulo=(p.guion or {}).get("titulo", ""))
+    articulo = ((p.evento or {}).get("paginas") or [""])[0]
     r = _efe_armar(conn, tg, None, token, settings, auto=True, reserva=True)
     if not isinstance(r, dict):
         reserva_tec.anotar_falla(conn, hoy)
+        banco_mod.marcar_sin_fotos(conn, "tecnologia", articulo, f"no salió el video: {str(r)[:120]}")
         db.borrar_valor(conn, f"efe:{token}")
         log.info("reserva de tecnología: no salió el video (%s)", r)
         return str(r)
     if calidad.retener("pequena_historia", r["fallas"], r["revisado"]):
         bitacora.cerrar(conn, "descartado")
         reserva_tec.anotar_falla(conn, hoy)
+        banco_mod.marcar_sin_fotos(conn, "tecnologia", articulo, "debajo del estándar mínimo")
         db.borrar_valor(conn, f"efe:{token}")
         log.info("reserva de tecnología: %s no llega al estándar mínimo, no entra", r["clip_id"])
         return "debajo del estándar"
@@ -5037,6 +5041,17 @@ def _informe_fotos_tick(conn, tg, ahora=None) -> None:
         return
     db.borrar_valor(conn, reserva_tec.INFORME)
     tg.send_message(DUENO, reserva_tec.informe(conn, date.fromisoformat(dia), OUTPUT_DIR))
+
+
+def _fallas_semana_tick(conn, tg, ahora=None) -> None:
+    """Los viernes desde las 10:00 (Santi, 2026-11-24): los motivos de falla de la semana, para ver qué mejorar."""
+    from . import fallas
+
+    ahora = ahora or datetime.now(AR)
+    if not fallas.toca(ahora.date(), ahora.strftime("%H:%M"), db.get_valor(conn, fallas.ENVIADO)):
+        return
+    db.set_valor(conn, fallas.ENVIADO, ahora.date().isoformat())
+    _aviso(tg, fallas.resumen(conn, ahora.date()))
 
 
 def _tope_dia_tick(conn, tg, ahora=None) -> None:
