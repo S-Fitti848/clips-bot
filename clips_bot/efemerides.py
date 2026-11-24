@@ -2492,10 +2492,11 @@ def aviso_fotos(g) -> str:
             f"salió con el mínimo bajado a {g.umbral_fotos * 100:.0f} %, el resto con mapa, retratos y texto)")
 
 
-def aceptar_relajado(err: "FotosInsuficientes", avisar=log.info) -> bool:
-    """Si las fotos de `err` llegan al 50 %, el guion queda con el mínimo relajado y sirve."""
+def aceptar_relajado(err: "FotosInsuficientes", avisar=log.info, piso: float = UMBRAL_FOTOS_PISO) -> bool:
+    """Si las fotos de `err` llegan al 50 % (o a `piso`: la reserva de tecnología pide 60), el guion queda con el
+    mínimo relajado y sirve."""
     u = umbral_relajado(err.pct)
-    if u is None:
+    if u is None or err.pct < piso - 1e-9:
         return False
     err.guion.umbral_fotos = u
     err.guion.fotos_reales = round(err.pct, 3)
@@ -3255,7 +3256,8 @@ def proponer(wiki: Wiki, cliente, dia: date, carpeta: Path, avisar=log.info,
              tema: str = "", corto: bool = False, texto=None, mas_video: bool = False,
              puntuador=None, piso: float | None = None, banco: list[dict] | None = None,
              solo_banco: bool = False, pesos: dict | None = None, evitar=(), sin_fotos=(),
-             al_fallar_fotos=None, max_guiones: int = MAX_GUIONES) -> Propuesta:
+             al_fallar_fotos=None, max_guiones: int = MAX_GUIONES,
+             piso_fotos: float = UMBRAL_FOTOS_PISO) -> Propuesta:
     """`sin_fotos` (Santi, 2026-11-23): artículos que ya fallaron por fotos (no se vuelven a intentar);
     `al_fallar_fotos(articulo, motivo)`: se llama cuando uno falla por fotos (o no pasa el chequeo previo), para
     anotarlo; con una historia del banco, también si falla el guion (Santi, 2026-11-24: "nunca una que ya falló").
@@ -3502,7 +3504,7 @@ def proponer(wiki: Wiki, cliente, dia: date, carpeta: Path, avisar=log.info,
             prop = intentar(i, articulo)
             if prop is not None:
                 return prop
-    if insuf and not respaldo and aceptar_relajado(insuf[0], avisar):
+    if insuf and not respaldo and aceptar_relajado(insuf[0], avisar, piso_fotos):
         err, e, fuente, i = insuf
         n = notas.get(i) or {}
         local = ({"puntaje": n.get("puntaje"), "puntajes": {k: n.get(k) for k in CRITERIOS_TEC},

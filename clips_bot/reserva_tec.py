@@ -73,11 +73,42 @@ def anotar_falla(conn, dia: date) -> None:
     db.set_valor(conn, FALLAS.format(dia.isoformat()), str(fallas_hoy(conn, dia) + 1))
 
 
+# Santi, 2026-11-24: "si un video queda entre 60 y 69 % de fotos reales pero pasa todas las otras reglas del estándar,
+# que entre igual a la reserva marcado ⚠️ fotos 66 %, así yo decido al aprobarlo. Con menos de 60 %, no."
+FOTOS_RESERVA_MIN = 0.60
+FOTOS_OK = 0.70
+
+
+def entrada(pct: float | None, fallas: list[dict], revisado: bool) -> tuple[bool, str]:
+    """(¿entra a la reserva?, marca para el mensaje). `pct`: fotos reales del video terminado (0-1)."""
+    from . import calidad
+
+    if pct is not None and pct < FOTOS_RESERVA_MIN - 1e-9:
+        return False, ""
+    if pct is not None and pct < FOTOS_OK - 1e-9:
+        otras = [f for f in fallas or [] if f.get("id") != "PH-21"]
+        if not revisado or otras:
+            return False, ""
+        return True, f"⚠️ fotos {round(pct * 100)} %"
+    return not calidad.retener("pequena_historia", fallas, revisado), ""
+
+
 PAUSA = "reserva_tec_pausa"   # bot_estado: "1" = no se arma nada (Santi, 2026-11-23: "pausá la reserva hasta el deploy")
 
 
 def pausada(conn) -> bool:
     return (db.get_valor(conn, PAUSA) or "") == "1"
+
+
+MARCADOS = "reserva_tec_marcados:{}"   # bot_estado: cuántos entraron con 60-69 % de fotos ese día
+
+
+def anotar_marcado(conn, dia: date) -> None:
+    db.set_valor(conn, MARCADOS.format(dia.isoformat()), str(marcados(conn, dia) + 1))
+
+
+def marcados(conn, dia: date) -> int:
+    return int(db.get_valor(conn, MARCADOS.format(dia.isoformat())) or 0)
 
 
 def entra_en_tope(conn, dia: date) -> bool:
@@ -135,3 +166,18 @@ def informe(conn, dia: date, raiz_output) -> str:
         f"🔧 Claude Code: fotos y reserva de tecnología, {dia:%d/%m} (primer día con el chequeo previo y el plan B).",
         f"Fotos reales: {medio} del tiempo en {len(pcts)} videos (antes {ANTES_PCT_REAL} %).",
         f"Reserva: {len(filas)} intentos, {entraron} entraron, {usd(gasto)} (el 23/11: {usd(ANTES_RESERVA_USD)})."])
+
+
+INFORME_MARCADOS = "informe_marcados_pedido"   # bot_estado: el día (AR) a informar, desde las 22:10
+
+
+def informe_marcados(conn, dia: date) -> str:
+    """Santi, 2026-11-24: "avisame mañana cuántos entraron" (con 60-69 % de fotos reales, marcados)."""
+    filas = conn.execute("select estado from videos_registro where dia = ? and formato = 'tecnologia_reserva'",
+                         (dia.isoformat(),)).fetchall()
+    entraron = sum(1 for (e,) in filas if e == "reserva")
+    m = marcados(conn, dia)
+    bajos = conn.execute("select count(*) from candidatos_descartados where dia = ? and formato = 'tecnologia_reserva' "
+                         "and motivo like '%(menos de 60 %)%'", (dia.isoformat(),)).fetchone()[0]
+    return (f"🔧 Claude Code: reserva de tecnología del {dia:%d/%m}: {len(filas)} intentos, {entraron} entraron "
+            f"({m} con ⚠️ fotos 60-69 %, esperan tu decisión al aprobarlos); {bajos} afuera por menos de 60 %.")

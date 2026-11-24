@@ -2746,6 +2746,7 @@ def escuchar_telegram(settings: Settings, timeout_poll: int = 50) -> int:
             _seguro(tg, str(chat_ultimo or ""), "el informe de fotos y reserva", _informe_fotos_tick, conn, tg)
             _seguro(tg, str(chat_ultimo or ""), "el tope diario de Claude", _tope_dia_tick, conn, tg)
             _seguro(tg, str(chat_ultimo or ""), "las fallas de la semana", _fallas_semana_tick, conn, tg)
+            _seguro(tg, str(chat_ultimo or ""), "el informe de la reserva marcada", _informe_marcados_tick, conn, tg)
             _seguro(tg, str(chat_ultimo or ""), "el video de marcas", _auto(_animacion_tick), conn, tg, settings)
             _seguro(tg, str(chat_ultimo or ""), "el calendario", _calendario_tick, conn, tg, settings)
             _seguro(tg, str(chat_ultimo or ""), "la medición de Pequeña Historia",
@@ -4314,7 +4315,8 @@ def _entregar_de_reserva(conn, tg: TelegramClient, chats, settings: Settings, it
     nota = f"📦 De la reserva de tecnología (armado el {armado[8:10]}/{armado[5:7]})" if armado else ""
     _efe_entregar(conn, tg, chats, item["token"], settings, prop, meta, item.get("fallas") or [],
                   item.get("corregidas") or [], bool(item.get("revisado")), item.get("motor") or "",
-                  item.get("relajado") or "", auto=True, costo=item.get("costo"), nota=nota)
+                  item.get("relajado") or "", auto=True, costo=item.get("costo"), nota=nota,
+                  marca=item.get("marca") or "")
     log.info("tecnología: sale de la reserva %s (%s)", item["clip_id"], item.get("titulo"))
     return True
 
@@ -4367,7 +4369,7 @@ def _reserva_armar(conn, tg: TelegramClient, settings: Settings, hoy) -> str | N
                         tema="tecnologia", corto=cfg.corto, texto=_texto_efemeride(settings, gemini),
                         mas_video=cfg.estilo_nuevo, puntuador=_puntuador(settings),
                         banco=banco_mod.leer(conn, "tecnologia"), solo_banco=True, pesos=_pesos_tec(conn), evitar=_marcas_evitar(conn),
-                        max_guiones=1, **_sin_fotos_tec(conn))
+                        max_guiones=1, piso_fotos=reserva_tec.FOTOS_RESERVA_MIN, **_sin_fotos_tec(conn))
     except (NarrarError, ef.WikiError, GeminiError) as e:
         bitacora.fallo("", str(e))
         bitacora.cerrar(conn, "fallido")
@@ -4386,16 +4388,25 @@ def _reserva_armar(conn, tg: TelegramClient, settings: Settings, hoy) -> str | N
         db.borrar_valor(conn, f"efe:{token}")
         log.info("reserva de tecnología: no salió el video (%s)", r)
         return str(r)
-    if calidad.retener("pequena_historia", r["fallas"], r["revisado"]):
+    entra, marca = reserva_tec.entrada(r.get("fotos_pct"), r["fallas"], r["revisado"])
+    if not entra:
+        pct = r.get("fotos_pct")
+        motivo = (f"{pct * 100:.0f} % de fotos reales" + (" (menos de 60 %)" if pct < reserva_tec.FOTOS_RESERVA_MIN
+                                                          else " y no cumple otras reglas del estándar")
+                  if pct is not None and pct < reserva_tec.FOTOS_OK else "debajo del estándar mínimo")
+        bitacora.descarte(r.get("titulo") or articulo, motivo, "otro",
+                          intentos=[f"{f.get('id')} {f.get('que') or ''}".strip() for f in r["fallas"]][:8])
         bitacora.cerrar(conn, "descartado")
         reserva_tec.anotar_falla(conn, hoy)
-        banco_mod.marcar_sin_fotos(conn, "tecnologia", articulo, "debajo del estándar mínimo")
+        banco_mod.marcar_sin_fotos(conn, "tecnologia", articulo, motivo)
         db.borrar_valor(conn, f"efe:{token}")
-        log.info("reserva de tecnología: %s no llega al estándar mínimo, no entra", r["clip_id"])
-        return "debajo del estándar"
+        log.info("reserva de tecnología: %s no entra (%s)", r["clip_id"], motivo)
+        return motivo
     bitacora.cerrar(conn, "reserva")
-    reserva_tec.agregar(conn, {**r, "token": token, "armado": hoy.isoformat(),
+    reserva_tec.agregar(conn, {**r, "token": token, "armado": hoy.isoformat(), "marca": marca,
                                "subtema": (p.local or {}).get("subtema")})
+    if marca:
+        reserva_tec.anotar_marcado(conn, hoy)
     log.info("reserva de tecnología: +1 %s «%s» (hay %d)", r["clip_id"], r["titulo"], len(reserva_tec.leer(conn)))
     return None
 
@@ -5054,6 +5065,16 @@ def _fallas_semana_tick(conn, tg, ahora=None) -> None:
     _aviso(tg, fallas.resumen(conn, ahora.date()))
 
 
+def _informe_marcados_tick(conn, tg, ahora=None) -> None:
+    """Una vez (Santi, 2026-11-24): el día pedido, desde las 22:10, cuántos de la reserva entraron con 60-69 % de fotos."""
+    dia = db.get_valor(conn, reserva_tec.INFORME_MARCADOS)
+    ahora = ahora or datetime.now(AR)
+    if not dia or ahora.date().isoformat() < dia or (ahora.date().isoformat() == dia and ahora.strftime("%H:%M") < "22:10"):
+        return
+    db.borrar_valor(conn, reserva_tec.INFORME_MARCADOS)
+    tg.send_message(DUENO, reserva_tec.informe_marcados(conn, date.fromisoformat(dia)))
+
+
 def _tope_dia_tick(conn, tg, ahora=None) -> None:
     """Santi, 2026-11-24: el tope de US$ 2,50 por día de producción; cuando empieza a recortar, una línea."""
     from . import presupuesto
@@ -5588,7 +5609,9 @@ def _efe_armar(conn, tg: TelegramClient, chat_id, token: str, settings: Settings
         from .process import guardar_meta
         ruta_meta = Path(estado["carpeta"]) / f"{meta['clip_id']}.json"
         guardar_meta(ruta_meta, meta)
+        pct_ = reserva_tec.pct_real((meta.get("efemeride") or {}).get("cortes") or [])
         return {"clip_id": meta["clip_id"], "meta": str(ruta_meta), "fallas": cal_fallas, "corregidas": cal_corregidas,
+                "fotos_pct": None if pct_ is None else round(pct_ / 100, 3),
                 "revisado": cal_revisado, "motor": motor, "relajado": relajado, "local": prop.local or {},
                 "costo": bitacora.costo_activo(), "titulo": (meta.get("textos") or {}).get("titulo", "")}
     return _efe_entregar(conn, tg, chat_id, token, settings, prop, meta, cal_fallas, cal_corregidas, cal_revisado,
@@ -5597,7 +5620,7 @@ def _efe_armar(conn, tg: TelegramClient, chat_id, token: str, settings: Settings
 
 def _efe_entregar(conn, tg: TelegramClient, chat_id, token: str, settings: Settings, prop, meta: dict,
                   cal_fallas: list, cal_corregidas: list, cal_revisado: bool, motor: str, relajado: str, auto: bool,
-                  costo: float | None = None, nota: str = ""):
+                  costo: float | None = None, nota: str = "", marca: str = ""):
     """La entrega de un video de Pequeña Historia ya armado (antes, el final de `_efe_armar`). `costo` y `nota`: los de
     la reserva de tecnología, que se armaron antes y se entregan el día que hacen falta."""
     from . import calidad
@@ -5658,6 +5681,8 @@ def _efe_entregar(conn, tg: TelegramClient, chat_id, token: str, settings: Setti
                                  retenido=retenido,
                                  etiqueta="🌎 Latinoamérica" if fb else "💻 Tecnología")
     motivo_ = aviso_corto.motivo_retenido("pequena_historia", cal_fallas, bajo) if retenido else ""
+    if marca:     # Santi, 2026-11-24: "⚠️ fotos 66 %" a la vista, para decidir al aprobarlo
+        linea_ = f"{linea_} · {marca}"
     enviar_clip(tg, chat_id, conn, meta["clip_id"], meta, 1, None,
                 encabezado=f"{encabezado}\n🎙 {html.escape(ef.texto_voz(motor))}", extra_filas=extra,
                 resumen=linea_, motivo=motivo_)

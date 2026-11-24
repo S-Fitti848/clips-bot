@@ -166,3 +166,20 @@ def test_banco_de_tecnologia_con_el_minimo_del_video_del_dia():
     assert banco.agregar(conn, "tecnologia", [{"id": "tec:a", "articulo": "a", "puntaje": 7.5},
                                               {"id": "tec:b", "articulo": "b", "puntaje": 7.25}]) == 1
     assert banco.agregar(conn, "latam", [{"id": "latam:a", "articulo": "a", "puntaje": 7.5}]) == 0
+
+
+def test_reserva_acepta_60_a_69_por_ciento_solo_si_pasa_todo_lo_demas():
+    falla = [{"id": "PH-05", "que": "x"}]
+    assert reserva_tec.entrada(0.66, [], True) == (True, "⚠️ fotos 66 %")
+    assert reserva_tec.entrada(0.66, [{"id": "PH-21"}], True) == (True, "⚠️ fotos 66 %")   # PH-21 es la de las fotos
+    assert reserva_tec.entrada(0.66, falla, True) == (False, "")
+    assert reserva_tec.entrada(0.66, [], False) == (False, "")      # sin revisión no se sabe si pasa lo demás
+    assert reserva_tec.entrada(0.59, [], True) == (False, "")
+    assert reserva_tec.entrada(0.80, falla, True) == (True, "")     # con 70 % o más, el estándar de siempre
+
+
+def test_la_propuesta_de_la_reserva_no_baja_de_60():
+    g = SimpleNamespace(umbral_fotos=0, fotos_reales=0)
+    assert not ef.aceptar_relajado(ef.FotosInsuficientes([], g, 0.56), lambda *_: None, piso=0.60)
+    assert ef.aceptar_relajado(ef.FotosInsuficientes([], g, 0.62), lambda *_: None, piso=0.60)
+    assert g.umbral_fotos == 0.6

@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-11-24 | **Versión:** v1.54.0 (desplegado) | **Modo:** Fase 2: corriendo solo en la Pi. **Rots APAGADO. Así Nació PAUSADO desde el 19/11** (vuelve con 1 por día, preparado la noche anterior, si 4 de 5 marcas nuevas dan 15/19 o más por menos de US$ 0,60). **Pequeña Historia: TECNOLOGÍA ES LA PRIORIDAD NÚMERO UNO desde el 23/11** (2 por día en YouTube, 11:00 y 20:00, con una reserva de 3 videos ya armados; el canal de YouTube es solo de tecnología) y **Latinoamérica 2 por día SOLO en Facebook** hasta el 15/12. Nada se publica solo desde el 17/11: llega con ✅ Publicar / ❌ Cancelar y sin respuesta no sale. Todo al privado de Santi
+**Snapshot:** 2026-11-24 | **Versión:** v1.55.0 (desplegado) | **Modo:** Fase 2: corriendo solo en la Pi. **Rots APAGADO. Así Nació PAUSADO desde el 19/11** (vuelve con 1 por día, preparado la noche anterior, si 4 de 5 marcas nuevas dan 15/19 o más por menos de US$ 0,60). **Pequeña Historia: TECNOLOGÍA ES LA PRIORIDAD NÚMERO UNO desde el 23/11** (2 por día en YouTube, 11:00 y 20:00, con una reserva de 3 videos ya armados; el canal de YouTube es solo de tecnología) y **Latinoamérica 2 por día SOLO en Facebook** hasta el 15/12. Nada se publica solo desde el 17/11: llega con ✅ Publicar / ❌ Cancelar y sin respuesta no sale. Todo al privado de Santi
 
 > **SI ESTÁS EMPEZANDO UNA SESIÓN NUEVA, LEÉ §10.** Ahí está qué está hecho, qué quedó a medias,
 > qué falta, y las trampas que ya nos mordieron.
@@ -273,6 +273,10 @@ servicio systemd separado: `clips-bot`).
   y no arranca si no entra en el tope de US$ 2,50 (`reserva_tec.COSTO_INTENTO` 0,35); una historia del banco que falla
   (fotos, guion, video o estándar) no se vuelve a intentar. Viernes desde las 10:00, el resumen de los motivos de falla
   de la semana (`fallas.py`).
+- **Reserva con 60-69 % de fotos reales (Santi, 2026-11-24):** entra igual si cumple TODAS las otras reglas del
+  estándar (con revisión hecha; PH-21 no cuenta), marcada "⚠️ fotos 66 %" en la línea corta del mensaje, y Santi decide
+  al aprobarla; con menos de 60 % no entra (la propuesta tampoco baja de 60: `proponer(piso_fotos=)`).
+  `reserva_tec.entrada`, `marcados`, informe de un día con `informe_marcados_pedido` (22:10).
 - **Banco de tecnología (Santi, 2026-11-24):** solo marcas, empresas y videojuegos (separados por palabras antes de
   puntuar) y solo con 6 o más fotos libres contadas sin Claude (`ef.fotos_libres`: artículo, Commons, Openverse, Flickr,
   Internet Archive; `banco.FOTOS_BANCO_MIN`), con el mismo mínimo de puntaje que el video del día (7,5; con 8 sumó 2
@@ -1374,6 +1378,8 @@ Problemas abiertos:
 
 ## 9. CHANGELOG
 
+- v1.55.0 (2026-11-24, noche) — Reserva de tecnología: entran los de 60-69 % de fotos reales que cumplen todo lo
+  demás, marcados "⚠️ fotos N %" (regla en §1). 2170 tests OK.
 - v1.54.0 (2026-11-24, tarde) — **Reintentos inteligentes, banco de tecnología con fotos comprobadas y ventilador** (reglas
   en §1). Las fallas del 23 y 24/11 eran todas de fotos (5 de 7 por "% de fotos reales" o "5 fotos distintas"), y la
   segunda búsqueda solo miraba Commons y Europeana con el título del artículo: ahora busca cada frase floja en todas las
