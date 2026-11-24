@@ -75,6 +75,55 @@ def nivel_necesario(gastado: float, por_dia: dict[str, float], hoy: date, actual
     return len(RECORTES), round(promedio, 2)
 
 
+# Tope diario (Santi, 2026-11-24: "el 23/11 Claude gastó US$ 4,52; me quedan ~US$ 2,50 por día"): lo que se gasta HOY en
+# producción (todo menos las pruebas: lo que el bot hace solo y lo que arma un ✅) no pasa de US$ 2,50. Al acercarse se
+# recorta en el orden de RECORTES (comunidad y búsqueda web primero, después Latinoamérica a 1); tecnología nunca.
+TOPE_DIA = 2.50
+TOPE_AVISADO = "presupuesto_tope_dia"   # bot_estado: el día en que ya se avisó
+
+
+def gasto_hoy(conn, dia: str) -> float:
+    from . import claude
+
+    filas = conn.execute("SELECT modelo, entrada, salida FROM gemini_uso WHERE clave = 'claude' AND dia = ? "
+                         "AND COALESCE(origen, '') != 'prueba'", (dia,)).fetchall()
+    return round(sum(claude.costo(m, e or 0, s or 0) for m, e, s in filas), 4)
+
+
+def nivel_dia(gastado_hoy: float) -> int:
+    """El recorte que pide el tope del día: con lo que queda no entra la comunidad + la búsqueda web → 2; llegado el
+    tope → 3 (Latinoamérica a 1 por día: si ya salió una, no sale otra). Nunca 4: tecnología y la primera de
+    Latinoamérica del día no se tocan."""
+    if gastado_hoy >= TOPE_DIA:
+        return 3
+    if gastado_hoy + RECORTES[1][2] > TOPE_DIA:
+        return 2
+    return 0
+
+
+def nivel_hoy(conn, dia: str) -> int:
+    """El recorte vigente hoy: el mayor entre el del saldo hasta el 14/12 y el del tope diario."""
+    try:
+        d = nivel_dia(gasto_hoy(conn, dia))
+    except Exception:          # sin gemini_uso (tests): solo el del saldo
+        d = 0
+    return max(nivel(conn), d)
+
+
+def aviso_tope(conn, dia: str) -> str | None:
+    """Una línea, una vez por día, cuando el tope diario empieza a recortar algo."""
+    from . import db
+
+    g = gasto_hoy(conn, dia)
+    n = nivel_dia(g)
+    if n == 0 or db.get_valor(conn, TOPE_AVISADO) == f"{dia}:{n}":
+        return None
+    db.set_valor(conn, TOPE_AVISADO, f"{dia}:{n}")
+    que = "; ".join(t for k, t, _ in RECORTES if 2 <= k <= n)
+    return (f"🔧 Claude Code: 💸 hoy van US$ {_f(g)} de US$ {_f(TOPE_DIA)}: {que} hasta mañana. "
+            "Tecnología sigue igual.")
+
+
 def nivel(conn) -> int:
     """El recorte vigente (0 = nada)."""
     from . import db

@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-11-23 | **Versión:** v1.52.0 (desplegado) | **Modo:** Fase 2: corriendo solo en la Pi. **Rots APAGADO. Así Nació PAUSADO desde el 19/11** (vuelve con 1 por día, preparado la noche anterior, si 4 de 5 marcas nuevas dan 15/19 o más por menos de US$ 0,60). **Pequeña Historia: TECNOLOGÍA ES LA PRIORIDAD NÚMERO UNO desde el 23/11** (2 por día en YouTube, 11:00 y 20:00, con una reserva de 3 videos ya armados; el canal de YouTube es solo de tecnología) y **Latinoamérica 2 por día SOLO en Facebook** hasta el 15/12. Nada se publica solo desde el 17/11: llega con ✅ Publicar / ❌ Cancelar y sin respuesta no sale. Todo al privado de Santi
+**Snapshot:** 2026-11-24 | **Versión:** v1.53.0 (desplegado) | **Modo:** Fase 2: corriendo solo en la Pi. **Rots APAGADO. Así Nació PAUSADO desde el 19/11** (vuelve con 1 por día, preparado la noche anterior, si 4 de 5 marcas nuevas dan 15/19 o más por menos de US$ 0,60). **Pequeña Historia: TECNOLOGÍA ES LA PRIORIDAD NÚMERO UNO desde el 23/11** (2 por día en YouTube, 11:00 y 20:00, con una reserva de 3 videos ya armados; el canal de YouTube es solo de tecnología) y **Latinoamérica 2 por día SOLO en Facebook** hasta el 15/12. Nada se publica solo desde el 17/11: llega con ✅ Publicar / ❌ Cancelar y sin respuesta no sale. Todo al privado de Santi
 
 > **SI ESTÁS EMPEZANDO UNA SESIÓN NUEVA, LEÉ §10.** Ahí está qué está hecho, qué quedó a medias,
 > qué falta, y las trampas que ya nos mordieron.
@@ -259,6 +259,10 @@ servicio systemd separado: `clips-bot`).
   línea "Motivo: …". Todo el detalle (reglas, correcciones, puntajes, fotos, textos) queda en `bot_estado`
   (`detalle:<clip>`) y sale con el botón "📋 Detalle" o `/detalle [clip]`. Los avisos e informes a Santi pasan por
   `_aviso`: 3 líneas como mucho y el resto detrás de 📋. Lo Encontré (repo bot-videos) lo hace su propia sesión.
+- **Producción: tope de US$ 2,50 por día de Claude (Santi, 2026-11-24)** (`presupuesto.TOPE_DIA`): al acercarse se
+  recorta en el orden de siempre (comunidad y búsqueda web de Latinoamérica, después Latinoamérica a 1); tecnología nunca.
+- **Calor (Santi, 2026-11-24, hasta que resuelva el enfriamiento):** un render a la vez, 4 min de pausa como mínimo entre
+  renders y hasta bajar de 58 °C (30 min como mucho), y el freno de 80 °C (`freno-calor.service`).
 - **Pruebas: tope de US$ 1 por día (Santi, 2026-11-20),** aparte de la producción; al llegar se frena hasta el día
   siguiente y se avisa en una línea; render local siempre que se pueda.
 - **Pruebas sin Claude real (Santi, 2026-11-18):** con origen "prueba" (scripts y CLI a mano) Claude y la búsqueda
@@ -1354,6 +1358,22 @@ Problemas abiertos:
 
 ## 9. CHANGELOG
 
+- v1.53.0 (2026-11-24) — **La Pi se colgó por calor y tope diario de Claude** (Santi). (1) Cuelgue: la Pi (con
+  disipadores, sin ventilador) se colgó a las ~07:01 renderizando un video de la reserva de tecnología (Netscape/Mozilla,
+  1998); Santi la desenchufó y arrancó a las 07:03. Tarjeta y bases sanas (`integrity_check` ok, solo el "orphan
+  cleanup" del ext4). El journal no sobrevive un corte (no es persistente): la temperatura del cuelgue no quedó; los
+  renders de la madrugada llegaron a 82,7-83,7 °C y los del 23/11 a 84,2-85,7 °C. Los 4 videos del día los aprobó Santi a
+  las 07:29 y quedaron programados (nada perdió su horario); se perdió solo el de la reserva que se armaba (~US$ 0,10 de
+  Claude). Ahora: `freno_calor.py` + servicio de usuario `freno-calor.service` (congela los ffmpeg con SIGSTOP desde
+  80 °C y los suelta debajo de 72 °C; anota la temperatura de cada minuto y qué corre en `data/temperatura.log`), pausa
+  entre renders de 4 min siempre y hasta bajar de 58 °C (como mucho 30 min; antes 65 °C y 10 min, `db.PAUSA_MIN_S`),
+  un render a la vez (ya era así: turno pesado compartido con Lo Encontré). (2) **Tope de US$ 2,50 por día** de
+  producción (todo menos pruebas, `presupuesto.TOPE_DIA`, `nivel_dia`, `nivel_hoy`): sin margen para comunidad + web →
+  nivel 2; llegado el tope → nivel 3 (Latinoamérica a 1); tecnología nunca. `_recorte` usa el mayor entre el del saldo y
+  el del día; una línea a Santi cuando empieza a recortar (`_tope_dia_tick`). (3) **El 23/11:** US$ 4,52, 30 guiones;
+  ~US$ 2,02 fueron intentos repetidos de historias que ya habían fallado ese día (Bell 7 veces, AlphaGo 6, Pokémon 3,
+  Motorola 2: la reserva volvía a sacar las mismas del banco), lo que arregló v1.52.0 (`banco.marcar_sin_fotos`).
+  `tests/test_calor_y_tope_dia.py`.
 - v1.52.0 (2026-11-23, noche) — **Fotos antes de gastar, plan B y tarjetas a tiempo** (regla en §1). Fuentes de
   fotos medidas en los 5 videos de tecnología de la semana (segundos en pantalla): Commons 35 %, Pexels 33 %, tarjetas
   30 %, video 2 %; Openverse, Smithsonian, Flickr y Europeana, 0. Por qué: Openverse tarda ~17 s y el timeout era de

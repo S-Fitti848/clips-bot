@@ -1,0 +1,18 @@
+# Freno por calor (Santi, 2026-11-24): congela los ffmpeg desde 80 °C y los suelta debajo de 72 °C; anota la
+# temperatura de cada minuto en data/temperatura.log. Servicio de USUARIO (no pide sudo; arranca con la Pi por linger).
+#   Instalar:  mkdir -p ~/.config/systemd/user && cp ~/clips/deploy/freno-calor.service ~/.config/systemd/user/
+#              systemctl --user daemon-reload && systemctl --user enable --now freno-calor
+#   Ver:       systemctl --user status freno-calor ; tail ~/clips/data/temperatura.log
+[Unit]
+Description=Freno por calor (clips-bot)
+
+[Service]
+WorkingDirectory=/home/santi/clips
+ExecStart=/home/santi/clips/.venv/bin/python -m clips_bot.freno_calor
+# Si el freno se cae o se detiene, nada queda congelado.
+ExecStopPost=/home/santi/clips/.venv/bin/python -m clips_bot.freno_calor --soltar
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target

@@ -38,12 +38,14 @@ def test_pausa_para_enfriar_entre_renders(conn, monkeypatch):
     assert db.tomar_turno(conn, db.RECURSO_PESADO, "a", maximo=1)        # sin render reciente: arranca
     db.soltar_turno(conn, db.RECURSO_PESADO, "a")
     assert not db.tomar_turno(conn, db.RECURSO_PESADO, "b", maximo=1)    # recién terminó y está caliente
-    monkeypatch.setattr(db, "temperatura_cpu", lambda: 60.0)
-    assert db.tomar_turno(conn, db.RECURSO_PESADO, "b", maximo=1)        # ya enfrió
+    monkeypatch.setattr(db, "temperatura_cpu", lambda: 55.0)
+    assert not db.tomar_turno(conn, db.RECURSO_PESADO, "b", maximo=1)    # frío, pero dentro de la pausa mínima
+    db.set_valor(conn, db.FIN_PESADO, str(time.time() - db.PAUSA_MIN_S - 1))
+    assert db.tomar_turno(conn, db.RECURSO_PESADO, "b", maximo=1)        # ya enfrió y pasó la pausa mínima
     db.soltar_turno(conn, db.RECURSO_PESADO, "b")
     monkeypatch.setattr(db, "temperatura_cpu", lambda: 72.0)
     db.set_valor(conn, db.FIN_PESADO, str(time.time() - db.PAUSA_MAX_S - 1))
-    assert db.tomar_turno(conn, db.RECURSO_PESADO, "c", maximo=1)        # nunca espera más de 10 min
+    assert db.tomar_turno(conn, db.RECURSO_PESADO, "c", maximo=1)        # nunca espera más de PAUSA_MAX_S
 
 
 def test_otros_turnos_no_esperan_a_que_enfrie(conn, monkeypatch):

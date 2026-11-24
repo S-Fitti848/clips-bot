@@ -421,8 +421,12 @@ def arranque_sistema() -> float | None:
         return None
 
 
-TEMP_ARRANQUE_C = float(__import__("os").environ.get("CLIPS_TEMP_ARRANQUE", "65"))
-PAUSA_MAX_S = 10 * 60          # la pausa para enfriar nunca dura más que esto después de un render
+# Santi, 2026-11-24 (la Pi se colgó por calor con disipadores y sin ventilador): pausa más larga entre renders. Uno nuevo
+# no arranca hasta PAUSA_MIN_S después del anterior y, además, hasta que la Pi baje de TEMP_ARRANQUE_C (como mucho
+# PAUSA_MAX_S). Durante el render, el freno de 80 °C es aparte (freno_calor.py).
+TEMP_ARRANQUE_C = float(__import__("os").environ.get("CLIPS_TEMP_ARRANQUE", "58"))
+PAUSA_MIN_S = 4 * 60           # siempre, aunque la Pi ya esté fría
+PAUSA_MAX_S = 30 * 60          # la pausa para enfriar nunca dura más que esto después de un render
 FIN_PESADO = "fin_trabajo_pesado"   # bot_estado: cuándo terminó el último render (epoch)
 TERMICO = Path("/sys/class/thermal/thermal_zone0/temp")
 
@@ -452,7 +456,8 @@ def tomar_turno(conn: sqlite3.Connection, recurso: str, token: str, maximo: int 
     if recurso == RECURSO_PESADO and not activos:
         t = temperatura_cpu()
         fin = float(get_valor(conn, FIN_PESADO) or 0)
-        if t is not None and t > TEMP_ARRANQUE_C and time.time() - fin < PAUSA_MAX_S:
+        desde = time.time() - fin
+        if t is not None and (desde < PAUSA_MIN_S or (t > TEMP_ARRANQUE_C and desde < PAUSA_MAX_S)):
             return False
     activos.append((token, time.time()))
     set_valor(conn, _clave_turno(recurso), json.dumps(activos))

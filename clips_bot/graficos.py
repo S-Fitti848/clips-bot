@@ -153,7 +153,7 @@ def mapa_zoom(base: Path, lat: float, lon: float, salida: Path, segundos: float 
             ff.stdin.write(cuadro.tobytes())
     finally:
         ff.stdin.close()
-        ff.wait(timeout=300)
+        ff.wait(timeout=1800)   # el freno por calor puede congelarlo unos minutos
     if ff.returncode != 0:
         raise RuntimeError(f"el mapa con zoom no salió (ffmpeg {ff.returncode})")
     return salida

@@ -2744,6 +2744,7 @@ def escuchar_telegram(settings: Settings, timeout_poll: int = 50) -> int:
             _seguro(tg, str(chat_ultimo or ""), "el plan de Así Nació", _plan_an_tick, conn, tg)
             _seguro(tg, str(chat_ultimo or ""), "los videos esperando aprobación", _espera_tick, conn, tg)
             _seguro(tg, str(chat_ultimo or ""), "el informe de fotos y reserva", _informe_fotos_tick, conn, tg)
+            _seguro(tg, str(chat_ultimo or ""), "el tope diario de Claude", _tope_dia_tick, conn, tg)
             _seguro(tg, str(chat_ultimo or ""), "el video de marcas", _auto(_animacion_tick), conn, tg, settings)
             _seguro(tg, str(chat_ultimo or ""), "el calendario", _calendario_tick, conn, tg, settings)
             _seguro(tg, str(chat_ultimo or ""), "la medición de Pequeña Historia",
@@ -3725,10 +3726,11 @@ def _web_latam(conn, settings: Settings):
 
 
 def _recorte(conn) -> int:
-    """El nivel de recorte por presupuesto (presupuesto.RECORTES; Santi, 2026-11-23: tecnología nunca se recorta)."""
+    """El nivel de recorte por presupuesto (presupuesto.RECORTES; Santi, 2026-11-23: tecnología nunca se recorta): el
+    del saldo hasta el 14/12 o el del tope de US$ 2,50 de hoy (Santi, 2026-11-24), el mayor."""
     from . import presupuesto
 
-    return presupuesto.nivel(conn)
+    return presupuesto.nivel_hoy(conn, datetime.now(AR).date().isoformat())
 
 
 def costo_web_dia(conn, dia: str, origen: str | None = "produccion") -> tuple[float, int, int]:
@@ -5035,6 +5037,15 @@ def _informe_fotos_tick(conn, tg, ahora=None) -> None:
         return
     db.borrar_valor(conn, reserva_tec.INFORME)
     tg.send_message(DUENO, reserva_tec.informe(conn, date.fromisoformat(dia), OUTPUT_DIR))
+
+
+def _tope_dia_tick(conn, tg, ahora=None) -> None:
+    """Santi, 2026-11-24: el tope de US$ 2,50 por día de producción; cuando empieza a recortar, una línea."""
+    from . import presupuesto
+
+    texto = presupuesto.aviso_tope(conn, (ahora or datetime.now(AR)).date().isoformat())
+    if texto:
+        tg.send_message(DUENO, texto)
 
 
 def _espera_tick(conn, tg, ahora=None) -> None:
