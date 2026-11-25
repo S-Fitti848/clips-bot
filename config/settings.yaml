@@ -359,6 +359,7 @@ efemerides:
   separacion_youtube_h: 4
   por_dia: 2
   reserva: 3                 # videos de tecnología ya armados y revisados, que no dependen de la fecha (reserva_tec.py)
+  fotos_primero: false       # Santi, 2026-11-25: fotos antes del guion (fotos_primero.py); se prende si 2 de 3 pruebas pasan el estándar
   # Voces de Gemini por día (plan gratis, por proyecto; la clave principal la comparte Lo Encontré):
   # aviso a Santi al llegar a tts_aviso de tts_tope.
   tts_tope: 10

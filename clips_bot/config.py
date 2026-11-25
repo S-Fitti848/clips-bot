@@ -359,6 +359,8 @@ class EfemeridesCfg:
     # historias que no dependen de la fecha (reserva_tec.py), que se reponen solos.
     por_dia: int = 2
     reserva: int = 3
+    # Santi, 2026-11-25: las fotos antes del guion (fotos_primero.py), en tecnología, la reserva y Latinoamérica
+    fotos_primero: bool = False
     # Voces de Gemini por día (plan gratis, por PROYECTO de Google; Google no publica el número): con
     # Lo Encontré, que usa la misma clave principal. Aviso a Santi al llegar a tts_aviso de tts_tope.
     tts_tope: int = 10

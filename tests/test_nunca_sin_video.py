@@ -351,3 +351,21 @@ def test_tecnologia_si_falla_por_fotos_prueba_el_banco(tec_sin_red, tmp_path, mo
     monkeypatch.setattr(ef, "fotos_con_control", fotos)
     p = ef.proponer(WikiTec(), _nota_tec(8), HOY, tmp_path, tema="tecnologia", piso=6.0, banco=[ITEM_TEC])
     assert p.local["banco_id"] == "tec:Netscape" and "banco" in p.local["aviso"]
+
+
+class WikiJuego:
+    def eventos(self, lang, dia):
+        return [ef.Evento("es", 1989, "Nintendo lanza la consola Game Boy en Japón", ["Producto_X"])] if lang == "es" else []
+
+
+def test_la_fecha_solo_con_un_hecho_fuerte_de_marcas_o_videojuegos(tec_sin_red, tmp_path):
+    """Santi, 2026-11-25: el banco es la fuente normal; la fecha, solo un hecho de marcas o videojuegos de 8,5+."""
+    p = ef.proponer(WikiJuego(), _nota_tec(8), HOY, tmp_path, tema="tecnologia", piso=6.0, banco=[ITEM_TEC],
+                    fecha_fuerte=8.5)
+    assert p.local["banco_id"] == "tec:Netscape"            # 8 no alcanza: al banco, sin el piso de 6
+    p = ef.proponer(WikiJuego(), _nota_tec(9), HOY, tmp_path, tema="tecnologia", piso=6.0, banco=[ITEM_TEC],
+                    fecha_fuerte=8.5)
+    assert p.evento["paginas"][0] == "Producto_X" and not p.local.get("banco_id")
+    p = ef.proponer(WikiJuego(), _nota_tec(8), HOY, tmp_path, tema="tecnologia", piso=6.0, banco=[],
+                    fecha_fuerte=8.5)
+    assert p.evento["paginas"][0] == "Producto_X"           # sin banco, la fecha como siempre

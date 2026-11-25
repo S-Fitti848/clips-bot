@@ -3574,6 +3574,10 @@ def _efe_proponer(conn, tg: TelegramClient, chats: list[str], dia, settings: Set
                         piso=None if hecho else banco_mod.PISO_ABSOLUTO,
                         banco=None if hecho else banco_mod.leer(conn, "tecnologia"),
                         pesos=_pesos_tec(conn), evitar=_marcas_evitar(conn),
+                        # Santi, 2026-11-25: el banco es la fuente normal; la fecha, solo un hecho fuerte de marcas o
+                        # videojuegos (8,5 o más)
+                        fecha_fuerte=None if hecho else ef.PUNTAJE_TEC_FUERTE,
+                        fotos_primero=settings.efemerides.fotos_primero,
                         **({} if hecho else _sin_fotos_tec(conn)))
     except (NarrarError, ef.WikiError, GeminiError) as e:
         bitacora.fallo("", str(e))
@@ -4059,7 +4063,7 @@ def _fb_proponer(conn, tg: TelegramClient, chats: list[str], dia, settings: Sett
                              excluir={v for x in _latam_del_dia(conn, dia)
                                       for v in (x.get("texto"), x.get("articulo")) if v},
                              evitar_paises={x["pais"] for x in _latam_del_dia(conn, dia) if x.get("pais")},
-                             pesos=_pesos_latam(conn),
+                             pesos=_pesos_latam(conn), fotos_primero=settings.efemerides.fotos_primero,
                              mas_video=settings.efemerides.estilo_nuevo,
                              puntuador=_puntuador(settings), web=_web_latam(conn, settings),
                              **(dict(banco=banco_mod.leer(conn, "latam"), solo_banco=True) if solo_banco
@@ -4369,7 +4373,8 @@ def _reserva_armar(conn, tg: TelegramClient, settings: Settings, hoy) -> str | N
                         tema="tecnologia", corto=cfg.corto, texto=_texto_efemeride(settings, gemini),
                         mas_video=cfg.estilo_nuevo, puntuador=_puntuador(settings),
                         banco=banco_mod.leer(conn, "tecnologia"), solo_banco=True, pesos=_pesos_tec(conn), evitar=_marcas_evitar(conn),
-                        max_guiones=1, piso_fotos=reserva_tec.FOTOS_RESERVA_MIN, **_sin_fotos_tec(conn))
+                        max_guiones=1, piso_fotos=reserva_tec.FOTOS_RESERVA_MIN,
+                        fotos_primero=cfg.fotos_primero, **_sin_fotos_tec(conn))
     except (NarrarError, ef.WikiError, GeminiError) as e:
         bitacora.fallo("", str(e))
         bitacora.cerrar(conn, "fallido")
@@ -4500,7 +4505,16 @@ def _costo_claude_tick(conn, tg: TelegramClient, settings: Settings, ahora=None)
         return
     db.set_valor(conn, COSTO_ENVIADO, ayer)
     if claude.resumen_costo(conn, ayer)[1]:
-        _aviso(tg, claude.texto_costo(conn, ayer))
+        texto = claude.texto_costo(conn, ayer)
+        try:     # Santi, 2026-11-25: "% al primer intento" y "gastado en reintentos", arriba de todo
+            from . import fallas
+
+            lineas = texto.split("\n")
+            texto = "\n".join(lineas[:1] + fallas.lineas_informe(conn, ayer, claude.resumen_costo(conn, ayer)[0])
+                              + lineas[1:])
+        except Exception:  # noqa: BLE001 — sin la bitácora, el informe sale igual
+            log.warning("informe: no pude medir el primer intento", exc_info=True)
+        _aviso(tg, texto)
 
 
 def _texto_costos(conn, dias: int = 7, settings: Settings | None = None) -> str:

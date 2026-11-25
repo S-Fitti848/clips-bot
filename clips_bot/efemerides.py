@@ -2179,8 +2179,13 @@ def fotos_para_guion(wiki: Wiki, cliente, e: Evento, g: Guion, fotos_articulo: l
                      buscador=None, fuentes=None,
                      tope_s: float | None = None, elector=None,
                      segunda: bool = False, forzadas: dict | None = None,
-                     flojas: list[int] | None = None, puntual: dict | None = None) -> tuple[list[Foto], Guion]:
-    """`segunda`: la segunda búsqueda del control de calidad (ver fotos_con_control). `forzadas` ({frase: foto}):
+                     flojas: list[int] | None = None, puntual: dict | None = None,
+                     primero=None) -> tuple[list[Foto], Guion]:
+    """`primero` (fotos_primero.Banco, Santi 2026-11-25): las fotos ya juntadas y descriptas ANTES del guion; no se
+    busca por frase ni se elige mirando imágenes: Haiku dice qué fotos van con cada frase (solo texto) y sigue el armado
+    de siempre. En la segunda búsqueda (`segunda`) no se usa: es la búsqueda de siempre sobre el mismo pool.
+
+    `segunda`: la segunda búsqueda del control de calidad (ver fotos_con_control). `forzadas` ({frase: foto}):
     las frases reescritas para hablar de una foto (plan B, 2026-11-23) van primero con esa foto. `flojas` (con
     `segunda`): las frases que en la primera vuelta se quedaron sin foto real (o con una que no mostraba lo que dicen):
     se buscan otra vez con otras palabras (el nombre del producto o la persona, en inglés, con el modelo y el año) en
@@ -2192,9 +2197,15 @@ def fotos_para_guion(wiki: Wiki, cliente, e: Evento, g: Guion, fotos_articulo: l
 
     `pool`: el de una propuesta anterior (✏️), para que los números no cambien. NarrarError si no
     se llega a ilustrar.MIN_FOTOS_DISTINTAS."""
+    modo_primero = primero is not None and not segunda
+    if modo_primero and not pool:
+        pool = list(primero.pool)
     pool = list(pool or [])
     por_archivo = {clave_archivo(f.archivo): i for i, f in enumerate(pool)}
     descartadas = set(descartadas or ())
+    if modo_primero:
+        descartadas |= {k for k in range(len(primero.pool)) if k not in primero.buenas}
+        videos = False
 
     def sumar(fotos: list[Foto], cuantas: int) -> list[int]:
         nuevas, vistas = [], set()
@@ -2238,7 +2249,9 @@ def fotos_para_guion(wiki: Wiki, cliente, e: Evento, g: Guion, fotos_articulo: l
                       if h.get("url") and h.get("licencia")]
             del_hecho += [i for i in sumar(nuevas, FOTOS_BUSQUEDA_MAX)
                           if i not in descartadas and i not in del_hecho]
-    propias, descartes = [], {}
+    propias, descartes = ([[] for _ in g.mostrar] if modo_primero else []), {}
+    if modo_primero:
+        del_hecho = [k for k in primero.buenas if k not in descartadas]
     from . import fuentes_fotos
     from .videos_libres import consultas as achicar_consultas, es_de_espacio, sin_anios
 
@@ -2248,7 +2261,7 @@ def fotos_para_guion(wiki: Wiki, cliente, e: Evento, g: Guion, fotos_articulo: l
     # sigue con lo que ya se bajó.
     corrida = fuentes_fotos.CORRIDA
     corrida.con_tope(TOPE_FOTOS_S if tope_s is None else tope_s)
-    for i, mostrar in enumerate(g.mostrar):
+    for i, mostrar in ([] if modo_primero else enumerate(g.mostrar)):
         if corrida.vencida():
             if len(propias) == i:
                 avisar(f"    fotos: pasó el tope de {(TOPE_FOTOS_S if tope_s is None else tope_s) / 60:.0f} "
@@ -2331,7 +2344,7 @@ def fotos_para_guion(wiki: Wiki, cliente, e: Evento, g: Guion, fotos_articulo: l
     # Regla fija de época: las fotos sacadas más de MARGEN_EPOCA años después del hecho no son
     # candidatas de las frases del pasado. Las del artículo del hecho quedan de respaldo igual
     # (de_reserva): antes una del artículo repetida que una moderna.
-    modernas = set() if segunda else \
+    modernas = set() if segunda or modo_primero else \
         {i for i, f in enumerate(pool) if f.anio and f.anio > e.anio + MARGEN_EPOCA}
     presente = [i < len(g.presente) and g.presente[i] for i in range(len(g.frases))]
     avisar(f"  fotos: {len(pool)} bajadas ({len(del_hecho)} del artículo, {len(modernas)} de más de "
@@ -2365,9 +2378,16 @@ def fotos_para_guion(wiki: Wiki, cliente, e: Evento, g: Guion, fotos_articulo: l
     # Qué parte de cada foto es texto (OCR): una captura, un documento o una placa no pasan.
     ocr = {k: fraccion_texto(Path(f.ruta)) for k, f in enumerate(pool) if f.ruta}
     extra: dict = {}
-    rankings, vistas_malas = elegir_fotos(cliente, g, pool, candidatas, propias, avisar=avisar,
-                                          anio=e.anio, videos=candidatos_video, elegidos=elegidos,
-                                          ocr=ocr, extra=extra, elector=elector)
+    if modo_primero:
+        from . import fotos_primero as _fp
+
+        rankings = _fp.asignar(primero.haiku, g.frases, primero, avisar)
+        rankings = [[x for x in r if x not in descartadas] for r in rankings]
+        vistas_malas = set()
+    else:
+        rankings, vistas_malas = elegir_fotos(cliente, g, pool, candidatas, propias, avisar=avisar,
+                                              anio=e.anio, videos=candidatos_video, elegidos=elegidos,
+                                              ocr=ocr, extra=extra, elector=elector)
     g.fotos_respaldo = bool(extra.get("respaldo"))
     g.con_videos = videos
     g.videos = {str(i): v.a_dict() for i, v in elegidos.items()}
@@ -3257,8 +3277,16 @@ def proponer(wiki: Wiki, cliente, dia: date, carpeta: Path, avisar=log.info,
              puntuador=None, piso: float | None = None, banco: list[dict] | None = None,
              solo_banco: bool = False, pesos: dict | None = None, evitar=(), sin_fotos=(),
              al_fallar_fotos=None, max_guiones: int = MAX_GUIONES,
-             piso_fotos: float = UMBRAL_FOTOS_PISO) -> Propuesta:
-    """`sin_fotos` (Santi, 2026-11-23): artículos que ya fallaron por fotos (no se vuelven a intentar);
+             piso_fotos: float = UMBRAL_FOTOS_PISO, fecha_fuerte: float | None = None,
+             fotos_primero: bool = False) -> Propuesta:
+    """`fotos_primero` (Santi, 2026-11-25, efemerides.fotos_primero): las fotos se juntan y se describen ANTES del
+    guion (fotos_primero.py); sin 8 buenas la historia no se usa y el guion se escribe a partir de ellas.
+
+    `fecha_fuerte` (Santi, 2026-11-25: "el banco como fuente normal y la fecha solo cuando haya un hecho fuerte de
+    marcas o videojuegos"): con banco, de los hechos del día solo entran los de marcas, empresas y videojuegos con ese
+    puntaje o más; si no hay, directo al banco (sin el piso de 6).
+
+    `sin_fotos` (Santi, 2026-11-23): artículos que ya fallaron por fotos (no se vuelven a intentar);
     `al_fallar_fotos(articulo, motivo)`: se llama cuando uno falla por fotos (o no pasa el chequeo previo), para
     anotarlo; con una historia del banco, también si falla el guion (Santi, 2026-11-24: "nunca una que ya falló").
     `max_guiones`: cuántas historias se intentan (la reserva, de a una: cada intento cuenta en su tope del día). Antes de pedir el guion, `fotos_previas` cuenta las fotos usables sin Claude (artículo + Commons).
@@ -3377,6 +3405,16 @@ def proponer(wiki: Wiki, cliente, dia: date, carpeta: Path, avisar=log.info,
         elegidos = sorted([x for x in elegidos if x[0] not in flojos],
                           key=lambda x: -(notas.get(x[0], {}).get("puntaje", 0)
                                           + (pesos or {}).get(notas.get(x[0], {}).get("subtema"), 0.0)))
+        if fecha_fuerte is not None and banco and not solo_banco:
+            fuertes = [x for x in elegidos if notas.get(x[0], {}).get("subtema") in SUBTEMAS_FACILES
+                       and (notas.get(x[0], {}).get("puntaje") or 0) >= fecha_fuerte]
+            if len(fuertes) < len(elegidos):
+                avisar(f"{len(elegidos) - len(fuertes)} hechos del día no son de marcas o videojuegos con "
+                       f"{fecha_fuerte:g} o más: quedan {len(fuertes)}")
+            elegidos = fuertes
+            if not elegidos and not elegidos_banco and usar_banco(
+                    f"hoy ningún hecho de marcas o videojuegos llega a {fecha_fuerte:g}".replace(".", ",")):
+                elegidos = list(elegidos_banco)
         if not elegidos and not elegidos_banco:
             mejor = max(todos_tec, key=lambda x: notas.get(x[0], {}).get("puntaje", 0), default=None)
             nota = notas.get(mejor[0], {}).get("puntaje", 0) if mejor else 0
@@ -3420,19 +3458,37 @@ def proponer(wiki: Wiki, cliente, dia: date, carpeta: Path, avisar=log.info,
                 al_fallar_fotos(articulo, motivo)
             return None
         fuente = texto_fuente(wiki, e)
+        banco_f = None
+        if fotos_primero:
+            from . import fotos_primero as fp
+
+            fila_f = bitacora.fila_actual()
+            bitacora.paso("fotos")
+            try:
+                banco_f = fp.juntar(wiki, puntuador or escritor, e, fotos, carpeta,
+                                    f"{e.texto} {e.paginas[0].replace('_', ' ')}", avisar)
+            except (fp.FotosPrevias, NarrarError) as err:
+                avisar(f"  {err}: no pido el guion")
+                fallas.append(f"{e.anio}: {err}")
+                bitacora.descarte(f"{e.anio} {e.texto[:90]}", str(err), "fotos", desde_fila=fila_f,
+                                  encontrado="fotos primero (Haiku)")
+                if al_fallar_fotos:
+                    al_fallar_fotos(articulo, str(err))
+                return None
         guiones += 1
         fila_h, g = bitacora.fila_actual(), None
         try:
             bitacora.paso("guion")
             g = escribir_guion(escritor, e, fuente, correccion, hablado=hablado and not corto,
                                sistema=SISTEMA_GUION_CORTO if corto else None, corto=corto,
-                               contexto=NO_ES_DE_HOY if del_banco and i in del_banco else "")
+                               contexto=(NO_ES_DE_HOY if del_banco and i in del_banco else "")
+                               + (banco_f.contexto() if banco_f else ""))
             g.imagen_frase = imagen_frase or corto      # efemerides.imagen_frase (2026-11-10)
             g.mas_video = mas_video                     # efemerides.estilo_nuevo (2026-11-14)
             bitacora.paso("fotos")
             pool, g = fotos_con_control(wiki, cliente, e, g, fotos, carpeta, avisar, videos=videos,
                                         elector=elector, elector_reintento=elector_reintento,
-                                        tope_s=tope_fotos_s,
+                                        tope_s=tope_fotos_s, primero=banco_f,
                                         reescribir=lambda g_, idx, pool_, forz=None: reescribir_frases_con_foto(
                                             puntuador or escritor, e, fuente, g_, idx, pool_, avisar, forz))
         except PocasFotos as pocas:
@@ -3479,7 +3535,7 @@ def proponer(wiki: Wiki, cliente, dia: date, carpeta: Path, avisar=log.info,
     # si los de PUNTAJE_TEC_MIN fallan por fotos o guion, se prueban los demás desde el piso (6), y después el banco.
     cola = list(elegidos[saltear:])
     extra_aviso: dict = {}
-    if tema == "tecnologia" and piso is not None:
+    if tema == "tecnologia" and piso is not None and not (fecha_fuerte is not None and banco):
         ya = {x[0] for x in cola}
         for x in sorted(todos_tec, key=lambda x: -notas.get(x[0], {}).get("puntaje", 0)):
             nota = notas.get(x[0], {}).get("puntaje", 0) or 0

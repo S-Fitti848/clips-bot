@@ -92,3 +92,49 @@ def resumen(conn, hasta: date) -> str:
 
 def toca(hoy: date, hm: str, enviado: str | None) -> bool:
     return hoy.weekday() == DIA_SEMANA and hm >= HORA and enviado != hoy.isoformat()
+
+
+# ---- al primer intento (Santi, 2026-11-25: "que los videos salgan bien al primer intento"; el informe de las 09:00
+# lleva "% al primer intento" y "gastado en reintentos") ----------------------------------------------------------
+FORMATOS_PH = {"tecnologia": "tecnología", "latinoamerica": "Latinoamérica", "tecnologia_reserva": "reserva"}
+LLEGARON = ("retenido", "programado", "entregado", "publicado", "reserva")
+
+
+def primer_intento(conn, desde: str, hasta: str | None = None) -> dict:
+    """{formato: {"videos", "caidas", "costo"}} de Pequeña Historia entre `desde` y `hasta` (AR, inclusive). Una
+    historia caída = una que pasó el puntaje y no llegó a video (cada candidato una vez, aunque tenga varias filas);
+    `costo`, lo que se gastó en Claude en las caídas."""
+    hasta = hasta or desde
+    out = {f: {"videos": 0, "caidas": 0, "costo": 0.0} for f in FORMATOS_PH}
+    q = ",".join("?" * len(FORMATOS_PH))
+    for formato, n in conn.execute(
+            f"SELECT formato, COUNT(*) FROM videos_registro WHERE canal = 'pequena_historia' AND dia BETWEEN ? AND ? "
+            f"AND formato IN ({q}) AND estado IN ({','.join('?' * len(LLEGARON))}) GROUP BY formato",
+            (desde, hasta, *FORMATOS_PH, *LLEGARON)):
+        out[formato]["videos"] = n
+    for formato, n, costo in conn.execute(
+            f"SELECT formato, COUNT(DISTINCT candidato), COALESCE(SUM(costo_usd), 0) FROM candidatos_descartados "
+            f"WHERE dia BETWEEN ? AND ? AND formato IN ({q}) AND paso NOT IN ('puntaje') GROUP BY formato",
+            (desde, hasta, *FORMATOS_PH)):
+        out[formato]["caidas"] = n
+        out[formato]["costo"] += float(costo or 0)
+    # los de la reserva que se armaron enteros y no pasaron el estándar: su costo está en la bitácora del video
+    for formato, costo in conn.execute(
+            f"SELECT formato, COALESCE(SUM(costo_usd), 0) FROM videos_registro WHERE canal = 'pequena_historia' "
+            f"AND dia BETWEEN ? AND ? AND formato IN ({q}) AND estado = 'descartado' GROUP BY formato",
+            (desde, hasta, *FORMATOS_PH)):
+        out[formato]["costo"] += float(costo or 0)
+    return out
+
+
+def lineas_informe(conn, dia: str, total_usd: float) -> list[str]:
+    """Las dos líneas del informe de las 09:00."""
+    d = primer_intento(conn, dia)
+    v = sum(x["videos"] for x in d.values())
+    c = sum(x["caidas"] for x in d.values())
+    pct = f"{round(100 * v / (v + c))} %" if v + c else "sin historias"
+    partes = " · ".join(f"{FORMATOS_PH[f]} {x['videos']}/{x['videos'] + x['caidas']}" for f, x in d.items()
+                        if x["videos"] + x["caidas"])
+    gastado = sum(x["costo"] for x in d.values())
+    return [f"Al primer intento: {pct}" + (f" ({partes})" if partes else ""),
+            f"Gastado en reintentos: {_usd(gastado)} de {_usd(total_usd)}"]

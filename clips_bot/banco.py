@@ -28,6 +28,10 @@ PUNTAJE_BANCO = 8.0
 PISO_ABSOLUTO = 6.0     # debajo de esto, la mejor del día no sale: va una del banco
 MINIMO = 10
 OBJETIVO = 20
+# Santi, 2026-11-25: el banco de tecnología es la fuente normal y "no tiene que bajar nunca de 15": empieza a llenar
+# debajo de 20 (deja margen para los ~3 que se usan por día entre el video y la reserva) y sigue hasta 25
+MINIMOS = {"tecnologia": 20}
+OBJETIVOS = {"tecnologia": 25}
 LEJOS_DIAS = 100        # se cosechan días a más de 100 días de hoy (lejos de su aniversario)
 CLAVE = "banco:{}"
 LLENANDO = "banco_llenando:{}"
@@ -192,12 +196,12 @@ def avisos_pendientes(conn, hoy: date | None = None) -> list[str]:
 
 
 def hay_que_reponer(conn, canal: str) -> bool:
-    """Con menos de MINIMO empieza a llenar y sigue hasta OBJETIVO (entonces para)."""
+    """Con menos de MINIMO (MINIMOS) empieza a llenar y sigue hasta OBJETIVO (OBJETIVOS; entonces para)."""
     n = len(leer(conn, canal))
     clave = LLENANDO.format(canal)
-    if n < MINIMO:
+    if n < MINIMOS.get(canal, MINIMO):
         db.set_valor(conn, clave, "1")
-    elif n >= OBJETIVO:
+    elif n >= OBJETIVOS.get(canal, OBJETIVO):
         db.borrar_valor(conn, clave)
     return db.get_valor(conn, clave) == "1"
 

@@ -259,14 +259,29 @@ Al final respondé SOLO con un bloque ```json:
  "es_real": true, "problema": "vacío, o por qué no se pudo verificar o qué está mal"}"""
 
 
+def es_tecnica(err: Exception) -> bool:
+    """La respuesta cortada o sin el JSON pedido (no dice nada de si la historia es real)."""
+    t = str(err)
+    return "max_tokens" in t or "JSON" in t
+
+
 def verificar(cliente: ClienteWeb, texto: str, anio: int, lugar: str, pais: str,
               pistas: list[str] | None = None) -> Verificacion:
     """Cada dato con 2+ fuentes de sitios distintos (lo revisa el código, no solo el modelo)."""
     prompt = (f"Historia ({anio}, {lugar}, {pais}): {texto}\n"
               + ("Links donde apareció: " + " ".join(pistas[:6]) if pistas else ""))
-    salida, links = cliente.pedir(SISTEMA_VERIFICAR, prompt, busquedas=BUSQUEDAS_VERIFICAR,
-                                  lecturas=LECTURAS_VERIFICAR)
-    d = json_de(cliente, salida, SISTEMA_VERIFICAR)
+    # Santi, 2026-11-25: 4 de 15 verificaciones de la semana se cayeron por la respuesta cortada (max_tokens) o sin
+    # JSON: eso es una falla técnica, no de la historia. Se reintenta una vez, con el doble de lugar para responder.
+    for intento in range(2):
+        try:
+            salida, links = cliente.pedir(SISTEMA_VERIFICAR, prompt, busquedas=BUSQUEDAS_VERIFICAR,
+                                          lecturas=LECTURAS_VERIFICAR, max_tokens=16000 * (intento + 1))
+            d = json_de(cliente, salida, SISTEMA_VERIFICAR)
+            break
+        except WebError as err:
+            if intento or not es_tecnica(err):
+                raise
+            log.info("verificación: %s; la reintento una vez", err)
     buenos, malos = [], 0
     for x in d.get("datos") or []:
         fuentes = [u for u in x.get("fuentes") or [] if str(u).startswith("http")]

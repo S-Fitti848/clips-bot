@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-11-25 | **Versión:** v1.56.0 (desplegado) | **Modo:** Fase 2: corriendo solo en la Pi. **Rots APAGADO. Así Nació PAUSADO desde el 19/11** (vuelve con 1 por día, preparado la noche anterior, si 4 de 5 marcas nuevas dan 15/19 o más por menos de US$ 0,60). **Pequeña Historia: TECNOLOGÍA ES LA PRIORIDAD NÚMERO UNO desde el 23/11** (2 por día en YouTube, 11:00 y 20:00, con una reserva de 3 videos ya armados; el canal de YouTube es solo de tecnología) y **Latinoamérica 2 por día SOLO en Facebook** hasta el 15/12. Nada se publica solo desde el 17/11: llega con ✅ Publicar / ❌ Cancelar y sin respuesta no sale. Todo al privado de Santi
+**Snapshot:** 2026-11-25 | **Versión:** v1.57.0 (desplegado) | **Modo:** Fase 2: corriendo solo en la Pi. **Rots APAGADO. Así Nació PAUSADO desde el 19/11** (vuelve con 1 por día, preparado la noche anterior, si 4 de 5 marcas nuevas dan 15/19 o más por menos de US$ 0,60). **Pequeña Historia: TECNOLOGÍA ES LA PRIORIDAD NÚMERO UNO desde el 23/11** (2 por día en YouTube, 11:00 y 20:00, con una reserva de 3 videos ya armados; el canal de YouTube es solo de tecnología) y **Latinoamérica 2 por día SOLO en Facebook** hasta el 15/12. Nada se publica solo desde el 17/11: llega con ✅ Publicar / ❌ Cancelar y sin respuesta no sale. Todo al privado de Santi
 
 > **SI ESTÁS EMPEZANDO UNA SESIÓN NUEVA, LEÉ §10.** Ahí está qué está hecho, qué quedó a medias,
 > qué falta, y las trampas que ya nos mordieron.
@@ -301,6 +301,18 @@ servicio systemd separado: `clips-bot`).
   (`bot_estado.presupuesto_niveles`). Se recorta de a UN escalón por día (saltando lo que ya está apagado: con Así Nació
   pausado, primero comunidad y búsqueda web, después Latinoamérica a 1, después sin Latinoamérica,
   `presupuesto.un_escalon`) y, si el ritmo baja, se devuelve lo recortado de una.
+- **Al primer intento (Santi, 2026-11-25; la meta: 8 de cada 10 pasan el estándar y menos reintentos).** Medido del 19 al
+  25/11: llegaba a video ~1 de cada 4 historias que pasaban el puntaje, 35 % del gasto se iba en reintentos y solo 2 de 24
+  videos pasaban el estándar (PH-02 en 17, borrosas 9, de otra época 8). (A) **Tecnología: el banco es la fuente normal**;
+  la fecha solo con un hecho de marcas, empresas o videojuegos de 8,5 o más (`ef.proponer(fecha_fuerte=)`); el banco de
+  tecnología repone debajo de 20 y llena hasta 25 (`banco.MINIMOS`/`OBJETIVOS`) para no bajar nunca de 15. (B) **Fotos
+  primero** (`fotos_primero.py`, `efemerides.fotos_primero`): antes del guion se juntan las fotos libres, el código saca
+  chicas, borrosas y con texto, Haiku describe cada una (qué se ve, nítida, época, si es de la historia, persona) y sin 8
+  buenas la historia no se usa; Sonnet escribe el guion con la lista de fotos delante y Haiku dice qué fotos van con cada
+  frase. (C) **Verificación de Latinoamérica:** una respuesta cortada o sin JSON se reintenta una vez con el doble de
+  lugar (`web_historias.es_tecnica`); se verifican solo las 3 mejores del día (y 3 del banco, `locales.MAX_VERIFICAR`).
+  (D) **Informe de las 09:00:** "Al primer intento: N % (tecnología a/b · Latinoamérica c/d · reserva e/f)" y "Gastado
+  en reintentos: US$ x de US$ y" (`fallas.lineas_informe`).
 - **Menos texto (Santi, 2026-11-18):** mensajes de 2-3 líneas. El resumen de cada Reel a las 24 h ya NO se manda: se
   guarda y alimenta los guiones (`aprendizaje.py`: los ganchos que más y menos retuvieron entran en el prompt de cada
   canal); los lunes desde las 10:00, un resumen de 5 líneas con qué cambió y cómo vienen las vistas
@@ -1384,6 +1396,9 @@ Problemas abiertos:
 
 ## 9. CHANGELOG
 
+- v1.57.0 (2026-11-25) — **Al primer intento: A, C y D prendidos; B (fotos primero) programado y apagado** hasta la
+  prueba de 3 historias (regla en §1; si pasan 2 de 3, se prende sin esperar a Santi). `scripts/prueba_fotos_primero.py`,
+  `tests/test_primer_intento.py`, `tests/test_fotos_primero.py`. 2179 tests OK.
 - v1.56.0 (2026-11-25) — **Ritmo del presupuesto con 3 días y de a un escalón** (regla en §1). El 25/11 a las 06:30 el
   recorte había llegado al nivel 4 (sin Latinoamérica desde el 26/11) con un promedio de 7 días que mezclaba pruebas
   (US$ 4,5 entre el 19 y el 20/11) y los reintentos del 23/11 (US$ 4,52). Con la cuenta nueva (21, 22 y 24/11 de

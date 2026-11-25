@@ -663,6 +663,7 @@ SCHEMA_ELEGIR = {
 
 CRITERIOS = ("persona", "peligro", "giro", "emocion")
 PUNTAJE_MIN = 8.0    # Santi, 2026-11-13: solo pasan las de 8 o más de promedio
+MAX_VERIFICAR = 3      # Santi, 2026-11-25: verificar solo las 3 mejores (y 3 del banco)
 CURIOSAS = {"lugar_curioso", "invento", "costumbre", "record", "misterio", "dato_sorprendente"}
 
 
@@ -841,8 +842,10 @@ def proponer(wiki: ef.Wiki, sonnet, haiku, gemini, dia: date, carpeta: Path, avi
              evitar_paises: set | None = None, mas_video: bool = False,
              piso_alternativo: float | None = None, puntuador=None,
              banco: list[dict] | None = None, solo_banco: bool = False, web=None,
-             pesos: dict | None = None) -> ef.Propuesta:
-    """`web` (web_historias.ClienteWeb, Santi 2026-11-16): suma historias de la web a las de Wikipedia y
+             pesos: dict | None = None, fotos_primero: bool = False) -> ef.Propuesta:
+    """`fotos_primero` (Santi, 2026-11-25): las fotos antes del guion (fotos_primero.py), como en tecnología.
+
+    `web` (web_historias.ClienteWeb, Santi 2026-11-16): suma historias de la web a las de Wikipedia y
     verifica CADA dato de la elegida con 2 fuentes antes del guion (el guion sale solo de lo verificado).
 
     `solo_banco`: directo del banco de reserva, sin buscar en el día (a mano, cuando un día quedó sin
@@ -956,6 +959,9 @@ def proponer(wiki: ef.Wiki, sonnet, haiku, gemini, dia: date, carpeta: Path, avi
                                           for c, a, _ in elegidos))
     fallas, respaldo, descartes, insuf = [], None, {}, None
     intentos = [0]
+    # Santi, 2026-11-25: se verifican solo las 3 mejores (del día; y otras 3 del banco si hace falta): con 15
+    # verificaciones caídas en la semana, seguir probando las de abajo de la lista gastaba sin llegar a video
+    verificadas = {"dia": 0, "banco": 0}
 
     def cola():
         """Las elegidas y, si ninguna sale (sin verificar, sin fotos), el banco (Santi, 2026-11-16: "nunca
@@ -986,6 +992,10 @@ def proponer(wiki: ef.Wiki, sonnet, haiku, gemini, dia: date, carpeta: Path, avi
             # y las del banco); el guion se escribe solo con lo verificado.
             from . import web_historias as wh
 
+            grupo = "banco" if c.clasif.get("banco_id") else "dia"
+            if verificadas[grupo] >= MAX_VERIFICAR:
+                continue
+            verificadas[grupo] += 1
             bitacora.paso("verificacion")
             try:
                 verif = wh.verificar(web, c.texto, c.anio, lugar, str(c.clasif.get("pais") or ""),
@@ -1038,20 +1048,34 @@ def proponer(wiki: ef.Wiki, sonnet, haiku, gemini, dia: date, carpeta: Path, avi
             if art_lugar:
                 fuente += "\n" + wiki.texto("es", art_lugar)[:6000]
         avisar(f"{e.anio} {lugar}: {len(fotos)} fotos del hecho y del lugar")
+        banco_f = None
+        if fotos_primero:
+            from . import fotos_primero as fp
+
+            fila_f = bitacora.fila_actual()
+            bitacora.paso("fotos")
+            try:
+                banco_f = fp.juntar(wiki, haiku or sonnet, e, fotos, carpeta, f"{lugar}: {c.texto}", avisar)
+            except (fp.FotosPrevias, ef.NarrarError) as err:
+                avisar(f"  {err}: no pido el guion")
+                fallas.append(f"{e.anio}: {err}")
+                bitacora.descarte(nombre_c, str(err), "fotos", desde_fila=fila_f, encontrado="fotos primero (Haiku)")
+                continue
         fila_h, g = bitacora.fila_actual(), None
         no_de_hoy = c.clasif.get("banco_id") or (c.seccion == "web" and not c.clasif.get("del_dia"))
         try:
             bitacora.paso("guion")
             g = ef.escribir_guion(sonnet, e, fuente, sistema=SISTEMA_GUION_CORTO if corto else SISTEMA_GUION_LOCAL,
                                   validar_extra=validar_lugar(lugar, corto),
-                                  contexto=contexto_de(c) + (ef.NO_ES_DE_HOY if no_de_hoy else ""),
+                                  contexto=contexto_de(c) + (ef.NO_ES_DE_HOY if no_de_hoy else "")
+                                  + (banco_f.contexto() if banco_f else ""),
                                   corto=corto, rango=ef.LATAM_PALABRAS if corto else None,
                                   max_s=ef.LATAM_MAX_S if corto else 0.0)
             g.imagen_frase = imagen_frase or corto
             g.mas_video = mas_video
             bitacora.paso("fotos")
             pool, g = ef.fotos_con_control(wiki, gemini, e, g, fotos, carpeta, avisar, videos=videos,
-                                           tope_s=tope_fotos_s, elector=elector,
+                                           tope_s=tope_fotos_s, elector=elector, primero=banco_f,
                                            elector_reintento=elector_reintento,
                                            reescribir=lambda g_, idx, pool_, forz=None: ef.reescribir_frases_con_foto(
                                                haiku or sonnet, e, fuente, g_, idx, pool_, avisar, forz))
