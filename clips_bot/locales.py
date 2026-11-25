@@ -827,13 +827,13 @@ def local_de(c: Candidato, aviso: str = "") -> dict:
 PISO_ABSOLUTO = 6.0   # Santi, 2026-11-15: la mejor del día sale si tiene 6 o más; debajo, el banco
 
 
-def candidatos_web(web, dia: date, excluir: set | None = None, avisar=log.info) -> list[Candidato]:
+def candidatos_web(web, dia: date, excluir: set | None = None, avisar=log.info, tema: str = "") -> list[Candidato]:
     """Historias de diarios, sitios de historia, museos y archivos (web_historias.buscar, Santi 2026-11-16),
     ya clasificadas por la misma búsqueda; pasan las mismas reglas duras que las de Wikipedia."""
     from . import web_historias as wh
 
     try:
-        halladas = wh.buscar(web, dia, evitar=sorted(excluir or set())[:10])
+        halladas = wh.buscar(web, dia, evitar=sorted(excluir or set())[:10], **({"tema": tema} if tema else {}))
     except wh.WebError as err:
         avisar(f"búsqueda web: no salió ({err}); sigo con Wikipedia")
         return []

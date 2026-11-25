@@ -216,11 +216,15 @@ sobremesa."""
 
 
 def buscar(cliente: ClienteWeb, dia, evitar: list[str] | None = None,
-           busquedas: int = BUSQUEDAS_DESCUBRIR) -> list[dict]:
-    """Las historias que encontró (dicts del JSON), con al menos un link y año."""
+           busquedas: int = BUSQUEDAS_DESCUBRIR, tema: str = "") -> list[dict]:
+    """Las historias que encontró (dicts del JSON), con al menos un link y año. Con `tema` (el banco, Santi
+    2026-11-25): historias de ese tema que no dependen de la fecha."""
     fecha = f"{dia.day} de {MESES[dia.month - 1]}"
     prompt = (f"La fecha de hoy es el {fecha}. Buscá historias de Latinoamérica que pasaron un {fecha} "
               "(cualquier año) y, si faltan, historias curiosas que no dependen de la fecha.")
+    if tema:
+        prompt = (f"Buscá historias de Latinoamérica sobre {tema} que NO dependen de la fecha (se pueden contar "
+                  "cualquier día). Cada una con el título exacto de su artículo de es.wikipedia (sin eso no sirve).")
     if evitar:
         prompt += "\nNo repitas estas, que ya salieron: " + " | ".join(x[:120] for x in evitar)
     texto, links = cliente.pedir(SISTEMA_BUSCAR, prompt, busquedas=busquedas)

@@ -249,6 +249,38 @@ def cosechar_latam(wiki, haiku, puntuador, dia: date, avisar=log.info) -> list[d
     return out
 
 
+# Santi, 2026-11-25: el banco de Latinoamérica por tema, con la búsqueda web de Haiku (con Wikipedia sumaba 1 cada ~40 min)
+TEMAS_BANCO_LATAM = (
+    "FÚTBOL: clubes que salieron campeones después de años, partidos históricos, ídolos, arqueros, hinchadas, mundiales",
+    "MÚSICA: cómo nació una canción, un género (tango, cumbia, bolero, ranchera, samba) o un disco que hizo historia",
+    "ÍDOLOS DE ANTES: la época de oro del cine mexicano y argentino, cantantes, actores y deportistas, con un giro real",
+    "INVENTOS LATINOS: inventos y descubrimientos de Latinoamérica (el bolígrafo, el colectivo, la huella digital…)",
+    "CURIOSIDADES E HISTORIAS HUMANAS SORPRENDENTES: lugares insólitos, récords, misterios, gente común que hizo algo "
+    "increíble",
+)
+
+
+def cosechar_latam_web(conn, web, puntuador, tema: str, hoy: date, avisar=log.info) -> list[dict]:
+    """Historias de `tema` de la web que no dependen de la fecha, con artículo de Wikipedia (para las fotos) y 8 o más
+    con la regla de hoy (rareza incluida)."""
+    from . import locales
+
+    ya = {x.get("texto") for x in leer(conn, "latam")} | {x.get("articulo") for x in leer(conn, "latam")}
+    cands = [c for c in locales.candidatos_web(web, hoy, ya, avisar, tema=tema)
+             if c.paginas and c.paginas[0] != c.clasif.get("lugar")]
+    if not cands:
+        return []
+    out = []
+    for c, art, lug in locales.elegir(puntuador, cands, cuantos=len(cands)):
+        if c.clasif.get("puntaje", 0) < PUNTAJE_BANCO or art in ya:
+            continue
+        out.append({"id": f"latam:{art}", "texto": c.texto, "anio": c.anio, "paginas": c.paginas,
+                    "articulo": art, "articulo_lugar": lug, "puntaje": c.clasif.get("puntaje"),
+                    "clasif": {k: c.clasif.get(k) for k in ("lugar", "region", "pais", "tipo", "puntajes")},
+                    "de_dia": "", "origen": "web"})
+    return out
+
+
 REGLA_LATAM = "banco_latam_regla"   # bot_estado: la versión de la regla con la que se revisó el banco de Latinoamérica
 VERSION_REGLA_LATAM = "2026-11-25"   # Santi: tema primero, y estaciones/edificios/fundaciones/próceres con rareza
 

@@ -106,3 +106,24 @@ def test_el_tick_revisa_el_banco_una_vez(tmp_path: Path, monkeypatch):
     assert banco.leer(conn, "latam") == [] and pasos == [] and "salen 1" in avisos[0]
     m._bancos_tick(conn, None, s, ahora, correr=lambda f: f())
     assert len(avisos) == 1          # una sola vez; después sigue llenando como siempre
+
+
+def test_la_cosecha_por_tema_solo_suma_las_de_8_con_articulo(tmp_path: Path, monkeypatch):
+    from clips_bot import web_historias as wh
+
+    conn = db.connect(tmp_path / "x.db")
+    pedidos = []
+
+    def buscar(web, dia, evitar=None, tema=""):
+        pedidos.append(tema)
+        return [{"texto": COLON, "anio": 2021, "lugar": "Santa Fe", "pais": "Argentina", "tipo": "futbol",
+                 "articulo_wikipedia": "Club Atlético Colón", "fuentes": ["https://a.com"]},
+                {"texto": "La Estación de tren se inaugura", "anio": 1874, "lugar": "Concordia", "pais": "Argentina",
+                 "tipo": "fundacion", "articulo_wikipedia": "Estación Concordia", "fuentes": ["https://b.com"]},
+                {"texto": "Algo sin artículo", "anio": 1950, "lugar": "Lima", "pais": "Perú", "tipo": "anecdota",
+                 "articulo_wikipedia": "", "fuentes": ["https://c.com"]}]
+
+    monkeypatch.setattr(wh, "buscar", buscar)
+    nuevos = banco.cosechar_latam_web(conn, object(), _Punt(), "FÚTBOL", date(2026, 11, 25), avisar=lambda *_: None)
+    assert pedidos == ["FÚTBOL"]
+    assert [x["articulo"] for x in nuevos] == ["Club Atlético Colón"]
