@@ -3466,7 +3466,7 @@ def proponer(wiki: Wiki, cliente, dia: date, carpeta: Path, avisar=log.info,
             bitacora.paso("fotos")
             try:
                 banco_f = fp.juntar(wiki, puntuador or escritor, e, fotos, carpeta,
-                                    f"{e.texto} {e.paginas[0].replace('_', ' ')}", avisar)
+                                    f"{e.texto} {e.paginas[0].replace('_', ' ')}. {fuente[:900]}", avisar)
             except (fp.FotosPrevias, NarrarError) as err:
                 avisar(f"  {err}: no pido el guion")
                 fallas.append(f"{e.anio}: {err}")

@@ -1055,7 +1055,8 @@ def proponer(wiki: ef.Wiki, sonnet, haiku, gemini, dia: date, carpeta: Path, avi
             fila_f = bitacora.fila_actual()
             bitacora.paso("fotos")
             try:
-                banco_f = fp.juntar(wiki, haiku or sonnet, e, fotos, carpeta, f"{lugar}: {c.texto}", avisar)
+                banco_f = fp.juntar(wiki, haiku or sonnet, e, fotos, carpeta, f"{lugar}: {c.texto} {fuente[:700]}",
+                                    avisar)
             except (fp.FotosPrevias, ef.NarrarError) as err:
                 avisar(f"  {err}: no pido el guion")
                 fallas.append(f"{e.anio}: {err}")

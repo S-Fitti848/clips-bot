@@ -19,7 +19,9 @@ def test_motivo_descarta_borrosas_modernas_y_ajenas():
     h = "Nintendo lanza la Game Boy"
     assert fp.motivo(_desc(), h) is None
     assert fp.motivo(_desc(nitida=False), h) == "borrosa"
-    assert fp.motivo(_desc(de_epoca=False), h) == "de otra época"
+    assert fp.motivo(_desc(de_epoca=False, moderno="autos de hoy en la calle"), h) == "de otra época"
+    # la estación de 1874 fotografiada hoy: sin nada moderno a la vista, es de la época (Santi, 2026-11-25)
+    assert fp.motivo(_desc(de_epoca=False, moderno=""), h) is None
     assert fp.motivo(_desc(de_la_historia=False), h) == "no es de la historia"
     assert fp.motivo(_desc(tipo="logo"), h) == "es un logo"
     assert fp.motivo(_desc(retrato=True, quien="Pedro Pérez"), h) == "persona que la historia no nombra"
@@ -65,7 +67,7 @@ def test_con_menos_de_8_buenas_no_hay_guion(monkeypatch, tmp_path):
 
 
 def test_el_guion_ve_las_fotos_y_cada_frase_recibe_las_suyas(monkeypatch, tmp_path):
-    desc = [_desc(se_ve=f"cosa {k}") for k in range(8)] + [_desc(de_epoca=False)]
+    desc = [_desc(se_ve=f"cosa {k}") for k in range(8)] + [_desc(de_epoca=False, moderno="un celular")]
     b, h = _juntar(monkeypatch, tmp_path, desc)
     assert b.buenas == list(range(8)) and "F1: cosa 0 (1989)" in b.contexto()
     r = fp.asignar(h, ["frase uno", "frase dos"], b, lambda *_: None)

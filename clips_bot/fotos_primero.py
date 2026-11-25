@@ -34,7 +34,7 @@ POR_CONSULTA = 6        # de cada búsqueda en Commons
 GENERICOS = {"estados unidos", "computadora", "monopolio", "argentina", "méxico", "españa", "japón", "alemania",
              "francia", "reino unido", "internet", "videojuego", "empresa", "united states", "computer", "japan"}
 POR_FRASE = 3
-DESCRIPCION_V = 1
+DESCRIPCION_V = 2       # 2 (2026-11-25): `moderno` (la época se juzga por lo que se ve, no por cuándo se sacó)
 CACHE = Path(__file__).resolve().parent.parent / "data" / "cache_claude" / "fotos_primero"
 TIPOS_MALOS = {"captura", "documento", "grafico", "mapa", "logo", "diagrama", "planilla"}
 
@@ -43,10 +43,17 @@ SISTEMA = """Mirás fotos para un video corto de historia ("Pequeña Historia").
 - nitida: true si se ve nítida y con buena calidad en un celular; false si está borrosa, pixelada, muy oscura, es un
   recorte de diario ilegible o una miniatura agrandada.
 - epoca: de qué año o década es lo que se VE ("1989", "años 80", "actual"); anio: el año aproximado (0 si no se sabe).
-- de_epoca: true si lo que se ve corresponde a la época de la historia que te paso (un producto de ese año fotografiado
-  hoy en un museo SÍ cuenta; una calle de hoy, un modelo nuevo o gente de hoy en una historia de 1970, NO).
+- moderno: los elementos MODERNOS que se ven y que no existían en NINGÚN momento de los que cuenta la historia (autos
+  de hoy, celulares o pantallas, ropa actual, carteles o luces de hoy), o "" si no hay ninguno. LA REGLA ES SOBRE LO QUE
+  SE VE, NO SOBRE CUÁNDO SE SACÓ LA FOTO: un edificio, una estación, un monumento, un paisaje, un producto o una persona
+  de la época fotografiados HOY cuentan como de la época si no se ve nada moderno (la estación de 1874 fotografiada en
+  2015 sin autos ni gente de hoy: moderno = ""). Una foto vieja (blanco y negro, sepia, postal antigua) nunca es moderna.
+  La historia puede cubrir varias épocas (una marca que empezó en 1865 haciendo papel y terminó haciendo celulares):
+  todo lo que corresponde a ALGÚN momento que cuenta la historia es de la época.
+- de_epoca: false SOLO si `moderno` no está vacío; si no, true.
 - de_la_historia: true si muestra a la persona, el objeto, el lugar o algo directo de ESTA historia; false si es de otra
-  cosa (otro producto, otra ciudad, otra persona) o algo genérico que no se puede atar a la historia.
+  cosa (otro producto, otra ciudad, otra persona, comida, plantas o animales que la historia no nombra) o algo genérico
+  que no se puede atar a la historia. NO uses de_epoca para decir que una foto no es de la historia.
 - tipo: foto | captura | documento | grafico | mapa | logo | ilustracion.
 - texto_otro_idioma: true si tiene texto visible en un idioma que no es castellano ni inglés.
 - dura: true si muestra muertos o heridos. politico: true si es un político o un acto de gobierno. retrato: true si es
@@ -57,11 +64,12 @@ SCHEMA = {
     "type": "object",
     "properties": {"fotos": {"type": "array", "items": {"type": "object", "properties": {
         "foto": {"type": "integer"}, "se_ve": {"type": "string"}, "nitida": {"type": "boolean"},
-        "epoca": {"type": "string"}, "anio": {"type": "integer"}, "de_epoca": {"type": "boolean"},
+        "epoca": {"type": "string"}, "anio": {"type": "integer"}, "moderno": {"type": "string"},
+        "de_epoca": {"type": "boolean"},
         "de_la_historia": {"type": "boolean"}, "tipo": {"type": "string"},
         "texto_otro_idioma": {"type": "boolean"}, "dura": {"type": "boolean"}, "politico": {"type": "boolean"},
         "retrato": {"type": "boolean"}, "quien": {"type": "string"}},
-        "required": ["foto", "se_ve", "nitida", "epoca", "de_epoca", "de_la_historia", "tipo"]}}},
+        "required": ["foto", "se_ve", "nitida", "epoca", "moderno", "de_epoca", "de_la_historia", "tipo"]}}},
     "required": ["fotos"],
 }
 
@@ -193,7 +201,7 @@ def describir(haiku, pool: list, historia: str, anio: int, avisar=log.info) -> d
                           + (f" (fechada {pool[k].anio})" if pool[k].anio else "")
                           for j, k in enumerate(faltan, 1))
         try:
-            d = json.loads(haiku.json(SISTEMA, f"LA HISTORIA ({anio}): {historia[:600]}\n\nSon {len(faltan)} fotos, "
+            d = json.loads(haiku.json(SISTEMA, f"LA HISTORIA (empieza en {anio}; puede contar épocas posteriores): {historia[:1200]}\n\nSon {len(faltan)} fotos, "
                                                f"numeradas de 1 a {len(faltan)}. Epígrafe de cada una:\n{lista}",
                                       SCHEMA, imagenes=imagenes))
         except Exception as err:  # noqa: BLE001
@@ -223,7 +231,9 @@ def motivo(desc: dict | None, historia: str) -> str | None:
         return "sin describir"
     if desc.get("nitida") is False:
         return "borrosa"
-    if desc.get("de_epoca") is False:
+    # Santi, 2026-11-25: la época es sobre lo que se ve; "de otra época" solo si Haiku nombra algo moderno que se ve
+    # (con la primera instrucción descartaba la estación de Concordia de 1874 y postales antiguas)
+    if desc.get("de_epoca") is False and str(desc.get("moderno") or "").strip():
         return "de otra época"
     if desc.get("de_la_historia") is False:
         return "no es de la historia"
