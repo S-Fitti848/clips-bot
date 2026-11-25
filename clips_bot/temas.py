@@ -19,14 +19,16 @@ PESOS = "temas_pesos"            # bot_estado: {"tec": {subtema: bonus}, "latam"
 SUBTEMAS_TEC = ("videojuegos", "internet", "empresas", "marcas", "inventos")
 NOMBRE_TEC = {"videojuegos": "videojuegos", "internet": "internet", "empresas": "empresas", "marcas": "marcas",
               "inventos": "inventos"}
-GRUPOS_LATAM = ("futbol", "idolo", "curiosidad", "humana", "procer")
-NOMBRE_LATAM = {"futbol": "fútbol", "idolo": "ídolos de antes", "curiosidad": "curiosidades",
-                "humana": "historias humanas", "procer": "próceres y fundaciones"}
+# Santi, 2026-11-25: música e inventos latinos aparte, para que haya variedad de temas
+GRUPOS_LATAM = ("futbol", "idolo", "musica", "invento", "curiosidad", "humana", "procer")
+NOMBRE_LATAM = {"futbol": "fútbol", "idolo": "ídolos de antes", "musica": "música", "invento": "inventos latinos",
+                "curiosidad": "curiosidades", "humana": "historias humanas", "procer": "próceres y fundaciones"}
 # Lo que Santi pidió para Facebook (2026-11-23), aunque los números todavía no alcancen: base del orden.
 # Santi, 2026-11-23: la mayoría de marcas, el resto videojuegos; inventos e internet solo si la historia es muy fuerte
 BASE_TEC = {"marcas": 1.0, "empresas": 0.8, "videojuegos": 0.5, "inventos": -0.75, "internet": -0.75}
 DIAS_MIN = 3        # un Short con menos de 3 días todavía no juntó sus vistas (Analytics llega con 2-3 días de atraso)
-BASE_LATAM = {"futbol": 1.0, "idolo": 0.6, "curiosidad": 0.6, "humana": 0.0, "procer": -1.0}
+BASE_LATAM = {"futbol": 1.0, "idolo": 0.6, "musica": 0.6, "invento": 0.6, "curiosidad": 0.6, "humana": 0.0,
+              "procer": -1.0}
 MAX_BONUS = 0.75
 MIN_N = 2
 
@@ -73,6 +75,12 @@ _PROCER = ("insurgente", "independencia", "batalla", "sitio ", "sitio a", "fusil
            "conquistador", "virrey", "corona", "realista", "caudillo", "presidente", "mando mexico", "decreto",
            "fundad", "fundacion", "nacio de", "distrito", "cambio de nombre")
 _CURIOSAS = {"lugar_curioso", "invento", "costumbre", "record", "misterio", "dato_sorprendente"}
+_MUSICA = ("cancion", "tango", "cumbia", "bolero", "ranchera", "mariachi", "salsa", "samba", "bossa nova", "folclore",
+           "orquesta", "himno", "disco ", "grabo", "compuso", "compositor", "musica", "musico", "cantor")
+# Temas que solo entran con algo fuera de lo común (Santi, 2026-11-25: Concordia salió bien hecho, pero una estación
+# no la vería nadie): edificios, estaciones, fundaciones, inauguraciones y próceres
+_COMUNES = ("estacion", "edificio", "inaugur", "teatro", "catedral", "iglesia", "museo", "puente", "ferrocarril",
+            "fundad", "fundacion", "se funda", "emisora", "palacio", "plaza", "avenida", "hospital", "escuela")
 
 
 def grupo_latam(tipo: str | None, texto: str = "") -> str:
@@ -83,6 +91,10 @@ def grupo_latam(tipo: str | None, texto: str = "") -> str:
         return "futbol"
     if tipo == "idolo":
         return "idolo"
+    if tipo == "musica" or (tipo not in ("procer", "fundacion") and _hay(t, _MUSICA)):
+        return "musica"
+    if tipo == "invento":
+        return "invento"
     if tipo in ("procer", "fundacion"):
         return "procer"
     if tipo in _CURIOSAS:
@@ -90,6 +102,15 @@ def grupo_latam(tipo: str | None, texto: str = "") -> str:
     if _hay(t, _PROCER) and tipo in ("heroe_de_pueblo", "momento_emotivo", "otro", ""):
         return "procer"
     return "humana"
+
+
+def tema_comun(tipo: str | None, texto: str = "") -> bool:
+    """Una estación, un edificio, una fundación, una inauguración o un prócer: no quedan prohibidos, pero solo entran
+    si la historia tiene algo fuera de lo común (Santi, 2026-11-25): su puntaje es el MENOR entre el promedio y la
+    `rareza` (locales.elegir)."""
+    if grupo_latam(tipo, texto) in ("futbol", "idolo", "musica"):
+        return False
+    return grupo_latam(tipo, texto) == "procer" or _hay(_norm(texto) + " ", _COMUNES)
 
 
 def _mediana(xs: list[float]) -> float:

@@ -3699,6 +3699,20 @@ def _latam_del_dia(conn, dia) -> list[dict]:
     return json.loads(db.get_valor(conn, f"{PH_LATAM}:{dia.isoformat()}") or "[]")
 
 
+def _temas_latam_recientes(conn, dia) -> set[str]:
+    """Los temas (temas.grupo_latam) de las historias de Latinoamérica de ayer y de hoy: el mismo tema no sale dos días
+    seguidos (Santi, 2026-11-25)."""
+    from datetime import timedelta
+
+    from . import temas
+
+    out = set()
+    for d in (dia - timedelta(days=1), dia):
+        for x in _latam_del_dia(conn, d):
+            out.add(x.get("grupo") or temas.grupo_latam(x.get("tipo"), x.get("texto") or ""))
+    return out
+
+
 def _piso_latam(conn, dia, hecho: str = "") -> dict:
     """Nunca un día sin video (Santi, 2026-11-15): la PRIMERA historia del día sale siempre (la mejor si
     tiene 6 o más; si no, una del banco de reserva); la segunda, solo con 8 (o con 7 si hoy todavía no
@@ -4064,6 +4078,7 @@ def _fb_proponer(conn, tg: TelegramClient, chats: list[str], dia, settings: Sett
                                       for v in (x.get("texto"), x.get("articulo")) if v},
                              evitar_paises={x["pais"] for x in _latam_del_dia(conn, dia) if x.get("pais")},
                              pesos=_pesos_latam(conn), fotos_primero=settings.efemerides.fotos_primero,
+                             evitar_temas=set() if hecho else _temas_latam_recientes(conn, dia),
                              mas_video=settings.efemerides.estilo_nuevo,
                              puntuador=_puntuador(settings), web=_web_latam(conn, settings),
                              **(dict(banco=banco_mod.leer(conn, "latam"), solo_banco=True) if solo_banco
@@ -4076,7 +4091,8 @@ def _fb_proponer(conn, tg: TelegramClient, chats: list[str], dia, settings: Sett
     ya = _latam_del_dia(conn, dia)
     ya.append({"texto": p.evento.get("texto"), "pais": (p.local or {}).get("pais"),
                "articulo": (p.evento.get("paginas") or [""])[0], "puntaje": (p.local or {}).get("puntaje"),
-               "origen": (p.local or {}).get("origen", "")})
+               "origen": (p.local or {}).get("origen", ""), "grupo": (p.local or {}).get("grupo", ""),
+               "tipo": (p.local or {}).get("tipo", "")})
     db.set_valor(conn, f"{PH_LATAM}:{dia.isoformat()}", json.dumps(ya, ensure_ascii=False))
     estado = {"propuesta": p.__dict__, "carpeta": str(carpeta), "chat_id": chats[0]}
     bitacora.dato(titulo=(p.guion or {}).get("titulo", ""))
@@ -4775,6 +4791,32 @@ def _bancos_tick(conn, tg: TelegramClient, settings: Settings, ahora=None, corre
         return
     hilo = BANCO_HILO.get("hilo")
     if hilo is not None and hilo.is_alive():
+        return
+    if (_banco_activo(settings, "latam")
+            and db.get_valor(conn, banco_mod.REGLA_LATAM) != banco_mod.VERSION_REGLA_LATAM):
+        # Santi, 2026-11-25: el banco se revisa una vez con la regla nueva (tema primero; estaciones, edificios,
+        # fundaciones y próceres solo con algo fuera de lo común) antes de seguir llenándolo
+        def revisar():
+            c2 = db.connect(DB_PATH)
+            try:
+                with gemini_mod.origen(gemini_mod.PRODUCCION):
+                    punt = _puntuador(settings)
+                    if punt is None:
+                        return
+                    quedan, salen = banco_mod.revisar_latam(c2, punt)
+                    _aviso(tg, f"🔧 Claude Code: revisé el banco de Latinoamérica con la regla nueva: quedan "
+                               f"{len(quedan)}, salen {len(salen)}.\n" + "\n".join(salen))
+            except Exception:
+                log.exception("revisión del banco de Latinoamérica")
+            finally:
+                c2.close()
+
+        if correr is not None:
+            correr(revisar)
+            return
+        hilo = threading.Thread(target=revisar, daemon=True, name="banco-latam-revision")
+        BANCO_HILO["hilo"] = hilo
+        hilo.start()
         return
     canales = [c for c in banco_mod.CANALES if _banco_activo(settings, c) and banco_mod.hay_que_reponer(conn, c)]
     if not canales:

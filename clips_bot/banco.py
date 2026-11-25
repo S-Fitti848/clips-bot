@@ -249,6 +249,42 @@ def cosechar_latam(wiki, haiku, puntuador, dia: date, avisar=log.info) -> list[d
     return out
 
 
+REGLA_LATAM = "banco_latam_regla"   # bot_estado: la versión de la regla con la que se revisó el banco de Latinoamérica
+VERSION_REGLA_LATAM = "2026-11-25"   # Santi: tema primero, y estaciones/edificios/fundaciones/próceres con rareza
+
+
+def revisar_latam(conn, puntuador, avisar=log.info) -> tuple[list[dict], list[str]]:
+    """Vuelve a puntuar el banco de Latinoamérica con la regla de hoy (rareza: locales.puntaje_de) y saca lo que ya no
+    llega a 8. Devuelve (las que quedan, las que salieron con su puntaje nuevo)."""
+    from . import locales, temas
+
+    items = leer(conn, "latam")
+    cands = [locales.Candidato("banco", int(it["anio"]), it["texto"], list(it["paginas"]),
+                               dict(it.get("clasif") or {}, conmemora="")) for it in items]
+    if not cands:
+        db.set_valor(conn, REGLA_LATAM, VERSION_REGLA_LATAM)
+        return [], []
+    notas = {id(c): (c, art, lug) for c, art, lug in locales.elegir(puntuador, cands, cuantos=len(cands))}
+    quedan, salen = [], []
+    for it, c in zip(items, cands):
+        g = temas.grupo_latam(c.clasif.get("tipo"), c.texto)
+        nombre = f"{c.anio} {c.clasif.get('lugar') or ''}: {c.texto[:60]}"
+        if id(c) not in notas:
+            salen.append(f"{nombre} (sin puntaje)")
+            continue
+        p = float(c.clasif.get("puntaje") or 0)
+        if p < PUNTAJE_BANCO:
+            r = (c.clasif.get("puntajes") or {}).get("rareza")
+            salen.append(f"{nombre} ({temas.NOMBRE_LATAM.get(g, g)}, {p:g}" + (f", rareza {r}" if r is not None else "")
+                         + ")")
+            continue
+        quedan.append(dict(it, puntaje=p, clasif=dict(it.get("clasif") or {}, puntajes=c.clasif.get("puntajes"))))
+    guardar(conn, "latam", quedan)
+    db.set_valor(conn, REGLA_LATAM, VERSION_REGLA_LATAM)
+    avisar(f"banco latam revisado: quedan {len(quedan)}, salen {len(salen)}: " + " | ".join(salen))
+    return quedan, salen
+
+
 SUBTEMAS_BANCO_TEC = ("marcas", "empresas", "videojuegos")   # Santi, 2026-11-24: el banco, con marcas y videojuegos
 FOTOS_BANCO_MIN = 6     # fotos libres (sin Claude) para entrar al banco; con 4 pasaban y después fallaban (23-24/11)
 

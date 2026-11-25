@@ -225,6 +225,7 @@ def test_la_reposicion_va_al_banco_mas_vacio_en_su_horario(conn, monkeypatch):
     monkeypatch.setattr(m, "DB_PATH", Path(conn.execute("PRAGMA database_list").fetchone()[2]))
     banco.agregar(conn, "latam", [_item(i) for i in range(5)])
     banco.agregar(conn, "tecnologia", [dict(_item(i), id=f"tec:{i}") for i in range(3)])
+    db.set_valor(conn, banco.REGLA_LATAM, banco.VERSION_REGLA_LATAM)   # la revisión del banco tiene su test aparte
     m._bancos_tick(conn, Tg(), s, _ahora("05:00"), correr=lambda f: f())
     assert corridos == []                                    # de madrugada, no
     m._bancos_tick(conn, Tg(), s, _ahora("10:00"), correr=lambda f: f())

@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-11-25 | **Versión:** v1.58.0 (desplegado) | **Modo:** Fase 2: corriendo solo en la Pi. **Rots APAGADO. Así Nació PAUSADO desde el 19/11** (vuelve con 1 por día, preparado la noche anterior, si 4 de 5 marcas nuevas dan 15/19 o más por menos de US$ 0,60). **Pequeña Historia: TECNOLOGÍA ES LA PRIORIDAD NÚMERO UNO desde el 23/11** (2 por día en YouTube, 11:00 y 20:00, con una reserva de 3 videos ya armados; el canal de YouTube es solo de tecnología) y **Latinoamérica 2 por día SOLO en Facebook** hasta el 15/12. Nada se publica solo desde el 17/11: llega con ✅ Publicar / ❌ Cancelar y sin respuesta no sale. Todo al privado de Santi
+**Snapshot:** 2026-11-25 | **Versión:** v1.59.0 (desplegado) | **Modo:** Fase 2: corriendo solo en la Pi. **Rots APAGADO. Así Nació PAUSADO desde el 19/11** (vuelve con 1 por día, preparado la noche anterior, si 4 de 5 marcas nuevas dan 15/19 o más por menos de US$ 0,60). **Pequeña Historia: TECNOLOGÍA ES LA PRIORIDAD NÚMERO UNO desde el 23/11** (2 por día en YouTube, 11:00 y 20:00, con una reserva de 3 videos ya armados; el canal de YouTube es solo de tecnología) y **Latinoamérica 2 por día SOLO en Facebook** hasta el 15/12. Nada se publica solo desde el 17/11: llega con ✅ Publicar / ❌ Cancelar y sin respuesta no sale. Todo al privado de Santi
 
 > **SI ESTÁS EMPEZANDO UNA SESIÓN NUEVA, LEÉ §10.** Ahí está qué está hecho, qué quedó a medias,
 > qué falta, y las trampas que ya nos mordieron.
@@ -313,6 +313,17 @@ servicio systemd separado: `clips-bot`).
   lugar (`web_historias.es_tecnica`); se verifican solo las 3 mejores del día (y 3 del banco, `locales.MAX_VERIFICAR`).
   (D) **Informe de las 09:00:** "Al primer intento: N % (tecnología a/b · Latinoamérica c/d · reserva e/f)" y "Gastado
   en reintentos: US$ x de US$ y" (`fallas.lineas_informe`).
+- **Tema primero; las fotos son un filtro, no la forma de elegir (Santi, 2026-11-25, después de la estación Concordia:
+  "salió bien hecho, pero la historia no la vería nadie").** (1) Latinoamérica con variedad: fútbol, ídolos de antes,
+  música, inventos latinos, curiosidades, historias humanas sorprendentes (`temas.GRUPOS_LATAM`, tipo `musica` nuevo);
+  el mismo tema no sale dos días seguidos (`locales.proponer(evitar_temas=)` con los de ayer y hoy, `ph_latam:<día>`
+  guarda el `grupo`: van al final, solo si no hay otra; el tema manda sobre el país). Tecnología: marcas y videojuegos
+  primero, otros temas con 8,5 o más (ya era así). (2) Estaciones, edificios, inauguraciones, fundaciones y próceres
+  (`temas.tema_comun`) no están prohibidos, pero su puntaje es el MENOR entre el promedio y la `rareza` (nuevo criterio
+  1-10 de Haiku, "¿hace decir 'no puede ser'?"; `locales.puntaje_de`). (3) Las fotos (8 buenas con fotos primero)
+  recién entre las que tienen buen tema. (4) El banco de Latinoamérica se revisa una vez con la regla
+  (`banco.revisar_latam`, `bot_estado.banco_latam_regla`) y saca lo que no llega a 8. **Las pruebas, con historias
+  variadas y de buen tema** (nunca elegir una historia de prueba por las fotos que tiene).
 - **Menos texto (Santi, 2026-11-18):** mensajes de 2-3 líneas. El resumen de cada Reel a las 24 h ya NO se manda: se
   guarda y alimenta los guiones (`aprendizaje.py`: los ganchos que más y menos retuvieron entran en el prompt de cada
   canal); los lunes desde las 10:00, un resumen de 5 líneas con qué cambió y cómo vienen las vistas
@@ -1396,6 +1407,10 @@ Problemas abiertos:
 
 ## 9. CHANGELOG
 
+- v1.59.0 (2026-11-25, tarde) — **Tema primero en Latinoamérica** (regla en §1). Por qué entró Concordia: el banco
+  la tenía con 8,25 (Haiku le dio persona 9, peligro 7, giro 8, emoción 9 a una estación de tren), la cosecha del banco
+  solo sacaba las de la sección "fundación" de Wikipedia y esta venía de la historia de una ciudad, y para la prueba yo
+  la elegí a mano porque tenía fotos. El banco tenía 12: 6 de próceres, batallas o fundaciones. `tests/test_tema_primero.py`.
 - v1.58.0 (2026-11-25) — (1) **Despliegue seguro** (`deploy/desplegar.sh`): el código nuevo se prueba en un worktree con
   el settings.yaml y el .env de la Pi (`chequeo-arranque` + tests) antes de actualizar; recién sin trabajo pesado se
   actualiza y se reinicia en el mismo momento, y si la escucha no arranca vuelve al commit anterior. Un proceso andando

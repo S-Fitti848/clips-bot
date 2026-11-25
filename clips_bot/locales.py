@@ -37,7 +37,9 @@ TIPOS = ("heroe_de_pueblo", "gente_comun", "anecdota", "momento_emotivo", "funda
          "idolo",
          # Santi, 2026-11-23 (con los números de Facebook: Colón campeón 14.730 reproducciones, los próceres ~200): el
          # fútbol aparte, y los próceres, conquistadores y batallas aparte, para mandarlos al final
-         "futbol", "procer", "otro")
+         "futbol", "procer",
+         # Santi, 2026-11-25: música aparte (canciones, géneros, discos que hicieron historia), para variar el tema
+         "musica", "otro")
 
 # Lugares de Latinoamérica: países, sus gentilicios y las provincias, estados y ciudades que más
 # aparecen en las páginas de cada día. Sin esto, Haiku vería ~150 líneas por día.
@@ -506,7 +508,8 @@ hecho de la lista decí:
   costumbre, record, misterio, dato_sorprendente, idolo (un ídolo latinoamericano de antes: la época de oro del cine
   mexicano y argentino, cantantes, actores, deportistas; contado como historia real de su vida, con un giro y
   emoción, no como ficha biográfica), futbol (clubes, ídolos del fútbol, partidos históricos, títulos, hinchadas,
-  mundiales), procer (próceres, conquistadores, virreyes, generales, batallas, independencia, revueltas, gobernantes)
+  mundiales), musica (una canción, un género, un disco o un músico que hicieron historia: cómo nació el tango, la
+  cumbia o un bolero famoso), procer (próceres, conquistadores, virreyes, generales, batallas, independencia, revueltas, gobernantes)
   u otro.
 - `tragedia_sola`: true si lo central es una muerte, un desastre, un crimen o una represión SIN un acto
   heroico o algo luminoso que contar. (Un maquinista que muere salvando a su pueblo: false. Un terremoto
@@ -637,7 +640,17 @@ segundo 3, hacen falta historias que atrapen):
   increíble pero cierto; 1 = un dato común). En las curiosas, `sorpresa` reemplaza a `peligro` (poné
   `peligro` igual, pero no cuenta);
 - `giro`: ¿hay un giro o un final sorprendente?;
-- `emocion`: ¿genera emoción (orgullo, asombro, tristeza)?
+- `emocion`: ¿genera emoción (orgullo, asombro, tristeza)?;
+- `rareza` (para TODOS, Santi 2026-11-25): ¿tiene algo FUERA DE LO COMÚN, un dato increíble o un giro que haga decir
+  "no puede ser"? 10 = Nacozari, o Colón campeón tras 116 años; 2 = una estación de tren, un edificio o una
+  emisora que se inaugura, una ciudad que se funda o una batalla de la independencia contada como siempre.
+  Las estaciones, edificios, fundaciones, inauguraciones y próceres NO están prohibidos, pero su puntaje final es
+  el MENOR entre el promedio y la `rareza`: solo entran si de verdad tienen algo increíble.
+SÉ EXIGENTE CON LOS NÚMEROS: una estación de tren o un edificio no tienen "peligro" (1-2) ni "persona" (salvo que
+haya alguien con nombre haciendo algo notable); una inundación sin un protagonista con nombre no pasa de 4 en
+persona. No infles: 8 o más es para historias que la gente compartiría.
+VARIEDAD (Santi, 2026-11-25): buscamos fútbol, ídolos de antes, curiosidades, historias humanas sorprendentes,
+música e inventos latinos; preferí un buen tema antes que la historia que tenga más fotos.
 EJEMPLO DE 10 EN LAS CUATRO: Nacozari (1907): el maquinista Jesús García ve que el tren lleva
 dinamita prendida, lo saca del pueblo a toda máquina y muere en la explosión salvando a todos; hoy
 el pueblo se llama Nacozari de García. Sé exigente: una fundación sin protagonista o un decreto
@@ -654,9 +667,9 @@ SCHEMA_ELEGIR = {
                        "articulo_lugar": {"type": "STRING"}, "motivo": {"type": "STRING"},
                        "persona": {"type": "INTEGER"}, "peligro": {"type": "INTEGER"},
                        "giro": {"type": "INTEGER"}, "emocion": {"type": "INTEGER"},
-                       "sorpresa": {"type": "INTEGER"}},
+                       "sorpresa": {"type": "INTEGER"}, "rareza": {"type": "INTEGER"}},
         "required": ["n", "articulo", "articulo_lugar", "motivo", "persona", "peligro", "giro",
-                     "emocion", "sorpresa"]}}},
+                     "emocion", "sorpresa", "rareza"]}}},
     "required": ["elegidos"],
 }
 
@@ -672,6 +685,26 @@ def es_curiosa(c: "Candidato") -> bool:
     return str(c.clasif.get("tipo") or "") in CURIOSAS
 PISO_UNA_POR_DIA = 7.0   # Santi, 2026-11-15: sin ninguna de 8, la mejor del día si tiene 7 (una por día)
 A_PUNTUAR = 30       # cuántas puntúa Sonnet por propuesta (eran 8 de 20; presupuesto de 2026-11-15)
+
+
+def puntaje_de(notas: dict, tipo: str | None, texto: str) -> float:
+    """El promedio de persona, peligro (o sorpresa), giro y emoción; en un tema común (estación, edificio, fundación,
+    inauguración, prócer) el MENOR entre ese promedio y la rareza (Santi, 2026-11-25: solo entran si tienen algo fuera
+    de lo común)."""
+    from . import temas
+
+    if not all(k in notas for k in CRITERIOS):
+        return 0.0
+    prom = round(sum(notas[k] for k in CRITERIOS) / len(CRITERIOS), 2)
+    if temas.tema_comun(tipo, texto) and isinstance(notas.get("rareza"), int):
+        return float(min(prom, notas["rareza"]))
+    return prom
+
+
+def grupo_de(c: "Candidato") -> str:
+    from . import temas
+
+    return temas.grupo_latam(c.clasif.get("tipo"), c.texto)
 
 
 def elegir(sonnet, cands: list[Candidato], cuantos: int = A_PUNTUAR) -> list[tuple[Candidato, str, str]]:
@@ -699,9 +732,10 @@ def elegir(sonnet, cands: list[Candidato], cuantos: int = A_PUNTUAR) -> list[tup
             # Santi, 2026-11-15: en las historias curiosas "peligro" pasa a ser "sorpresa"
             notas["peligro"] = x["sorpresa"]
             notas["sorpresa"] = x["sorpresa"]
+        if isinstance(x.get("rareza"), int):
+            notas["rareza"] = x["rareza"]
         c.clasif["puntajes"] = notas
-        c.clasif["puntaje"] = (round(sum(notas[k] for k in CRITERIOS) / len(CRITERIOS), 2)
-                               if all(k in notas for k in CRITERIOS) else 0.0)
+        c.clasif["puntaje"] = puntaje_de(notas, c.clasif.get("tipo"), c.texto)
         out.append((c, art, lug if lug != art else ""))
     # El calendario manda aunque Sonnet no lo respete (sorted es estable: dentro de cada grupo, su orden), salvo los
     # próceres y las fundaciones, que van al final (Santi, 2026-11-23: son lo que peor rinde en Facebook).
@@ -773,6 +807,7 @@ def local_de(c: Candidato, aviso: str = "") -> dict:
     out = {"lugar": k.get("lugar"), "region": k.get("region"), "pais": k.get("pais"),
            "tipo": k.get("tipo"), "conmemora": k.get("conmemora"), "seccion": c.seccion,
            "puntaje": k.get("puntaje"), "puntajes": k.get("puntajes")}
+    out["grupo"] = grupo_de(c)
     if k.get("banco_id"):
         out["banco_id"] = k["banco_id"]
     out["origen"] = "banco" if k.get("banco_id") else ("web" if c.seccion == "web" else "wikipedia")
@@ -821,10 +856,20 @@ def candidatos_web(web, dia: date, excluir: set | None = None, avisar=log.info) 
     return out
 
 
-def de_banco(banco: list[dict] | None, excluir: set | None = None) -> list[tuple[Candidato, str, str]]:
-    """Las historias del banco de reserva como candidatos elegidos (mejor puntaje primero)."""
+def de_banco(banco: list[dict] | None, excluir: set | None = None, evitar_temas: set | None = None,
+             pesos: dict | None = None) -> list[tuple[Candidato, str, str]]:
+    """Las historias del banco de reserva como candidatos elegidos: primero el tema (el que rinde y no salió ayer,
+    Santi 2026-11-25), después el puntaje."""
+    from . import temas
+
+    def clave(x):
+        k = x.get("clasif") or {}
+        g = temas.grupo_latam(k.get("tipo"), x.get("texto") or "")
+        return (g in (evitar_temas or set()), g == "procer",
+                -(float(x.get("puntaje") or 0) + float((pesos or temas.BASE_LATAM).get(g, 0.0))))
+
     out = []
-    for it in sorted(banco or [], key=lambda x: -float(x.get("puntaje") or 0)):
+    for it in sorted(banco or [], key=clave):
         if it.get("texto") in (excluir or set()) or it.get("articulo") in (excluir or set()):
             continue
         if float(it.get("puntaje") or 0) < PUNTAJE_MIN:     # nunca una de menos de 8 (Santi, 2026-11-16)
@@ -842,8 +887,12 @@ def proponer(wiki: ef.Wiki, sonnet, haiku, gemini, dia: date, carpeta: Path, avi
              evitar_paises: set | None = None, mas_video: bool = False,
              piso_alternativo: float | None = None, puntuador=None,
              banco: list[dict] | None = None, solo_banco: bool = False, web=None,
-             pesos: dict | None = None, fotos_primero: bool = False) -> ef.Propuesta:
+             pesos: dict | None = None, fotos_primero: bool = False,
+             evitar_temas: set | None = None) -> ef.Propuesta:
     """`fotos_primero` (Santi, 2026-11-25): las fotos antes del guion (fotos_primero.py), como en tecnología.
+
+    `evitar_temas` (Santi, 2026-11-25): los grupos (temas.grupo_latam) que salieron ayer y hoy; esas historias van al
+    final (solo salen si no hay otra), así el mismo tema no sale dos días seguidos.
 
     `web` (web_historias.ClienteWeb, Santi 2026-11-16): suma historias de la web a las de Wikipedia y
     verifica CADA dato de la elegida con 2 fuentes antes del guion (el guion sale solo de lo verificado).
@@ -933,7 +982,8 @@ def proponer(wiki: ef.Wiki, sonnet, haiku, gemini, dia: date, carpeta: Path, avi
                                       f"puntaje {c.clasif.get('puntaje', 0):.2f} < {PUNTAJE_MIN:g}", "puntaje",
                                       costo=parte_puntaje)
             # Las mejores primero, con el tema que rinde (Santi, 2026-11-23): próceres al final; el calendario suma medio punto.
-            elegidos.sort(key=lambda x: (es_procer(x[0]), -(x[0].clasif.get("puntaje", 0) + peso_tema(x[0], pesos)
+            elegidos.sort(key=lambda x: (grupo_de(x[0]) in (evitar_temas or set()), es_procer(x[0]),
+                                         -(x[0].clasif.get("puntaje", 0) + peso_tema(x[0], pesos)
                                                             + (0.5 if en_calendario(x[0]) else 0.0))))
             if not elegidos:
                 raise ef.NarrarError(f"Hoy ninguna historia llega a {PUNTAJE_MIN:g} de promedio (persona, "
@@ -948,14 +998,15 @@ def proponer(wiki: ef.Wiki, sonnet, haiku, gemini, dia: date, carpeta: Path, avi
     except ef.NarrarError as err:
         # Nunca un día sin video (Santi, 2026-11-15): debajo del piso (6) o sin candidatas, una historia
         # del banco de reserva (no depende de la fecha, puntuada de antemano con 8 o más).
-        elegidos = de_banco(banco, excluir)
+        elegidos = de_banco(banco, excluir, evitar_temas, pesos)
         if not elegidos:
             raise
         aviso[0] = "📦 del banco de reserva (" + str(err).split(":")[0][:120] + ")"
         avisar(f"banco de reserva: {len(elegidos)} historias ({err})")
     orden = otro_pais_primero([c for c, _, _ in elegidos], evitar_paises)
-    elegidos = sorted(elegidos, key=lambda x: orden.index(x[0]))
-    avisar("Sonnet eligió: " + " | ".join(f"{c.anio} {c.clasif.get('lugar')}: {c.texto[:50]} [{a}]"
+    # el tema manda sobre el país (Santi, 2026-11-25): un tema que salió ayer u hoy va al final aunque sea de otro país
+    elegidos = sorted(elegidos, key=lambda x: (grupo_de(x[0]) in (evitar_temas or set()), orden.index(x[0])))
+    avisar("Sonnet eligió: " + " | ".join(f"{c.anio} {c.clasif.get('lugar')}: {c.texto[:50]} [{a}] ({grupo_de(c)})"
                                           for c, a, _ in elegidos))
     fallas, respaldo, descartes, insuf = [], None, {}, None
     intentos = [0]
@@ -973,7 +1024,7 @@ def proponer(wiki: ef.Wiki, sonnet, haiku, gemini, dia: date, carpeta: Path, avi
         # llega al 50 % sale con el mínimo relajado (como la de tecnología) ANTES de ir al banco (Puebla: 68 %).
         if insuf is not None and ef.umbral_relajado(insuf[0].pct) is not None and not respaldo:
             return
-        extra = de_banco(banco, excluir)
+        extra = de_banco(banco, excluir, evitar_temas, pesos)
         if extra:
             avisar("ninguna de las del día salió: paso al banco de reserva")
             aviso[0] = "📦 del banco de reserva (las del día no salieron: " + "; ".join(fallas)[:120] + ")"
