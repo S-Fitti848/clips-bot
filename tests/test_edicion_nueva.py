@@ -159,9 +159,10 @@ def test_plan_rapido_ninguna_foto_mas_de_2_veces():
     for _, f, _s in plan:
         veces[f] = veces.get(f, 0) + 1
     assert max(veces.values()) <= 2
-    assert len(plan) >= 5 and sum(s for *_, s in plan) == pytest.approx(18.0)
+    # Santi, 2026-11-25: con 2 fotos, 4 cortes más largos con movimiento en vez de tarjetas
+    assert len(plan) == 4 and max(veces) < 10 and sum(s for *_, s in plan) == pytest.approx(18.0)
     faltas = []
-    ef.plan_rapido([(0, 0, 18.0)], g, faltas=faltas)     # sin tarjetas: queda anotado
+    ef.plan_rapido([(0, 0, 30.0)], g, faltas=faltas)     # ni así alcanza (más de 6 s por corte): queda anotado
     assert faltas
 
 

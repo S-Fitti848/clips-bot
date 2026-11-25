@@ -127,3 +127,12 @@ def test_la_cosecha_por_tema_solo_suma_las_de_8_con_articulo(tmp_path: Path, mon
     nuevos = banco.cosechar_latam_web(conn, object(), _Punt(), "FÚTBOL", date(2026, 11, 25), avisar=lambda *_: None)
     assert pedidos == ["FÚTBOL"]
     assert [x["articulo"] for x in nuevos] == ["Club Atlético Colón"]
+
+
+def test_los_productos_se_nombran():
+    from clips_bot import efemerides as ef
+
+    frases = ["Sony sacó un aparato azul y plateado.", "El Walkman era un aparato chico.",
+              "Lo llevabas en el bolsillo.", "¿Vos tuviste uno?"]
+    assert ef.frases_vagas(frases) == [1]
+    assert "NADA ABSTRACTO" in ef.SISTEMA_GUION and "NOMBRAN SIEMPRE" in ef.SISTEMA_GUION

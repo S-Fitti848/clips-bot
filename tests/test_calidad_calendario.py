@@ -283,13 +283,18 @@ def test_sonnet_no_puede_saltear_el_calendario():
 
 # ---- feedback del 11/11: fotos del corto, ruido final, ficción, karaoke, horarios de Facebook ----
 
-def test_ninguna_foto_mas_de_4_s_y_el_gancho_2_5():
+def test_ninguna_foto_mas_de_6_s_y_el_gancho_2_5_si_hay_otra():
+    # Santi, 2026-11-25: con una sola foto, la frase la sigue con movimiento (hasta 6 s) en vez de una tarjeta
     g = _guion(frases=["a", "b"], ranking=[[0], [1]], del_hecho=[5, 6])
-    tarjetas = iter(range(100, 120))     # sin fotos "generales" (2026-11-17): si no hay otra, tarjeta
+    tarjetas = iter(range(100, 120))
     plan, _ = ef.plan_rapido([(0, 0, 6.0), (1, 1, 4.1)], g, nueva_tarjeta=lambda i: next(tarjetas))
     seguido, primera = ef.seguidos_max(plan)
-    assert seguido <= ef.FOTO_MAX_S and primera <= ef.GANCHO_MAX_S
+    assert seguido <= ef.CORTE_LARGO_MAX_S and [f for _, f, _s in plan] == [0, 1]
     assert sum(s for *_, s in plan) == pytest.approx(10.1)
+    # con otra foto en la frase del gancho, el gancho sigue cortando a los 2,5 s
+    g = _guion(frases=["a", "b"], ranking=[[0, 2], [1]], del_hecho=[5, 6])
+    plan, _ = ef.plan_rapido([(0, 0, 6.0), (1, 1, 4.1)], g, nueva_tarjeta=lambda i: next(tarjetas))
+    assert ef.seguidos_max(plan)[1] <= ef.GANCHO_MAX_S
 
 
 def test_ruido_al_final_de_la_voz_se_silencia(tmp_path):
@@ -358,9 +363,10 @@ def test_ninguna_foto_en_mas_de_2_cortes_y_si_no_hay_una_tarjeta(tmp_path):
     for _, f, _s in plan:
         cuenta[f] = cuenta.get(f, 0) + 1
     assert max(cuenta.values()) <= 2, plan
-    assert tarjetas, "sin fotos que alcancen, tiene que haber tarjetas"
+    # Santi, 2026-11-25: con pocas fotos, cortes más largos con movimiento; la tarjeta solo si una foto pasaría de 6 s
+    assert len(tarjetas) == 1, plan          # la 0 seguiría 10 s en pantalla
     seguido, primera = ef.seguidos_max(plan)
-    assert seguido <= ef.FOTO_MAX_S and primera <= ef.GANCHO_MAX_S
+    assert seguido <= ef.CORTE_LARGO_MAX_S
     # sin fábrica de tarjetas, los cortes que no tienen foto quedan anotados
     faltas = []
     ef.plan_rapido([(0, 0, 4.0), (1, 0, 6.0), (2, 1, 8.0)], g, faltas=faltas)
@@ -423,3 +429,14 @@ def test_cuatro_horas_entre_los_dos_reels():
     otra = datetime(2026, 11, 12, 21, 30, tzinfo=m.AR)
     t = datetime(2026, 11, 12, 22, 0, tzinfo=m.AR)
     assert m.separar_de_otras(t, [otra], datetime(2026, 11, 12, 21, 50, tzinfo=m.AR), 4) == t
+
+
+def test_los_cortes_se_ajustan_a_las_fotos_que_hay():
+    # Santi, 2026-11-25: con pocas fotos buenas, cortes más largos con movimiento de cámara, sin tarjetas de relleno
+    g = _guion(frases=["a", "b", "c"], ranking=[[0], [1], [2, 3]], del_hecho=[0], claves=["Acta"])
+    tarjetas = []
+    plan, movs = ef.plan_rapido([(0, 0, 5.0), (1, 1, 5.5), (2, 2, 7.0)], g,
+                                nueva_tarjeta=lambda i: tarjetas.append(i) or 100)
+    assert not tarjetas, plan
+    assert [f for _, f, _s in plan] == [0, 1, 2, 3]          # un corte por foto: 5 s, 5,5 s y dos de 3,5 s
+    assert all(m for m in movs)                                # todos con movimiento de cámara

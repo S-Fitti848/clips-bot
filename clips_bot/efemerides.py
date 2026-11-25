@@ -864,6 +864,12 @@ nombre, ni un número, ni una fecha que no esté ahí. Si el artículo no lo dic
   es algo que pasa dentro de la historia, no sirve. Poné `cuenta_trama` en true si alguna frase
   cuenta la trama (y entonces reescribila).
 """ + REGLAS_CLARIDAD + REGLA_GANCHO_CONCRETO + """
+- NADA ABSTRACTO (Santi, 2026-11-25): cada frase habla de algo que se pueda MOSTRAR con una foto (una persona, un
+  objeto, un lugar, un momento), no de ideas sueltas ("la mitad del mercado", "su importancia", "el éxito"). Si
+  querés dar un dato abstracto, atalo a algo que se ve ("Medio Japón caminaba con un Walkman puesto."). Solo la
+  frase del giro a la mitad y la pregunta final pueden no tener imagen propia.
+- LOS PRODUCTOS SE NOMBRAN SIEMPRE: "un Walkman", "el Nokia 3310", "la Game Boy"; nunca "un aparato", "el
+  dispositivo", "un artefacto azul y plateado" ni "el invento" sin decir cuál es.
 - "Menos datos" NO es un guion más corto: sigue siendo de 80 a 100 palabras. Las palabras que
   dejás de gastar en fechas y nombres van a explicar el cómo y el porqué.
 - Cada frase lleva `mostrar`: qué tendría que verse en pantalla mientras se dice, como búsqueda
@@ -1164,6 +1170,23 @@ class Guion:
         return cls(**d)
 
 
+_VAGO = re.compile(r"\b(un|una|el|la|ese|esa|este|esta|aquel|aquella|su|sus|los|las)\s+(aparatos?|dispositivos?|"
+                   r"artefactos?|objetos?|cosas?|cacharros?|chiches?|maquinitas?|gadgets?|inventos?|productos?)\b", re.I)
+
+
+def frases_vagas(frases: list[str]) -> list[int]:
+    """Las frases (desde 1) que nombran un producto como "un aparato" o "el dispositivo" sin su nombre propio (Santi,
+    2026-11-25): si la frase tiene un nombre propio (una mayúscula que no es la primera palabra), pasa."""
+    out = []
+    for i, f in enumerate(frases):
+        if not _VAGO.search(f):
+            continue
+        palabras = re.findall(r"[\wÁÉÍÓÚÑáéíóúñ]+", f)
+        if not any(w[:1].isupper() for w in palabras[1:]):
+            out.append(i + 1)
+    return out
+
+
 def errores_estructura(d: dict, n: int) -> list[str]:
     """Gancho → tensión → giro → final que paga (Santi, 2026-11-13). El guion dice qué pregunta deja
     abierta el gancho y en qué frase va cada parte (desde 1): la tensión desde la tercera (la primera
@@ -1238,6 +1261,10 @@ def validar_guion(d: dict, anio: int, fuente: str, corto: bool = False,
     if not any(str(anio) in f for f in frases[2:4]):
         errores.append(f"el año ({anio}) se dice en la tercera o la cuarta frase")
     errores += errores_estructura(d, len(frases))
+    vagas = frases_vagas(frases)
+    if vagas:      # Santi, 2026-11-25 (el Walkman: "un aparato azul y plateado")
+        errores.append(f"frases {vagas}: nombrá el producto o la cosa por su nombre (\"un Walkman\", \"el Nokia "
+                       "3310\"), nunca \"un aparato\", \"el dispositivo\" ni \"el invento\" sin decir cuál es")
     # Pedido 2026-09-27 ("la voz suena triste y plana"): frases cortas, al menos una pregunta y
     # una exclamación, y cierre con gancho. Piper entona distinto una frase con ¿? o ¡!.
     if not frases[-1].rstrip().endswith("?") or len(frases[-1].split()) > 12:
@@ -3661,6 +3688,9 @@ def con_videos(plan: list[tuple[int, int, float]], g: Guion) -> list[tuple[int, 
 CORTE_MAX_S, CORTE_MIN_S = 4.0, 2.5     # formato corto: un cambio de imagen cada 2,5-4 s (Santi, 2026-11-10)
 FOTO_MAX_S = 4.0       # ninguna foto más que esto seguida (Santi, 2026-11-11)
 GANCHO_MAX_S = 2.5     # la primera, la del gancho
+# Santi, 2026-11-25: la cantidad de cortes se ajusta a las fotos buenas que hay; con pocas, cortes más largos con
+# movimiento de cámara (hasta el tope de la regla fija 1, 6 s) antes que tarjetas de relleno
+CORTE_LARGO_MAX_S = ilustrar.MAX_TRAMO_S
 MOVIMIENTOS = ("in", "der", "out", "izq")
 MONTAJE_CORTES, MONTAJE_MIN_S = 3, 0.6   # estilo nuevo: el gancho en 3 imágenes con golpe de zoom
 
@@ -3696,12 +3726,32 @@ def plan_rapido(plan: list[tuple[int, int, float]], g: Guion,
         return [round(s / n, 3)] * n
 
     def tope_de(x) -> float:
-        return GANCHO_MAX_S if all(o[1] == x for o in out) else FOTO_MAX_S
+        # Santi, 2026-11-25: una foto puede seguir con otro movimiento hasta 6 s antes que cortar a una tarjeta
+        return GANCHO_MAX_S if all(o[1] == x for o in out) else CORTE_LARGO_MAX_S
 
     def sirve(x, t, previa) -> bool:
         if x is None or x == VIDEO or veces.get(x, 0) >= max_apariciones:
             return False
         return x != previa or seguido + t <= tope_de(x) + 1e-9
+
+    def segun_fotos(trozos: list[float], propias: list[int], previa) -> list[float]:
+        """Tantos cortes como fotos de la frase que todavía se pueden usar (Santi, 2026-11-25): con pocas, cortes más
+        largos (hasta CORTE_LARGO_MAX_S) en vez de tarjetas de relleno."""
+        libres = [x for x in dict.fromkeys(propias) if x is not None and x != VIDEO
+                  and veces.get(x, 0) < max_apariciones]
+        n = max(1, len(libres))
+        if len(trozos) <= n:
+            return trozos
+        total = round(sum(trozos), 3)
+        # el gancho corta a los 2,5 s solo si la frase tiene otra foto; con una sola, la sigue con movimiento
+        primero = trozos[0] if not out and len(trozos) > 1 and trozos[0] == GANCHO_MAX_S and n > 1 else None
+        resto = round(total - primero, 3) if primero else total
+        k = max(1, n - (1 if primero else 0))
+        while resto / k > CORTE_LARGO_MAX_S + 1e-9:
+            k += 1
+        partes_ = [round(resto / k, 3)] * k
+        partes_[-1] = round(resto - sum(partes_[:-1]), 3)     # sin perder milésimas: el total no cambia
+        return ([primero] if primero else []) + partes_
 
     for i, f, s in plan:
         if f == VIDEO:
@@ -3729,6 +3779,7 @@ def plan_rapido(plan: list[tuple[int, int, float]], g: Guion,
         else:
             trozos = partes(s)
         propias = [f] + [x for x in (rk[i] if i < len(rk) else []) if x != f]
+        trozos = segun_fotos(trozos, propias, out[-1][1] if out else None)
         for k, t in enumerate(trozos):
             previa = out[-1][1] if out else None
             rot = propias[k % len(propias):] + propias[:k % len(propias)]
