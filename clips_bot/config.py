@@ -622,7 +622,30 @@ def _seccion(cls, raw: dict, nombre: str, path: Path):
         raise ConfigError(f"Clave desconocida en {path} → {nombre}: {e}") from e
 
 
+_ULTIMA_BUENA: dict = {}    # {ruta: Settings}: la última configuración que cargó bien en este proceso
+
+
 def load_settings(path: Path = CONFIG_DIR / "settings.yaml") -> Settings:
+    """La configuración. Un proceso que ya está andando (la escucha) la relee seguido: si el archivo nuevo no carga
+    (Santi, 2026-11-25: el git pull trajo una clave que el código viejo, todavía en memoria, no conocía), sigue con la
+    última buena y avisa en el log en vez de caerse. Al arrancar no hay última buena: el error sale (y el chequeo del
+    despliegue, `chequeo-arranque`, lo frena antes)."""
+    try:
+        s = _load_settings(path)
+    except ConfigError:
+        previa = _ULTIMA_BUENA.get(str(path))
+        if previa is None:
+            raise
+        import logging
+
+        logging.getLogger(__name__).warning("settings.yaml no carga con este código; sigo con la última buena",
+                                            exc_info=True)
+        return previa
+    _ULTIMA_BUENA[str(path)] = s
+    return s
+
+
+def _load_settings(path: Path) -> Settings:
     raw = _read_yaml(path)
     for seccion, clave in [
         ("evento", "categorias"),

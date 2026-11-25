@@ -51,7 +51,7 @@ def armar(conn, tg, settings, cual: str) -> dict:
                  elector=m._elector_fotos(settings), elector_reintento=m._elector_fotos(settings, reintento=True),
                  mas_video=cfg.estilo_nuevo, puntuador=m._puntuador(settings), fotos_primero=True)
     try:
-        if cual == "latam":
+        if cual == "latam":  # noqa: SIM114
             sonnet, haiku = m._claude_textos(settings)
             ya = m._latam_del_dia(conn, hoy)
             p = locales.proponer(ef.Wiki(), sonnet, haiku, gemini, hoy, carpeta,
@@ -59,7 +59,12 @@ def armar(conn, tg, settings, cual: str) -> dict:
                                  excluir={v for x in ya for v in (x.get("texto"), x.get("articulo")) if v},
                                  evitar_paises={x["pais"] for x in ya if x.get("pais")}, web=None, **comun)
         else:
-            item = NOKIA if cual == "nokia" else banco_mod.leer(conn, "tecnologia")[0]
+            if cual == "nokia":
+                item = NOKIA
+            else:      # "tec" = el primero del banco; "tec:Walkman" = ese artículo
+                nombre = cual.split(":", 1)[1] if ":" in cual else ""
+                banco_t = banco_mod.leer(conn, "tecnologia")
+                item = next((x for x in banco_t if x.get("articulo") == nombre), banco_t[0])
             p = ef.proponer(ef.Wiki(), gemini, hoy, carpeta, tema="tecnologia", corto=cfg.corto,
                             texto=m._texto_efemeride(settings, gemini), banco=[item], solo_banco=True,
                             max_guiones=1, piso_fotos=0.60, **comun)

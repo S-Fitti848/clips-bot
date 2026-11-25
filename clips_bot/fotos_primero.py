@@ -27,7 +27,12 @@ from pathlib import Path
 log = logging.getLogger(__name__)
 
 MINIMO = 8              # Santi, 2026-11-25: 8 fotos buenas como mínimo (avisar antes de bajarlo)
-MAX_CANDIDATAS = 24     # las que se bajan y se le muestran a Haiku (un pedido)
+MAX_CANDIDATAS = 30     # las que se bajan y se le muestran a Haiku (un pedido)
+POR_ARTICULO = 10       # del artículo del hecho
+POR_OTRO_ARTICULO = 5   # de cada otro artículo que nombra el hecho
+POR_CONSULTA = 6        # de cada búsqueda en Commons
+GENERICOS = {"estados unidos", "computadora", "monopolio", "argentina", "méxico", "españa", "japón", "alemania",
+             "francia", "reino unido", "internet", "videojuego", "empresa", "united states", "computer", "japan"}
 POR_FRASE = 3
 DESCRIPCION_V = 1
 CACHE = Path(__file__).resolve().parent.parent / "data" / "cache_claude" / "fotos_primero"
@@ -115,17 +120,31 @@ def candidatas(wiki, e, fotos_articulo: list, fuentes=None, avisar=log.info) -> 
     from . import efemerides as ef
     from . import fuentes_fotos
 
+    # Cupos por fuente (la primera prueba, Microsoft 1998: buscar "Microsoft" a secas trajo 17 edificios y tiendas de
+    # hoy y se comió todo el lugar): lo puntual de la historia primero, cada cosa con su tope.
     out, vistas = [], set()
-    _sumar(out, fotos_articulo, vistas)
-    nombres = [re.sub(r"\s*\(.*?\)", "", e.paginas[0].replace("_", " ")).strip()]
+    _sumar(out, fotos_articulo[:POR_ARTICULO], vistas)
+
+    def limpio(t: str) -> str:
+        return re.sub(r"\s*\(.*?\)", "", t.replace("_", " ")).strip()
+
+    nombres = [limpio(e.paginas[0])]
     try:
         en = wiki.en_ingles(e.paginas[0]) if e.lang == "es" else None
     except Exception:  # noqa: BLE001
         en = None
     if en:
-        nombres.append(re.sub(r"\s*\(.*?\)", "", en.replace("_", " ")).strip())
+        nombres.append(limpio(en))
     nombres = list(dict.fromkeys(nombres))
-    for q in nombres + [f"{n} {e.anio}" for n in nombres]:
+    # los otros artículos que nombra el hecho (Bill Gates, la Game Boy, August Horch), menos los genéricos
+    for pag in [p for p in e.paginas[1:4] if limpio(p).lower() not in GENERICOS]:
+        try:
+            fotos_p, _ = ef.fotos_del_evento(wiki, type(e)(e.lang, e.anio, e.texto, [pag]))
+        except Exception:  # noqa: BLE001
+            continue
+        _sumar(out, fotos_p[:POR_OTRO_ARTICULO], vistas)
+    consultas = [f"{n} {e.anio}" for n in nombres] + nombres
+    for q in consultas:
         if len(out) >= MAX_CANDIDATAS:
             break
         try:
@@ -133,7 +152,7 @@ def candidatas(wiki, e, fotos_articulo: list, fuentes=None, avisar=log.info) -> 
         except Exception as err:  # noqa: BLE001 — una fuente caída no frena
             avisar(f"    fotos primero: Commons «{q}» falló ({str(err)[:80]})")
             continue
-        _sumar(out, nuevas, vistas)
+        _sumar(out, nuevas[:POR_CONSULTA], vistas)
     if len(out) < MAX_CANDIDATAS:
         otras = fuentes or fuentes_fotos.Fuentes()
         try:

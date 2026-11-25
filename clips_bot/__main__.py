@@ -7613,6 +7613,31 @@ def READY_DIR_CLI() -> Path:
     return READY_DIR
 
 
+def cmd_chequeo_arranque(args: argparse.Namespace) -> int:
+    """Santi, 2026-11-25 (el ConfigError de fotos_primero): antes de desplegar, el código nuevo tiene que poder cargar
+    el settings.yaml, el streamers.yaml y el .env de ESTA máquina e importar todos sus módulos. deploy/desplegar.sh lo
+    corre en una copia aparte; si falla, no se toca lo que está andando."""
+    import importlib
+    import pkgutil
+
+    import clips_bot
+
+    s = load_settings()
+    n = len(load_streamers())
+    malos = []
+    for mod in pkgutil.walk_packages(clips_bot.__path__, "clips_bot."):
+        if "remotion" in mod.name:
+            continue
+        try:
+            importlib.import_module(mod.name)
+        except Exception as e:  # noqa: BLE001
+            malos.append(f"{mod.name}: {e}")
+    for m_ in malos:
+        print("NO IMPORTA", m_)
+    print(f"settings OK ({len(s.__dict__)} secciones), {n} streamers, {len(malos)} módulos con error")
+    return 1 if malos else 0
+
+
 def cmd_benchmark(args: argparse.Namespace) -> int:
     """Mide las etapas caras sobre los mp4 que ya están en output/raw/. No descarga nada."""
     from . import benchmark as bench
@@ -7787,6 +7812,8 @@ def main(argv: list[str] | None = None) -> int:
     pm = sub.add_parser("prueba-manual", help="informe de la prueba manual vs API (solo lectura)")
     pm.set_defaults(func=cmd_prueba_manual)
 
+    sub.add_parser("chequeo-arranque", help="antes de desplegar: carga la configuración y todos los módulos"
+                   ).set_defaults(func=cmd_chequeo_arranque)
     pb = sub.add_parser("benchmark", help="cuánto tarda un clip completo en esta máquina")
     pb.add_argument("--clips", type=int, default=2, help="cuántos mp4 de output/raw/ medir (default 2)")
     pb.add_argument("--modelos", default="small",
