@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-11-25 | **Versión:** v1.57.0 (desplegado) | **Modo:** Fase 2: corriendo solo en la Pi. **Rots APAGADO. Así Nació PAUSADO desde el 19/11** (vuelve con 1 por día, preparado la noche anterior, si 4 de 5 marcas nuevas dan 15/19 o más por menos de US$ 0,60). **Pequeña Historia: TECNOLOGÍA ES LA PRIORIDAD NÚMERO UNO desde el 23/11** (2 por día en YouTube, 11:00 y 20:00, con una reserva de 3 videos ya armados; el canal de YouTube es solo de tecnología) y **Latinoamérica 2 por día SOLO en Facebook** hasta el 15/12. Nada se publica solo desde el 17/11: llega con ✅ Publicar / ❌ Cancelar y sin respuesta no sale. Todo al privado de Santi
+**Snapshot:** 2026-11-25 | **Versión:** v1.58.0 (desplegado) | **Modo:** Fase 2: corriendo solo en la Pi. **Rots APAGADO. Así Nació PAUSADO desde el 19/11** (vuelve con 1 por día, preparado la noche anterior, si 4 de 5 marcas nuevas dan 15/19 o más por menos de US$ 0,60). **Pequeña Historia: TECNOLOGÍA ES LA PRIORIDAD NÚMERO UNO desde el 23/11** (2 por día en YouTube, 11:00 y 20:00, con una reserva de 3 videos ya armados; el canal de YouTube es solo de tecnología) y **Latinoamérica 2 por día SOLO en Facebook** hasta el 15/12. Nada se publica solo desde el 17/11: llega con ✅ Publicar / ❌ Cancelar y sin respuesta no sale. Todo al privado de Santi
 
 > **SI ESTÁS EMPEZANDO UNA SESIÓN NUEVA, LEÉ §10.** Ahí está qué está hecho, qué quedó a medias,
 > qué falta, y las trampas que ya nos mordieron.
@@ -1396,6 +1396,16 @@ Problemas abiertos:
 
 ## 9. CHANGELOG
 
+- v1.58.0 (2026-11-25) — (1) **Despliegue seguro** (`deploy/desplegar.sh`): el código nuevo se prueba en un worktree con
+  el settings.yaml y el .env de la Pi (`chequeo-arranque` + tests) antes de actualizar; recién sin trabajo pesado se
+  actualiza y se reinicia en el mismo momento, y si la escucha no arranca vuelve al commit anterior. Un proceso andando
+  que relee un settings.yaml que no carga sigue con la última configuración buena (`config._ULTIMA_BUENA`). Motivo: a
+  las 09:39:52 del 25/11 la escucha vieja releyó el settings con `fotos_primero` 6 s antes del reinicio. Tests: ninguno
+  lee la temperatura real (conftest) ni escribe en output/work. (2) **Época de fotos_primero por lo que se ve**
+  (`moderno`, el arco completo de la historia; postales = foto; estatuas y edificios no son retratos): medido sobre las 6
+  historias de la prueba + Microsoft, llegan a 8 fotos buenas 4 de 7 (antes 1). (3) **Tarjetas en la revisión final**
+  (todos los videos de Pequeña Historia): `calidad.revisar_video_ph` le dice al modelo qué cortes son tarjetas y no
+  cuenta PH-02/PH-12 sobre ellas (antes se sacaba recién al final y la tarjeta entraba en la vuelta de reemplazo).
 - v1.57.0 (2026-11-25) — **Al primer intento: A, C y D prendidos; B (fotos primero) programado y apagado** hasta la
   prueba de 3 historias (regla en §1; si pasan 2 de 3, se prende sin esperar a Santi). `scripts/prueba_fotos_primero.py`,
   `tests/test_primer_intento.py`, `tests/test_fotos_primero.py`. 2179 tests OK.

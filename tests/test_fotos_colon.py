@@ -160,3 +160,30 @@ def test_la_foto_mal_se_reemplaza_y_solo_se_revisa_ese_corte(tmp_path, monkeypat
                                        [{"frase": 0, "inicio": 0, "dur": 3}, {"frase": 1, "inicio": 3, "dur": 3}],
                                        e, {}, lambda r: tmp_path / "v.mp4", lambda i: None)
     assert [f["id"] for f in out["fallas"]] == ["PH-10"] and calidad.retener("pequena_historia", out["fallas"], True)
+
+
+def test_una_tarjeta_no_se_juzga_como_foto_en_ninguna_revision(tmp_path, monkeypatch):
+    """Santi, 2026-11-25 (Walkman): la tarjeta «WALKMAN» se marcó PH-12 (borrosa). En toda revisión del video terminado
+    el modelo sabe qué cortes son tarjetas, y PH-02/PH-12 sobre una tarjeta no cuentan."""
+    from PIL import Image
+
+    meta = {"salida": str(tmp_path / "v.mp4"),
+            "efemeride": {"anio": 1979, "evento": "Walkman", "guion": ["a", "b"],
+                          "cortes": [{"frase": 0, "inicio": 0.0, "dur": 3.0, "tipo": "foto", "archivo": "File:W.jpg"},
+                                     {"frase": 1, "inicio": 3.0, "dur": 3.0, "tipo": "foto",
+                                      "archivo": "tarjeta:tarjeta_02"}]}}
+    cuadros = []
+    for k in range(2):
+        p = tmp_path / f"c{k}.jpg"
+        Image.new("RGB", (108, 192), "gray").save(p)
+        cuadros.append(p)
+    monkeypatch.setattr(calidad, "cuadros_de_cortes", lambda *a, **k: cuadros)
+
+    class Cliente:
+        def json(self, sistema, prompt, schema, temp, imagenes=None):
+            assert "Corte 2 (TARJETA DE TEXTO" in prompt and "Corte 1 (foto" in prompt
+            return json.dumps({"reglas": [{"id": "PH-12", "cumple": False, "corte": 2, "que": "desenfocado"},
+                                          {"id": "PH-02", "cumple": False, "corte": 1, "que": "engranajes"}]})
+
+    fallas, revisado = calidad.revisar_video_ph(Cliente(), meta)
+    assert revisado and [f["id"] for f in fallas] == ["PH-02"]

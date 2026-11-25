@@ -372,6 +372,10 @@ def mosaico(cuadros: list[Path], destino: Path, ancho: int = 216, columnas: int 
     return destino
 
 
+def es_corte_tarjeta(corte: dict) -> bool:
+    return str(corte.get("archivo") or "").startswith("tarjeta")
+
+
 def revisar_video_ph(cliente, meta: dict, avisar=log.info) -> tuple[list[dict], bool]:
     """(fallas, revisado) del video terminado contra las reglas de fotos y de rótulos (REGLAS_VIDEO_PH)."""
     ef_ = meta.get("efemeride") or {}
@@ -389,7 +393,9 @@ def revisar_video_ph(cliente, meta: dict, avisar=log.info) -> tuple[list[dict], 
     for k, c in enumerate(cortes, 1):
         i = int(c.get("frase", 0))
         frase = frases[i] if 0 <= i < len(frases) else ""
-        lineas.append(f"Corte {k} ({c.get('tipo')}, {c.get('inicio')} s): frase {i + 1}: {frase}")
+        tipo = ("TARJETA DE TEXTO a propósito: el fondo difuminado y la palabra grande son el diseño, no la juzgues "
+                "como foto" if es_corte_tarjeta(c) else c.get("tipo"))
+        lineas.append(f"Corte {k} ({tipo}, {c.get('inicio')} s): frase {i + 1}: {frase}")
     local = ef_.get("local") or {}
     ids = por_id("pequena_historia")
     reglas_txt = "\n".join(f"- {r.id}: {r.texto}" for r in de_revision("pequena_historia"))
@@ -410,8 +416,13 @@ def revisar_video_ph(cliente, meta: dict, avisar=log.info) -> tuple[list[dict], 
     for x in r.get("reglas") or []:
         rid = str(x.get("id") or "").strip().upper()
         if rid in validos and rid not in vistos and x.get("cumple") is False:
-            vistos.add(rid)
             k = int(x.get("corte") or 0)
+            # Santi, 2026-11-25 (Walkman: la tarjeta «WALKMAN» marcada PH-12): una tarjeta no se juzga como foto, en
+            # TODAS las revisiones (antes se sacaba recién al final y, mientras, entraba en la vuelta de reemplazo)
+            if rid in TARJETA_EXENTA and 1 <= k <= len(cortes) and es_corte_tarjeta(cortes[k - 1]):
+                avisar(f"revisión del video terminado: {rid} en el corte {k} es una tarjeta: no cuenta")
+                continue
+            vistos.add(rid)
             seg = f" (corte {k}, {cortes[k - 1]['inicio']} s)" if 1 <= k <= len(cortes) else ""
             out.append({"id": rid, "cuadro": k, "que": (str(x.get("que") or "") + seg)[:260]})
     avisar(f"revisión del video terminado: {len(cortes)} cortes, fallan {[f['id'] for f in out] or 'ninguna'}")
