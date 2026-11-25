@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-11-24 | **Versión:** v1.55.0 (desplegado) | **Modo:** Fase 2: corriendo solo en la Pi. **Rots APAGADO. Así Nació PAUSADO desde el 19/11** (vuelve con 1 por día, preparado la noche anterior, si 4 de 5 marcas nuevas dan 15/19 o más por menos de US$ 0,60). **Pequeña Historia: TECNOLOGÍA ES LA PRIORIDAD NÚMERO UNO desde el 23/11** (2 por día en YouTube, 11:00 y 20:00, con una reserva de 3 videos ya armados; el canal de YouTube es solo de tecnología) y **Latinoamérica 2 por día SOLO en Facebook** hasta el 15/12. Nada se publica solo desde el 17/11: llega con ✅ Publicar / ❌ Cancelar y sin respuesta no sale. Todo al privado de Santi
+**Snapshot:** 2026-11-25 | **Versión:** v1.56.0 (desplegado) | **Modo:** Fase 2: corriendo solo en la Pi. **Rots APAGADO. Así Nació PAUSADO desde el 19/11** (vuelve con 1 por día, preparado la noche anterior, si 4 de 5 marcas nuevas dan 15/19 o más por menos de US$ 0,60). **Pequeña Historia: TECNOLOGÍA ES LA PRIORIDAD NÚMERO UNO desde el 23/11** (2 por día en YouTube, 11:00 y 20:00, con una reserva de 3 videos ya armados; el canal de YouTube es solo de tecnología) y **Latinoamérica 2 por día SOLO en Facebook** hasta el 15/12. Nada se publica solo desde el 17/11: llega con ✅ Publicar / ❌ Cancelar y sin respuesta no sale. Todo al privado de Santi
 
 > **SI ESTÁS EMPEZANDO UNA SESIÓN NUEVA, LEÉ §10.** Ahí está qué está hecho, qué quedó a medias,
 > qué falta, y las trampas que ya nos mordieron.
@@ -295,6 +295,12 @@ servicio systemd separado: `clips-bot`).
   deploy, `bot_estado.presupuesto_fila`). Cada día desde las 06:30: promedio de los días completos (7 como mucho) y
   proyección al 14/12; si no alcanza, Así Nació a 1 video por día (`asinacio_un_video`) y vuelve a 2 cuando con el
   segundo (~US$ 0,90) igual alcanza. Cada cambio, una línea a Santi.
+  **Ritmo y escalones (Santi, 2026-11-25: "recortaste Latinoamérica entero por US$ 2,93/día y ayer gastaste ~1"):** el
+  ritmo es el promedio de los últimos 3 días completos de producción (sin pruebas) y sin los días de reintentos ya
+  arreglados (`DIAS_NO_CUENTAN`: 23/11), sumándole a cada día lo que ahorró el recorte con el que corrió
+  (`bot_estado.presupuesto_niveles`). Se recorta de a UN escalón por día (saltando lo que ya está apagado: con Así Nació
+  pausado, primero comunidad y búsqueda web, después Latinoamérica a 1, después sin Latinoamérica,
+  `presupuesto.un_escalon`) y, si el ritmo baja, se devuelve lo recortado de una.
 - **Menos texto (Santi, 2026-11-18):** mensajes de 2-3 líneas. El resumen de cada Reel a las 24 h ya NO se manda: se
   guarda y alimenta los guiones (`aprendizaje.py`: los ganchos que más y menos retuvieron entran en el prompt de cada
   canal); los lunes desde las 10:00, un resumen de 5 líneas con qué cambió y cómo vienen las vistas
@@ -1378,6 +1384,11 @@ Problemas abiertos:
 
 ## 9. CHANGELOG
 
+- v1.56.0 (2026-11-25) — **Ritmo del presupuesto con 3 días y de a un escalón** (regla en §1). El 25/11 a las 06:30 el
+  recorte había llegado al nivel 4 (sin Latinoamérica desde el 26/11) con un promedio de 7 días que mezclaba pruebas
+  (US$ 4,5 entre el 19 y el 20/11) y los reintentos del 23/11 (US$ 4,52). Con la cuenta nueva (21, 22 y 24/11 de
+  producción: US$ 1,67/día) alcanza sin recortes: nivel 0 aplicado en la Pi el mismo día. `tests/test_presupuesto.py`.
+  2172 tests OK.
 - v1.55.0 (2026-11-24, noche) — Reserva de tecnología: entran los de 60-69 % de fotos reales que cumplen todo lo
   demás, marcados "⚠️ fotos N %" (regla en §1). 2170 tests OK.
 - v1.54.0 (2026-11-24, tarde) — **Reintentos inteligentes, banco de tecnología con fotos comprobadas y ventilador** (reglas

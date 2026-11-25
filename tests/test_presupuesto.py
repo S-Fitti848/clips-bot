@@ -35,3 +35,38 @@ def test_el_tick_avisa_una_linea_y_baja_a_uno(tmp_path):
     assert db.get_valor(c, pr.UN_VIDEO) == "1"
     pr.tick(c, avisos.append, datetime(2026, 11, 20, 9, 0))      # una vez por día
     assert len(avisos) == 1
+
+
+def _uso(c, dia, entrada, origen="produccion"):
+    c.execute("INSERT INTO gemini_uso (ts, dia, funcion, modelo, clave, entrada, salida, origen) VALUES "
+              "(?, ?, 'x', 'm', 'claude', ?, 0, ?)", (dia + "T10:00", dia, entrada, origen))
+    c.commit()
+
+
+def test_ritmo_de_3_dias_sin_pruebas_ni_el_23(tmp_path, monkeypatch):
+    """Santi, 2026-11-25: el ritmo con los últimos 3 días, sin pruebas ni el 23/11 (reintentos ya arreglados)."""
+    from clips_bot import claude
+
+    monkeypatch.setattr(claude, "costo", lambda m, e, s: e / 1000)
+    c = db.connect(tmp_path / "t.db")
+    db.set_valor(c, pr.FILA, "0")
+    db.set_valor(c, pr.NIVEL, "4")
+    for dia, usd in (("2026-11-19", 4700), ("2026-11-20", 1300), ("2026-11-21", 2100), ("2026-11-22", 1200),
+                     ("2026-11-23", 4500), ("2026-11-24", 1700)):
+        _uso(c, dia, usd)
+    _uso(c, "2026-11-20", 2700, "prueba")
+    por = pr.gasto_produccion(c, "2026-11-18")
+    assert pr.dias_ritmo(por, date(2026, 11, 25)) == ["2026-11-21", "2026-11-22", "2026-11-24"]
+    avisos = []
+    activos = {1: False, 2: True, 3: True, 4: True}
+    pr.tick(c, avisos.append, datetime(2026, 11, 25, 7, 0), activos)
+    assert pr.nivel(c) == 0 and "se deshace" in avisos[0] and "Latinoamérica" in avisos[0]
+
+
+def test_recorta_de_a_un_escalon_y_saltea_lo_apagado():
+    activos = {1: False}
+    assert pr.un_escalon(0, 4, activos) == 2       # Así Nació ya está pausado: el primero es comunidad y web
+    assert pr.un_escalon(2, 4, activos) == 3
+    assert pr.un_escalon(3, 4, activos) == 4
+    assert pr.un_escalon(4, 1, activos) == 1       # devolver, directo
+    assert pr.un_escalon(0, 3) == 1

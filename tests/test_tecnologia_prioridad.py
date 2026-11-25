@@ -78,7 +78,7 @@ def test_presupuesto_tecnologia_nunca_se_recorta():
     assert pr.nivel_necesario(20.4, por, hoy, 0, {1: False})[0] >= n
     # ya recortado: el promedio trae el ahorro, no vuelve atrás por eso solo
     por_rec = {f"2026-11-{d}": 3.4 - pr._ahorro(n) for d in range(18, 24)}
-    assert pr.nivel_necesario(20.4, por_rec, hoy, n)[0] == n
+    assert pr.nivel_necesario(20.4, por_rec, hoy, n, niveles={d: n for d in por_rec})[0] == n
 
 
 def test_el_recorte_frena_comunidad_y_latinoamerica(tmp_path):
