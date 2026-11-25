@@ -75,6 +75,7 @@ def armar(conn, tg, settings, cual: str) -> dict:
         bitacora.cerrar(conn, "fallido")
         return {"cual": cual, "error": f"propuesta: {str(e)[:300]}", "costo": costo_desde(conn, fila0)}
     estado = {"propuesta": p.__dict__, "carpeta": str(carpeta), "chat_id": ""}
+    (carpeta / "estado.json").write_text(json.dumps(estado, ensure_ascii=False), encoding="utf-8")   # para depurar
     db.set_valor(conn, f"efe:{token}", json.dumps(estado, ensure_ascii=False))
     r = m._efe_armar(conn, tg, None, token, settings, auto=True, reserva=True)
     db.borrar_valor(conn, f"efe:{token}")

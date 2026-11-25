@@ -1072,6 +1072,9 @@ def proponer(wiki: ef.Wiki, sonnet, haiku, gemini, dia: date, carpeta: Path, avi
                                   + (banco_f.contexto() if banco_f else ""),
                                   corto=corto, rango=ef.LATAM_PALABRAS if corto else None,
                                   max_s=ef.LATAM_MAX_S if corto else 0.0)
+            if banco_f:
+                avisar(f"  fotos primero: el guion eligió foto en {banco_f.tomar_de_mostrar(g)} de "
+                       f"{len(g.frases)} frases")
             g.imagen_frase = imagen_frase or corto
             g.mas_video = mas_video
             bitacora.paso("fotos")

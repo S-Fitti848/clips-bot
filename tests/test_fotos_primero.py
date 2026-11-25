@@ -72,3 +72,12 @@ def test_el_guion_ve_las_fotos_y_cada_frase_recibe_las_suyas(monkeypatch, tmp_pa
     assert b.buenas == list(range(8)) and "F1: cosa 0 (1989)" in b.contexto()
     r = fp.asignar(h, ["frase uno", "frase dos"], b, lambda *_: None)
     assert r == [[1, 0], []]                    # la 9 no existe: no se inventa
+
+
+def test_el_guion_elige_la_foto_en_mostrar(monkeypatch, tmp_path):
+    desc = [_desc(se_ve=f"cosa {k}") for k in range(8)]
+    b, _ = _juntar(monkeypatch, tmp_path, desc)
+    g = SimpleNamespace(mostrar=["F3 1979 Sony Walkman blue", "1979 Sony factory Tokyo", "[F9] algo", "F2: 1980 ad"])
+    assert b.tomar_de_mostrar(g) == 2
+    assert b.elegidas == [2, None, None, 1]                     # F9 no existe: no se inventa
+    assert g.mostrar == ["1979 Sony Walkman blue", "1979 Sony factory Tokyo", "algo", "1980 ad"]

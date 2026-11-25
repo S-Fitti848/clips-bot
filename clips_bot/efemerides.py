@@ -2382,6 +2382,11 @@ def fotos_para_guion(wiki: Wiki, cliente, e: Evento, g: Guion, fotos_articulo: l
         from . import fotos_primero as _fp
 
         rankings = _fp.asignar(primero.haiku, g.frases, primero, avisar, mostrar=g.mostrar)
+        # la foto que eligió el guion al escribir cada frase va primera (Santi, 2026-11-25: el guion A PARTIR de las
+        # fotos); Haiku completa las demás
+        elegidas = list(getattr(primero, "elegidas", None) or [])
+        rankings = [list(dict.fromkeys(([elegidas[i]] if i < len(elegidas) and elegidas[i] is not None else [])
+                                       + r)) for i, r in enumerate(rankings)]
         rankings = [[x for x in r if x not in descartadas] for r in rankings]
         vistas_malas = set()
     else:
@@ -3483,6 +3488,9 @@ def proponer(wiki: Wiki, cliente, dia: date, carpeta: Path, avisar=log.info,
                                sistema=SISTEMA_GUION_CORTO if corto else None, corto=corto,
                                contexto=(NO_ES_DE_HOY if del_banco and i in del_banco else "")
                                + (banco_f.contexto() if banco_f else ""))
+            if banco_f:
+                avisar(f"  fotos primero: el guion eligió foto en {banco_f.tomar_de_mostrar(g)} de {len(g.frases)} "
+                       "frases")
             g.imagen_frase = imagen_frase or corto      # efemerides.imagen_frase (2026-11-10)
             g.mas_video = mas_video                     # efemerides.estilo_nuevo (2026-11-14)
             bitacora.paso("fotos")

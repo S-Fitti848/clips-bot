@@ -74,9 +74,11 @@ SCHEMA = {
     "required": ["fotos"],
 }
 
-SISTEMA_ASIGNAR = """Te paso las frases de un guion y las fotos que hay (con lo que muestra cada una). Para cada frase,
-decí las fotos (hasta 3, la mejor primero) que muestran LO QUE DICE ESA FRASE. Si ninguna lo muestra, la lista vacía:
-no pongas una foto que no tiene que ver. Para la frase 1 (el gancho), la más impactante primero."""
+SISTEMA_ASIGNAR = """Te paso las frases de un guion y las fotos que hay (con lo que muestra cada una). Todas las fotos
+son de esta historia. Para cada frase, decí las fotos (hasta 3, la mejor primero) que mejor la acompañan: lo que dice
+la frase o, si ninguna lo muestra tal cual, lo más cercano de la misma historia (el producto, la persona, el lugar).
+La lista vacía SOLO si cualquier foto contradiría la frase o confundiría al que mira. Repartí fotos distintas entre
+frases distintas mientras haya. Para la frase 1 (el gancho), la más impactante primero."""
 
 SCHEMA_ASIGNAR = {
     "type": "object",
@@ -103,6 +105,7 @@ class Banco:
     desc: dict[int, dict] = field(default_factory=dict)
     motivos: dict = field(default_factory=dict)
     haiku: object = None                        # para `asignar`
+    elegidas: list = field(default_factory=list)  # por frase, la foto (índice del pool) que eligió el guion, o None
 
     def contexto(self) -> str:
         lineas = [f"F{n}: {self.desc[k].get('se_ve', '')} ({self.desc[k].get('epoca') or 'sin fecha'})"
@@ -110,7 +113,24 @@ class Banco:
         return ("\n\nFOTOS QUE HAY PARA ESTE VIDEO (Santi, 2026-11-25: el guion se escribe A PARTIR de las fotos). "
                 "Cada frase tiene que poder mostrarse con una de estas fotos: no escribas frases sobre cosas que no se "
                 "ven en ninguna (si un dato importante no tiene foto, contalo en la misma frase que algo que sí la "
-                "tiene). El gancho, con lo que muestra la foto más impactante.\n" + "\n".join(lineas))
+                "tiene). El gancho, con lo que muestra la foto más impactante. ELEGÍ LA FOTO DE CADA FRASE: `mostrar` "
+                "de cada frase EMPIEZA con su número de foto (\"F3 1979 Sony Walkman blue\"); usá fotos DISTINTAS en "
+                "frases distintas mientras haya.\n" + "\n".join(lineas))
+
+    def tomar_de_mostrar(self, g) -> int:
+        """Lee el "F<n>" del principio de cada `mostrar` (la foto que eligió el guion), lo saca de `mostrar` (se usa
+        para buscar) y lo guarda en `elegidas`. Devuelve cuántas frases eligieron foto."""
+        self.elegidas = []
+        for i, m in enumerate(list(g.mostrar)):
+            x = re.match(r"\s*\[?F(\d+)\]?[:.,]?\s*", m or "")
+            k = None
+            if x:
+                n = int(x.group(1))
+                if 1 <= n <= len(self.buenas):
+                    k = self.buenas[n - 1]
+                g.mostrar[i] = m[x.end():].strip() or m
+            self.elegidas.append(k)
+        return sum(1 for k in self.elegidas if k is not None)
 
 
 def _sumar(lista: list, nuevas, vistas: set) -> None:
