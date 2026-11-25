@@ -78,6 +78,15 @@ def _sin_fuentes_de_fotos(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _sin_temperatura_real(monkeypatch):
+    """Ningún test lee la temperatura de la máquina (2026-11-25: en la Pi a 68 °C la pausa para enfriar no dejaba tomar
+    el turno y un test que en la compu pasaba frenó el despliegue). Los que la necesitan la fijan ellos."""
+    from clips_bot import db
+
+    monkeypatch.setattr(db, "temperatura_cpu", lambda: None)
+
+
+@pytest.fixture(autouse=True)
 def _sin_claude(monkeypatch):
     """Ningún test habla con la API de Claude (2026-11-09: el texto del video de Facebook). El SDK no
     usa requests, así que se corta en el armado del cliente: `claude.cliente` da None y los tests
