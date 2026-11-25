@@ -84,7 +84,7 @@ def dias_ritmo(por_dia: dict[str, float], hoy: date) -> list[str]:
 
 def nivel_necesario(gastado: float, por_dia: dict[str, float], hoy: date, actual: int,
                     activos: dict | None = None, niveles: dict | None = None) -> tuple[int, float]:
-    """(nivel de recorte que hace falta para llegar al 14/12, ritmo por día). El ritmo sale de `dias_ritmo`; a cada día
+    """(nivel de recorte que hace falta para llegar al 14/12, ritmo por día sin recortes). El ritmo sale de `dias_ritmo`; a cada día
     se le suma lo que ahorró el recorte con el que corrió (`niveles` {día: nivel}; sin el dato, `actual`), así recortar
     y volver no oscila. `activos` {nivel: bool}: un recorte de algo que ya está apagado (Así Nació pausado) no ahorra."""
     dias = dias_ritmo(por_dia, hoy)
@@ -96,8 +96,8 @@ def nivel_necesario(gastado: float, por_dia: dict[str, float], hoy: date, actual
     restan = max(0, (HASTA - hoy).days + 1)
     for n in range(0, len(RECORTES) + 1):
         if gastado - hoy_ya + max(0.0, sin_recorte - _ahorro(n, activos)) * restan <= SALDO:
-            return n, round(sin_recorte - _ahorro(actual, activos), 2)
-    return len(RECORTES), round(sin_recorte - _ahorro(actual, activos), 2)
+            return n, round(sin_recorte, 2)
+    return len(RECORTES), round(sin_recorte, 2)
 
 
 def un_escalon(antes: int, objetivo: int, activos: dict | None = None) -> int:
