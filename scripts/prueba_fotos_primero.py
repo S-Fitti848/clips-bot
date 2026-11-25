@@ -57,7 +57,8 @@ def armar(conn, tg, settings, cual: str) -> dict:
             p = locales.proponer(ef.Wiki(), sonnet, haiku, gemini, hoy, carpeta,
                                  corto=settings.historias_fb.formato_corto,
                                  excluir={v for x in ya for v in (x.get("texto"), x.get("articulo")) if v},
-                                 evitar_paises={x["pais"] for x in ya if x.get("pais")}, web=None, **comun)
+                                 evitar_paises={x["pais"] for x in ya if x.get("pais")}, web=None,
+                                 banco=banco_mod.leer(conn, "latam"), solo_banco=True, **comun)
         else:
             if cual == "nokia":
                 item = NOKIA
