@@ -51,7 +51,14 @@ def armar(conn, tg, settings, cual: str) -> dict:
                  elector=m._elector_fotos(settings), elector_reintento=m._elector_fotos(settings, reintento=True),
                  mas_video=cfg.estilo_nuevo, puntuador=m._puntuador(settings), fotos_primero=True)
     try:
-        if cual.startswith("latam"):
+        if cual.startswith("latam@"):
+            # "latam@30/11:Jorge Negrete": un hecho de otro día (Santi, 2026-11-25: pruebas con temas variados)
+            fecha, hecho = cual[len("latam@"):].split(":", 1)
+            d, mes = (int(x) for x in fecha.split("/"))
+            sonnet, haiku = m._claude_textos(settings)
+            p = locales.proponer(ef.Wiki(), sonnet, haiku, gemini, hoy.replace(month=mes, day=d), carpeta,
+                                 corto=settings.historias_fb.formato_corto, hecho=hecho, web=None, **comun)
+        elif cual.startswith("latam"):
             sonnet, haiku = m._claude_textos(settings)
             ya = m._latam_del_dia(conn, hoy)
             p = locales.proponer(ef.Wiki(), sonnet, haiku, gemini, hoy, carpeta,
