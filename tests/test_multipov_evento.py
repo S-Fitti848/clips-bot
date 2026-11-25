@@ -270,6 +270,8 @@ def test_el_angulo_vacio_se_rescata_con_fit_blur(tmp_path, monkeypatch):
         return multipov.Contenido(vacios=0.9 if vacio else 0.0, frames=10)
 
     monkeypatch.setattr(multipov, "medir_panel", medir)
+    # 2026-11-25: en una copia recién hecha (el despliegue prueba en un worktree) output/work no existe
+    monkeypatch.setattr("clips_bot.__main__.WORK_DIR", tmp_path)
     monkeypatch.setattr("clips_bot.layout.detectar_caras", lambda *a, **k: (1920, 1080, [], []))
     hechos = []
     monkeypatch.setattr("clips_bot.render.renderizar",
