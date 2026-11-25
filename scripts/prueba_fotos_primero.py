@@ -51,14 +51,16 @@ def armar(conn, tg, settings, cual: str) -> dict:
                  elector=m._elector_fotos(settings), elector_reintento=m._elector_fotos(settings, reintento=True),
                  mas_video=cfg.estilo_nuevo, puntuador=m._puntuador(settings), fotos_primero=True)
     try:
-        if cual == "latam":  # noqa: SIM114
+        if cual.startswith("latam"):
             sonnet, haiku = m._claude_textos(settings)
             ya = m._latam_del_dia(conn, hoy)
             p = locales.proponer(ef.Wiki(), sonnet, haiku, gemini, hoy, carpeta,
                                  corto=settings.historias_fb.formato_corto,
                                  excluir={v for x in ya for v in (x.get("texto"), x.get("articulo")) if v},
                                  evitar_paises={x["pais"] for x in ya if x.get("pais")}, web=None,
-                                 banco=banco_mod.leer(conn, "latam"), solo_banco=True, **comun)
+                                 banco=[x for x in banco_mod.leer(conn, "latam")
+                                        if ":" not in cual or x.get("articulo") == cual.split(":", 1)[1]],
+                                 solo_banco=True, **comun)
         else:
             if cual == "nokia":
                 item = NOKIA

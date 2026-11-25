@@ -34,7 +34,7 @@ POR_CONSULTA = 6        # de cada búsqueda en Commons
 GENERICOS = {"estados unidos", "computadora", "monopolio", "argentina", "méxico", "españa", "japón", "alemania",
              "francia", "reino unido", "internet", "videojuego", "empresa", "united states", "computer", "japan"}
 POR_FRASE = 3
-DESCRIPCION_V = 2       # 2 (2026-11-25): `moderno` (la época se juzga por lo que se ve, no por cuándo se sacó)
+DESCRIPCION_V = 3      # 2 (2026-11-25): `moderno` (la época se juzga por lo que se ve, no por cuándo se sacó)
 CACHE = Path(__file__).resolve().parent.parent / "data" / "cache_claude" / "fotos_primero"
 TIPOS_MALOS = {"captura", "documento", "grafico", "mapa", "logo", "diagrama", "planilla"}
 
@@ -54,10 +54,11 @@ SISTEMA = """Mirás fotos para un video corto de historia ("Pequeña Historia").
 - de_la_historia: true si muestra a la persona, el objeto, el lugar o algo directo de ESTA historia; false si es de otra
   cosa (otro producto, otra ciudad, otra persona, comida, plantas o animales que la historia no nombra) o algo genérico
   que no se puede atar a la historia. NO uses de_epoca para decir que una foto no es de la historia.
-- tipo: foto | captura | documento | grafico | mapa | logo | ilustracion.
+- tipo: foto | captura | documento | grafico | mapa | logo | ilustracion. Una postal antigua o una foto vieja de un
+  lugar es `foto` (no `documento`); `documento` es un papel escrito (un acta, un folleto, una planilla).
 - texto_otro_idioma: true si tiene texto visible en un idioma que no es castellano ni inglés.
 - dura: true si muestra muertos o heridos. politico: true si es un político o un acto de gobierno. retrato: true si es
-  el retrato de una persona. quien: el nombre de la persona si se sabe por la foto o su epígrafe, o "".
+  el retrato de UNA PERSONA real (no un edificio, una estatua ni un monumento). quien: el nombre de la persona si se sabe por la foto o su epígrafe, o "".
 Respondé SOLO el JSON pedido, una entrada por foto, con su número."""
 
 SCHEMA = {
@@ -282,11 +283,15 @@ def juntar(wiki, haiku, e, fotos_articulo: list, carpeta: Path, historia: str, a
     return Banco(pool, buenas, desc, motivos, haiku)
 
 
-def asignar(haiku, frases: list[str], banco: Banco, avisar=log.info) -> list[list[int]]:
-    """Paso 5: por frase, los índices del pool (hasta POR_FRASE) que muestran lo que dice (Haiku, solo texto)."""
+def asignar(haiku, frases: list[str], banco: Banco, avisar=log.info,
+            mostrar: list[str] | None = None) -> list[list[int]]:
+    """Paso 5: por frase, los índices del pool (hasta POR_FRASE) que muestran lo que dice (Haiku, solo texto).
+    `mostrar`: lo que el guion dice que tendría que verse en cada frase (ayuda a atar la frase con su foto)."""
     fotos = "\n".join(f"F{n}: {banco.desc[k].get('se_ve', '')} ({banco.desc[k].get('epoca') or 'sin fecha'})"
                       for n, k in enumerate(banco.buenas, 1))
-    texto = "\n".join(f"frase {i}: {f}" for i, f in enumerate(frases, 1))
+    texto = "\n".join(f"frase {i}: {f}" + (f" [tendría que verse: {mostrar[i - 1]}]"
+                                           if mostrar and i - 1 < len(mostrar) and mostrar[i - 1] else "")
+                      for i, f in enumerate(frases, 1))
     d = json.loads(haiku.json(SISTEMA_ASIGNAR, f"FRASES:\n{texto}\n\nFOTOS:\n{fotos}\n\nRespondé con el número de "
                                                "foto sin la F.", SCHEMA_ASIGNAR))
     por = {x.get("frase"): x.get("fotos") or [] for x in d.get("frases") or [] if isinstance(x, dict)}

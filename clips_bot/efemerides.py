@@ -2381,7 +2381,7 @@ def fotos_para_guion(wiki: Wiki, cliente, e: Evento, g: Guion, fotos_articulo: l
     if modo_primero:
         from . import fotos_primero as _fp
 
-        rankings = _fp.asignar(primero.haiku, g.frases, primero, avisar)
+        rankings = _fp.asignar(primero.haiku, g.frases, primero, avisar, mostrar=g.mostrar)
         rankings = [[x for x in r if x not in descartadas] for r in rankings]
         vistas_malas = set()
     else:
