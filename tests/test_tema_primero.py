@@ -136,3 +136,36 @@ def test_los_productos_se_nombran():
               "Lo llevabas en el bolsillo.", "¿Vos tuviste uno?"]
     assert ef.frases_vagas(frases) == [1]
     assert "NADA ABSTRACTO" in ef.SISTEMA_GUION and "NOMBRAN SIEMPRE" in ef.SISTEMA_GUION
+
+
+def test_musica_e_idolos_usan_sorpresa():
+    c = locales.Candidato("x", 1950, "Jorge Negrete canta en el Palacio de Bellas Artes", ["Jorge Negrete"],
+                          {"tipo": "idolo"})
+    assert locales.es_curiosa(c)
+    assert locales.es_curiosa(locales.Candidato("x", 1917, "Nace el tango La Cumparsita", ["x"], {"tipo": "musica"}))
+    assert not locales.es_curiosa(locales.Candidato("x", 1907, "El maquinista salvó al pueblo", ["x"],
+                                                    {"tipo": "heroe_de_pueblo"}))
+
+
+def test_el_video_guardado_sale_su_dia(tmp_path: Path, monkeypatch):
+    from datetime import datetime
+
+    from clips_bot import __main__ as m
+
+    conn = db.connect(tmp_path / "x.db")
+    video = tmp_path / "v.mp4"
+    video.write_bytes(b"x")
+    meta = tmp_path / "historia_fb_1130_1911.json"
+    meta.write_text(json.dumps({"clip_id": "historia_fb_1130_1911", "salida": str(video)}), encoding="utf-8")
+    estado = {"propuesta": {"evento": {"texto": "Jorge Negrete", "paginas": ["Jorge Negrete"]},
+                            "local": {"pais": "México", "grupo": "idolo", "tipo": "idolo"}}}
+    m.guardar_latam(conn, {"clip_id": "historia_fb_1130_1911", "meta": str(meta), "fallas": [], "revisado": True,
+                           "titulo": "Negrete"}, "abc123", estado, "2026-11-30")
+    entregados = []
+    monkeypatch.setattr(m, "_efe_entregar", lambda *a, **k: entregados.append(k.get("nota")))
+    monkeypatch.setattr("clips_bot.efemerides.Propuesta", lambda **kw: type("P", (), kw)())
+    assert not m._entregar_guardado_latam(conn, None, ["1"], None, date(2026, 11, 29))
+    assert m._entregar_guardado_latam(conn, None, ["1"], None, date(2026, 11, 30))
+    assert entregados and "Guardado para hoy" in entregados[0]
+    assert m._latam_del_dia(conn, date(2026, 11, 30))[0]["grupo"] == "idolo"
+    assert not m._entregar_guardado_latam(conn, None, ["1"], None, date(2026, 11, 30))     # una sola vez

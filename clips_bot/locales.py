@@ -635,10 +635,11 @@ segundo 3, hacen falta historias que atrapen):
   algo, o un lugar o un invento con nombre propio que "hace" algo insólito; 1 = una institución o una ley);
 - `peligro`: ¿hay peligro, conflicto, misterio o algo en juego? (10 = vidas en riesgo o un misterio sin
   resolver; 1 = nada en juego);
-- `sorpresa` (SOLO para las historias CURIOSAS: lugar insólito, invento, costumbre, récord, misterio o
-  dato sorprendente; para las de personas poné 0): ¿el dato o el giro hace decir "no puede ser"? (10 =
-  increíble pero cierto; 1 = un dato común). En las curiosas, `sorpresa` reemplaza a `peligro` (poné
-  `peligro` igual, pero no cuenta);
+- `sorpresa` (para las historias CURIOSAS: lugar insólito, invento, costumbre, récord, misterio o dato
+  sorprendente, Y para las de MÚSICA y de ÍDOLOS DE ANTES; para las demás poné 0): ¿el dato o el giro hace decir "no
+  puede ser", o hay un MOMENTO ÉPICO (el concierto, la grabación, la noche que lo cambió todo)? (10 = increíble pero
+  cierto, o un momento que eriza la piel; 1 = un dato común). En esas historias `sorpresa` reemplaza a `peligro`
+  (poné `peligro` igual, pero no cuenta: a un cantante casi nunca le pasa algo peligroso);
 - `giro`: ¿hay un giro o un final sorprendente?;
 - `emocion`: ¿genera emoción (orgullo, asombro, tristeza)?;
 - `rareza` (para TODOS, Santi 2026-11-25): ¿tiene algo FUERA DE LO COMÚN, un dato increíble o un giro que haga decir
@@ -681,8 +682,9 @@ CURIOSAS = {"lugar_curioso", "invento", "costumbre", "record", "misterio", "dato
 
 
 def es_curiosa(c: "Candidato") -> bool:
-    """Una historia curiosa (no de personas): ahí "peligro" se mide como "sorpresa" (Santi, 2026-11-15)."""
-    return str(c.clasif.get("tipo") or "") in CURIOSAS
+    """Una historia curiosa (no de personas): ahí "peligro" se mide como "sorpresa" (Santi, 2026-11-15). También las de
+    música y los ídolos de antes, donde cuenta la sorpresa o el momento épico (Santi, 2026-11-25)."""
+    return str(c.clasif.get("tipo") or "") in CURIOSAS or grupo_de(c) in ("musica", "idolo")
 PISO_UNA_POR_DIA = 7.0   # Santi, 2026-11-15: sin ninguna de 8, la mejor del día si tiene 7 (una por día)
 A_PUNTUAR = 30       # cuántas puntúa Sonnet por propuesta (eran 8 de 20; presupuesto de 2026-11-15)
 

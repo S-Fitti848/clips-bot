@@ -4711,6 +4711,49 @@ FB_DIA = "historias_fb_dia"   # bot_estado: el día (AR) en que ya se propuso la
 FB_FECHA_FIJA = "historias_fb_hecho"   # bot_estado: {"dia": ..., "hecho": ...} para elegir uno a mano
 
 
+LATAM_GUARDADO = "latam_guardado"   # bot_estado, latam_guardado:<AAAA-MM-DD>: un video de Latinoamérica ya armado
+
+
+def guardar_latam(conn, r: dict, token: str, estado: dict, dia: str) -> None:
+    """Guarda un video de Latinoamérica ya armado y revisado para entregarlo el día `dia` (Santi, 2026-11-25: el de
+    Jorge Negrete, para su cumpleaños, el 30/11). Ese día sale primero, con ✅ Publicar / ❌ Cancelar como siempre."""
+    db.set_valor(conn, f"efe:{token}", json.dumps(estado, ensure_ascii=False))
+    db.set_valor(conn, f"{LATAM_GUARDADO}:{dia}", json.dumps(
+        {**r, "token": token, "armado": datetime.now(AR).date().isoformat()}, ensure_ascii=False))
+
+
+def _entregar_guardado_latam(conn, tg: TelegramClient, chats, settings: Settings, dia) -> bool:
+    """El video guardado para hoy, si hay: lo manda (como la reserva de tecnología) y lo anota en ph_latam."""
+    from . import efemerides as ef
+
+    raw = db.get_valor(conn, f"{LATAM_GUARDADO}:{dia.isoformat()}")
+    if not raw:
+        return False
+    db.borrar_valor(conn, f"{LATAM_GUARDADO}:{dia.isoformat()}")
+    item = json.loads(raw)
+    estado = _efe_estado(conn, item["token"])
+    meta = {}
+    if item.get("meta") and Path(item["meta"]).exists():
+        meta = json.loads(Path(item["meta"]).read_text(encoding="utf-8"))
+    if not estado or not meta or not Path(meta.get("salida", "")).exists():
+        log.warning("video guardado para hoy (%s): ya no está", item.get("clip_id"))
+        return False
+    prop = ef.Propuesta(**estado["propuesta"])
+    armado = str(item.get("armado") or "")
+    _efe_entregar(conn, tg, chats, item["token"], settings, prop, meta, item.get("fallas") or [],
+                  item.get("corregidas") or [], bool(item.get("revisado")), item.get("motor") or "",
+                  item.get("relajado") or "", auto=True, costo=item.get("costo"),
+                  nota=f"📦 Guardado para hoy (armado el {armado[8:10]}/{armado[5:7]})" if armado else "")
+    local = prop.local or {}
+    ya = _latam_del_dia(conn, dia)
+    ya.append({"texto": prop.evento.get("texto"), "pais": local.get("pais"),
+               "articulo": (prop.evento.get("paginas") or [""])[0], "puntaje": local.get("puntaje"),
+               "origen": local.get("origen", ""), "grupo": local.get("grupo", ""), "tipo": local.get("tipo", "")})
+    db.set_valor(conn, f"{PH_LATAM}:{dia.isoformat()}", json.dumps(ya, ensure_ascii=False))
+    log.info("Latinoamérica: sale el guardado para hoy %s (%s)", item["clip_id"], item.get("titulo"))
+    return True
+
+
 def _fb_tick(conn, tg: TelegramClient, settings: Settings, ahora=None, proponer=None) -> None:
     """Corre en cada vuelta de la escucha: desde historias_fb.hora (06:30), una vez por día, con el
     turno pesado libre, propone la historia de Facebook. Una falla se avisa y no se reintenta sola
@@ -4746,7 +4789,13 @@ def _fb_tick(conn, tg: TelegramClient, settings: Settings, ahora=None, proponer=
     log.info("historias de Latinoamérica: propongo %d a %s%s", n, chats, f" ({hecho})" if hecho else "")
     errores, salieron = [], 0
     try:
-        for k in range(n):
+        # Un video ya armado para hoy (el de un cumpleaños: Santi, 2026-11-25) sale primero y ocupa el hecho fijado
+        try:
+            if chats and _entregar_guardado_latam(conn, tg, chats, settings, ahora.date()):
+                salieron, hecho = 1, ""
+        except Exception:
+            log.exception("el video guardado para hoy falló")
+        for k in range(salieron, n):
             try:
                 error = ((proponer or _fb_proponer)(conn, tg, chats, ahora.date(), settings,
                                                     hecho=hecho if k == 0 else "",
@@ -7655,6 +7704,15 @@ def READY_DIR_CLI() -> Path:
     return READY_DIR
 
 
+def cmd_guardar_latam(args: argparse.Namespace) -> int:
+    """Guarda para un día un video de Latinoamérica ya armado (la carpeta de una prueba, con guardado.json)."""
+    d = json.loads((Path(args.carpeta) / "guardado.json").read_text(encoding="utf-8"))
+    conn = db.connect(DB_PATH)
+    guardar_latam(conn, d["r"], d["token"], d["estado"], args.dia)
+    print(f"guardado {d['r'].get('clip_id')} ({d['r'].get('titulo')}) para el {args.dia}")
+    return 0
+
+
 def cmd_chequeo_arranque(args: argparse.Namespace) -> int:
     """Santi, 2026-11-25 (el ConfigError de fotos_primero): antes de desplegar, el código nuevo tiene que poder cargar
     el settings.yaml, el streamers.yaml y el .env de ESTA máquina e importar todos sus módulos. deploy/desplegar.sh lo
@@ -7856,6 +7914,10 @@ def main(argv: list[str] | None = None) -> int:
 
     sub.add_parser("chequeo-arranque", help="antes de desplegar: carga la configuración y todos los módulos"
                    ).set_defaults(func=cmd_chequeo_arranque)
+    gl = sub.add_parser("guardar-latam", help="guarda un video de Latinoamérica ya armado para entregarlo un día")
+    gl.add_argument("carpeta", help="carpeta del video (con guardado.json)")
+    gl.add_argument("dia", help="AAAA-MM-DD")
+    gl.set_defaults(func=cmd_guardar_latam)
     pb = sub.add_parser("benchmark", help="cuánto tarda un clip completo en esta máquina")
     pb.add_argument("--clips", type=int, default=2, help="cuántos mp4 de output/raw/ medir (default 2)")
     pb.add_argument("--modelos", default="small",

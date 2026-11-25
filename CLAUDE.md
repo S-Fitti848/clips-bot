@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-11-25 | **Versión:** v1.60.0 (desplegado) | **Modo:** Fase 2: corriendo solo en la Pi. **Rots APAGADO. Así Nació PAUSADO desde el 19/11** (vuelve con 1 por día, preparado la noche anterior, si 4 de 5 marcas nuevas dan 15/19 o más por menos de US$ 0,60). **Pequeña Historia: TECNOLOGÍA ES LA PRIORIDAD NÚMERO UNO desde el 23/11** (2 por día en YouTube, 11:00 y 20:00, con una reserva de 3 videos ya armados; el canal de YouTube es solo de tecnología) y **Latinoamérica 2 por día SOLO en Facebook** hasta el 15/12. Nada se publica solo desde el 17/11: llega con ✅ Publicar / ❌ Cancelar y sin respuesta no sale. Todo al privado de Santi
+**Snapshot:** 2026-11-25 | **Versión:** v1.61.0 (desplegado) | **Modo:** Fase 2: corriendo solo en la Pi. **Rots APAGADO. Así Nació PAUSADO desde el 19/11** (vuelve con 1 por día, preparado la noche anterior, si 4 de 5 marcas nuevas dan 15/19 o más por menos de US$ 0,60). **Pequeña Historia: TECNOLOGÍA ES LA PRIORIDAD NÚMERO UNO desde el 23/11** (2 por día en YouTube, 11:00 y 20:00, con una reserva de 3 videos ya armados; el canal de YouTube es solo de tecnología) y **Latinoamérica 2 por día SOLO en Facebook** hasta el 15/12. Nada se publica solo desde el 17/11: llega con ✅ Publicar / ❌ Cancelar y sin respuesta no sale. Todo al privado de Santi
 
 > **SI ESTÁS EMPEZANDO UNA SESIÓN NUEVA, LEÉ §10.** Ahí está qué está hecho, qué quedó a medias,
 > qué falta, y las trampas que ya nos mordieron.
@@ -326,6 +326,10 @@ servicio systemd separado: `clips-bot`).
   variadas y de buen tema** (nunca elegir una historia de prueba por las fotos que tiene). El banco se llena también
   por tema con la búsqueda web de Haiku (`banco.TEMAS_BANCO_LATAM`, `cosechar_latam_web`, solo las que tienen artículo
   de Wikipedia; `scripts/llenar_banco_latam.py`).
+  **Música e ídolos de antes (Santi, 2026-11-25):** como en las curiosidades, `peligro` se puntúa como `sorpresa` o
+  momento épico (`locales.es_curiosa`). Un video ya armado se puede guardar para un día (`guardar-latam <carpeta> <día>`,
+  `bot_estado.latam_guardado:<día>`): ese día sale primero, en lugar del hecho fijado (el de Jorge Negrete, para el 30/11,
+  si pasa el estándar en la prueba).
 - **Cortes según las fotos y guion sin frases abstractas (Santi, 2026-11-25, para todo Pequeña Historia):** (1) en el
   formato corto la cantidad de cortes de cada frase es la de sus fotos que todavía se pueden usar; con pocas, cortes
   más largos con movimiento de cámara hasta 6 s (`ef.CORTE_LARGO_MAX_S`, `plan_rapido.segun_fotos`), y el gancho corta a
@@ -1415,6 +1419,8 @@ Problemas abiertos:
 
 ## 9. CHANGELOG
 
+- v1.61.0 (2026-11-25, noche) — Música e ídolos con sorpresa o momento épico en vez de peligro; videos de Latinoamérica
+  guardados para un día (`guardar_latam`, `_entregar_guardado_latam`, CLI `guardar-latam`).
 - v1.60.0 (2026-11-25, noche) — Banco de Latinoamérica por tema con la búsqueda web de Haiku; cortes según las fotos
   (más largos con movimiento, sin tarjetas de relleno) y guion sin frases abstractas, con los productos nombrados (reglas en
   §1). Cambian dos reglas viejas: "ninguna foto más de 4 s seguida" pasa a 6 s cuando faltan fotos, y el gancho de 2,5 s

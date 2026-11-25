@@ -89,6 +89,9 @@ def armar(conn, tg, settings, cual: str) -> dict:
     if not isinstance(r, dict):
         bitacora.cerrar(conn, "fallido")
         return {"cual": cual, "error": f"video: {str(r)[:300]}", "costo": costo_desde(conn, fila0)}
+    # para poder guardarlo y entregarlo otro día (python -m clips_bot guardar-latam <carpeta> <día>)
+    (carpeta / "guardado.json").write_text(json.dumps({"r": r, "token": token, "estado": estado}, ensure_ascii=False),
+                                           encoding="utf-8")
     from clips_bot import calidad
 
     ok, total = calidad.puntaje("pequena_historia", r["fallas"])
