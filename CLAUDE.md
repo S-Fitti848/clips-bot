@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-11-26 | **Versión:** v1.62.0 (desplegado) | **Modo:** Fase 2: corriendo solo en la Pi. **Rots APAGADO. Así Nació PAUSADO desde el 19/11** (vuelve con 1 por día, preparado la noche anterior, si 4 de 5 marcas nuevas dan 15/19 o más por menos de US$ 0,60). **Pequeña Historia: TECNOLOGÍA ES LA PRIORIDAD NÚMERO UNO desde el 23/11** (2 por día en YouTube, 11:00 y 20:00, con una reserva de 3 videos ya armados; el canal de YouTube es solo de tecnología) y **Latinoamérica 2 por día SOLO en Facebook** hasta el 15/12. Nada se publica solo desde el 17/11: llega con ✅ Publicar / ❌ Cancelar y sin respuesta no sale. Todo al privado de Santi
+**Snapshot:** 2026-11-26 | **Versión:** v1.63.0 (desplegado) | **Modo:** Fase 2: corriendo solo en la Pi. **Rots APAGADO. Así Nació PAUSADO desde el 19/11** (vuelve con 1 por día, preparado la noche anterior, si 4 de 5 marcas nuevas dan 15/19 o más por menos de US$ 0,60). **Pequeña Historia: TECNOLOGÍA ES LA PRIORIDAD NÚMERO UNO desde el 23/11** (2 por día en YouTube, 11:00 y 20:00, con una reserva de 3 videos ya armados; el canal de YouTube es solo de tecnología) y **Latinoamérica 2 por día SOLO en Facebook** hasta el 15/12. Nada se publica solo desde el 17/11: llega con ✅ Publicar / ❌ Cancelar y sin respuesta no sale. Todo al privado de Santi
 
 > **SI ESTÁS EMPEZANDO UNA SESIÓN NUEVA, LEÉ §10.** Ahí está qué está hecho, qué quedó a medias,
 > qué falta, y las trampas que ya nos mordieron.
@@ -311,6 +311,11 @@ servicio systemd separado: `clips-bot`).
   buenas la historia no se usa; Sonnet escribe el guion con la lista de fotos delante y Haiku dice qué fotos van con cada
   frase. (C) **Verificación de Latinoamérica:** una respuesta cortada o sin JSON se reintenta una vez con el doble de
   lugar (`web_historias.es_tecnica`); se verifican solo las 3 mejores del día (y 3 del banco, `locales.MAX_VERIFICAR`).
+  **Después de la prueba (Santi, 2026-11-26):** antes de 1970 alcanzan 6 fotos buenas (`fp.minimo_para`; con
+  menos fotos los cortes ya se alargan hasta 6 s, `plan_rapido.segun_fotos`); un hecho fijado a mano que no junta las
+  fotos sigue por el camino de antes con el control del 70 % (Negrete el 30/11); el lugar de la historia de
+  Latinoamérica cuenta como dato del artículo (`escribir_guion(respaldo=)`) y el error de un dato sin respaldo dice en
+  qué frase está, así la corrección puntual reescribe solo esa.
   (D) **Informe de las 09:00:** "Al primer intento: N % (tecnología a/b · Latinoamérica c/d · reserva e/f)" y "Gastado
   en reintentos: US$ x de US$ y" (`fallas.lineas_informe`).
 - **Tema primero; las fotos son un filtro, no la forma de elegir (Santi, 2026-11-25, después de la estación Concordia:
@@ -1420,6 +1425,10 @@ Problemas abiertos:
 
 ## 9. CHANGELOG
 
+- v1.63.0 (2026-11-26) — **Por qué Goycochea no se corrigió:** la historia era de Nápoles y `validar_lugar` exige
+  nombrar el lugar, pero el artículo de Goycochea no dice "Nápoles": cada corrección puntual lo sacaba y la validación
+  del lugar lo volvía a pedir, hasta el tope de 4. Ahora el lugar cuenta como respaldo y el error dice la frase. Mínimo
+  de 6 fotos antes de 1970 y el hecho fijado que no junta fotos sigue igual (§1). `tests/test_prueba_26_11.py`.
 - v1.62.0 (2026-11-26) — Aviso del banco: ya no por usarlo más de 2 veces por semana, sino si un banco baja de 8 o no
   se repone en el día (regla en §1). Semana del 23/11 (mandado a Santi): tecnología 0 del día y 7 del banco (5
   publicados, mediana 1.015 vistas en YouTube); Latinoamérica 3 del día (mediana 259 en Facebook) y 4 del banco

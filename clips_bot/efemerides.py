@@ -1307,8 +1307,13 @@ def validar_guion(d: dict, anio: int, fuente: str, corto: bool = False,
                          "impacto, récords), nada de lo que hace o le pasa a un personaje")
     faltan = no_respaldados(texto, fuente, anio)
     if faltan:
-        errores.append("esto NO está en el artículo, sacalo o cambialo por lo que dice el artículo: "
-                       + ", ".join(faltan))
+        # Con el número de frase, así la corrección puntual reescribe SOLO esa (Santi, 2026-11-26, Goycochea).
+        donde = []
+        for x in faltan:
+            nums = [i + 1 for i, f in enumerate(frases) if x.lower() in f.lower()]
+            donde.append(f"{x} (frase {', '.join(map(str, nums))})" if nums else x)
+        errores.append("esto NO está en el artículo, reescribí solo esas frases con lo que dice el artículo: "
+                       + ", ".join(donde))
     titulo = str(d.get("titulo") or "").strip()
     if not titulo or len(titulo) > 55:
         errores.append("el título tiene que tener entre 1 y 55 caracteres")
@@ -1410,7 +1415,7 @@ def escribir_guion(cliente, e: Evento, fuente: str, correccion: str = "", anteri
                    reintentos: int = 3, hablado: bool = False, sistema: str | None = None,
                    validar_extra=None, contexto: str = "", corto: bool = False,
                    rango: tuple[int, int] | None = None, max_s: float = 0.0,
-                   revisar_final: bool = True) -> Guion:
+                   revisar_final: bool = True, respaldo: str = "") -> Guion:
     """Gemini (o Claude, en el video de Facebook) con el artículo, SIN fotos: el guion y qué mostrar
     en cada frase. Las fotos se buscan después para cada frase (`fotos_para_guion`). Reintenta con
     los errores de la validación. `sistema`/`validar_extra`/`contexto`: los del video de Facebook
@@ -1445,7 +1450,10 @@ def escribir_guion(cliente, e: Evento, fuente: str, correccion: str = "", anteri
             log.info("guion de %s: %s", e.anio, err)
             errores = errores or [str(err)]
             break
-        errores = validar_guion(d, e.anio, fuente + "\n" + e.texto + f" {e.anio}", corto=corto,
+        # `respaldo`: el lugar de la historia, que validar_lugar EXIGE nombrar, cuenta como dato del artículo; si no,
+        # el lugar que no figura en el artículo ("Nápoles" en el de Goycochea) se sacaba y se volvía a pedir hasta el
+        # tope de correcciones (Santi, 2026-11-26).
+        errores = validar_guion(d, e.anio, fuente + "\n" + e.texto + f" {e.anio}\n{respaldo}", corto=corto,
                                 rango=rango)
         if validar_extra and not errores:
             errores = validar_extra(d)

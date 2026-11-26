@@ -27,6 +27,8 @@ from pathlib import Path
 log = logging.getLogger(__name__)
 
 MINIMO = 8              # Santi, 2026-11-25: 8 fotos buenas como mínimo (avisar antes de bajarlo)
+MINIMO_ANTIGUAS = 6     # Santi, 2026-11-26 (Negrete): antes de 1970 alcanza con 6, con cortes más largos
+ANIO_ANTIGUAS = 1970
 MAX_CANDIDATAS = 30     # las que se bajan y se le muestran a Haiku (un pedido)
 POR_ARTICULO = 10       # del artículo del hecho
 POR_OTRO_ARTICULO = 5   # de cada otro artículo que nombra el hecho
@@ -89,12 +91,20 @@ SCHEMA_ASIGNAR = {
 }
 
 
+def minimo_para(anio) -> int:
+    """8 fotos buenas; 6 para las historias de antes de 1970 (hay pocas fotos libres de la época)."""
+    try:
+        return MINIMO_ANTIGUAS if int(anio) < ANIO_ANTIGUAS else MINIMO
+    except (TypeError, ValueError):
+        return MINIMO
+
+
 class FotosPrevias(Exception):
     """La historia no tiene MINIMO fotos buenas: no se escribe el guion."""
 
-    def __init__(self, buenas: int, motivos: dict, costo_usd: float = 0.0):
+    def __init__(self, buenas: int, motivos: dict, costo_usd: float = 0.0, minimo: int = MINIMO):
         self.buenas, self.motivos = buenas, motivos
-        super().__init__(f"solo {buenas} fotos buenas antes del guion (mínimo {MINIMO}; "
+        super().__init__(f"solo {buenas} fotos buenas antes del guion (mínimo {minimo}; "
                          + ", ".join(f"{k} {v}" for k, v in sorted(motivos.items(), key=lambda kv: -kv[1])[:4]) + ")")
 
 
@@ -268,8 +278,10 @@ def motivo(desc: dict | None, historia: str) -> str | None:
 
 
 def juntar(wiki, haiku, e, fotos_articulo: list, carpeta: Path, historia: str, avisar=log.info,
-           fuentes=None, minimo: int = MINIMO) -> Banco:
-    """Pasos 1-3: las fotos buenas de la historia, o FotosPrevias."""
+           fuentes=None, minimo: int | None = None) -> Banco:
+    """Pasos 1-3: las fotos buenas de la historia, o FotosPrevias. Sin `minimo`, el de su año (`minimo_para`)."""
+    if minimo is None:
+        minimo = minimo_para(getattr(e, "anio", None))
     from . import efemerides as ef
 
     cands = candidatas(wiki, e, fotos_articulo, fuentes, avisar)
@@ -287,7 +299,7 @@ def juntar(wiki, haiku, e, fotos_articulo: list, carpeta: Path, historia: str, a
         pool.append(f)
     avisar(f"  fotos primero: {len(cands)} candidatas, {len(bajadas)} bajadas, {len(pool)} pasan el código {motivos}")
     if len(pool) < minimo:
-        raise FotosPrevias(len(pool), motivos)
+        raise FotosPrevias(len(pool), motivos, minimo=minimo)
     desc = describir(haiku, pool, historia, e.anio, avisar)
     buenas = []
     for k in range(len(pool)):
@@ -299,7 +311,7 @@ def juntar(wiki, haiku, e, fotos_articulo: list, carpeta: Path, historia: str, a
             buenas.append(k)
     avisar(f"  fotos primero: {len(buenas)} buenas de {len(pool)} {motivos}")
     if len(buenas) < minimo:
-        raise FotosPrevias(len(buenas), motivos)
+        raise FotosPrevias(len(buenas), motivos, minimo=minimo)
     return Banco(pool, buenas, desc, motivos, haiku)
 
 

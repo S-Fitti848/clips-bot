@@ -1111,10 +1111,17 @@ def proponer(wiki: ef.Wiki, sonnet, haiku, gemini, dia: date, carpeta: Path, avi
                 banco_f = fp.juntar(wiki, haiku or sonnet, e, fotos, carpeta, f"{lugar}: {c.texto} {fuente[:700]}",
                                     avisar)
             except (fp.FotosPrevias, ef.NarrarError) as err:
-                avisar(f"  {err}: no pido el guion")
-                fallas.append(f"{e.anio}: {err}")
-                bitacora.descarte(nombre_c, str(err), "fotos", desde_fila=fila_f, encontrado="fotos primero (Haiku)")
-                continue
+                if hecho:
+                    # Un hecho fijado a mano (Negrete el 30/11) sale igual: por el camino de antes, con el control
+                    # del 70 % de fotos reales de siempre (Santi, 2026-11-26).
+                    avisar(f"  {err}: es el hecho fijado, sigo por el camino de siempre")
+                    banco_f = None
+                else:
+                    avisar(f"  {err}: no pido el guion")
+                    fallas.append(f"{e.anio}: {err}")
+                    bitacora.descarte(nombre_c, str(err), "fotos", desde_fila=fila_f,
+                                      encontrado="fotos primero (Haiku)")
+                    continue
         fila_h, g = bitacora.fila_actual(), None
         no_de_hoy = c.clasif.get("banco_id") or (c.seccion == "web" and not c.clasif.get("del_dia"))
         try:
@@ -1124,7 +1131,7 @@ def proponer(wiki: ef.Wiki, sonnet, haiku, gemini, dia: date, carpeta: Path, avi
                                   contexto=contexto_de(c) + (ef.NO_ES_DE_HOY if no_de_hoy else "")
                                   + (banco_f.contexto() if banco_f else ""),
                                   corto=corto, rango=ef.LATAM_PALABRAS if corto else None,
-                                  max_s=ef.LATAM_MAX_S if corto else 0.0)
+                                  max_s=ef.LATAM_MAX_S if corto else 0.0, respaldo=contexto_de(c))
             if banco_f:
                 avisar(f"  fotos primero: el guion eligió foto en {banco_f.tomar_de_mostrar(g)} de "
                        f"{len(g.frases)} frases")
@@ -1186,7 +1193,8 @@ def rehacer(p: ef.Propuesta, wiki: ef.Wiki, sonnet, gemini, carpeta: Path, corre
     g = ef.escribir_guion(sonnet, e, p.fuente, correccion=correccion, anterior=anterior.texto,
                           sistema=SISTEMA_GUION_CORTO if corto else SISTEMA_GUION_LOCAL,
                           validar_extra=validar_lugar(lugar, corto), contexto=contexto_de(c), corto=corto,
-                          rango=ef.LATAM_PALABRAS if corto else None, max_s=ef.LATAM_MAX_S if corto else 0.0)
+                          rango=ef.LATAM_PALABRAS if corto else None, max_s=ef.LATAM_MAX_S if corto else 0.0,
+                          respaldo=contexto_de(c))
     g.imagen_frase = anterior.imagen_frase
     g.mas_video = anterior.mas_video
     fotos, _ = ef.fotos_del_evento(wiki, e)
