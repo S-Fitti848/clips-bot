@@ -4245,7 +4245,7 @@ def voz_falsa() -> bool:
         return False
     if os.getenv("CLIPS_VOZ_FALSA") == "1":
         return True
-    return gm.ORIGEN == gm.PRUEBA
+    return gm.origen_actual() == gm.PRUEBA
 
 
 def voz_de_prueba(frases: list[str], settings, carpeta: Path,

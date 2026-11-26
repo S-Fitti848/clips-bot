@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-11-26 | **Versión:** v1.63.0 (desplegado) | **Modo:** Fase 2: corriendo solo en la Pi. **Rots APAGADO. Así Nació PAUSADO desde el 19/11** (vuelve con 1 por día, preparado la noche anterior, si 4 de 5 marcas nuevas dan 15/19 o más por menos de US$ 0,60). **Pequeña Historia: TECNOLOGÍA ES LA PRIORIDAD NÚMERO UNO desde el 23/11** (2 por día en YouTube, 11:00 y 20:00, con una reserva de 3 videos ya armados; el canal de YouTube es solo de tecnología) y **Latinoamérica 2 por día SOLO en Facebook** hasta el 15/12. Nada se publica solo desde el 17/11: llega con ✅ Publicar / ❌ Cancelar y sin respuesta no sale. Todo al privado de Santi
+**Snapshot:** 2026-11-26 | **Versión:** v1.64.0 (desplegado) | **Modo:** Fase 2: corriendo solo en la Pi. **Rots APAGADO. Así Nació PAUSADO desde el 19/11** (vuelve con 1 por día, preparado la noche anterior, si 4 de 5 marcas nuevas dan 15/19 o más por menos de US$ 0,60). **Pequeña Historia: TECNOLOGÍA ES LA PRIORIDAD NÚMERO UNO desde el 23/11** (2 por día en YouTube, 11:00 y 20:00, con una reserva de 3 videos ya armados; el canal de YouTube es solo de tecnología) y **Latinoamérica 2 por día SOLO en Facebook** hasta el 15/12. Nada se publica solo desde el 17/11: llega con ✅ Publicar / ❌ Cancelar y sin respuesta no sale. Todo al privado de Santi
 
 > **SI ESTÁS EMPEZANDO UNA SESIÓN NUEVA, LEÉ §10.** Ahí está qué está hecho, qué quedó a medias,
 > qué falta, y las trampas que ya nos mordieron.
@@ -259,6 +259,17 @@ servicio systemd separado: `clips-bot`).
   línea "Motivo: …". Todo el detalle (reglas, correcciones, puntajes, fotos, textos) queda en `bot_estado`
   (`detalle:<clip>`) y sale con el botón "📋 Detalle" o `/detalle [clip]`. Los avisos e informes a Santi pasan por
   `_aviso`: 3 líneas como mucho y el resto detrás de 📋. Lo Encontré (repo bot-videos) lo hace su propia sesión.
+- **Videos del día listos a las 03:00 y botones que siempre responden (Santi, 2026-11-26):** la de tecnología y las
+  de Latinoamérica se arman desde las 00:05 (`efemerides.hora_propuesta`, `historias_fb.hora`) y, si al día le falta el
+  segundo de tecnología y la reserva está vacía, la reserva arma uno de madrugada (arranca antes de las 02:30,
+  `reserva_tec.MADRUGADA_HASTA`). Llegan con ✅ Publicar / ❌ Cancelar y su horario ("sale 11:00"); la reposición normal
+  de la reserva sigue de 06:30 a 22:00. Las pruebas (turno "prueba:…") no toman el turno pesado de 00:00 a 03:00
+  (`db.VENTANA_PRODUCCION`): corren antes o después. La escucha va en 3 hilos (`escuchar_telegram`): uno solo lee
+  Telegram y contesta cada botón al toque (`_respuesta_inmediata`), otro hace lo que piden botones y comandos
+  (`_atender_updates`), y el de trabajo corre los ticks y la cola (`_vuelta_trabajo`: todo lo que renderiza). Un botón
+  que no se puede hacer en ese momento contesta "⏳ en cola, se hace cuando termine el render" (`EN_COLA_RENDER`). El
+  origen de Claude y Gemini es por hilo (`gemini.origen_actual`); al cerrar, la escucha suelta los turnos que tomó
+  (`db.soltar_propios`).
 - **Producción: tope de US$ 2,50 por día de Claude (Santi, 2026-11-24)** (`presupuesto.TOPE_DIA`): al acercarse se
   recorta en el orden de siempre (comunidad y búsqueda web de Latinoamérica, después Latinoamérica a 1); tecnología nunca.
 - **Calor (Santi, 2026-11-24, hasta que resuelva el enfriamiento):** un render a la vez, 4 min de pausa como mínimo entre
@@ -1424,6 +1435,12 @@ Problemas abiertos:
 ---
 
 ## 9. CHANGELOG
+
+- v1.64.0 (2026-11-26) — **Videos del día listos a las 03:00 y botones que siempre responden** (regla en §1). Medido
+  en el log de la Pi: la madrugada (04:00) terminaba a las 05:27-05:46 y la reserva de tecnología renderizaba de 06:30 a
+  ~09:00 (cada intento 25-35 min, la mayoría debajo del estándar); todo eso corría en el mismo hilo que leía Telegram,
+  por eso los botones no respondían a la mañana. `tests/test_madrugada_y_botones.py` (con una prueba de punta a punta
+  de los hilos: el botón se contesta en < 2,5 s con un render de 3 s andando).
 
 - v1.63.0 (2026-11-26) — **Por qué Goycochea no se corrigió:** la historia era de Nápoles y `validar_lugar` exige
   nombrar el lugar, pero el artículo de Goycochea no dice "Nápoles": cada corrección puntual lo sacaba y la validación
@@ -3473,8 +3490,10 @@ clips" queda sin uso mientras Rots siga apagado.
 | hora | qué | dónde |
 |---|---|---|
 | ~~01:30~~ / ~~03:30~~ | "pegó" y la corrida de Rots — APAGADOS (`publicacion.rots: false`) | `_pego_tick`, `_madrugada_tick` |
-| 04:00 | propuesta de tecnología (puntaje ≥ 7,5) | `_madrugada_tick` → `efemeride_del_dia` |
-| después (desde 04:00) | 2 propuestas de Latinoamérica (puntaje ≥ 8, sin repetir país ni artículo) | `_fb_tick` |
+| 00:05 | propuesta de tecnología (puntaje ≥ 7,5) | `_madrugada_tick` → `efemeride_del_dia` |
+| después (desde 00:05) | 2 propuestas de Latinoamérica (puntaje ≥ 8, sin repetir país ni artículo) | `_fb_tick` |
+| después (hasta 02:30) | el segundo de tecnología de la reserva, si está vacía; todo listo a las 03:00 | `_reserva_tec_tick` |
+| 00:00-03:00 | ninguna prueba toma el turno pesado | `db.VENTANA_PRODUCCION` |
 | 05:30 | tope de "todo en Telegram" (`LISTO_DESDE`) | |
 | 05:00 / 06:00 | timers de respaldo (no hacen nada si ya se hizo) | systemd |
 | **07:00** | **Así Nació: arma los 2 videos del día** de a uno (nunca 03:45-06:00), los programa y los manda al privado con ❌ Cancelar; si uno falla, reintento en 1 h hasta las 22:00 | `_animacion_tick` |

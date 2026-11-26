@@ -215,7 +215,7 @@ def test_madrugada_en_orden(conn, rots_prendido):
     import clips_bot.__main__ as m
 
     s = load_settings()
-    assert (s.publicacion.hora_rots, s.efemerides.hora_propuesta, s.historias_fb.hora, s.pego.hora) ==         ("03:30", "04:00", "04:00", "01:30")
+    assert (s.publicacion.hora_rots, s.efemerides.hora_propuesta, s.historias_fb.hora, s.pego.hora) ==         ("03:30", "00:05", "00:05", "01:30")   # Santi, 2026-11-26: listos a las 03:00
     lanzadas, efes = [], []
     tick = lambda h, mi, d=13: m._madrugada_tick(conn, None, s, ahora=datetime(2026, 11, d, h, mi, tzinfo=m.AR),
                                                  lanzar=lambda: lanzadas.append(1),

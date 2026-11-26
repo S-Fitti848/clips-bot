@@ -322,9 +322,9 @@ def prueba_sin_claude() -> None:
 
     from . import gemini
 
-    if gemini.ORIGEN == gemini.PRUEBA and os.environ.get("CLIPS_CLAUDE_REAL") != "1":
+    if gemini.origen_actual() == gemini.PRUEBA and os.environ.get("CLIPS_CLAUDE_REAL") != "1":
         raise ClaudeError("prueba sin Claude real (Santi, 2026-11-18): para usarlo, CLIPS_CLAUDE_REAL=1")
-    if gemini.ORIGEN == gemini.PRUEBA:
+    if gemini.origen_actual() == gemini.PRUEBA:
         gastado = gasto_pruebas_hoy()
         if gastado >= TOPE_PRUEBAS_DIA:
             _avisar_tope_pruebas(gastado)

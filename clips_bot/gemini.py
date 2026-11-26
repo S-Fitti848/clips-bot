@@ -68,6 +68,22 @@ PRODUCCION, A_MANO, PRUEBA = "produccion", "a_mano", "prueba"
 ORIGEN = PRUEBA
 
 
+import threading as _threading
+
+_LOCAL = _threading.local()   # el origen de cada hilo de la escucha (2026-11-26: trabajo y atención van aparte)
+
+
+def _en_hilo_principal() -> bool:
+    return _threading.current_thread() is _threading.main_thread()
+
+
+def origen_actual() -> str:
+    """El origen de quien llama: en el hilo principal, ORIGEN (como siempre); en otro hilo, el suyo."""
+    if _en_hilo_principal():
+        return ORIGEN
+    return getattr(_LOCAL, "valor", None) or ORIGEN
+
+
 class origen:
     """`with origen(PRODUCCION): ...`: las llamadas de adentro se anotan con ese origen."""
 
@@ -76,18 +92,27 @@ class origen:
 
     def __enter__(self):
         global ORIGEN
-        self.antes, ORIGEN = ORIGEN, self.nombre
+        if _en_hilo_principal():
+            self.antes, ORIGEN = ORIGEN, self.nombre
+        else:
+            self.antes, _LOCAL.valor = getattr(_LOCAL, "valor", None), self.nombre
         return self
 
     def __exit__(self, *exc):
         global ORIGEN
-        ORIGEN = self.antes
+        if _en_hilo_principal():
+            ORIGEN = self.antes
+        else:
+            _LOCAL.valor = self.antes
         return False
 
 
 def fijar_origen(nombre: str) -> None:
     global ORIGEN
-    ORIGEN = nombre
+    if _en_hilo_principal():
+        ORIGEN = nombre
+    else:
+        _LOCAL.valor = nombre
 
 
 def _llamador() -> str:
@@ -115,7 +140,7 @@ def registrar_uso(funcion: str, modelo: str, clave: str, entrada: int, salida: i
     try:
         conn = db.connect(DB_PATH)
         try:
-            db.anotar_gemini(conn, funcion, modelo, clave, entrada, salida, cache, origen=ORIGEN)
+            db.anotar_gemini(conn, funcion, modelo, clave, entrada, salida, cache, origen=origen_actual())
         finally:
             conn.close()
     except Exception as e:     # medir no puede romper lo que se mide

@@ -449,6 +449,8 @@ def tomar_turno(conn: sqlite3.Connection, recurso: str, token: str, maximo: int 
     if len(activos) >= maximo:
         set_valor(conn, _clave_turno(recurso), json.dumps(activos))  # deja limpios los vencidos
         return False
+    if recurso == RECURSO_PESADO and token.startswith("prueba") and en_ventana_produccion():
+        return False     # las pruebas no pisan los videos del día (Santi, 2026-11-26)
     # Pausa entre renders (Santi, 2026-11-14): uno nuevo no arranca hasta que la Pi baje de
     # TEMP_ARRANQUE_C; quien lo pide lo trata como "ocupado" y reintenta, igual que con otro render.
     # Solo en los PAUSA_MAX_S que siguen al fin del último render: si la Pi está caliente por otra cosa
@@ -461,7 +463,31 @@ def tomar_turno(conn: sqlite3.Connection, recurso: str, token: str, maximo: int 
             return False
     activos.append((token, time.time()))
     set_valor(conn, _clave_turno(recurso), json.dumps(activos))
+    _PROPIOS.add((recurso, token))
     return True
+
+
+# Santi, 2026-11-26: los videos del día se arman de madrugada y tienen que estar listos a las 03:00; una prueba (token
+# "prueba:…") no toma el turno pesado en ese rato: corre antes de las 00:00 o después de las 03:00.
+VENTANA_PRODUCCION = ("00:00", "03:00")
+
+
+def en_ventana_produccion(ahora=None) -> bool:
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    hm = (ahora or datetime.now(ZoneInfo("America/Argentina/Buenos_Aires"))).strftime("%H:%M")
+    return VENTANA_PRODUCCION[0] <= hm < VENTANA_PRODUCCION[1]
+
+
+_PROPIOS: set = set()   # (recurso, token) tomados por este proceso: los suelta `soltar_propios` al salir
+
+
+def soltar_propios(conn: sqlite3.Connection) -> None:
+    """Al cerrar la escucha (SIGTERM, 2026-11-26): un hilo que estaba renderizando no llega a su `finally`, así que
+    el turno se suelta acá; si no, lo siguiente esperaría a que venza."""
+    for recurso, token in list(_PROPIOS):
+        soltar_turno(conn, recurso, token)
 
 
 def soltar_turno(conn: sqlite3.Connection, recurso: str, token: str,
@@ -470,6 +496,7 @@ def soltar_turno(conn: sqlite3.Connection, recurso: str, token: str,
 
     import time
 
+    _PROPIOS.discard((recurso, token))
     activos = [(t, ts) for t, ts in turnos_activos(conn, recurso, vencimiento_s) if t != token]
     set_valor(conn, _clave_turno(recurso), json.dumps(activos))
     if recurso == RECURSO_PESADO:

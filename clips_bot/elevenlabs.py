@@ -56,12 +56,12 @@ def anotar(tipo: str, creditos: int, detalle: str = "") -> None:
     """Una fila en `elevenlabs_uso`. Nunca tumba el pedido."""
     from . import db
     from .config import DB_PATH
-    from .gemini import ORIGEN
+    from .gemini import origen_actual
 
     try:
         conn = db.connect(DB_PATH)
         try:
-            db.anotar_elevenlabs(conn, tipo, creditos, detalle, origen=ORIGEN)
+            db.anotar_elevenlabs(conn, tipo, creditos, detalle, origen=origen_actual())
         finally:
             conn.close()
     except Exception as e:     # noqa: BLE001 — medir no puede romper lo que se mide

@@ -26,7 +26,8 @@ FALLAS = "reserva_tec_fallas:{}"
 # Cada intento es UNA historia (con todos sus arreglos de fotos adentro); una que falla no se vuelve a intentar.
 MAX_FALLAS_DIA = 5
 COSTO_INTENTO = 0.35        # lo que puede costar un intento (guion + 2 búsquedas + plan B): no arranca si no entra
-DESDE, HASTA = "06:30", "22:00"   # nunca en la madrugada (03:30-06:30 es de los videos del día)
+DESDE, HASTA = "06:30", "22:00"   # la reposición normal; de madrugada solo para completar el día (hasta 02:30)
+MADRUGADA_HASTA = "02:30"        # el último intento de madrugada arranca antes de esto: termina antes de las 03:00
 
 
 def leer(conn) -> list[dict]:
@@ -121,8 +122,11 @@ def entra_en_tope(conn, dia: date) -> bool:
         return True
 
 
-def hay_que_armar(conn, objetivo: int, dia: date, hm: str) -> bool:
-    return (not pausada(conn) and DESDE <= hm < HASTA and len(leer(conn)) < int(objetivo)
+def hay_que_armar(conn, objetivo: int, dia: date, hm: str, madrugada: bool = False) -> bool:
+    """`madrugada`: falta el segundo de tecnología de HOY y la reserva está vacía (Santi, 2026-11-26: los videos del
+    día listos a las 03:00): se arma aunque sea fuera de DESDE-HASTA."""
+    en_horario = DESDE <= hm < HASTA or madrugada
+    return (not pausada(conn) and en_horario and len(leer(conn)) < int(objetivo)
             and fallas_hoy(conn, dia) < MAX_FALLAS_DIA and entra_en_tope(conn, dia))
 
 

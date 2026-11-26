@@ -335,7 +335,7 @@ efemerides:
   # vida real: inventos, lanzamientos, empresas, creadores; nunca tramas), en el formato corto y SOLO
   # en YouTube. Los 3 videos del día (2 de Latinoamérica + este) en YouTube, a 4 h o más entre sí.
   tema: tecnologia
-  hora_propuesta: "04:00"    # la escucha la propone apenas termina Rots (el timer de 06:00, de respaldo)
+  hora_propuesta: "00:05"    # Santi, 2026-11-26: los videos del día listos a las 03:00 (antes 04:00)
   corto: true
   # Sin aprobar (Santi, 2026-11-14; APAGADO hasta que apruebe el diseño): las 3 diarias (tecnología y
   # las 2 de Latinoamérica) se arman y se programan solas; el video llega a Telegram horas antes de
@@ -545,7 +545,7 @@ facebook:
 # respaldo). YouTube no cambia nada.
 historias_fb:
   activo: true
-  hora: "04:00"              # AR, desde el 2026-11-12: después de Rots (03:30) y de la de tecnología
+  hora: "00:05"              # AR, Santi 2026-11-26: apenas termina la de tecnología, todo listo a las 03:00
   hora_publicacion: "19:00"  # AR: el Reel sale a esta hora (16 h en Colombia, 15 h en el centro de México)
   chat: "8668060171"         # privado de Santi (2026-11-14); vacío = los destinos de la entrega diaria
   modelo_texto: "claude-sonnet-5-5"

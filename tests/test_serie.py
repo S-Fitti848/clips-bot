@@ -220,7 +220,7 @@ def test_aprobar_con_algo_pesado_andando_va_a_la_cola(conn):
     m._serie_callback(conn, tg, {"data": "ser:ok:0a1b2c", "chat_id": "1", "message_id": 3,
                                  "callback_id": "q", "user_id": "7"}, None, cola)
     assert cola == [{"chat_id": "1", "comando": "serie:partes", "args": ["0a1b2c"], "user_id": "7"}]
-    assert "En cola" in tg.mensajes[-1][0]
+    assert "en cola, se hace cuando termine el render" in tg.mensajes[-1][0]
 
 
 def test_cambiar_los_guiones_deja_esperando_la_correccion(conn):

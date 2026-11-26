@@ -2295,7 +2295,7 @@ def _serie_callback(conn, tg: TelegramClient, cb: dict, settings: Settings, cola
     if r is OCUPADO:   # la misma cola que /buscar, /editar y /narrar
         cola.append({"chat_id": cb["chat_id"], "comando": comando, "args": [token],
                      "user_id": cb["user_id"]})
-        tg.send_message(cb["chat_id"], f"En cola ({len(cola)}º), arranco cuando se libere.")
+        tg.send_message(cb["chat_id"], f"{EN_COLA_RENDER} ({len(cola)}º en la cola).")
     elif r:
         tg.send_message(cb["chat_id"], r)
 
@@ -2702,248 +2702,345 @@ def _auto(tick):
     return f
 
 
-def escuchar_telegram(settings: Settings, timeout_poll: int = 50) -> int:
-    """`atender-telegram --escuchar`: long polling, para que /buscar ande cuando lo mandás y no
-    recién en la corrida del día siguiente. Lo corre clips-bot-telegram.service.
+EN_COLA_RENDER = "⏳ en cola, se hace cuando termine el render"
 
-    Cola: si hay una corrida pesada andando (`diario` o la búsqueda anterior), la búsqueda no se
-    tira, se guarda y arranca sola cuando se libera el turno. Mientras hay algo en la cola el
-    polling baja a unos segundos, así no se queda esperando 50 s para reaccionar.
-    """
+
+def _respuesta_inmediata(conn, cb: dict, atencion_ocupada: bool) -> str | None:
+    """Qué contestarle YA a un botón, desde el hilo que lee Telegram (Santi, 2026-11-26: "los botones tienen que
+    responder siempre, aunque haya un render en curso"). None = lo contesta quien lo atiende, con su propio texto
+    ("👍 anotado", un cartel). Si no se puede hacer en este momento, el aviso de la cola."""
+    pesado = _es_pesado(cb["data"])
+    if atencion_ocupada:
+        return EN_COLA_RENDER if pesado or db.hay_trabajo_pesado(conn, VENCIMIENTO_PESADO_S)             else "⏳ en cola, ya lo hago"
+    if pesado:
+        return EN_COLA_RENDER if db.hay_trabajo_pesado(conn, VENCIMIENTO_PESADO_S)             else L("⏳ Un momento…", "⏳ One moment…")
+    return None
+
+
+def _vuelta_trabajo(conn, tg: TelegramClient, settings: Settings, cola: list, estado: dict,
+                    reloj_envivo: dict) -> None:
+    """Una vuelta del hilo de trabajo: los ticks programados (la madrugada, la reserva, Así Nació…) y la cola de
+    pedidos pesados. Todo lo que renderiza corre acá, nunca en el hilo que lee Telegram."""
+    # El modo en vivo va ANTES que la cola: un momento en vivo pierde valor por minuto.
+    _seguro(tg, str(db.envivo_chat(conn) or estado.get("chat") or ""), "el modo en vivo",
+            _envivo_tick, conn, tg, settings, reloj_envivo)
+    _seguro(tg, str(estado.get("chat") or ""), "el reintento de la efeméride",
+            _auto(_efe_reintento_tick), conn, tg, settings)
+    _seguro(tg, str(estado.get("chat") or ""), "la madrugada (Rots y la de tecnología)",
+            _auto(_madrugada_tick), conn, tg, settings)
+    # Tecnología primero (Santi, 2026-11-23): el segundo del día (o los dos, si el del día falló) sale de la reserva
+    _seguro(tg, str(estado.get("chat") or ""), "la tecnología de la reserva", _tec_del_dia_tick, conn, tg, settings)
+    _seguro(tg, str(estado.get("chat") or ""), "la historia de Facebook", _auto(_fb_tick), conn, tg, settings)
+    _seguro(tg, str(estado.get("chat") or ""), "la reserva de tecnología", _auto(_reserva_tec_tick), conn, tg, settings)
+    _seguro(tg, str(estado.get("chat") or ""), "los temas de la semana", _temas_semana_tick, conn, tg)
+    _seguro(tg, str(estado.get("chat") or ""), "el plan de Así Nació", _plan_an_tick, conn, tg)
+    _seguro(tg, str(estado.get("chat") or ""), "los videos esperando aprobación", _espera_tick, conn, tg)
+    _seguro(tg, str(estado.get("chat") or ""), "el informe de fotos y reserva", _informe_fotos_tick, conn, tg)
+    _seguro(tg, str(estado.get("chat") or ""), "el tope diario de Claude", _tope_dia_tick, conn, tg)
+    _seguro(tg, str(estado.get("chat") or ""), "las fallas de la semana", _fallas_semana_tick, conn, tg)
+    _seguro(tg, str(estado.get("chat") or ""), "el informe de la reserva marcada", _informe_marcados_tick, conn, tg)
+    _seguro(tg, str(estado.get("chat") or ""), "el video de marcas", _auto(_animacion_tick), conn, tg, settings)
+    _seguro(tg, str(estado.get("chat") or ""), "el calendario", _calendario_tick, conn, tg, settings)
+    _seguro(tg, str(estado.get("chat") or ""), "la medición de Pequeña Historia",
+            _auto(_medicion_ph_tick), conn, tg, settings)
+    _seguro(tg, str(estado.get("chat") or ""), "el aviso de las voces", _voces_tick, conn, tg, settings)
+    _seguro(tg, str(estado.get("chat") or ""), "el costo de Claude", _costo_claude_tick, conn, tg, settings)
+    _seguro(tg, str(estado.get("chat") or ""), "los créditos de ElevenLabs", _elevenlabs_tick, conn, tg, settings)
+    _seguro(tg, str(estado.get("chat") or ""), "el uso del banco de reserva", _banco_usos_tick, conn, tg)
+    _seguro(tg, str(estado.get("chat") or ""), "la prueba de la búsqueda web", _web_latam_tick, conn, tg, settings)
+    _seguro(tg, str(estado.get("chat") or ""), "el resumen de los Reels a las 24 h", _fb_24h_tick, conn, tg, settings)
+    _seguro(tg, str(estado.get("chat") or ""), "las mejoras al motor", _mejoras_motor_tick, conn, tg, settings)
+    _seguro(tg, str(estado.get("chat") or ""), "la publicación de comunidad", _comunidad_tick, conn, tg, settings)
+    _seguro(tg, str(estado.get("chat") or ""), "el resumen semanal de costos", _costos_semana_tick, conn, tg, settings)
+    _seguro(tg, str(estado.get("chat") or ""), "el resumen semanal del estándar de calidad", _calidad_semana_tick,
+            conn, tg)
+    _seguro(tg, str(estado.get("chat") or ""), "el resumen semanal de vistas", _resumen_semana_tick, conn, tg)
+    _seguro(tg, str(estado.get("chat") or ""), "el control del saldo de Claude", _presupuesto_tick, conn, tg)
+    _seguro(tg, str(estado.get("chat") or ""), "el reintento de los clips",
+            _auto(_clips_reintento_tick), conn, settings)
+    _seguro(tg, str(estado.get("chat") or ""), "la búsqueda de lo que pegó",
+            _auto(_pego_tick), conn, settings)
+    _seguro(tg, str(estado.get("chat") or ""), "el chequeo de las subidas", _chequeo_subidas_tick, conn, tg)
+    _seguro(tg, str(estado.get("chat") or ""), "los bancos de reserva", _bancos_tick, conn, tg, settings)
+    _seguro(tg, str(estado.get("chat") or ""), "el chequeo de las 20:00", _sin_video_tick, conn, tg, settings)
+    _seguro(tg, str(estado.get("chat") or ""), "la cola", _drenar_cola, conn, tg, cola, settings)
+
+
+def _atender_updates(conn, tg: TelegramClient, updates: list, permitidos, settings: Settings, cola: list,
+                     estado: dict) -> None:
+    """Botones, videos, textos y comandos de una tanda de updates (hilo de atención)."""
     from . import serie as serie_mod
-    from .telegram import (callbacks, comandos, sacar_cc, sacar_sin_audio, textos_sueltos,
-                           usuarios_permitidos, videos)
+    from .telegram import callbacks, comandos, sacar_cc, sacar_sin_audio, textos_sueltos, videos
+
+    _seguro(tg, str(estado.get("chat") or ""), "votos", _atender_votos, conn, tg, updates,
+            permitidos)
+    for cb in callbacks(updates):
+        if cb["user_id"] not in permitidos:
+            log.warning("Botón de %s: no autorizado", cb["user_id"])
+            tg.answer_callback(cb["callback_id"], "No tenés acceso a este bot.")
+            continue
+        estado["chat"] = cb["chat_id"]
+        db.ver_chat(conn, cb["chat_id"], cb.get("chat_tipo", ""),
+                    cb.get("chat_nombre", ""), cb["user_id"])
+        if cb["data"].startswith("gui:"):
+            _seguro(tg, cb["chat_id"], cb["data"], _guion_callback, conn, tg, cb, settings)
+            continue
+        if cb["data"].startswith("pas:"):
+            _seguro(tg, cb["chat_id"], cb["data"], _pasos_callback, conn, tg, cb, settings)
+            continue
+        if cb["data"].startswith("acc:"):
+            _seguro(tg, cb["chat_id"], cb["data"], _acceso_callback, conn, tg, cb)
+            continue
+        if cb["data"].startswith("det:"):
+            _seguro(tg, cb["chat_id"], cb["data"], _detalle_callback, conn, tg, cb)
+            continue
+        if cb["data"].startswith("sub:"):
+            _seguro(tg, cb["chat_id"], cb["data"], _subidas_callback, conn, tg, cb, settings)
+            continue
+        if cb["data"].startswith("gp:"):
+            _seguro(tg, cb["chat_id"], cb["data"], _gameplay_callback, conn, tg, cb, settings,
+                    cola)
+            continue
+        if cb["data"].startswith("efe:"):
+            _seguro(tg, cb["chat_id"], cb["data"], _efe_callback, conn, tg, cb, settings,
+                    cola)
+            continue
+        if cb["data"].startswith("bu:"):
+            _seguro(tg, cb["chat_id"], cb["data"], _buscar_callback, conn, tg, cb, settings,
+                    cola)
+            continue
+        if cb["data"].startswith("ser:"):
+            _seguro(tg, cb["chat_id"], cb["data"], _serie_callback, conn, tg, cb, settings,
+                    cola)
+            continue
+        if cb["data"].startswith("ped:"):
+            _seguro(tg, cb["chat_id"], cb["data"], _pedido_callback, conn, tg, cb,
+                    settings, cola)
+            continue
+        if cb["data"].startswith("ay:"):
+            _seguro(tg, cb["chat_id"], cb["data"], _ayuda_callback, tg, cb)
+            continue
+        if cb["data"].startswith("dst:"):
+            _seguro(tg, cb["chat_id"], cb["data"], _destinos_callback, conn, tg, cb)
+            continue
+        fn = _menu_callback if cb["data"].startswith("st:") else _alta_callback
+        extra = (settings, cola) if fn is _menu_callback else (settings,)
+        _seguro(tg, cb["chat_id"], cb["data"], fn, conn, tg, cb, *extra)
+    for v in videos(updates):
+        if v["user_id"] not in permitidos:
+            continue
+        estado["chat"] = v["chat_id"]
+        if v["texto"].startswith("/"):   # "/serie partes 4 cc: <link> sin audio" abajo
+            modo, *extra = v["texto"].lstrip("/").split()
+            modo = modo.split("@")[0].lower()
+        else:   # lo que quedó esperando: "narrar", o "serie:4" con las partes
+            modo, _, n = (db.get_valor(conn, f"{ESPERA_VIDEO}:{v['user_id']}") or "").partition(":")
+            extra = ["partes", n] if n else []
+        if modo not in ("editar", "narrar", "serie"):
+            continue
+        db.borrar_valor(conn, f"{ESPERA_VIDEO}:{v['user_id']}")
+        resto, cc = sacar_cc(extra)
+        resto, sin_audio = sacar_sin_audio(resto)
+        try:
+            partes = serie_mod.sacar_partes(resto)[1] if modo == "serie" else None
+        except ValueError as e:
+            tg.send_message(v["chat_id"], str(e))
+            continue
+        v = {**v, "cc": cc, "sin_audio": sin_audio, "partes": partes}
+        if v["mb"] > MAX_MB_TELEGRAM:
+            tg.send_message(v["chat_id"], f"El archivo pesa {v['mb']} MB y Telegram me deja "
+                                          f"bajar hasta {MAX_MB_TELEGRAM}. Mandame el link.")
+            continue
+        _seguro(tg, v["chat_id"], f"/{modo}", _aporte_o_cola, conn, tg, v, modo, settings,
+                cola)
+    for t in textos_sueltos(updates):
+        if t["user_id"] not in permitidos:
+            continue
+        espera_apodos = db.get_valor(conn, f"{ESPERA_APODOS}:{t['user_id']}")
+        if espera_apodos:
+            db.borrar_valor(conn, f"{ESPERA_APODOS}:{t['user_id']}")
+            _seguro(tg, t["chat_id"], "guardar los apodos", _guardar_apodos, conn, tg, t,
+                    espera_apodos)
+            continue
+        espera_facecam = db.get_valor(conn, f"{ESPERA_FACECAM}:{t['user_id']}")
+        if espera_facecam:
+            db.borrar_valor(conn, f"{ESPERA_FACECAM}:{t['user_id']}")
+            _seguro(tg, t["chat_id"], "guardar la webcam", _guardar_facecam, conn, tg, t,
+                    espera_facecam)
+            continue
+        espera_carpeta = db.get_valor(conn, f"{ESPERA_CARPETA}:{t['user_id']}")
+        if espera_carpeta:
+            db.borrar_valor(conn, f"{ESPERA_CARPETA}:{t['user_id']}")
+            _seguro(tg, t["chat_id"], "crear la carpeta", _carpeta_nueva, conn, tg, t,
+                    json.loads(espera_carpeta))
+            continue
+        espera_efe = db.get_valor(conn, f"{ESPERA_EFE}:{t['user_id']}")
+        if espera_efe:
+            db.borrar_valor(conn, f"{ESPERA_EFE}:{t['user_id']}")
+            _seguro(tg, t["chat_id"], "reescribir la efeméride", _efe_corregir, conn, tg,
+                    t, espera_efe, settings)
+            continue
+        espera_serie = db.get_valor(conn, f"{ESPERA_SERIE}:{t['user_id']}")
+        if espera_serie:
+            db.borrar_valor(conn, f"{ESPERA_SERIE}:{t['user_id']}")
+            _seguro(tg, t["chat_id"], "rehacer la serie", _serie_corregir, conn, tg, t,
+                    json.loads(espera_serie), settings)
+            continue
+        pasos = db.get_valor(conn, f"{ESPERA_PASOS}:{t['user_id']}")
+        if pasos:
+            db.borrar_valor(conn, f"{ESPERA_PASOS}:{t['user_id']}")
+            _seguro(tg, t["chat_id"], "reelegir los pasos", _repensar_pasos, conn, tg,
+                    t, pasos, settings)
+            continue
+        pendiente = db.get_valor(conn, f"{ESPERA_CORRECCION}:{t['user_id']}")
+        if pendiente:
+            db.borrar_valor(conn, f"{ESPERA_CORRECCION}:{t['user_id']}")
+            _seguro(tg, t["chat_id"], "reescribir el guion", _reescribir_guion, conn, tg,
+                    t, pendiente, settings)
+            continue
+        esperando = db.get_valor(conn, f"{ESPERA_VIDEO}:{t['user_id']}")
+        if esperando and t["texto"].startswith("http"):
+            db.borrar_valor(conn, f"{ESPERA_VIDEO}:{t['user_id']}")
+            modo, _, n = esperando.partition(":")   # "serie:4" → /serie <link> partes 4
+            _despachar(conn, tg, {"comando": f"/{modo}",
+                                  "args": [t["texto"]] + (["partes", n] if n else []),
+                                  "chat_id": t["chat_id"], "usuario": "",
+                                  "user_id": t["user_id"]}, settings, cola)
+            continue
+        login = db.get_valor(conn, f"{ESPERA_PALABRA}:{t['user_id']}")
+        if not login:
+            continue
+        db.borrar_valor(conn, f"{ESPERA_PALABRA}:{t['user_id']}")
+        estado["chat"] = t["chat_id"]
+        _seguro(tg, t["chat_id"], f"/buscar {login} {t['texto']}", _encolar_busqueda,
+                conn, tg, t["chat_id"], [login] + t["texto"].split(), settings, cola)
+    for c in comandos(updates):
+        estado["chat"] = c["chat_id"]
+        # Se anota SIEMPRE, aunque no esté autorizado: así /destinos sabe qué chats existen
+        # y, sobre todo, a quién se le puede escribir por privado.
+        db.ver_chat(conn, c["chat_id"], c.get("chat_tipo", ""), c.get("chat_nombre", ""),
+                    c["user_id"] if c.get("chat_tipo") == "private" else "")
+        if c["user_id"] not in permitidos:
+            log.warning("%s de %s (id %s) en el chat %s: NO AUTORIZADO. Para darle acceso, "
+                        "sumá ese id a TELEGRAM_ALLOWED_USERS en el .env",
+                        c["comando"], c["usuario"], c["user_id"], c["chat_id"])
+            continue
+        _seguro(tg, c["chat_id"], c["comando"], _despachar, conn, tg, c, settings, cola)
+
+
+def _hilo_seguro(nombre: str, vuelta, parar, pausa_error: float = 30.0) -> None:
+    """Un hilo de la escucha que no se muere: un error se anota y la vuelta siguiente sigue."""
+    while not parar.is_set():
+        try:
+            if vuelta() is False:
+                return
+        except Exception:  # noqa: BLE001 — cualquier cosa, que el hilo siga
+            log.exception("hilo %s: la vuelta falló", nombre)
+            parar.wait(pausa_error)
+
+
+def escuchar_telegram(settings: Settings, timeout_poll: int = 50) -> int:
+    """`atender-telegram --escuchar`: lo corre clips-bot-telegram.service, 24/7.
+
+    Tres hilos (Santi, 2026-11-26: "a la mañana los botones no responden durante una hora"; la escucha estaba
+    renderizando la madrugada y la reserva en el mismo hilo que leía Telegram):
+    - este, que SOLO lee Telegram y le contesta al toque a cada botón (`_respuesta_inmediata`);
+    - el de atención, que hace lo que pide cada botón o comando (lo liviano al toque; lo pesado, si el turno está
+      libre, o a la cola con "⏳ en cola, se hace cuando termine el render");
+    - el de trabajo, con los ticks programados y la cola: todo lo que renderiza.
+    Cada hilo con su conexión a la base y su cliente de Telegram.
+    """
+    import queue
+    import threading
+
+    from .telegram import callbacks
 
     tg = TelegramClient(env("TELEGRAM_BOT_TOKEN"), timeout=timeout_poll + 30)
     cola: list[dict] = []
+    estado = {"chat": env("TELEGRAM_CHAT_ID", requerido=False)}
     reloj_envivo: dict[str, float] = {}   # última detección por plataforma (modo en vivo)
-    chat_ultimo = env("TELEGRAM_CHAT_ID", requerido=False)
+    entrantes: "queue.Queue[list]" = queue.Queue()
+    atendiendo = threading.Event()
+    parar = threading.Event()
     print(f"Escuchando (long polling {timeout_poll}s). Ctrl-C para salir.")
-    gemini_mod.fijar_origen(gemini_mod.A_MANO)   # lo que no es un tick automático: comandos y botones
-    while True:
-        # Se relee en cada vuelta: sumar a alguien a la lista tiene que andar sin reiniciar el
-        # servicio, porque el restart pide sudo y no siempre está a mano.
-        permitidos = _permitidos()
-        conn = db.connect(DB_PATH)
-        try:
-            from . import idioma
+    # El de todo hilo sin el suyo (los del banco, por ejemplo): lo que no es un tick automático cuenta "a mano".
+    gemini_mod.fijar_origen(gemini_mod.A_MANO)
 
-            idioma.cargar(conn)   # /lang en|es (la demo de la auditoría), sin reiniciar
-            # El modo en vivo va ANTES que la cola: un momento en vivo pierde valor por minuto.
-            _seguro(tg, str(db.envivo_chat(conn) or chat_ultimo or ""), "el modo en vivo",
-                    _envivo_tick, conn, tg, settings, reloj_envivo)
-            _seguro(tg, str(chat_ultimo or ""), "el reintento de la efeméride",
-                    _auto(_efe_reintento_tick), conn, tg, settings)
-            _seguro(tg, str(chat_ultimo or ""), "la madrugada (Rots y la de tecnología)",
-                    _auto(_madrugada_tick), conn, tg, settings)
-            # Tecnología primero (Santi, 2026-11-23): el segundo del día (o los dos, si el del día falló) sale de la reserva
-            _seguro(tg, str(chat_ultimo or ""), "la tecnología de la reserva", _tec_del_dia_tick, conn, tg, settings)
-            _seguro(tg, str(chat_ultimo or ""), "la historia de Facebook", _auto(_fb_tick), conn, tg, settings)
-            _seguro(tg, str(chat_ultimo or ""), "la reserva de tecnología", _auto(_reserva_tec_tick), conn, tg, settings)
-            _seguro(tg, str(chat_ultimo or ""), "los temas de la semana", _temas_semana_tick, conn, tg)
-            _seguro(tg, str(chat_ultimo or ""), "el plan de Así Nació", _plan_an_tick, conn, tg)
-            _seguro(tg, str(chat_ultimo or ""), "los videos esperando aprobación", _espera_tick, conn, tg)
-            _seguro(tg, str(chat_ultimo or ""), "el informe de fotos y reserva", _informe_fotos_tick, conn, tg)
-            _seguro(tg, str(chat_ultimo or ""), "el tope diario de Claude", _tope_dia_tick, conn, tg)
-            _seguro(tg, str(chat_ultimo or ""), "las fallas de la semana", _fallas_semana_tick, conn, tg)
-            _seguro(tg, str(chat_ultimo or ""), "el informe de la reserva marcada", _informe_marcados_tick, conn, tg)
-            _seguro(tg, str(chat_ultimo or ""), "el video de marcas", _auto(_animacion_tick), conn, tg, settings)
-            _seguro(tg, str(chat_ultimo or ""), "el calendario", _calendario_tick, conn, tg, settings)
-            _seguro(tg, str(chat_ultimo or ""), "la medición de Pequeña Historia",
-                    _auto(_medicion_ph_tick), conn, tg, settings)
-            _seguro(tg, str(chat_ultimo or ""), "el aviso de las voces", _voces_tick, conn, tg, settings)
-            _seguro(tg, str(chat_ultimo or ""), "el costo de Claude", _costo_claude_tick, conn, tg, settings)
-            _seguro(tg, str(chat_ultimo or ""), "los créditos de ElevenLabs", _elevenlabs_tick, conn, tg, settings)
-            _seguro(tg, str(chat_ultimo or ""), "el uso del banco de reserva", _banco_usos_tick, conn, tg)
-            _seguro(tg, str(chat_ultimo or ""), "la prueba de la búsqueda web", _web_latam_tick, conn, tg, settings)
-            _seguro(tg, str(chat_ultimo or ""), "el resumen de los Reels a las 24 h", _fb_24h_tick, conn, tg, settings)
-            _seguro(tg, str(chat_ultimo or ""), "las mejoras al motor", _mejoras_motor_tick, conn, tg, settings)
-            _seguro(tg, str(chat_ultimo or ""), "la publicación de comunidad", _comunidad_tick, conn, tg, settings)
-            _seguro(tg, str(chat_ultimo or ""), "el resumen semanal de costos", _costos_semana_tick, conn, tg, settings)
-            _seguro(tg, str(chat_ultimo or ""), "el resumen semanal del estándar de calidad", _calidad_semana_tick,
-                    conn, tg)
-            _seguro(tg, str(chat_ultimo or ""), "el resumen semanal de vistas", _resumen_semana_tick, conn, tg)
-            _seguro(tg, str(chat_ultimo or ""), "el control del saldo de Claude", _presupuesto_tick, conn, tg)
-            _seguro(tg, str(chat_ultimo or ""), "el reintento de los clips",
-                    _auto(_clips_reintento_tick), conn, settings)
-            _seguro(tg, str(chat_ultimo or ""), "la búsqueda de lo que pegó",
-                    _auto(_pego_tick), conn, settings)
-            _seguro(tg, str(chat_ultimo or ""), "el chequeo de las subidas", _chequeo_subidas_tick, conn, tg)
-            _seguro(tg, str(chat_ultimo or ""), "los bancos de reserva", _bancos_tick, conn, tg, settings)
-            _seguro(tg, str(chat_ultimo or ""), "el chequeo de las 20:00", _sin_video_tick, conn, tg, settings)
-            _seguro(tg, str(chat_ultimo or ""), "la cola", _drenar_cola, conn, tg, cola, settings)
-            guardado = db.get_valor(conn, "telegram_offset")
-            pendientes = db.alertas(conn, estados=("pendiente",)) if db.envivo_chat(conn) else []
-            espera = 5 if (cola or pendientes) else timeout_poll
+    def trabajo():
+        tg_t = TelegramClient(env("TELEGRAM_BOT_TOKEN"))
+        while not parar.is_set():
+            conn = db.connect(DB_PATH)
             try:
-                updates = tg.get_updates(offset=int(guardado) if guardado else None, timeout=espera)
-            except TelegramError as e:
-                # Un corte de red no puede matar el servicio: se anota y se reintenta.
-                log.warning("getUpdates falló (%s); reintento en 30 s", e)
-                time.sleep(30)
+                with gemini_mod.origen(gemini_mod.A_MANO):
+                    _vuelta_trabajo(conn, tg_t, settings, cola, estado, reloj_envivo)
+                pendientes = db.alertas(conn, estados=("pendiente",)) if db.envivo_chat(conn) else []
+            finally:
+                conn.close()
+            parar.wait(5 if (cola or pendientes) else 20)
+
+    def atencion():
+        tg_a = TelegramClient(env("TELEGRAM_BOT_TOKEN"))
+        gemini_mod.fijar_origen(gemini_mod.A_MANO)   # comandos y botones
+        while not parar.is_set():
+            try:
+                updates = entrantes.get(timeout=5)
+            except queue.Empty:
                 continue
-            if updates:
+            atendiendo.set()
+            conn = db.connect(DB_PATH)
+            try:
+                from . import idioma
+
+                idioma.cargar(conn)   # /lang en|es, sin reiniciar
+                _atender_updates(conn, tg_a, updates, _permitidos(), settings, cola, estado)
+            finally:
+                conn.close()
+                atendiendo.clear()
+
+    hilos = [threading.Thread(target=_hilo_seguro, args=("trabajo", trabajo, parar), daemon=True,
+                              name="escucha-trabajo"),
+             threading.Thread(target=_hilo_seguro, args=("atención", atencion, parar), daemon=True,
+                              name="escucha-atencion")]
+    for h in hilos:
+        h.start()
+    try:
+        while True:
+            # Se relee en cada vuelta: sumar a alguien a la lista tiene que andar sin reiniciar el servicio.
+            permitidos = _permitidos()
+            conn = db.connect(DB_PATH)
+            try:
+                guardado = db.get_valor(conn, "telegram_offset")
+                espera = 5 if cola else timeout_poll
+                try:
+                    updates = tg.get_updates(offset=int(guardado) if guardado else None, timeout=espera)
+                except TelegramError as e:
+                    # Un corte de red no puede matar el servicio: se anota y se reintenta.
+                    log.warning("getUpdates falló (%s); reintento en 30 s", e)
+                    time.sleep(30)
+                    continue
+                if not updates:
+                    continue
                 # Leído = anotado ANTES de atender (2026-10-08): si se reinicia la escucha a mitad de
                 # un comando largo, ese comando no se vuelve a correr solo (un /buscar se repitió así).
                 db.set_valor(conn, "telegram_offset", str(max(u["update_id"] for u in updates) + 1))
-            _seguro(tg, str(chat_ultimo or ""), "votos", _atender_votos, conn, tg, updates,
-                    permitidos)
-            for cb in callbacks(updates):
-                if cb["user_id"] not in permitidos:
-                    log.warning("Botón de %s: no autorizado", cb["user_id"])
-                    tg.answer_callback(cb["callback_id"], "No tenés acceso a este bot.")
-                    continue
-                if _es_pesado(cb["data"]):
-                    # Se contesta YA, antes del trabajo pesado: si no, el botón gira y, pasados unos
-                    # segundos, Telegram ya no acepta la respuesta ("query is too old").
-                    tg.answer_callback(cb["callback_id"], L("⏳ Un momento…", "⏳ One moment…"))
-                chat_ultimo = cb["chat_id"]
-                db.ver_chat(conn, cb["chat_id"], cb.get("chat_tipo", ""),
-                            cb.get("chat_nombre", ""), cb["user_id"])
-                if cb["data"].startswith("gui:"):
-                    _seguro(tg, cb["chat_id"], cb["data"], _guion_callback, conn, tg, cb, settings)
-                    continue
-                if cb["data"].startswith("pas:"):
-                    _seguro(tg, cb["chat_id"], cb["data"], _pasos_callback, conn, tg, cb, settings)
-                    continue
-                if cb["data"].startswith("acc:"):
-                    _seguro(tg, cb["chat_id"], cb["data"], _acceso_callback, conn, tg, cb)
-                    continue
-                if cb["data"].startswith("det:"):
-                    _seguro(tg, cb["chat_id"], cb["data"], _detalle_callback, conn, tg, cb)
-                    continue
-                if cb["data"].startswith("sub:"):
-                    _seguro(tg, cb["chat_id"], cb["data"], _subidas_callback, conn, tg, cb, settings)
-                    continue
-                if cb["data"].startswith("gp:"):
-                    _seguro(tg, cb["chat_id"], cb["data"], _gameplay_callback, conn, tg, cb, settings,
-                            cola)
-                    continue
-                if cb["data"].startswith("efe:"):
-                    _seguro(tg, cb["chat_id"], cb["data"], _efe_callback, conn, tg, cb, settings,
-                            cola)
-                    continue
-                if cb["data"].startswith("bu:"):
-                    _seguro(tg, cb["chat_id"], cb["data"], _buscar_callback, conn, tg, cb, settings,
-                            cola)
-                    continue
-                if cb["data"].startswith("ser:"):
-                    _seguro(tg, cb["chat_id"], cb["data"], _serie_callback, conn, tg, cb, settings,
-                            cola)
-                    continue
-                if cb["data"].startswith("ped:"):
-                    _seguro(tg, cb["chat_id"], cb["data"], _pedido_callback, conn, tg, cb,
-                            settings, cola)
-                    continue
-                if cb["data"].startswith("ay:"):
-                    _seguro(tg, cb["chat_id"], cb["data"], _ayuda_callback, tg, cb)
-                    continue
-                if cb["data"].startswith("dst:"):
-                    _seguro(tg, cb["chat_id"], cb["data"], _destinos_callback, conn, tg, cb)
-                    continue
-                fn = _menu_callback if cb["data"].startswith("st:") else _alta_callback
-                extra = (settings, cola) if fn is _menu_callback else (settings,)
-                _seguro(tg, cb["chat_id"], cb["data"], fn, conn, tg, cb, *extra)
-            for v in videos(updates):
-                if v["user_id"] not in permitidos:
-                    continue
-                chat_ultimo = v["chat_id"]
-                if v["texto"].startswith("/"):   # "/serie partes 4 cc: <link> sin audio" abajo
-                    modo, *extra = v["texto"].lstrip("/").split()
-                    modo = modo.split("@")[0].lower()
-                else:   # lo que quedó esperando: "narrar", o "serie:4" con las partes
-                    modo, _, n = (db.get_valor(conn, f"{ESPERA_VIDEO}:{v['user_id']}") or "").partition(":")
-                    extra = ["partes", n] if n else []
-                if modo not in ("editar", "narrar", "serie"):
-                    continue
-                db.borrar_valor(conn, f"{ESPERA_VIDEO}:{v['user_id']}")
-                resto, cc = sacar_cc(extra)
-                resto, sin_audio = sacar_sin_audio(resto)
-                try:
-                    partes = serie_mod.sacar_partes(resto)[1] if modo == "serie" else None
-                except ValueError as e:
-                    tg.send_message(v["chat_id"], str(e))
-                    continue
-                v = {**v, "cc": cc, "sin_audio": sin_audio, "partes": partes}
-                if v["mb"] > MAX_MB_TELEGRAM:
-                    tg.send_message(v["chat_id"], f"El archivo pesa {v['mb']} MB y Telegram me deja "
-                                                  f"bajar hasta {MAX_MB_TELEGRAM}. Mandame el link.")
-                    continue
-                _seguro(tg, v["chat_id"], f"/{modo}", _aporte_o_cola, conn, tg, v, modo, settings,
-                        cola)
-            for t in textos_sueltos(updates):
-                if t["user_id"] not in permitidos:
-                    continue
-                espera_apodos = db.get_valor(conn, f"{ESPERA_APODOS}:{t['user_id']}")
-                if espera_apodos:
-                    db.borrar_valor(conn, f"{ESPERA_APODOS}:{t['user_id']}")
-                    _seguro(tg, t["chat_id"], "guardar los apodos", _guardar_apodos, conn, tg, t,
-                            espera_apodos)
-                    continue
-                espera_facecam = db.get_valor(conn, f"{ESPERA_FACECAM}:{t['user_id']}")
-                if espera_facecam:
-                    db.borrar_valor(conn, f"{ESPERA_FACECAM}:{t['user_id']}")
-                    _seguro(tg, t["chat_id"], "guardar la webcam", _guardar_facecam, conn, tg, t,
-                            espera_facecam)
-                    continue
-                espera_carpeta = db.get_valor(conn, f"{ESPERA_CARPETA}:{t['user_id']}")
-                if espera_carpeta:
-                    db.borrar_valor(conn, f"{ESPERA_CARPETA}:{t['user_id']}")
-                    _seguro(tg, t["chat_id"], "crear la carpeta", _carpeta_nueva, conn, tg, t,
-                            json.loads(espera_carpeta))
-                    continue
-                espera_efe = db.get_valor(conn, f"{ESPERA_EFE}:{t['user_id']}")
-                if espera_efe:
-                    db.borrar_valor(conn, f"{ESPERA_EFE}:{t['user_id']}")
-                    _seguro(tg, t["chat_id"], "reescribir la efeméride", _efe_corregir, conn, tg,
-                            t, espera_efe, settings)
-                    continue
-                espera_serie = db.get_valor(conn, f"{ESPERA_SERIE}:{t['user_id']}")
-                if espera_serie:
-                    db.borrar_valor(conn, f"{ESPERA_SERIE}:{t['user_id']}")
-                    _seguro(tg, t["chat_id"], "rehacer la serie", _serie_corregir, conn, tg, t,
-                            json.loads(espera_serie), settings)
-                    continue
-                pasos = db.get_valor(conn, f"{ESPERA_PASOS}:{t['user_id']}")
-                if pasos:
-                    db.borrar_valor(conn, f"{ESPERA_PASOS}:{t['user_id']}")
-                    _seguro(tg, t["chat_id"], "reelegir los pasos", _repensar_pasos, conn, tg,
-                            t, pasos, settings)
-                    continue
-                pendiente = db.get_valor(conn, f"{ESPERA_CORRECCION}:{t['user_id']}")
-                if pendiente:
-                    db.borrar_valor(conn, f"{ESPERA_CORRECCION}:{t['user_id']}")
-                    _seguro(tg, t["chat_id"], "reescribir el guion", _reescribir_guion, conn, tg,
-                            t, pendiente, settings)
-                    continue
-                esperando = db.get_valor(conn, f"{ESPERA_VIDEO}:{t['user_id']}")
-                if esperando and t["texto"].startswith("http"):
-                    db.borrar_valor(conn, f"{ESPERA_VIDEO}:{t['user_id']}")
-                    modo, _, n = esperando.partition(":")   # "serie:4" → /serie <link> partes 4
-                    _despachar(conn, tg, {"comando": f"/{modo}",
-                                          "args": [t["texto"]] + (["partes", n] if n else []),
-                                          "chat_id": t["chat_id"], "usuario": "",
-                                          "user_id": t["user_id"]}, settings, cola)
-                    continue
-                login = db.get_valor(conn, f"{ESPERA_PALABRA}:{t['user_id']}")
-                if not login:
-                    continue
-                db.borrar_valor(conn, f"{ESPERA_PALABRA}:{t['user_id']}")
-                chat_ultimo = t["chat_id"]
-                _seguro(tg, t["chat_id"], f"/buscar {login} {t['texto']}", _encolar_busqueda,
-                        conn, tg, t["chat_id"], [login] + t["texto"].split(), settings, cola)
-            for c in comandos(updates):
-                chat_ultimo = c["chat_id"]
-                # Se anota SIEMPRE, aunque no esté autorizado: así /destinos sabe qué chats existen
-                # y, sobre todo, a quién se le puede escribir por privado.
-                db.ver_chat(conn, c["chat_id"], c.get("chat_tipo", ""), c.get("chat_nombre", ""),
-                            c["user_id"] if c.get("chat_tipo") == "private" else "")
-                if c["user_id"] not in permitidos:
-                    log.warning("%s de %s (id %s) en el chat %s: NO AUTORIZADO. Para darle acceso, "
-                                "sumá ese id a TELEGRAM_ALLOWED_USERS en el .env",
-                                c["comando"], c["usuario"], c["user_id"], c["chat_id"])
-                    continue
-                _seguro(tg, c["chat_id"], c["comando"], _despachar, conn, tg, c, settings, cola)
+                ocupada = atendiendo.is_set() or not entrantes.empty()
+                for cb in callbacks(updates):
+                    if cb["user_id"] not in permitidos:
+                        continue
+                    texto = _respuesta_inmediata(conn, cb, ocupada)
+                    if texto is not None:
+                        try:
+                            tg.answer_callback(cb["callback_id"], texto)
+                        except TelegramError:
+                            log.warning("no pude contestar el botón %s", cb["data"], exc_info=True)
+                entrantes.put(updates)
+            finally:
+                conn.close()
+    finally:
+        parar.set()
+        conn = db.connect(DB_PATH)
+        try:
+            db.soltar_propios(conn)   # lo que tenía tomado un hilo de este proceso (SIGTERM en medio de un render)
         finally:
             conn.close()
 
@@ -4348,7 +4445,15 @@ def _reserva_tec_tick(conn, tg: TelegramClient, settings: Settings, ahora=None, 
     if not _es_tecnologia(settings) or int(cfg.reserva) <= 0:
         return
     ahora = ahora or datetime.now(AR)
-    if not reserva_tec.hay_que_armar(conn, cfg.reserva, ahora.date(), ahora.strftime("%H:%M")):
+    hm, hoy = ahora.strftime("%H:%M"), ahora.date()
+    # De madrugada (Santi, 2026-11-26: "todo listo a las 03:00"): si al día le falta el segundo de tecnología y la
+    # reserva está vacía, se arma uno ya, después de la del día y las de Latinoamérica.
+    madrugada = (cfg.hora_propuesta <= hm < reserva_tec.MADRUGADA_HASTA
+                 and db.get_valor(conn, EFE_DIA) == hoy.isoformat()
+                 and (not settings.historias_fb.activo or _recorte(conn) >= 4
+                      or db.get_valor(conn, FB_DIA) == hoy.isoformat())
+                 and not reserva_tec.leer(conn) and reserva_tec.faltan_hoy(conn, hoy, cfg.por_dia) > 0)
+    if not reserva_tec.hay_que_armar(conn, cfg.reserva, hoy, hm, madrugada=madrugada):
         return
     if not banco_mod.leer(conn, "tecnologia") or db.hay_trabajo_pesado(conn, VENCIMIENTO_PESADO_S):
         return
@@ -5600,7 +5705,7 @@ def _efe_callback(conn, tg: TelegramClient, cb: dict, settings: Settings, cola: 
     if r is OCUPADO:
         cola.append({"chat_id": cb["chat_id"], "comando": "efe:video", "args": [token],
                      "user_id": cb["user_id"]})
-        tg.send_message(cb["chat_id"], f"En cola ({len(cola)}º), arranco cuando se libere.")
+        tg.send_message(cb["chat_id"], f"{EN_COLA_RENDER} ({len(cola)}º en la cola).")
     elif r:
         tg.send_message(cb["chat_id"], r)
 
@@ -6378,7 +6483,7 @@ def _gameplay_callback(conn, tg: TelegramClient, cb: dict, settings: Settings, c
     if r is OCUPADO:
         cola.append({"chat_id": cb["chat_id"], "comando": "gp:video", "args": [clip_id],
                      "user_id": cb["user_id"]})
-        tg.send_message(cb["chat_id"], f"🎮 En cola ({len(cola)}º), arranco cuando se libere.")
+        tg.send_message(cb["chat_id"], f"🎮 {EN_COLA_RENDER} ({len(cola)}º en la cola).")
     elif r:
         tg.send_message(cb["chat_id"], r)
 

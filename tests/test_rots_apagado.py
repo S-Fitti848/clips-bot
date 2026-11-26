@@ -25,13 +25,13 @@ def test_settings_tiene_rots_apagado():
 def test_la_madrugada_no_lanza_rots_y_hace_la_de_tecnologia(conn):
     s = load_settings()
     lanzadas, efes = [], []
-    m._madrugada_tick(conn, None, s, ahora=datetime(2026, 11, 14, 3, 40, tzinfo=m.AR),
+    m._madrugada_tick(conn, None, s, ahora=datetime(2026, 11, 13, 23, 59, tzinfo=m.AR),
                       lanzar=lambda: lanzadas.append(1), efemeride=lambda st: efes.append(1))
-    assert lanzadas == [] and efes == []          # antes de efemerides.hora_propuesta (04:00)
-    m._madrugada_tick(conn, None, s, ahora=datetime(2026, 11, 14, 4, 1, tzinfo=m.AR),
+    assert lanzadas == [] and efes == []          # antes de efemerides.hora_propuesta (00:05)
+    m._madrugada_tick(conn, None, s, ahora=datetime(2026, 11, 14, 0, 6, tzinfo=m.AR),
                       lanzar=lambda: lanzadas.append(1), efemeride=lambda st: efes.append(1))
     assert lanzadas == [] and efes == [1]         # no espera a Rots
-    assert m._rots_listo(conn, datetime(2026, 11, 14, 4, 1, tzinfo=m.AR), s)
+    assert m._rots_listo(conn, datetime(2026, 11, 14, 0, 6, tzinfo=m.AR), s)
 
 
 def test_el_timer_de_las_05_no_hace_nada(capsys, monkeypatch, tmp_path):
