@@ -3,7 +3,7 @@ con aviso si un canal pasa de 2; (2) la segunda de Latinoamérica tampoco queda 
 una del banco, nunca una de menos de 8; (3) ningún video termina con un pico arriba de -3 dB."""
 
 import subprocess
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 
 from clips_bot import __main__ as m
@@ -33,22 +33,57 @@ def test_cada_uso_queda_anotado_y_se_cuenta_por_semana(tmp_path):
     assert "Latinoamérica 1 (la anterior 1)" in txt and "16/11" in txt
 
 
-def test_aviso_si_un_canal_pasa_de_2_una_vez_por_semana(tmp_path):
+def _llenos(n, pref):
+    return [{"id": f"{pref}{i}", "puntaje": 9, "articulo": f"{pref}{i}"} for i in range(n)]
+
+
+def test_usarlo_seguido_ya_no_avisa(tmp_path):
+    """Santi, 2026-11-26: con tema primero el banco es una fuente normal; usarlo muchas veces no es un problema."""
     conn = db.connect(tmp_path / "c.db")
     tg = _TG()
-    for i in range(2):
-        banco.sacar(conn, "asinacio", f"x{i}", hoy=LUNES)
-    m._banco_usos_tick(conn, tg, hoy=LUNES)
-    assert tg.mensajes == []                                    # 2 todavía está bien
-    banco.sacar(conn, "asinacio", "x2", hoy=LUNES)
-    m._banco_usos_tick(conn, tg, hoy=LUNES)
-    m._banco_usos_tick(conn, tg, hoy=LUNES)
+    banco.guardar(conn, "latam", _llenos(15, "l"))
+    banco.guardar(conn, "tecnologia", _llenos(25, "t"))
+    for i in range(5):
+        banco.sacar(conn, "latam", f"l{i}", hoy=LUNES)
+    m._banco_usos_tick(conn, tg, ahora=datetime(2026, 11, 16, 12))
+    assert tg.mensajes == []
+
+
+def test_aviso_si_un_banco_baja_de_8_una_vez_por_dia(tmp_path):
+    conn = db.connect(tmp_path / "c.db")
+    tg = _TG()
+    banco.guardar(conn, "tecnologia", _llenos(25, "t"))
+    banco.guardar(conn, "latam", _llenos(8, "l"))
+    m._banco_usos_tick(conn, tg, ahora=datetime(2026, 11, 26, 12))
+    assert tg.mensajes == []                                    # 8 todavía está bien
+    banco.sacar(conn, "latam", "l0", hoy=date(2026, 11, 26))
+    m._banco_usos_tick(conn, tg, ahora=datetime(2026, 11, 26, 12))
+    m._banco_usos_tick(conn, tg, ahora=datetime(2026, 11, 26, 13))
     assert len(tg.mensajes) == 1
     chat, texto = tg.mensajes[0]
-    assert chat == m.DUENO and texto.startswith("🔧 Claude Code:") and "Así Nació" in texto and "3 veces" in texto
-    banco.sacar(conn, "asinacio", "y", hoy=date(2026, 11, 23))   # otra semana: arranca de cero
-    m._banco_usos_tick(conn, tg, hoy=date(2026, 11, 23))
-    assert len(tg.mensajes) == 1
+    assert chat == m.DUENO and texto.startswith("🔧 Claude Code:") and "Latinoamérica" in texto and "7" in texto
+    m._banco_usos_tick(conn, tg, ahora=datetime(2026, 11, 27, 12))  # otro día, sigue bajo: avisa otra vez
+    assert len(tg.mensajes) == 2
+
+
+def test_aviso_si_no_se_repuso_en_el_dia(tmp_path):
+    conn = db.connect(tmp_path / "c.db")
+    tg = _TG()
+    hoy = banco._hoy_ar()
+    banco.guardar(conn, "latam", _llenos(15, "l"))
+    banco.guardar(conn, "tecnologia", _llenos(18, "t"))          # debajo de 20: necesita reponerse
+    m._banco_usos_tick(conn, tg, ahora=datetime.combine(hoy, datetime.min.time()).replace(hour=15))
+    assert tg.mensajes == []                                    # todavía hay tiempo
+    m._banco_usos_tick(conn, tg, ahora=datetime.combine(hoy, datetime.min.time()).replace(hour=22))
+    assert len(tg.mensajes) == 1 and "no se repuso" in tg.mensajes[0][1] and "tecnología" in tg.mensajes[0][1]
+    # si sumó alguna en el día, no avisa
+    conn2 = db.connect(tmp_path / "d.db")
+    tg2 = _TG()
+    banco.guardar(conn2, "latam", _llenos(15, "l"))
+    banco.guardar(conn2, "tecnologia", _llenos(17, "t"))
+    assert banco.agregar(conn2, "tecnologia", [{"id": "nuevo", "puntaje": 9, "articulo": "Nuevo"}]) == 1
+    m._banco_usos_tick(conn2, tg2, ahora=datetime.combine(hoy, datetime.min.time()).replace(hour=22))
+    assert tg2.mensajes == []
 
 
 def test_costos_muestra_el_banco(tmp_path, monkeypatch):

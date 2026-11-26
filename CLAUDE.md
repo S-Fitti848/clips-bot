@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-11-25 | **Versión:** v1.61.0 (desplegado) | **Modo:** Fase 2: corriendo solo en la Pi. **Rots APAGADO. Así Nació PAUSADO desde el 19/11** (vuelve con 1 por día, preparado la noche anterior, si 4 de 5 marcas nuevas dan 15/19 o más por menos de US$ 0,60). **Pequeña Historia: TECNOLOGÍA ES LA PRIORIDAD NÚMERO UNO desde el 23/11** (2 por día en YouTube, 11:00 y 20:00, con una reserva de 3 videos ya armados; el canal de YouTube es solo de tecnología) y **Latinoamérica 2 por día SOLO en Facebook** hasta el 15/12. Nada se publica solo desde el 17/11: llega con ✅ Publicar / ❌ Cancelar y sin respuesta no sale. Todo al privado de Santi
+**Snapshot:** 2026-11-26 | **Versión:** v1.62.0 (desplegado) | **Modo:** Fase 2: corriendo solo en la Pi. **Rots APAGADO. Así Nació PAUSADO desde el 19/11** (vuelve con 1 por día, preparado la noche anterior, si 4 de 5 marcas nuevas dan 15/19 o más por menos de US$ 0,60). **Pequeña Historia: TECNOLOGÍA ES LA PRIORIDAD NÚMERO UNO desde el 23/11** (2 por día en YouTube, 11:00 y 20:00, con una reserva de 3 videos ya armados; el canal de YouTube es solo de tecnología) y **Latinoamérica 2 por día SOLO en Facebook** hasta el 15/12. Nada se publica solo desde el 17/11: llega con ✅ Publicar / ❌ Cancelar y sin respuesta no sale. Todo al privado de Santi
 
 > **SI ESTÁS EMPEZANDO UNA SESIÓN NUEVA, LEÉ §10.** Ahí está qué está hecho, qué quedó a medias,
 > qué falta, y las trampas que ya nos mordieron.
@@ -478,10 +478,11 @@ servicio systemd separado: `clips-bot`).
   (`ARCHIVOS_COMMONS`) y en Europeana. LoC y la Biblioteca Digital Hispánica dan 403 a bots y Memoria
   Chilena no tiene API: no se usan directo. (4) Aviso en el mensaje del video ("⚠️ salió con puntaje 6,2
   (mínimo 8)", "📦 del banco de reserva", "⚠️ fotos reales 55 %"). (5) A las 20:00, si un canal no tiene nada
-  programado ni publicado hoy, aviso a Santi (`_sin_video_tick`). **(6) El banco es la excepción (Santi,
-  2026-11-16):** cada uso queda en `bot_estado.banco_usos`; /costos muestra los de la semana (lunes a domingo)
-  por canal y, si uno pasa de 2, aviso a Santi una vez por semana (`_banco_usos_tick`: su búsqueda necesita
-  arreglo). **(7) La segunda de Latinoamérica tampoco queda vacía:** sin ninguna de 8 (o 7), una del banco;
+  programado ni publicado hoy, aviso a Santi (`_sin_video_tick`). **(6) El banco es una fuente normal (Santi,
+  2026-11-26, reemplaza "el banco es la excepción" del 16/11):** cada uso queda en `bot_estado.banco_usos` y /costos
+  muestra los de la semana, pero ya no se avisa por usarlo: el aviso (`_banco_usos_tick`, una vez por día) es si el
+  banco de tecnología o de Latinoamérica baja de 8 historias (`banco.BAJO`) o si, necesitando reponerse, a las 22:00
+  no sumó ninguna en el día (`banco_sumados:<canal>:<día>`). **(7) La segunda de Latinoamérica tampoco queda vacía:** sin ninguna de 8 (o 7), una del banco;
   nunca una de menos de 8 (`de_banco` saltea las de menos de 8). Si ninguna de las del día sale (sin
   verificar o sin fotos), se prueba con el banco antes de rendirse.
 - **Latinoamérica: fuentes web y 2 fuentes por dato (Santi, 2026-11-16, opción C; `web_historias.py`,
@@ -1419,6 +1420,10 @@ Problemas abiertos:
 
 ## 9. CHANGELOG
 
+- v1.62.0 (2026-11-26) — Aviso del banco: ya no por usarlo más de 2 veces por semana, sino si un banco baja de 8 o no
+  se repone en el día (regla en §1). Semana del 23/11 (mandado a Santi): tecnología 0 del día y 7 del banco (5
+  publicados, mediana 1.015 vistas en YouTube); Latinoamérica 3 del día (mediana 259 en Facebook) y 4 del banco
+  (Popeye 947, Zaragoza 280; 2 salen el 26/11). `tests/test_banco_usos.py`.
 - v1.61.0 (2026-11-25, noche) — Música e ídolos con sorpresa o momento épico en vez de peligro; videos de Latinoamérica
   guardados para un día (`guardar_latam`, `_entregar_guardado_latam`, CLI `guardar-latam`).
 - v1.60.0 (2026-11-25, noche) — Banco de Latinoamérica por tema con la búsqueda web de Haiku; cortes según las fotos

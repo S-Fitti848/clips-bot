@@ -4553,9 +4553,9 @@ def _texto_costos(conn, dias: int = 7, settings: Settings | None = None) -> str:
     return texto
 
 
-def _banco_usos_tick(conn, tg: TelegramClient, hoy=None) -> None:
-    """Santi, 2026-11-16: si un canal usa el banco de reserva más de 2 veces en la semana, aviso (una vez)."""
-    for texto in banco_mod.avisos_pendientes(conn, hoy or datetime.now(AR).date()):
+def _banco_usos_tick(conn, tg: TelegramClient, ahora=None) -> None:
+    """Santi, 2026-11-26: el banco es una fuente normal; aviso solo si un banco baja de 8 o no se repone en el día."""
+    for texto in banco_mod.avisos_pendientes(conn, ahora or datetime.now(AR).replace(tzinfo=None)):
         _aviso(tg, texto)
 
 

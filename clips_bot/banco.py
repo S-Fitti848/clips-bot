@@ -16,7 +16,7 @@ import json
 import logging
 import random
 import time
-from datetime import date, timedelta
+from datetime import date, timedelta, timezone
 
 from . import db
 
@@ -65,6 +65,7 @@ def agregar(conn, canal: str, nuevos: list[dict]) -> int:
             sumados.append(x)
     if sumados:
         guardar(conn, canal, items + sumados)
+        _anotar_sumados(conn, canal, len(sumados))
     return len(sumados)
 
 
@@ -130,8 +131,13 @@ def sacar(conn, canal: str, id_: str | None, hoy: date | None = None) -> None:
 # ---- cuántas veces se usa (Santi, 2026-11-16: "el banco es la excepción") ---------------------------
 
 USOS = "banco_usos"              # bot_estado: [{"canal", "dia", "id"}], los usos de los últimos 60 días
-AVISO_USOS = "banco_usos_aviso"  # bot_estado, banco_usos_aviso:<canal>:<lunes>: ya se avisó esa semana
-TOPE_SEMANA = 2                  # más de 2 usos por semana en un canal = su búsqueda necesita arreglo
+# Santi, 2026-11-26: con tema primero el banco es una fuente normal (tecnología y Latinoamérica): ya no se avisa por
+# usarlo, sino si un banco baja de BAJO historias o si, necesitando reponerse, no sumó ninguna en el día.
+BAJO = 8
+CANALES_AVISO = ("latam", "tecnologia")
+AVISO = "banco_aviso"            # bot_estado, banco_aviso:<bajo|sin_reponer>:<canal>:<día>: ya se avisó ese día
+SUMADOS = "banco_sumados"        # bot_estado, banco_sumados:<canal>:<día>: cuántas se sumaron ese día
+HORA_SIN_REPONER = 22            # la reposición corre 09:30-21:30: a las 22:00 se sabe si se repuso
 
 
 def _usos(conn) -> list[dict]:
@@ -173,25 +179,42 @@ def usos_semana(conn, hoy: date | None = None) -> dict[str, int]:
 def texto_usos(conn, hoy: date | None = None) -> str:
     hoy = hoy or _hoy_ar()
     este, anterior = usos_semana(conn, hoy), usos_semana(conn, lunes_de(hoy) - timedelta(days=1))
-    partes = []
-    for c in CANALES:
-        marca = " ⚠️" if este[c] > TOPE_SEMANA else ""
-        partes.append(f"{NOMBRES[c]} {este[c]}{marca} (la anterior {anterior[c]})")
-    return (f"<b>Banco de reserva</b>, usos esta semana (desde el lunes {lunes_de(hoy):%d/%m}; tope "
-            f"{TOPE_SEMANA}): " + " · ".join(partes) + f"\nQuedan: {resumen(conn)}.")
+    partes = [f"{NOMBRES[c]} {este[c]} (la anterior {anterior[c]})" for c in CANALES]
+    return (f"<b>Banco de reserva</b>, usos esta semana (desde el lunes {lunes_de(hoy):%d/%m}): "
+            + " · ".join(partes) + f"\nQuedan: {resumen(conn)}.")
 
 
-def avisos_pendientes(conn, hoy: date | None = None) -> list[str]:
-    """Los avisos de esta semana que todavía no se mandaron (una vez por canal y semana); los marca."""
-    hoy = hoy or _hoy_ar()
-    lunes = lunes_de(hoy).isoformat()
+def sumados_hoy(conn, canal: str, hoy: date | None = None) -> int:
+    return int(db.get_valor(conn, f"{SUMADOS}:{canal}:{(hoy or _hoy_ar()).isoformat()}") or 0)
+
+
+def _anotar_sumados(conn, canal: str, n: int) -> None:
+    hoy = _hoy_ar()
+    db.set_valor(conn, f"{SUMADOS}:{canal}:{hoy.isoformat()}", str(sumados_hoy(conn, canal, hoy) + n))
+
+
+def avisos_pendientes(conn, ahora=None) -> list[str]:
+    """Santi, 2026-11-26: aviso si un banco (tecnología o Latinoamérica) baja de BAJO historias, o si a las
+    HORA_SIN_REPONER necesitaba reponerse y no sumó ninguna en el día. Una vez por tipo, canal y día; los marca."""
+    from datetime import datetime
+
+    ahora = ahora or (datetime.now(timezone.utc) - timedelta(hours=3)).replace(tzinfo=None)
+    hoy = ahora.date()
     out = []
-    for c, n in usos_semana(conn, hoy).items():
-        clave = f"{AVISO_USOS}:{c}:{lunes}"
-        if n > TOPE_SEMANA and not db.get_valor(conn, clave):
-            db.set_valor(conn, clave, "1")
-            out.append(f"🔧 Claude Code: {NOMBRES[c]} ya usó el banco de reserva {n} veces esta semana "
-                       f"(tope {TOPE_SEMANA}): la búsqueda de historias de ese canal necesita arreglo.")
+    for c in CANALES_AVISO:
+        n = len(leer(conn, c))
+        if n < BAJO:
+            clave = f"{AVISO}:bajo:{c}:{hoy.isoformat()}"
+            if not db.get_valor(conn, clave):
+                db.set_valor(conn, clave, "1")
+                out.append(f"🔧 Claude Code: el banco de {NOMBRES[c]} bajó a {n} historias (mínimo {BAJO}).")
+        necesita = n < MINIMOS.get(c, MINIMO) or db.get_valor(conn, LLENANDO.format(c)) == "1"
+        if ahora.hour >= HORA_SIN_REPONER and necesita and not sumados_hoy(conn, c, hoy):
+            clave = f"{AVISO}:sin_reponer:{c}:{hoy.isoformat()}"
+            if not db.get_valor(conn, clave):
+                db.set_valor(conn, clave, "1")
+                out.append(f"🔧 Claude Code: el banco de {NOMBRES[c]} no se repuso hoy (quedan {n}, "
+                           f"la meta es {OBJETIVOS.get(c, OBJETIVO)}).")
     return out
 
 
