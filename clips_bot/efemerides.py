@@ -1258,8 +1258,13 @@ def validar_guion(d: dict, anio: int, fuente: str, corto: bool = False,
     if len(frases) > 1 and (str(anio) in frases[1] or re.match(r"en\s+\d", _norm(frases[1]))):
         errores.append('la segunda frase suma INTRIGA ("Y tenía un solo barco…"), sin el año: el año va '
                        "en la tercera o la cuarta")
-    if not any(str(anio) in f for f in frases[2:4]):
-        errores.append(f"el año ({anio}) se dice en la tercera o la cuarta frase")
+    # Santi, 2026-11-27 (Sixto Rodríguez: la fecha del día era su muerte, 2023, y la historia es de los 70): que se
+    # entienda está por encima del estilo, así que vale el año del hecho u otro del artículo, el de cuando pasa lo
+    # que se cuenta.
+    anios_ok = {str(anio)} | set(re.findall(r"\b(1[0-9]{3}|20[0-9]{2})\b", fuente or ""))
+    if not any(a in re.findall(r"\b\d{4}\b", f) for f in frases[2:4] for a in anios_ok):
+        errores.append(f"el año se dice en la tercera o la cuarta frase: el del hecho ({anio}) u otro del artículo, "
+                       "el de cuando pasa lo que contás")
     errores += errores_estructura(d, len(frases))
     vagas = frases_vagas(frases)
     if vagas:      # Santi, 2026-11-25 (el Walkman: "un aparato azul y plateado")

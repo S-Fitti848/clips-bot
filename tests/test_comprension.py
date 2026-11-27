@@ -101,3 +101,15 @@ def test_el_plan_b_no_deja_un_guion_confuso():
 def test_esta_en_el_estandar():
     ids = {r.id for r in calidad.reglas("pequena_historia")}
     assert {"PH-07", "PH-27"} <= ids
+
+
+def test_el_anio_de_la_historia_puede_ser_otro_del_articulo():
+    """Sixto: la fecha del día era su muerte (2023) y la historia es de 1970; vale cualquier año del artículo."""
+    def errores(tercera):
+        d = {"frases": [{"texto": "Vendió más que Elvis en Sudáfrica y no lo sabía."},
+                        {"texto": "Y en su ciudad casi nadie compraba sus discos."},
+                        {"texto": tercera}, {"texto": "¡Así que dejó la música!"}, {"texto": "¿Lo sabías?"}]}
+        return [e for e in ef.validar_guion(d, 2023, "Grabó Cold Fact en 1970 en Detroit.") if "el año" in e]
+    assert errores("Fue en 1970, en Detroit, con su primer disco.") == []
+    assert errores("Fue en 2023.") == []
+    assert errores("Fue en 1985, en Detroit.") and errores("Fue en Detroit.")
