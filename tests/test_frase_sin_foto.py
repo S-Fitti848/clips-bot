@@ -24,6 +24,10 @@ class Cli:
         self.frase, self.n = frase, 0
 
     def json(self, sistema, prompt, schema, **k):
+        if sistema == ef.SISTEMA_LECTOR:       # el control de comprensión (PH-27): se entiende
+            return json.dumps({"entendi": "Microsoft lanzó Windows", "confuso": ""})
+        if sistema == ef.SISTEMA_COINCIDE:
+            return json.dumps({"coincide": True, "falta": ""})
         self.n += 1
         assert "FOTOS DISPONIBLES" in prompt and "Pantalla de Windows 1.0" in prompt
         return json.dumps({"frases": [{"n": 1, "frase": self.frase, "mostrar": "1985 Windows 1.0 screen",

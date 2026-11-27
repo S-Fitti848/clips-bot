@@ -7,6 +7,15 @@ algún prompt deja de incluirlas. Si se cambian, cambian para todos a la vez.
 # Pedido 2026-09-28: el guion de Fleming decía que descubrió la penicilina, pero no quedaba claro
 # que el moho mataba a las bacterias ni por qué eso lo volvía un remedio.
 REGLAS_CLARIDAD = """
+QUE SE ENTIENDA A LA PRIMERA (Santi, 2026-11-27, el de Sixto Rodríguez; ESTA REGLA ESTÁ POR ENCIMA DE TODAS LAS DE
+ESTILO: intriga, gancho, el año en la 3.ª frase):
+- Alguien que no conoce el tema, viéndolo UNA sola vez, tiene que saber QUIÉN es (o qué es), QUÉ pasó y POR QUÉ es
+  sorprendente. Decí quién es la persona en pocas palabras la primera vez que aparece ("un cantante de Detroit").
+- Una idea por frase y EN ORDEN: la historia avanza paso a paso. Nada de saltos de tiempo ni de lugar sin avisar
+  ("Mientras tanto, en Sudáfrica…", "Años después…"); nada que se cuente antes de que haya pasado.
+- Si la historia es muy enredada para 35 segundos, contá solo la parte más fuerte y dejá el resto afuera. No metas
+  datos sueltos (cuándo murió, otros discos) que no ayudan a seguir la historia.
+
 QUE SE ENTIENDA (regla fija, vale más que meter datos):
 - Escribí para un chico de 15 años que no sabe nada del tema. Explicá el CÓMO y el PORQUÉ,
   paso a paso: qué pasó, cómo funciona y por qué importa.

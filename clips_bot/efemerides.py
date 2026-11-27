@@ -1371,6 +1371,49 @@ SCHEMA_PAGO = {"type": "OBJECT",
                "required": ["responde", "anteultima", "ultima", "motivo"]}
 
 
+SISTEMA_LECTOR = """Sos alguien que NO sabe nada del tema y ve un video corto UNA sola vez. Te paso lo que dice la voz,
+frase por frase. Respondé en UNA línea, con tus palabras, qué entendiste: quién es (o qué es), qué pasó y por qué es
+sorprendente. Si algo no se entiende (no sabés quién es alguien, un salto de tiempo o de lugar, una frase que no
+sigue a la anterior), decilo en `confuso`, con el número de la frase. No inventes nada que no diga el guion."""
+
+SCHEMA_LECTOR = {"type": "OBJECT", "properties": {
+    "entendi": {"type": "STRING"}, "confuso": {"type": "STRING"}}, "required": ["entendi", "confuso"]}
+
+SISTEMA_COINCIDE = """Comparás lo que entendió un espectador que no sabía nada del tema con la historia que el video
+quería contar. ¿Coincide en lo esencial (quién es, qué pasó y por qué sorprende)? Si falta algo esencial, lo entendió
+distinto o marcó una parte confusa que importa, `coincide` es false y en `falta` decí qué hay que arreglar del guion
+(en una frase, con el número de la frase si se sabe)."""
+
+SCHEMA_COINCIDE = {"type": "OBJECT", "properties": {
+    "coincide": {"type": "BOOLEAN"}, "falta": {"type": "STRING"}}, "required": ["coincide", "falta"]}
+
+
+def comprension(lector, frases: list[str], idea_clave: str, avisar=log.info) -> tuple[bool, str, str]:
+    """Control de comprensión (Santi, 2026-11-27, PH-27): Haiku lee el guion como si no supiera nada del tema y dice
+    en una línea qué entendió (sin ver la idea clave); después se compara con la historia. Devuelve (sirve, lo que
+    entendió, qué falta). Si el lector no responde, sirve (nunca frena por una falla técnica)."""
+    from .gemini import GeminiError
+
+    if lector is None or not frases:
+        return True, "", ""
+    guion = "\n".join(f"{i + 1}. {f}" for i, f in enumerate(frases))
+    try:
+        r = json.loads(lector.json(SISTEMA_LECTOR, guion, SCHEMA_LECTOR, temperatura=0.2))
+        entendi, confuso = str(r.get("entendi") or "").strip(), str(r.get("confuso") or "").strip()
+        c = json.loads(lector.json(SISTEMA_COINCIDE,
+                                   f"Lo que entendió: {entendi}\nLo que le resultó confuso: {confuso or '(nada)'}\n\n"
+                                   f"La historia que el video quería contar: {idea_clave}",
+                                   SCHEMA_COINCIDE, temperatura=0.0))
+    except (GeminiError, NarrarError, ValueError) as err:
+        avisar(f"  control de comprensión: no respondió ({str(err)[:80]})")
+        return True, "", ""
+    sirve = bool(c.get("coincide"))
+    falta = str(c.get("falta") or "").strip()
+    avisar(f"  control de comprensión: {'✅' if sirve else '❌'} entendió «{entendi[:160]}»"
+           + ("" if sirve else f" · falta: {falta[:160]}"))
+    return sirve, entendi, falta
+
+
 def final_que_paga(cliente, d: dict, e: Evento, fuente: str, corto: bool = False,
                    rango: tuple[int, int] | None = None, validar_extra=None, avisar=log.info) -> dict:
     """Segunda revisión (Santi, 2026-11-13: en La Pola el gancho prometía "terminó en un billete" y
@@ -1415,7 +1458,7 @@ def escribir_guion(cliente, e: Evento, fuente: str, correccion: str = "", anteri
                    reintentos: int = 3, hablado: bool = False, sistema: str | None = None,
                    validar_extra=None, contexto: str = "", corto: bool = False,
                    rango: tuple[int, int] | None = None, max_s: float = 0.0,
-                   revisar_final: bool = True, respaldo: str = "") -> Guion:
+                   revisar_final: bool = True, respaldo: str = "", lector=None) -> Guion:
     """Gemini (o Claude, en el video de Facebook) con el artículo, SIN fotos: el guion y qué mostrar
     en cada frase. Las fotos se buscan después para cada frase (`fotos_para_guion`). Reintenta con
     los errores de la validación. `sistema`/`validar_extra`/`contexto`: los del video de Facebook
@@ -1459,6 +1502,16 @@ def escribir_guion(cliente, e: Evento, fuente: str, correccion: str = "", anteri
             errores = validar_extra(d)
         if not errores and revisar_final:
             d = final_que_paga(cliente, d, e, fuente, corto=corto, rango=rango, validar_extra=validar_extra)
+        if not errores and lector is not None:
+            # Santi, 2026-11-27 (PH-27): que se entienda a la primera; está por encima de las reglas de estilo
+            sirve, entendi, falta = comprension(lector, [str(f.get("texto") or "") for f in d["frases"]],
+                                                str(d.get("idea_clave") or ""))
+            if not sirve:
+                errores = [f"NO SE ENTIENDE A LA PRIMERA: alguien que no sabe nada del tema entendió «{entendi}». "
+                           f"Falta: {falta}. Reescribí para que se sepa quién es, qué pasó y por qué sorprende, una idea "
+                           "por frase y en orden (sin saltos de tiempo ni de lugar sin avisar); si la historia es muy "
+                           "enredada, contá solo la parte más fuerte. Esto está por encima de las reglas de estilo."]
+                continue
         if not errores:
             return Guion(frases=[f["texto"].strip() for f in d["frases"]], fotos=[],
                          descartadas=[], titulo=d["titulo"].strip(),
@@ -2740,6 +2793,13 @@ def reescribir_frases_con_foto(cliente, e: "Evento", fuente: str, g: "Guion", id
             return False
         k = int(x.get("foto") or 0) - 1
         cambios[i] = (texto, str(x.get("mostrar") or "").strip(), k if k in usables else None)
+    # Santi, 2026-11-27 (el de Sixto: el plan B metió "Y él seguía tocando en escenarios" en la 2.ª frase): el guion
+    # con las frases nuevas tiene que seguir entendiéndose a la primera; si no, queda como estaba (y va la tarjeta).
+    nuevas_frases = [cambios[i][0] if i in cambios else f for i, f in enumerate(g.frases)]
+    sirve, _, falta = comprension(cliente, nuevas_frases, g.idea_clave, avisar)
+    if not sirve:
+        avisar(f"  plan B: con las frases nuevas no se entiende ({falta[:100]}); queda el guion como estaba")
+        return False
     for i, (texto, mostrar, k) in cambios.items():
         if forzadas is not None and k is not None:
             forzadas[i] = k
@@ -3532,7 +3592,7 @@ def proponer(wiki: Wiki, cliente, dia: date, carpeta: Path, avisar=log.info,
             g = escribir_guion(escritor, e, fuente, correccion, hablado=hablado and not corto,
                                sistema=SISTEMA_GUION_CORTO if corto else None, corto=corto,
                                contexto=(NO_ES_DE_HOY if del_banco and i in del_banco else "")
-                               + (banco_f.contexto() if banco_f else ""))
+                               + (banco_f.contexto() if banco_f else ""), lector=puntuador)
             if banco_f:
                 avisar(f"  fotos primero: el guion eligió foto en {banco_f.tomar_de_mostrar(g)} de {len(g.frases)} "
                        "frases")

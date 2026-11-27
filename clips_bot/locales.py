@@ -1136,7 +1136,7 @@ def proponer(wiki: ef.Wiki, sonnet, haiku, gemini, dia: date, carpeta: Path, avi
                                   contexto=contexto_de(c) + (ef.NO_ES_DE_HOY if no_de_hoy else "")
                                   + (banco_f.contexto() if banco_f else ""),
                                   corto=corto, rango=ef.LATAM_PALABRAS if corto else None,
-                                  max_s=ef.LATAM_MAX_S if corto else 0.0, respaldo=contexto_de(c))
+                                  max_s=ef.LATAM_MAX_S if corto else 0.0, respaldo=contexto_de(c), lector=haiku)
             if banco_f:
                 avisar(f"  fotos primero: el guion eligió foto en {banco_f.tomar_de_mostrar(g)} de "
                        f"{len(g.frases)} frases")

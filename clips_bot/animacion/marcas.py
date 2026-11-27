@@ -1655,7 +1655,9 @@ def sistema_guion() -> str:
 
     from .director import REGLA_DIRECTOR
 
-    return (SISTEMA_GUION.replace("{BIBLIOTECA}", lista) + (REGLA_16 if REGLAS_V3 else "") + (REGLA_17 if USO_V4 else "")
+    from ..reglas import REGLAS_CLARIDAD      # Santi, 2026-11-27: que se entienda a la primera, en todos los videos
+
+    return (SISTEMA_GUION.replace("{BIBLIOTECA}", lista) + REGLAS_CLARIDAD + (REGLA_16 if REGLAS_V3 else "") + (REGLA_17 if USO_V4 else "")
             + REGLA_DIRECTOR + _aprendizaje.para_prompt("asinacio"))
 
 
