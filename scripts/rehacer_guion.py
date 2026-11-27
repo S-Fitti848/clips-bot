@@ -16,6 +16,10 @@ from clips_bot.config import load_settings
 
 
 def main() -> int:
+    import logging
+
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
+    logging.getLogger("httpx").setLevel(logging.WARNING)
     estado = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
     lugar = sys.argv[2]
     p = estado["propuesta"]
