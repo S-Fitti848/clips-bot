@@ -56,12 +56,12 @@ def armar(conn, tg, settings, cual: str) -> dict:
             fecha, hecho = cual[len("latam@"):].split(":", 1)
             d, mes = (int(x) for x in fecha.split("/"))
             sonnet, haiku = m._claude_textos(settings)
-            p = locales.proponer(ef.Wiki(), sonnet, haiku, gemini, hoy.replace(month=mes, day=d), carpeta,
+            p = m._registrado(conn, locales.proponer)(ef.Wiki(), sonnet, haiku, gemini, hoy.replace(month=mes, day=d), carpeta,
                                  corto=settings.historias_fb.formato_corto, hecho=hecho, web=None, **comun)
         elif cual.startswith("latam"):
             sonnet, haiku = m._claude_textos(settings)
             ya = m._latam_del_dia(conn, hoy)
-            p = locales.proponer(ef.Wiki(), sonnet, haiku, gemini, hoy, carpeta,
+            p = m._registrado(conn, locales.proponer)(ef.Wiki(), sonnet, haiku, gemini, hoy, carpeta,
                                  corto=settings.historias_fb.formato_corto,
                                  excluir={v for x in ya for v in (x.get("texto"), x.get("articulo")) if v},
                                  evitar_paises={x["pais"] for x in ya if x.get("pais")}, web=None,
@@ -75,7 +75,7 @@ def armar(conn, tg, settings, cual: str) -> dict:
                 nombre = cual.split(":", 1)[1] if ":" in cual else ""
                 banco_t = banco_mod.leer(conn, "tecnologia")
                 item = next((x for x in banco_t if x.get("articulo") == nombre), banco_t[0])
-            p = ef.proponer(ef.Wiki(), gemini, hoy, carpeta, tema="tecnologia", corto=cfg.corto,
+            p = m._registrado(conn, ef.proponer)(ef.Wiki(), gemini, hoy, carpeta, tema="tecnologia", corto=cfg.corto,
                             texto=m._texto_efemeride(settings, gemini), banco=[item], solo_banco=True,
                             max_guiones=1, piso_fotos=0.60, **comun)
     except Exception as e:  # noqa: BLE001

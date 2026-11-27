@@ -3657,7 +3657,7 @@ def _efe_proponer(conn, tg: TelegramClient, chats: list[str], dia, settings: Set
     carpeta = OUTPUT_DIR / "efemerides" / f"{dia:%m%d}_{token}"
     bitacora.abrir(conn, token, "pequena_historia", ("efemeride" if hecho else settings.efemerides.tema) or "efemeride")
     try:
-        p = ef.proponer(ef.Wiki(), gemini, dia, carpeta, avisar=log.info, hecho=hecho,
+        p = _registrado(conn, ef.proponer)(ef.Wiki(), gemini, dia, carpeta, avisar=log.info, hecho=hecho,
                         videos=settings.efemerides.videos,
                         tope_fotos_s=settings.efemerides.tope_fotos_min * 60,
                         hablado=settings.efemerides.guion_hablado,
@@ -3699,6 +3699,22 @@ def _sin_fotos_tec(conn) -> dict:
     fallan ahora quedan anotadas y salen del banco)."""
     return {"sin_fotos": banco_mod.sin_fotos(conn, "tecnologia"),
             "al_fallar_fotos": lambda art, motivo: banco_mod.marcar_sin_fotos(conn, "tecnologia", art, motivo)}
+
+
+def _registrado(conn, proponer):
+    """`proponer` dentro del registro de historias usadas (Santi, 2026-11-27: nunca dos videos de la misma historia en
+    la semana, sumando producción, reserva, banco y pruebas; historias_usadas.py). Sin `conn` abre la base."""
+    from . import historias_usadas
+
+    def correr(*a, **k):
+        c = conn if conn is not None else db.connect(DB_PATH)
+        try:
+            with historias_usadas.activo(c, datetime.now(AR).date(), gemini_mod.origen_actual()):
+                return proponer(*a, **k)
+        finally:
+            if conn is None:
+                c.close()
+    return correr
 
 
 def _marcas_evitar(conn) -> set:
@@ -4164,7 +4180,7 @@ def _fb_proponer(conn, tg: TelegramClient, chats: list[str], dia, settings: Sett
     carpeta = OUTPUT_DIR / "efemerides" / f"fb_{dia:%m%d}_{token}"
     bitacora.abrir(conn, token, "pequena_historia", "latinoamerica")
     try:
-        p = locales.proponer(ef.Wiki(), sonnet, haiku, gemini, dia, carpeta, avisar=log.info,
+        p = _registrado(conn, locales.proponer)(ef.Wiki(), sonnet, haiku, gemini, dia, carpeta, avisar=log.info,
                              hecho=hecho, videos=settings.efemerides.videos,
                              tope_fotos_s=settings.efemerides.tope_fotos_min * 60,
                              imagen_frase=settings.efemerides.imagen_frase,
@@ -4488,7 +4504,7 @@ def _reserva_armar(conn, tg: TelegramClient, settings: Settings, hoy) -> str | N
     bitacora.abrir(conn, token, "pequena_historia", "tecnologia_reserva")
     log.info("reserva de tecnología: armo uno (hay %d de %d)", len(reserva_tec.leer(conn)), cfg.reserva)
     try:
-        p = ef.proponer(ef.Wiki(), gemini, hoy, carpeta, avisar=log.info, videos=cfg.videos,
+        p = _registrado(conn, ef.proponer)(ef.Wiki(), gemini, hoy, carpeta, avisar=log.info, videos=cfg.videos,
                         tope_fotos_s=cfg.tope_fotos_min * 60, imagen_frase=cfg.imagen_frase,
                         elector=_elector_fotos(settings), elector_reintento=_elector_fotos(settings, reintento=True),
                         tema="tecnologia", corto=cfg.corto, texto=_texto_efemeride(settings, gemini),
@@ -5956,7 +5972,7 @@ def cmd_efemeride(args: argparse.Namespace) -> int:
         if gemini is None:
             print("Falta GEMINI_API_KEY", file=sys.stderr)
             return 2
-        p = ef.proponer(ef.Wiki(), gemini, dia, carpeta, avisar=print, hecho=args.hecho or "",
+        p = _registrado(None, ef.proponer)(ef.Wiki(), gemini, dia, carpeta, avisar=print, hecho=args.hecho or "",
                         videos=settings.efemerides.videos or getattr(args, "videos", False),
                         tope_fotos_s=settings.efemerides.tope_fotos_min * 60,
                         hablado=settings.efemerides.guion_hablado,
@@ -6100,7 +6116,7 @@ def cmd_historia_fb(args: argparse.Namespace) -> int:
         return 0
     gemini = _gemini(settings)
     carpeta = OUTPUT_DIR / "efemerides" / f"fb_{dia:%m%d}"
-    p = locales.proponer(ef.Wiki(), sonnet, haiku, gemini, dia, carpeta, avisar=print,
+    p = _registrado(None, locales.proponer)(ef.Wiki(), sonnet, haiku, gemini, dia, carpeta, avisar=print,
                          hecho=args.hecho or "", videos=settings.efemerides.videos,
                          tope_fotos_s=settings.efemerides.tope_fotos_min * 60)
     (carpeta / "propuesta.json").write_text(json.dumps(p.__dict__, ensure_ascii=False, indent=2),

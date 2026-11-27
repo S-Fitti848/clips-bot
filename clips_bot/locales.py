@@ -1037,6 +1037,11 @@ def proponer(wiki: ef.Wiki, sonnet, haiku, gemini, dia: date, carpeta: Path, avi
         if intentos[0] >= ef.MAX_GUIONES:
             continue
         e = ef.Evento("es", c.anio, c.texto, [articulo] + [x for x in c.paginas if x != articulo])
+        from . import historias_usadas
+        ya = historias_usadas.bloqueada(e, articulo)
+        if ya:       # Santi, 2026-11-27: nunca dos videos de la misma historia en la semana (no cuenta como intento)
+            avisar(f"  {c.anio} {articulo}: {ya}")
+            continue
         lugar = str(c.clasif.get("lugar") or "").strip()
         nombre_c = f"{c.anio} {lugar}: {c.texto[:80]}"
         verif, fila_v = None, bitacora.fila_actual()

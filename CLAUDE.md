@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-11-26 | **Versión:** v1.64.0 (desplegado) | **Modo:** Fase 2: corriendo solo en la Pi. **Rots APAGADO. Así Nació PAUSADO desde el 19/11** (vuelve con 1 por día, preparado la noche anterior, si 4 de 5 marcas nuevas dan 15/19 o más por menos de US$ 0,60). **Pequeña Historia: TECNOLOGÍA ES LA PRIORIDAD NÚMERO UNO desde el 23/11** (2 por día en YouTube, 11:00 y 20:00, con una reserva de 3 videos ya armados; el canal de YouTube es solo de tecnología) y **Latinoamérica 2 por día SOLO en Facebook** hasta el 15/12. Nada se publica solo desde el 17/11: llega con ✅ Publicar / ❌ Cancelar y sin respuesta no sale. Todo al privado de Santi
+**Snapshot:** 2026-11-27 | **Versión:** v1.65.0 (desplegado) | **Modo:** Fase 2: corriendo solo en la Pi. **Rots APAGADO. Así Nació PAUSADO desde el 19/11** (vuelve con 1 por día, preparado la noche anterior, si 4 de 5 marcas nuevas dan 15/19 o más por menos de US$ 0,60). **Pequeña Historia: TECNOLOGÍA ES LA PRIORIDAD NÚMERO UNO desde el 23/11** (2 por día en YouTube, 11:00 y 20:00, con una reserva de 3 videos ya armados; el canal de YouTube es solo de tecnología) y **Latinoamérica 2 por día SOLO en Facebook** hasta el 15/12. Nada se publica solo desde el 17/11: llega con ✅ Publicar / ❌ Cancelar y sin respuesta no sale. Todo al privado de Santi
 
 > **SI ESTÁS EMPEZANDO UNA SESIÓN NUEVA, LEÉ §10.** Ahí está qué está hecho, qué quedó a medias,
 > qué falta, y las trampas que ya nos mordieron.
@@ -270,6 +270,12 @@ servicio systemd separado: `clips-bot`).
   que no se puede hacer en ese momento contesta "⏳ en cola, se hace cuando termine el render" (`EN_COLA_RENDER`). El
   origen de Claude y Gemini es por hilo (`gemini.origen_actual`); al cerrar, la escucha suelta los turnos que tomó
   (`db.soltar_propios`).
+- **Nunca dos videos de la misma historia (Santi, 2026-11-27, los dos de la fundación de Apple):** ni el mismo día
+  ni en la misma semana, sumando producción, reserva, banco y pruebas (`historias_usadas.py`, `bot_estado.historias_usadas`).
+  Toda propuesta corre dentro del registro (`_registrado`): lo usado en 7 días se saltea sin contar como intento, y cada
+  Propuesta creada queda reservada en ese momento (también la de una prueba). Misma historia = el mismo artículo sin
+  sufijos de empresa ("Apple_Inc." = "Apple") o del mismo año con las palabras de uno dentro del otro; al usarla, sus
+  mellizas salen del banco.
 - **Producción: tope de US$ 2,50 por día de Claude (Santi, 2026-11-24)** (`presupuesto.TOPE_DIA`): al acercarse se
   recorta en el orden de siempre (comunidad y búsqueda web de Latinoamérica, después Latinoamérica a 1); tecnología nunca.
 - **Calor (Santi, 2026-11-24, hasta que resuelva el enfriamiento):** un render a la vez, 4 min de pausa como mínimo entre
@@ -1435,6 +1441,12 @@ Problemas abiertos:
 ---
 
 ## 9. CHANGELOG
+
+- v1.65.0 (2026-11-27) — **Nunca dos videos de la misma historia** (regla en §1). Por qué llegaron dos de Apple el
+  27/11: el banco de tecnología tenía la fundación de Apple dos veces (artículos "Apple" y "Apple_Inc.", de es y en);
+  la reserva armó una el 26/11 (`efemeride_1126_1976`) y a las 00:05 la del día tomó la otra (`efemeride_1127_1976`),
+  y a las 00:36 la reserva entregó la suya para completar el día. Nadie comparaba contra lo ya armado. No tuvo que ver
+  con la prueba de la noche (Super Mario, Miramontes, Sixto Rodríguez) ni con el horario. `tests/test_historias_usadas.py`.
 
 - v1.64.0 (2026-11-26) — **Videos del día listos a las 03:00 y botones que siempre responden** (regla en §1). Medido
   en el log de la Pi: la madrugada (04:00) terminaba a las 05:27-05:46 y la reserva de tecnología renderizaba de 06:30 a

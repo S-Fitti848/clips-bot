@@ -3308,6 +3308,11 @@ class Propuesta:
     destino: str = ""        # "facebook": el video aparte de Facebook (locales.py), no va a YouTube
     local: dict = field(default_factory=dict)   # lugar, país, tipo de historia, conmemoración
 
+    def __post_init__(self):
+        # Santi, 2026-11-27: con un registro activo, la historia queda reservada (historias_usadas.py)
+        from . import historias_usadas
+        historias_usadas.al_crear(self)
+
 
 def proponer(wiki: Wiki, cliente, dia: date, carpeta: Path, avisar=log.info,
              correccion: str = "", saltear: int = 0, hecho: str = "", videos: bool = False,
@@ -3476,6 +3481,11 @@ def proponer(wiki: Wiki, cliente, dia: date, carpeta: Path, avisar=log.info,
     insuf = None      # (FotosInsuficientes, evento, fuente, índice): el que más se acercó al 70 %
     def intentar(i, articulo):
         nonlocal guiones, respaldo, insuf
+        from . import historias_usadas
+        ya = historias_usadas.bloqueada(candidatos[i], articulo)
+        if ya:       # Santi, 2026-11-27: nunca dos videos de la misma historia en la semana (no cuenta como intento)
+            avisar(f"  {candidatos[i].anio} {articulo}: {ya}")
+            return None
         # El artículo del evento va primero: de ahí salen las fotos y el texto del guion.
         e = Evento(candidatos[i].lang, candidatos[i].anio, candidatos[i].texto,
                    [articulo] + [x for x in candidatos[i].paginas if x != articulo])
