@@ -26,8 +26,22 @@ def test_apple_y_apple_inc_son_la_misma_historia():
     assert hu.nucleo("Apple_Inc.") == hu.nucleo("Apple") == hu.nucleo("Apple Computer, Inc.") == "apple"
     assert hu.nucleo("Super_Mario_Bros.") == hu.nucleo("Super Mario Bros. (videojuego)")
     assert hu.misma(hu.entrada("Apple", 1976), hu.entrada("Apple_Inc.", 1976))
-    assert not hu.misma(hu.entrada("Apple", 1976), hu.entrada("IPod", 2001))
-    assert not hu.misma(hu.entrada("IMac", 1998), hu.entrada("Apple", 1976))
+    assert not hu.misma(hu.entrada("Apple", 1976), hu.entrada("IPod", 2001), marca=False)
+    assert not hu.misma(hu.entrada("IMac", 1998), hu.entrada("Apple", 1976), marca=False)
+
+
+def test_la_misma_marca_tampoco_en_la_semana(tmp_path):
+    """Santi, 2026-11-28: el 27/11 la fundación de Apple, el 28/11 el iPhone y la reserva probaba el iPod."""
+    assert "Apple" in hu.marcas_de("IPhone")
+    assert "Apple" in hu.marcas_de("se estrena el reproductor de audio iPod, de la empresa Apple")
+    assert hu.misma(hu.entrada("Apple_Inc.", 1976), hu.entrada("IPhone", 2007, "Apple presenta el iPhone"))
+    assert not hu.misma(hu.entrada("Walkman", 1979), hu.entrada("IPhone", 2007))
+    c = _conn(tmp_path)
+    with hu.activo(c, HOY, "produccion"):
+        _prop("Apple_Inc.", 1976, "se funda Apple")
+    with hu.activo(c, HOY + timedelta(days=1), "reserva"):
+        assert hu.bloqueada(ef.Evento("es", 2001, "se estrena el iPod, de Apple", ["IPod"]), "IPod")
+        assert hu.bloqueada(ef.Evento("es", 1979, "Sony presenta el Walkman", ["Walkman"]), "Walkman") == ""
 
 
 def test_reservada_toda_la_semana_por_cualquier_origen(tmp_path):
@@ -56,7 +70,7 @@ def test_usarla_saca_a_sus_mellizas_del_banco(tmp_path):
     c = _conn(tmp_path)
     banco.guardar(c, "tecnologia", [
         {"id": "a", "anio": 1976, "articulo": "Apple", "texto": "se funda Apple", "paginas": ["Apple"]},
-        {"id": "b", "anio": 2001, "articulo": "IPod", "texto": "iPod", "paginas": ["IPod"]}])
+        {"id": "b", "anio": 2001, "articulo": "IPod", "texto": "iPod", "paginas": ["IPod"]}])   # otra historia: se queda
     with hu.activo(c, HOY, "produccion"):
         _prop("Apple_Inc.", 1976)
     assert [x["id"] for x in banco.leer(c, "tecnologia")] == ["b"]

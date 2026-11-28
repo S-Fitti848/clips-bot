@@ -266,7 +266,18 @@ Al final respondé SOLO con un bloque ```json:
 def es_tecnica(err: Exception) -> bool:
     """La respuesta cortada o sin el JSON pedido (no dice nada de si la historia es real)."""
     t = str(err)
-    return "max_tokens" in t or "JSON" in t
+    return "max_tokens" in t or "JSON" in t or "SIN ACCESO" in t
+
+
+# Santi, 2026-11-28: la verificación contestó "no tengo acceso web en esta conversación" y la historia quedó como "no
+# verificada". Eso es una falla técnica (el modelo no usó la búsqueda), no un veredicto sobre la historia.
+_SIN_ACCESO = re.compile(r"(no tengo|sin) acceso (a la )?web|no (pude|puedo) (abrir|acceder|leer|navegar)"
+                         r"|no (tengo|cuento con) (herramientas|la herramienta) de b[uú]squeda|cannot (browse|access)",
+                         re.I)
+
+
+def sin_acceso(d: dict) -> bool:
+    return bool(_SIN_ACCESO.search(f"{d.get('problema') or ''} {d.get('resumen') or ''}"))
 
 
 def verificar(cliente: ClienteWeb, texto: str, anio: int, lugar: str, pais: str,
@@ -281,6 +292,8 @@ def verificar(cliente: ClienteWeb, texto: str, anio: int, lugar: str, pais: str,
             salida, links = cliente.pedir(SISTEMA_VERIFICAR, prompt, busquedas=BUSQUEDAS_VERIFICAR,
                                           lecturas=LECTURAS_VERIFICAR, max_tokens=16000 * (intento + 1))
             d = json_de(cliente, salida, SISTEMA_VERIFICAR)
+            if sin_acceso(d):
+                raise WebError(f"SIN ACCESO: la verificación dijo que no pudo buscar ({str(d.get('problema'))[:120]})")
             break
         except WebError as err:
             if intento or not es_tecnica(err):

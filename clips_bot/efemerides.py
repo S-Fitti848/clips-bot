@@ -1376,6 +1376,8 @@ SCHEMA_PAGO = {"type": "OBJECT",
                "required": ["responde", "anteultima", "ultima", "motivo"]}
 
 
+COMPRENSION_REESCRITURAS = 1     # cuántas veces se reescribe un guion porque el lector no lo entendió (PH-27)
+
 SISTEMA_LECTOR = """Sos alguien que NO sabe nada del tema y ve un video corto UNA sola vez. Te paso lo que dice la voz,
 frase por frase. Respondé en UNA línea, con tus palabras, qué entendiste: quién es (o qué es), qué pasó y por qué es
 sorprendente. Si algo no se entiende (no sabés quién es alguien, un salto de tiempo o de lugar, una frase que no
@@ -1385,9 +1387,14 @@ SCHEMA_LECTOR = {"type": "OBJECT", "properties": {
     "entendi": {"type": "STRING"}, "confuso": {"type": "STRING"}}, "required": ["entendi", "confuso"]}
 
 SISTEMA_COINCIDE = """Comparás lo que entendió un espectador que no sabía nada del tema con la historia que el video
-quería contar. ¿Coincide en lo esencial (quién es, qué pasó y por qué sorprende)? Si falta algo esencial, lo entendió
-distinto o marcó una parte confusa que importa, `coincide` es false y en `falta` decí qué hay que arreglar del guion
-(en una frase, con el número de la frase si se sabe)."""
+quería contar. La pregunta es UNA sola: ¿entendió lo esencial? Es decir, ¿sabe QUIÉN es (o qué es), QUÉ pasó y POR QUÉ
+sorprende, sin entender otra cosa? Si lo que entendió dice eso con sus palabras, `coincide` es true, aunque le falten
+detalles, nombres secundarios, fechas exactas o explicaciones de más.
+NO es motivo para false: la pregunta al público del final (está a propósito y no se responde), una frase de intriga
+("Pero ahí todo cambió", "Pero faltaba lo peor") que la frase siguiente explica, que no se explique una palabra común
+(Windows, guerra, software), ni sugerencias de estilo. `coincide` es false SOLO si se equivocó de protagonista, de qué
+pasó o de por qué sorprende, o si no pudo seguir la historia. Si es false, en `falta` decí qué hay que arreglar del
+guion (en una frase, con el número de la frase si se sabe)."""
 
 SCHEMA_COINCIDE = {"type": "OBJECT", "properties": {
     "coincide": {"type": "BOOLEAN"}, "falta": {"type": "STRING"}}, "required": ["coincide", "falta"]}
@@ -1475,7 +1482,7 @@ def escribir_guion(cliente, e: Evento, fuente: str, correccion: str = "", anteri
     from . import correcciones
 
     errores: list[str] = []
-    d, puntuales = None, 0
+    d, puntuales, comp_fallas = None, 0, 0
     base = sistema or (SISTEMA_GUION_HABLADO if hablado else SISTEMA_GUION)   # efemerides.guion_hablado
     from . import aprendizaje      # lo que más retuvo en Facebook (Santi, 2026-11-18)
 
@@ -1507,11 +1514,17 @@ def escribir_guion(cliente, e: Evento, fuente: str, correccion: str = "", anteri
             errores = validar_extra(d)
         if not errores and revisar_final:
             d = final_que_paga(cliente, d, e, fuente, corto=corto, rango=rango, validar_extra=validar_extra)
-        if not errores and lector is not None:
-            # Santi, 2026-11-27 (PH-27): que se entienda a la primera; está por encima de las reglas de estilo
+        if not errores and lector is not None and comp_fallas < COMPRENSION_REESCRITURAS + 1:
+            # Santi, 2026-11-27 (PH-27): que se entienda a la primera; está por encima de las reglas de estilo.
+            # Una sola reescritura por esto (2026-11-28: el control tiró 5 guiones que se entendían y se comió las 4
+            # correcciones de cada uno): si la segunda versión tampoco convence al lector, sale igual con el aviso.
             sirve, entendi, falta = comprension(lector, [str(f.get("texto") or "") for f in d["frases"]],
                                                 str(d.get("idea_clave") or ""))
             if not sirve:
+                comp_fallas += 1
+            if not sirve and comp_fallas > COMPRENSION_REESCRITURAS:
+                log.info("  control de comprensión: sigue sin convencer después de reescribir; sale igual (PH-27)")
+            elif not sirve:
                 errores = [f"NO SE ENTIENDE A LA PRIMERA: alguien que no sabe nada del tema entendió «{entendi}». "
                            f"Falta: {falta}. Reescribí para que se sepa quién es, qué pasó y por qué sorprende, una idea "
                            "por frase y en orden (sin saltos de tiempo ni de lugar sin avisar); si la historia es muy "

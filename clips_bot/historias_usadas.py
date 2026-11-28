@@ -9,7 +9,11 @@ saltean lo que `bloqueada()` dice y cada Propuesta que se crea se anota sola (`a
 registro activo no se mira ni se anota nada (los tests de siempre no cambian).
 
 La misma historia = el mismo artículo, sin tildes, guiones bajos, paréntesis ni sufijos de empresa ("Apple_Inc." =
-"Apple" = "Apple Computer, Inc."), o del mismo año y con las palabras de uno dentro de las del otro."""
+"Apple" = "Apple Computer, Inc."), o del mismo año y con las palabras de uno dentro de las del otro.
+
+La misma MARCA también cuenta (Santi, 2026-11-28: el 27/11 la fundación de Apple y el 28/11 el iPhone, y la reserva
+probaba el iPod): una marca del catálogo de Así Nació (o un producto suyo conocido, `PRODUCTOS`) que aparece en el
+artículo o el texto de las dos no se repite en la semana."""
 
 from __future__ import annotations
 
@@ -31,6 +35,33 @@ GUARDAR_DIAS = 30
 _SUFIJOS = {"inc", "corp", "corporation", "computer", "computers", "company", "co", "ltd", "llc", "sa", "s", "a",
             "plc", "gmbh", "ag", "holdings", "group"}
 _LOCAL = threading.local()
+# productos conocidos que no nombran a su marca (el artículo "IPhone", "Walkman")
+PRODUCTOS = {"iphone": "Apple", "ipod": "Apple", "ipad": "Apple", "macintosh": "Apple", "mac": "Apple",
+             "itunes": "Apple", "windows": "Microsoft", "xbox": "Microsoft", "ms dos": "Microsoft",
+             "walkman": "Sony", "gmail": "Google", "android": "Google", "youtube": "Google",
+             "game boy": "Nintendo", "super nintendo": "Nintendo", "mario": "Nintendo", "pentium": "Intel"}
+_NOMBRES: list[str] | None = None
+
+
+def _nombres_marcas() -> list[str]:
+    global _NOMBRES
+    if _NOMBRES is None:
+        try:
+            from .animacion import marcas as _m
+            _NOMBRES = [m.nombre for m in _m.cargar_catalogo()]
+        except Exception:      # noqa: BLE001 — sin catálogo, solo los productos
+            _NOMBRES = []
+    return _NOMBRES
+
+
+def marcas_de(texto: str) -> set[str]:
+    """Las marcas que nombra un texto (artículo + hecho), con los productos conocidos pasados a su marca."""
+    from .marcas_semana import _norm, menciona
+
+    out = set(menciona(texto, _nombres_marcas()))
+    t = f" {_norm(texto)} "
+    out.update(m for prod, m in PRODUCTOS.items() if f" {prod} " in t)
+    return out
 
 
 def nucleo(articulo: str) -> str:
@@ -41,17 +72,26 @@ def nucleo(articulo: str) -> str:
     return " ".join(sin or palabras)
 
 
-def misma(a: dict, b: dict) -> bool:
-    """¿Dos entradas ({nucleo, anio}) son la misma historia?"""
+def misma(a: dict, b: dict, marca: bool = True) -> bool:
+    """¿Dos entradas ({nucleo, anio}) son la misma historia? Con `marca`, también si nombran la misma marca (eso solo
+    bloquea la semana: del banco no se saca una historia por la marca)."""
     na, nb = a.get("nucleo") or "", b.get("nucleo") or ""
     if not na or not nb:
         return False
+    if marca and _marcas(a) & _marcas(b):
+        return True
     if na == nb:
         return True
     if a.get("anio") and a.get("anio") == b.get("anio"):
         sa, sb = set(na.split()), set(nb.split())
         return sa <= sb or sb <= sa
     return False
+
+
+def _marcas(x: dict) -> set[str]:
+    if "marcas" not in x:
+        x["marcas"] = sorted(marcas_de(f"{x.get('articulo') or ''} {x.get('texto') or ''}"))
+    return set(x["marcas"])
 
 
 def leer(conn) -> list[dict]:
@@ -71,12 +111,13 @@ def entrada(articulo: str, anio=None, texto: str = "") -> dict:
         anio = int(anio) if anio not in (None, "") else None
     except (TypeError, ValueError):
         anio = None
-    return {"nucleo": nucleo(articulo), "articulo": str(articulo or ""), "anio": anio, "texto": str(texto or "")[:120]}
+    return {"nucleo": nucleo(articulo), "articulo": str(articulo or ""), "anio": anio, "texto": str(texto or "")[:120],
+            "marcas": sorted(marcas_de(f"{articulo or ''} {texto or ''}"))}
 
 
-def usada(conn, hoy: date, articulo: str, anio=None) -> dict | None:
+def usada(conn, hoy: date, articulo: str, anio=None, texto: str = "") -> dict | None:
     """La entrada que la bloquea (usada hace menos de DIAS días), o None."""
-    e = entrada(articulo, anio)
+    e = entrada(articulo, anio, texto)
     desde = (hoy - timedelta(days=DIAS - 1)).isoformat()
     hasta = (hoy + timedelta(days=DIAS - 1)).isoformat()
     for x in leer(conn):
@@ -107,7 +148,8 @@ def _sacar_del_banco(conn, e: dict) -> None:
     for canal in ("tecnologia", "latam"):
         items = banco.leer(conn, canal)
         quedan = [x for x in items if not misma(
-            e, entrada(x.get("articulo") or (x.get("paginas") or [""])[0], x.get("anio")))]
+            e, entrada(x.get("articulo") or (x.get("paginas") or [""])[0], x.get("anio"), x.get("texto") or ""),
+            marca=False)]
         if len(quedan) < len(items):
             banco.guardar(conn, canal, quedan)
             log.info("banco %s: saqué %d con la misma historia (%s)", canal, len(items) - len(quedan), e["articulo"])
@@ -134,10 +176,10 @@ def bloqueada(evento, articulo: str = "") -> str:
     conn, hoy, _ = reg
     paginas = list(getattr(evento, "paginas", None) or [])
     for art in [a for a in [articulo] + paginas[:1] if a]:
-        x = usada(conn, hoy, art, getattr(evento, "anio", None))
+        x = usada(conn, hoy, art, getattr(evento, "anio", None), getattr(evento, "texto", "") or "")
         if x:
-            return (f"ya se usó esta historia ({x.get('articulo')}, {x.get('dia')}, {x.get('origen') or '?'}): "
-                    "nunca dos videos de la misma en la semana")
+            return (f"ya se usó esta historia o su marca ({x.get('articulo')}, {x.get('dia')}, "
+                    f"{x.get('origen') or '?'}): nunca dos videos de la misma en la semana")
     return ""
 
 

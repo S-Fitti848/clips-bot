@@ -57,17 +57,30 @@ def test_si_no_se_entiende_se_reescribe(monkeypatch):
     assert any("NO SE ENTIENDE A LA PRIMERA" in p and "Sudáfrica" in p for p in pedidos)
 
 
-def test_si_nunca_se_entiende_la_historia_se_descarta(monkeypatch):
+def test_una_sola_reescritura_por_comprension(monkeypatch):
+    """2026-11-28: el control tiró 5 guiones que se entendían y se comió las 4 correcciones de cada uno. Ahora se
+    reescribe una vez; si la segunda versión tampoco convence, sale igual (no se pierde la historia)."""
     monkeypatch.setattr(ef, "validar_guion", lambda *a, **k: [])
+    pedidos = []
 
     class Escritor:
         def json(self, *a, **k):
+            pedidos.append(1)
             return json.dumps({"frases": [{"texto": "f", "mostrar": "x"}], "titulo": "t", "descripcion": "d",
                                "hashtags": [], "idea_clave": "idea"})
 
-    with pytest.raises(ef.NarrarError, match="NO SE ENTIENDE"):
-        ef.escribir_guion(Escritor(), ef.Evento("es", 2023, "x", ["X"]), "art", revisar_final=False,
-                          reintentos=1, lector=Lector([False] * 20))
+    from clips_bot import correcciones
+    monkeypatch.setattr(correcciones, "corregir", lambda cliente, base, prompt, d, errores, *a: (pedidos.append(2), d)[1])
+    lector = Lector([False] * 20)
+    g = ef.escribir_guion(Escritor(), ef.Evento("es", 2023, "x", ["X"]), "art", revisar_final=False,
+                          reintentos=1, lector=lector)
+    assert g.frases == ["f"] and pedidos == [1, 2]
+    assert len(lector.pedidos) == 4          # dos lecturas, nada más
+
+
+def test_el_comparador_no_pide_responder_la_pregunta_final():
+    for frase in ("pregunta al público", "SOLO si se equivocó", "aunque le falten"):
+        assert frase in ef.SISTEMA_COINCIDE
 
 
 def test_sin_lector_o_sin_respuesta_no_frena():

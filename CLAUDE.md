@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-11-27 | **Versión:** v1.66.0 (desplegado) | **Modo:** Fase 2: corriendo solo en la Pi. **Rots APAGADO. Así Nació PAUSADO desde el 19/11** (vuelve con 1 por día, preparado la noche anterior, si 4 de 5 marcas nuevas dan 15/19 o más por menos de US$ 0,60). **Pequeña Historia: TECNOLOGÍA ES LA PRIORIDAD NÚMERO UNO desde el 23/11** (2 por día en YouTube, 11:00 y 20:00, con una reserva de 3 videos ya armados; el canal de YouTube es solo de tecnología) y **Latinoamérica 2 por día SOLO en Facebook** hasta el 15/12. Nada se publica solo desde el 17/11: llega con ✅ Publicar / ❌ Cancelar y sin respuesta no sale. Todo al privado de Santi
+**Snapshot:** 2026-11-28 | **Versión:** v1.67.0 (desplegado) | **Modo:** Fase 2: corriendo solo en la Pi. **Rots APAGADO. Así Nació PAUSADO desde el 19/11** (vuelve con 1 por día, preparado la noche anterior, si 4 de 5 marcas nuevas dan 15/19 o más por menos de US$ 0,60). **Pequeña Historia: TECNOLOGÍA ES LA PRIORIDAD NÚMERO UNO desde el 23/11** (2 por día en YouTube, 11:00 y 20:00, con una reserva de 3 videos ya armados; el canal de YouTube es solo de tecnología) y **Latinoamérica 2 por día SOLO en Facebook** hasta el 15/12. Nada se publica solo desde el 17/11: llega con ✅ Publicar / ❌ Cancelar y sin respuesta no sale. Todo al privado de Santi
 
 > **SI ESTÁS EMPEZANDO UNA SESIÓN NUEVA, LEÉ §10.** Ahí está qué está hecho, qué quedó a medias,
 > qué falta, y las trampas que ya nos mordieron.
@@ -275,7 +275,7 @@ servicio systemd separado: `clips-bot`).
   una vez; una idea por frase y en orden, sin saltos de tiempo ni de lugar sin avisar; si es muy enredada, solo la parte
   más fuerte (`reglas.REGLAS_CLARIDAD`, también en Así Nació). Control: Haiku lee el guion sin saber nada y dice en una
   línea qué entendió, y se compara con la idea clave (`ef.comprension`, `escribir_guion(lector=)`); si no coincide, se
-  corrige con eso y, si nunca, la historia se descarta. El plan B de fotos no puede dejar un guion que no se entiende.
+  reescribe UNA vez con eso y, si tampoco convence, sale igual (2026-11-28: descartar tiró 5 guiones buenos en un día). El plan B de fotos no puede dejar un guion que no se entiende.
 - **Nunca dos videos de la misma historia (Santi, 2026-11-27, los dos de la fundación de Apple):** ni el mismo día
   ni en la misma semana, sumando producción, reserva, banco y pruebas (`historias_usadas.py`, `bot_estado.historias_usadas`).
   Toda propuesta corre dentro del registro (`_registrado`): lo usado en 7 días se saltea sin contar como intento, y cada
@@ -1447,6 +1447,15 @@ Problemas abiertos:
 ---
 
 ## 9. CHANGELOG
+
+- v1.67.0 (2026-11-28) — **El 28/11 salió 1 video de 4.** (1) El control de comprensión (v1.66.0) tiró 5 guiones que se
+  entendían: el comparador pedía responder la pregunta del final o explicar "Windows", y cada falla se comía las 4
+  correcciones. Ahora juzga solo protagonista / qué pasó / por qué sorprende y reescribe una vez; si no convence, sale
+  igual. (2) La verificación de Latinoamérica contestó "no tengo acceso web" y quedó como "no verificada": es falla
+  técnica (`web_historias.sin_acceso`), se reintenta y si sigue cuenta como búsqueda caída. (3) El banco SÍ se usó (3
+  historias): 2 cayeron por el control y 1 por fotos (47 %). (4) Apple tres días seguidos (fundación, iPhone, el iPod de
+  la reserva): la misma marca tampoco se repite en la semana (`historias_usadas.marcas_de`, catálogo de Así Nació +
+  productos conocidos); del banco no se saca por la marca.
 
 - v1.66.0 (2026-11-27) — **Guiones que se entienden a la primera** (regla en §1). El de Sixto Rodríguez era confuso
   por dos cosas: la 3.ª frase metía el año a la fuerza ("grabó sus discos en 1970 y murió en 2023") y el plan B

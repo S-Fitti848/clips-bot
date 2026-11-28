@@ -239,3 +239,14 @@ def test_si_la_respuesta_no_trae_el_json_se_pide_el_formato():
     cliente = SimpleNamespace(_c=SimpleNamespace(messages=Msgs()), modelo="haiku", uso=None)
     assert wh.json_de(cliente, "verifiqué todo y está bien", wh.SISTEMA_VERIFICAR) == {"datos": [], "es_real": True}
     assert wh.json_de(cliente, '{"a": 1}', wh.SISTEMA_VERIFICAR) == {"a": 1}
+
+
+def test_sin_acceso_web_es_falla_tecnica():
+    """Santi, 2026-11-28: la verificación dijo "no tengo acceso web en esta conversación" y la historia quedó como "no
+    verificada": eso es técnico (se reintenta y, si sigue, cuenta como búsqueda caída)."""
+    from clips_bot import web_historias as wh
+    d = {"problema": "No pude abrir ni leer las URLs citadas porque no tengo acceso web en esta conversación",
+         "es_real": False}
+    assert wh.sin_acceso(d)
+    assert not wh.sin_acceso({"problema": "las fuentes se contradicen en el año", "es_real": False})
+    assert wh.es_tecnica(wh.WebError("SIN ACCESO: x"))
