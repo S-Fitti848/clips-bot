@@ -677,7 +677,8 @@ SCHEMA_ELEGIR = {
 
 CRITERIOS = ("persona", "peligro", "giro", "emocion")
 PUNTAJE_MIN = 8.0    # Santi, 2026-11-13: solo pasan las de 8 o más de promedio
-MAX_VERIFICAR = 3      # Santi, 2026-11-25: verificar solo las 3 mejores (y 3 del banco)
+MAX_VERIFICAR = 3      # Santi, 2026-11-25: verificar solo las 3 mejores del día
+BANCO_MAX = 8          # Santi, 2026-11-28: el banco es la red; se prueban hasta 8 historias antes de rendirse
 CURIOSAS = {"lugar_curioso", "invento", "costumbre", "record", "misterio", "dato_sorprendente"}
 
 
@@ -1015,12 +1016,17 @@ def proponer(wiki: ef.Wiki, sonnet, haiku, gemini, dia: date, carpeta: Path, avi
     # Santi, 2026-11-25: se verifican solo las 3 mejores (del día; y otras 3 del banco si hace falta): con 15
     # verificaciones caídas en la semana, seguir probando las de abajo de la lista gastaba sin llegar a video
     verificadas = {"dia": 0, "banco": 0}
+    # Santi, 2026-11-28: "si las del día fallan, el banco es la red: que nunca quede un día sin video si hay historias
+    # en el banco". El banco se prueba hasta BANCO_MAX historias (antes 3-4), con la verificación contra el artículo.
+    limite_verificar = {"dia": MAX_VERIFICAR, "banco": BANCO_MAX}
+    del_banco = any(c.clasif.get("banco_id") for c, _, _ in elegidos)
+    limite = [BANCO_MAX if del_banco else ef.MAX_GUIONES]
 
     def cola():
         """Las elegidas y, si ninguna sale (sin verificar, sin fotos), el banco (Santi, 2026-11-16: "nunca
         vacía"); el banco también se verifica."""
-        yield from elegidos[:ef.MAX_GUIONES * 2]
-        if hecho or any(c.clasif.get("banco_id") for c, _, _ in elegidos):
+        yield from elegidos[:limite[0] * 2]
+        if hecho or del_banco:
             return
         # Santi, 2026-11-18 (el banco se usó 3 veces en la semana): una historia del día que solo falló por fotos y
         # llega al 50 % sale con el mínimo relajado (como la de tecnología) ANTES de ir al banco (Puebla: 68 %).
@@ -1031,10 +1037,11 @@ def proponer(wiki: ef.Wiki, sonnet, haiku, gemini, dia: date, carpeta: Path, avi
             avisar("ninguna de las del día salió: paso al banco de reserva")
             aviso[0] = "📦 del banco de reserva (las del día no salieron: " + "; ".join(fallas)[:120] + ")"
             intentos[0] = 0
-            yield from extra[:ef.MAX_GUIONES]
+            limite[0] = BANCO_MAX
+            yield from extra[:BANCO_MAX * 2]
 
     for c, articulo, art_lugar in cola():
-        if intentos[0] >= ef.MAX_GUIONES:
+        if intentos[0] >= limite[0]:
             continue
         e = ef.Evento("es", c.anio, c.texto, [articulo] + [x for x in c.paginas if x != articulo])
         from . import historias_usadas
@@ -1045,13 +1052,42 @@ def proponer(wiki: ef.Wiki, sonnet, haiku, gemini, dia: date, carpeta: Path, avi
         lugar = str(c.clasif.get("lugar") or "").strip()
         nombre_c = f"{c.anio} {lugar}: {c.texto[:80]}"
         verif, fila_v = None, bitacora.fila_actual()
-        if web is not None:
-            # Santi, 2026-11-16: cada dato con al menos 2 fuentes ANTES de usarlo (también las de Wikipedia
-            # y las del banco); el guion se escribe solo con lo verificado.
-            from . import web_historias as wh
+        from . import web_historias as wh
 
+        # Santi, 2026-11-28: se verifica contra el texto del artículo que ya bajó el bot (sin abrir links); la búsqueda
+        # web queda solo para las historias de la web que no tienen artículo.
+        art_texto = ""
+        try:
+            art_texto = ef.texto_fuente(wiki, e)
+            if art_lugar:
+                art_texto += "\n" + wiki.texto("es", art_lugar)[:6000]
+        except ef.WikiError:
+            art_texto = ""
+        verificador = haiku or sonnet
+        if verificador is not None and len(art_texto) >= 300:
             grupo = "banco" if c.clasif.get("banco_id") else "dia"
-            if verificadas[grupo] >= MAX_VERIFICAR:
+            if verificadas[grupo] >= limite_verificar[grupo]:
+                continue
+            verificadas[grupo] += 1
+            bitacora.paso("verificacion")
+            try:
+                va = wh.verificar_con_articulo(verificador, c.texto, c.anio, lugar, art_texto, articulo)
+            except wh.WebError as err:
+                avisar(f"  verificación contra el artículo caída ({err}): sigo con el artículo, con aviso")
+                aviso[0] = (aviso[0] + " · " if aviso[0] else "") + "⚠️ sin verificar"
+            else:
+                if not va.ok:
+                    avisar(f"  el artículo no confirma la historia: {va.motivo}")
+                    fallas.append(f"{e.anio}: no verificada ({va.motivo[:120]})")
+                    bitacora.descarte(nombre_c, f"no verificada contra el artículo: {va.motivo}", "verificacion",
+                                      desde_fila=fila_v)
+                    continue
+                avisar(f"  verificada contra el artículo: {len(va.datos)} datos con cita")
+                c.clasif["verificados"] = va.datos
+        elif web is not None:
+            # Una de la web sin artículo de Wikipedia: cada dato con 2 fuentes (Santi, 2026-11-16).
+            grupo = "banco" if c.clasif.get("banco_id") else "dia"
+            if verificadas[grupo] >= limite_verificar[grupo]:
                 continue
             verificadas[grupo] += 1
             bitacora.paso("verificacion")
@@ -1102,9 +1138,7 @@ def proponer(wiki: ef.Wiki, sonnet, haiku, gemini, dia: date, carpeta: Path, avi
         if verif is not None and verif.ok:
             fuente = verif.texto        # solo lo verificado con 2 fuentes
         else:
-            fuente = ef.texto_fuente(wiki, e)
-            if art_lugar:
-                fuente += "\n" + wiki.texto("es", art_lugar)[:6000]
+            fuente = art_texto or ef.texto_fuente(wiki, e)
         avisar(f"{e.anio} {lugar}: {len(fotos)} fotos del hecho y del lugar")
         banco_f = None
         if fotos_primero:

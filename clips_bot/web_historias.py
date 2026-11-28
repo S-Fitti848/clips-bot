@@ -319,6 +319,65 @@ def verificar(cliente: ClienteWeb, texto: str, anio: int, lugar: str, pais: str,
     return Verificacion(True, buenos, texto_final, links=todos_links)
 
 
+# Santi, 2026-11-28: "la verificación dice 'no tengo acceso web para abrir las URLs': tiene que verificar contra el
+# texto del artículo que ya bajó el bot, no abriendo links". Sin herramientas: el modelo cita, el código confirma que
+# cada cita está tal cual en el artículo.
+SISTEMA_VERIFICAR_ARTICULO = """Verificás una historia contra el texto de un artículo que ya tenés abajo. NO busques
+en la web ni abras links: usá SOLO ese texto. Para cada dato de la historia (nombres de personas y lugares, el año,
+cifras, lo que pasó) copiá una CITA LITERAL corta del artículo (de 4 a 25 palabras, exactamente como está escrita) que
+lo confirme. Un dato que el artículo no dice no va. Si el artículo contradice la historia, es_real = false.
+Respondé solo el JSON pedido. El "resumen" cuenta la historia en 150-300 palabras en castellano con SOLO lo que dice el
+artículo."""
+
+SCHEMA_VERIFICAR_ARTICULO = {
+    "type": "OBJECT",
+    "properties": {
+        "datos": {"type": "ARRAY", "items": {"type": "OBJECT", "properties": {
+            "dato": {"type": "STRING"}, "cita": {"type": "STRING"}}, "required": ["dato", "cita"]}},
+        "resumen": {"type": "STRING"},
+        "es_real": {"type": "BOOLEAN"},
+        "problema": {"type": "STRING"},
+    },
+    "required": ["datos", "resumen", "es_real", "problema"],
+}
+
+
+def _norm(t: str) -> str:
+    import unicodedata
+
+    t = unicodedata.normalize("NFKD", str(t or "").lower())
+    t = "".join(ch for ch in t if not unicodedata.combining(ch))
+    return re.sub(r"[^a-z0-9]+", " ", t).strip()
+
+
+def verificar_con_articulo(cliente, texto: str, anio: int, lugar: str, articulo: str,
+                           nombre: str = "artículo") -> Verificacion:
+    """Cada dato de la historia con una cita que el código encuentra tal cual en el artículo ya bajado."""
+    art = str(articulo or "")[:30000]
+    if len(art) < 300:
+        raise WebError("SIN ARTÍCULO: no hay texto del artículo para verificar")
+    prompt = f"Historia ({anio}, {lugar}): {texto}\n\nARTÍCULO ({nombre}):\n{art}"
+    try:
+        d = json.loads(cliente.json(SISTEMA_VERIFICAR_ARTICULO, prompt, SCHEMA_VERIFICAR_ARTICULO, temperatura=0.0))
+    except Exception as err:      # noqa: BLE001 - cortado, sin JSON o el modelo caído: falla técnica
+        raise WebError(f"JSON: la verificación contra el artículo no respondió ({err})") from err
+    base = _norm(art)
+    buenos, malos = [], 0
+    for x in d.get("datos") or []:
+        cita = _norm(x.get("cita") or "")
+        if str(x.get("dato") or "").strip() and len(cita.split()) >= 3 and cita in base:
+            buenos.append({"dato": str(x["dato"]).strip(), "fuentes": [f"{nombre} (cita: «{str(x['cita'])[:160]}»)"]})
+        else:
+            malos += 1
+    if d.get("es_real") is False:
+        return Verificacion(False, buenos, motivo=str(d.get("problema") or "el artículo contradice la historia")[:300])
+    if len(buenos) < MIN_DATOS:
+        return Verificacion(False, buenos, motivo=f"solo {len(buenos)} datos con cita del artículo ({malos} sin cita)")
+    resumen = str(d.get("resumen") or "").strip()
+    texto_final = resumen + "\n\nDatos confirmados en el artículo:\n" + "\n".join(f"- {x['dato']}" for x in buenos)
+    return Verificacion(True, buenos, texto_final)
+
+
 def cliente_web() -> ClienteWeb | None:
     """Con ANTHROPIC_API_KEY del .env; None si no está."""
     from .config import env

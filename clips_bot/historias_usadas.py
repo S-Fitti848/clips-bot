@@ -196,6 +196,34 @@ def al_crear(propuesta) -> None:
             anotar(conn, hoy, paginas[0], ev.get("anio"), origen, ev.get("texto") or "")
         except Exception:      # anotar nunca frena una propuesta
             log.exception("no pude anotar la historia usada")
+    if paginas and getattr(propuesta, "destino", "") != "facebook" and origen != "prueba":
+        try:
+            db.set_valor(conn, CLAVE_GRUPO, grupo_tec(f"{paginas[0]} {ev.get('texto') or ''}"))
+        except Exception:
+            log.exception("no pude anotar el grupo de tecnología")
+
+
+# Santi, 2026-11-28: en tecnología, videojuegos y marcas se alternan (el banco y la reserva prueban primero el grupo que
+# no salió la última vez).
+CLAVE_GRUPO = "tec_ultimo_grupo"
+
+
+def grupo_tec(texto: str, subtema: str = "") -> str:
+    """"videojuegos" o "marcas" (marcas, empresas y todo lo demás)."""
+    from . import temas
+
+    return "videojuegos" if (subtema or temas.subtema_tec(texto)) == "videojuegos" else "marcas"
+
+
+def ultimo_grupo_tec() -> str:
+    """El grupo del último video de tecnología propuesto, con un registro activo ("" sin registro)."""
+    reg = getattr(_LOCAL, "reg", None)
+    if reg is None:
+        return ""
+    try:
+        return db.get_valor(reg[0], CLAVE_GRUPO) or ""
+    except Exception:
+        return ""
 
 
 # --- lo de antes de esta regla ---

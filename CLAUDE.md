@@ -1,6 +1,6 @@
 # Clips Bot — Project Context
 
-**Snapshot:** 2026-11-28 | **Versión:** v1.67.0 (desplegado) | **Modo:** Fase 2: corriendo solo en la Pi. **Rots APAGADO. Así Nació PAUSADO desde el 19/11** (vuelve con 1 por día, preparado la noche anterior, si 4 de 5 marcas nuevas dan 15/19 o más por menos de US$ 0,60). **Pequeña Historia: TECNOLOGÍA ES LA PRIORIDAD NÚMERO UNO desde el 23/11** (2 por día en YouTube, 11:00 y 20:00, con una reserva de 3 videos ya armados; el canal de YouTube es solo de tecnología) y **Latinoamérica 2 por día SOLO en Facebook** hasta el 15/12. Nada se publica solo desde el 17/11: llega con ✅ Publicar / ❌ Cancelar y sin respuesta no sale. Todo al privado de Santi
+**Snapshot:** 2026-11-28 | **Versión:** v1.68.0 (desplegado) | **Modo:** Fase 2: corriendo solo en la Pi. **Rots APAGADO. Así Nació PAUSADO desde el 19/11** (vuelve con 1 por día, preparado la noche anterior, si 4 de 5 marcas nuevas dan 15/19 o más por menos de US$ 0,60). **Pequeña Historia: TECNOLOGÍA ES LA PRIORIDAD NÚMERO UNO desde el 23/11** (2 por día en YouTube, 11:00 y 20:00, con una reserva de 3 videos ya armados; el canal de YouTube es solo de tecnología) y **Latinoamérica 2 por día SOLO en Facebook** hasta el 15/12. Nada se publica solo desde el 17/11: llega con ✅ Publicar / ❌ Cancelar y sin respuesta no sale. Todo al privado de Santi
 
 > **SI ESTÁS EMPEZANDO UNA SESIÓN NUEVA, LEÉ §10.** Ahí está qué está hecho, qué quedó a medias,
 > qué falta, y las trampas que ya nos mordieron.
@@ -1447,6 +1447,16 @@ Problemas abiertos:
 ---
 
 ## 9. CHANGELOG
+
+- v1.68.0 (2026-11-28, tarde) — **Pedidos de Santi después del 1 de 4** (reemplazan partes de la regla del 16/11 de
+  fuentes web): (1) la historia de Latinoamérica se verifica contra el TEXTO DEL ARTÍCULO que ya bajó el bot, sin abrir
+  links (`web_historias.verificar_con_articulo`: Haiku da una cita literal por dato y el código la busca en el artículo;
+  3 datos con cita como mínimo; si el artículo la contradice, afuera); la búsqueda web queda solo para las de la web sin
+  artículo. (2) El banco es la red: se prueban hasta 8 historias (`locales.BANCO_MAX`) antes de rendirse. (3) El control de
+  comprensión rechaza SOLO si lo entendido contradice la historia o le falta quién es o qué pasó. (4) Tecnología:
+  videojuegos y marcas se alternan (`historias_usadas.grupo_tec` / `ultimo_grupo_tec`, `bot_estado.tec_ultimo_grupo`;
+  banco y reserva prueban primero el otro grupo), y la misma marca, como mucho una vez cada 7 días (v1.67.0).
+  `tests/test_red_28_11.py`.
 
 - v1.67.0 (2026-11-28) — **El 28/11 salió 1 video de 4.** (1) El control de comprensión (v1.66.0) tiró 5 guiones que se
   entendían: el comparador pedía responder la pregunta del final o explicar "Windows", y cada falla se comía las 4

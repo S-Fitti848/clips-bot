@@ -1387,14 +1387,14 @@ SCHEMA_LECTOR = {"type": "OBJECT", "properties": {
     "entendi": {"type": "STRING"}, "confuso": {"type": "STRING"}}, "required": ["entendi", "confuso"]}
 
 SISTEMA_COINCIDE = """Comparás lo que entendió un espectador que no sabía nada del tema con la historia que el video
-quería contar. La pregunta es UNA sola: ¿entendió lo esencial? Es decir, ¿sabe QUIÉN es (o qué es), QUÉ pasó y POR QUÉ
-sorprende, sin entender otra cosa? Si lo que entendió dice eso con sus palabras, `coincide` es true, aunque le falten
-detalles, nombres secundarios, fechas exactas o explicaciones de más.
+quería contar (Santi, 2026-11-28: rechazar SOLO si lo que entendió contradice la historia o le falta lo principal).
+`coincide` es false SOLO en dos casos: (1) lo que entendió CONTRADICE la historia (otro protagonista, otro hecho, otro
+resultado), o (2) le falta lo principal: no sabe quién es el protagonista o qué pasó. En cualquier otro caso es true,
+aunque le falten detalles, nombres secundarios, fechas, el porqué, o lo cuente con otras palabras.
 NO es motivo para false: la pregunta al público del final (está a propósito y no se responde), una frase de intriga
 ("Pero ahí todo cambió", "Pero faltaba lo peor") que la frase siguiente explica, que no se explique una palabra común
-(Windows, guerra, software), ni sugerencias de estilo. `coincide` es false SOLO si se equivocó de protagonista, de qué
-pasó o de por qué sorprende, o si no pudo seguir la historia. Si es false, en `falta` decí qué hay que arreglar del
-guion (en una frase, con el número de la frase si se sabe)."""
+(Windows, guerra, software), ni sugerencias de estilo. SOLO si se equivocó o le falta lo principal, en `falta` decí qué
+hay que arreglar del guion (en una frase, con el número de la frase si se sabe); aunque le falten detalles, true."""
 
 SCHEMA_COINCIDE = {"type": "OBJECT", "properties": {
     "coincide": {"type": "BOOLEAN"}, "falta": {"type": "STRING"}}, "required": ["coincide", "falta"]}
@@ -3473,10 +3473,15 @@ def proponer(wiki: Wiki, cliente, dia: date, carpeta: Path, avisar=log.info,
         # Santi, 2026-11-23: del banco, primero los subtemas que más rinden (temas.py)
         # Santi, 2026-11-23: primero marcas, empresas y videojuegos (fotos fáciles: productos, logos de época,
         # consolas), después inventos y personas poco conocidas; dentro de cada grupo, por puntaje y por lo que rinde.
+        from . import historias_usadas as _hu
+        ultimo = _hu.ultimo_grupo_tec() if tema == "tecnologia" else ""
+
         def clave_banco(it):
             sub = it.get("subtema") or _t.subtema_tec(it.get("texto") or "")
             facil = 0 if tema != "tecnologia" or sub in SUBTEMAS_FACILES else 1
-            return (facil, -(float(it.get("puntaje") or 0) + (pesos or {}).get(sub, 0.0)))
+            # Santi, 2026-11-28: videojuegos y marcas se alternan
+            repite = bool(ultimo) and _hu.grupo_tec(it.get("texto") or "", sub) == ultimo
+            return (facil, repite, -(float(it.get("puntaje") or 0) + (pesos or {}).get(sub, 0.0)))
 
         sin = {_norm_art(x) for x in sin_fotos or ()}
         orden = sorted([it for it in banco or [] if _norm_art(it.get("articulo") or (it.get("paginas") or [""])[0])
@@ -3525,9 +3530,13 @@ def proponer(wiki: Wiki, cliente, dia: date, carpeta: Path, avisar=log.info,
                                   "puntaje", costo=parte)
         todos_tec = list(elegidos)
         # Santi, 2026-11-23: los subtemas que más rinden en YouTube (temas.py) suman al ORDEN, no al mínimo
+        from . import historias_usadas as _hu2
+        _ult = _hu2.ultimo_grupo_tec()      # Santi, 2026-11-28: videojuegos y marcas se alternan
         elegidos = sorted([x for x in elegidos if x[0] not in flojos],
-                          key=lambda x: -(notas.get(x[0], {}).get("puntaje", 0)
-                                          + (pesos or {}).get(notas.get(x[0], {}).get("subtema"), 0.0)))
+                          key=lambda x: (bool(_ult) and _hu2.grupo_tec(candidatos[x[0]].texto,
+                                                                       notas.get(x[0], {}).get("subtema") or "") == _ult,
+                                         -(notas.get(x[0], {}).get("puntaje", 0)
+                                           + (pesos or {}).get(notas.get(x[0], {}).get("subtema"), 0.0))))
         if fecha_fuerte is not None and banco and not solo_banco:
             fuertes = [x for x in elegidos if notas.get(x[0], {}).get("subtema") in SUBTEMAS_FACILES
                        and (notas.get(x[0], {}).get("puntaje") or 0) >= fecha_fuerte]
